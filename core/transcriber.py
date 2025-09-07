@@ -7,7 +7,7 @@ from typing import Dict, Any, List, Tuple, Optional
 from tqdm import tqdm
 
 import config
-from api.saia_api import APIRequestManager
+from api.openai_transcribe_api import OpenAITranscriptionManager
 from api.openai_api import OpenAISummaryManager
 from processors.pdf_processor import extract_pdf_pages_to_images, \
 	get_image_paths_from_folder
@@ -15,8 +15,8 @@ from processors.file_manager import (
 	create_docx_summary, write_transcription_to_text, initialize_log_file,
 	append_to_log
 )
-from utils.image_processor import ImageProcessor
 from utils.rate_limiter import RateLimiter
+from modules.config_loader import ConfigLoader
 
 
 class ItemTranscriber:
@@ -46,11 +46,12 @@ class ItemTranscriber:
 			float] = []  # For successful transcriptions
 
 		# Use specific rate limiter configurations
-		self.saia_rate_limiter = RateLimiter(config.SAIA_RATE_LIMITS)
-		self.saia_api_manager = APIRequestManager(
-			config.SAIA_API_KEY, config.SAIA_API_BASE_URL,
-			config.SAIA_MODEL_NAME,
-			self.saia_rate_limiter, config.SAIA_API_TIMEOUT
+		self.openai_transcribe_rate_limiter = RateLimiter(config.OPENAI_RATE_LIMITS)
+		self.openai_transcribe_manager = OpenAITranscriptionManager(
+			config.OPENAI_API_KEY,
+			config.OPENAI_TRANSCRIPTION_MODEL,
+			rate_limiter=self.openai_transcribe_rate_limiter,
+			timeout=config.OPENAI_API_TIMEOUT,
 		)
 
 		# Only initialize OpenAI manager if summarization is enabled
@@ -59,16 +60,12 @@ class ItemTranscriber:
 			self.openai_summary_manager = OpenAISummaryManager(
 				config.OPENAI_API_KEY, config.OPENAI_MODEL)
 
-		self.image_processor = ImageProcessor(
-			jpeg_quality=config.JPEG_QUALITY,
-			min_pixels=config.MIN_TOTAL_PIXELS_DEFAULT,
-			max_pixels=config.MAX_TOTAL_PIXELS_DEFAULT,
-		)
+		# Image preprocessing is handled within modules.image_utils inside the transcription manager.
 
 	def _get_list_of_images_to_transcribe(self) -> List[Path]:
 		if self.input_type == "pdf":
 			return extract_pdf_pages_to_images(
-				self.input_path, self.images_dir, self.image_processor)
+				self.input_path, self.images_dir)
 		elif self.input_type == "image_folder":
 			# For image folders, we process images directly from their source path.
 			return get_image_paths_from_folder(self.input_path)
@@ -103,8 +100,8 @@ class ItemTranscriber:
 			original_input_order_index, img_path = args_tuple
 			nonlocal processed_count
 			try:
-				transcription_result_raw = self.saia_api_manager.transcribe_image(
-					img_path, self.image_processor)
+				transcription_result_raw = self.openai_transcribe_manager.transcribe_image(
+					img_path, None)
 				transcription_result = {
 					**transcription_result_raw,
 					"original_input_order_index": original_input_order_index
@@ -207,7 +204,8 @@ class ItemTranscriber:
 
 			except Exception as e:
 				print(f"Critical error during task for {img_path.name}: {e}")
-				seq_num = self.saia_api_manager._get_sequence_number(img_path)
+				# Fallback to original order index + 1 for page numbering on error
+				seq_num = original_input_order_index + 1
 				error_result = {
 					"page": seq_num, "image": img_path.name,
 					"transcription": f"[CRITICAL ERROR] Unhandled in task: {e}",
@@ -240,8 +238,13 @@ class ItemTranscriber:
 		parsed_summaries = []
 		for r in summary_results:
 			# Extract model_page_number from the summary data structure
-			summary_dict = r.get("summary", {})
-			page_number_obj = summary_dict.get('page_number', {})
+			summary_container = r.get("summary", {})
+			# Prefer nested 'summary' JSON if present
+			inner_summary = summary_container.get("summary") if isinstance(summary_container, dict) else None
+			if isinstance(inner_summary, dict):
+				page_number_obj = inner_summary.get('page_number', {})
+			else:
+				page_number_obj = summary_container.get('page_number', {})
 			
 			# Get the page number integer and unnumbered flag from the correct location
 			model_page_num = None
@@ -340,17 +343,21 @@ class ItemTranscriber:
 					s_wrapper["data"]["summary"], dict):
 				s_wrapper["data"]["summary"] = {}
 			summary_data_dict = s_wrapper["data"]["summary"]
+			# Identify the target dict that actually holds page_number (nested summary JSON preferred)
+			target_summary_json = summary_data_dict.get("summary") if isinstance(summary_data_dict.get("summary"), dict) else summary_data_dict
 
 			# Ensure page_number object structure exists
-			if "page_number" not in summary_data_dict or not isinstance(
-					summary_data_dict["page_number"], dict):
-				summary_data_dict["page_number"] = {"page_number_integer": 0,
-				                                    "contains_no_page_number": False}
+			if "page_number" not in target_summary_json or not isinstance(
+					target_summary_json["page_number"], dict):
+				target_summary_json["page_number"] = {
+					"page_number_integer": 0,
+					"contains_no_page_number": False
+				}
 
 			if s_wrapper["is_genuinely_unnumbered"]:
-				summary_data_dict["page_number"][
+				target_summary_json["page_number"][
 					"page_number_integer"] = 0  # Mark as unnumbered
-				summary_data_dict["page_number"][
+				target_summary_json["page_number"][
 					"contains_no_page_number"] = True
 			else:
 				# Default to original_input_order_index + 1 if no reliable anchor logic could be applied
@@ -358,8 +365,8 @@ class ItemTranscriber:
 				if summaries_with_model_pages:  # Only use anchor logic if valid anchors were derived
 					adjusted_page = anchor_model_page + (original_index - anchor_original_index)
 				adjusted_page = max(1, adjusted_page)  # Ensure numbered pages start at 1
-				summary_data_dict["page_number"]["page_number_integer"] = adjusted_page
-				summary_data_dict["page_number"]["contains_no_page_number"] = False
+				target_summary_json["page_number"]["page_number_integer"] = adjusted_page
+				target_summary_json["page_number"]["contains_no_page_number"] = False
 
 			final_ordered_summaries.append(s_wrapper["data"])
 
@@ -378,12 +385,13 @@ class ItemTranscriber:
 		failed_items.sort(key=lambda x: int(x[0]))  # x[0] is sequence_num
 		paths_to_retry = [item[1] for item in failed_items]
 
-		# More conservative rate limiter for retries
-		retry_rate_limiter = RateLimiter([(1, 2), (30, 60), (1500, 3600)])
-		retry_api_manager = APIRequestManager(
-			config.SAIA_API_KEY, config.SAIA_API_BASE_URL,
-			config.SAIA_MODEL_NAME,
-			retry_rate_limiter, int(config.SAIA_API_TIMEOUT * 1.5)
+		# More conservative rate limiter for retries (re-use OpenAI limits)
+		retry_rate_limiter = RateLimiter([(1, 2), (60, 60), (3000, 3600)])
+		retry_api_manager = OpenAITranscriptionManager(
+			config.OPENAI_API_KEY,
+			config.OPENAI_TRANSCRIPTION_MODEL,
+			rate_limiter=retry_rate_limiter,
+			timeout=int(config.OPENAI_API_TIMEOUT * 1.5),
 		)
 
 		print(
@@ -394,7 +402,7 @@ class ItemTranscriber:
 		for img_path in tqdm(paths_to_retry, desc="Retrying failed items"):
 			# Retry transcription
 			retry_result = retry_api_manager.transcribe_image(
-				img_path, self.image_processor, max_retries=3)
+				img_path, None, max_retries=3)
 			retry_transcription_results.append(retry_result)
 
 			# Log retry result
@@ -477,10 +485,19 @@ class ItemTranscriber:
 			f"Prepared {self.total_items_to_transcribe} images for transcription{' and summarization' if config.SUMMARIZE else ''}.")
 
 		# Initialize log file with a header
+		# read target_dpi from modules config for logging
+		target_dpi = None
+		if self.input_type == "pdf":
+			try:
+				cl = ConfigLoader()
+				cl.load_configs()
+				target_dpi = int(cl.get_image_processing_config().get('api_image_processing', {}).get('target_dpi', 300))
+			except Exception:
+				target_dpi = None
 		initialize_log_file(
 			self.log_path, self.name, str(self.input_path), item_type_str,
-			self.total_items_to_transcribe, config.SAIA_MODEL_NAME,
-			config.EXTRACTION_DPI if self.input_type == "pdf" else None
+			self.total_items_to_transcribe, config.OPENAI_TRANSCRIPTION_MODEL,
+			target_dpi
 		)
 
 		# Process all images - transcribe and summarize

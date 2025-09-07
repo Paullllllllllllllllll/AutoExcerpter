@@ -1,0 +1,55 @@
+{
+  "name": "article_page_summary",
+  "strict": true,
+  "schema": {
+    "$schema": "Summary_1_1_0",
+    "title": "Article Page Summary",
+    "type": "object",
+    "properties": {
+      "page_number": {
+        "type": "object",
+        "description": "Contains information about the page number. Includes the page number as an integer and a boolean indicating whether the page contains no visible or assigned page number. Reason hard to properly identify and format the page number.",
+        "properties": {
+          "page_number_integer": {
+            "type": "integer",
+            "description": "Page number of the text being summarized. Page numbers normally appear in running headers or footers and may be flanked by the article, chapter, or monograph title or author names (e.g., '4 T. Albers et al.', '716 QUARTERLY JOURNAL OF ECONOMICS', or '22 CAPITALISM IN AMSTERDAM IN THE SEVENTEENTH CENTURY'). Academic pagination may begin at a higher number (e.g., 215 – 240) rather than 1."
+          },
+          "contains_no_page_number": {
+            "type": "boolean",
+            "description": "Set to true if the page contains no visible or assigned page number; otherwise, false."
+          }
+        },
+        "required": [
+          "page_number_integer",
+          "contains_no_page_number"
+        ],
+        "additionalProperties": false
+      },
+      "contains_no_semantic_content": {
+        "type": "boolean",
+        "description": "Set to true if the page contains no substantial content, but only lists of references, sources, title or introductory pages, tables of contents or similar non-semantic material."
+      },
+      "bullet_points": {
+        "type": "array",
+        "description": "Concise bullet-point statements that capture the main ideas or findings on the page. Return an empty string if contains_no_semantic_content is true.",
+        "items": {
+          "type": "string"
+        }
+      },
+      "references": {
+        "type": "array",
+        "description": "Full bibliographic citations appearing on the page, formatted in American Psychological Association (APA) style.",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "required": [
+      "page_number",
+      "contains_no_semantic_content",
+      "bullet_points",
+      "references"
+    ],
+    "additionalProperties": false
+  }
+}

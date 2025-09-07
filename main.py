@@ -1,12 +1,11 @@
 """
-Optimized script for PDF and image folder transcription using the Qwen VL model
-via SAIA API, with optional structured summarization via OpenAI API.
+Transcription and summarization pipeline powered by OpenAI (gpt-5-mini).
 
 This script:
 1. Processes PDFs by extracting each page as an image, or processes images from a folder
-2. Transcribes the images using the SAIA API
-3. Optionally sends transcribed text to OpenAI API for structured summarization
-4. Saves the transcriptions and summaries in both TXT and DOCX formats
+2. Transcribes the images with OpenAI Responses API (gpt-5-mini) using a JSON schema
+3. Optionally sends the transcribed text to OpenAI (gpt-5-mini) for structured summarization
+4. Saves transcriptions to TXT and summaries to DOCX
 5. Verifies page numbering coherence
 """
 
@@ -19,6 +18,7 @@ from typing import List, Dict, Any
 
 import config
 from core.transcriber import ItemTranscriber
+from modules.image_utils import SUPPORTED_IMAGE_EXTENSIONS
 
 def setup_argparse() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -55,7 +55,7 @@ def scan_input_path(path_to_scan: Path) -> List[Dict[str, Any]]:
             # Group images by their parent directory to identify image folders
             for file_name in files:
                 file_path = current_dir / file_name
-                if file_path.suffix.lower() in config.IMAGE_EXTENSIONS:
+                if file_path.suffix.lower() in SUPPORTED_IMAGE_EXTENSIONS:
                     if current_dir not in image_folders_found:
                         image_folders_found[current_dir] = []
                     image_folders_found[current_dir].append(file_path)
@@ -158,15 +158,13 @@ def main():
 
         # Check if final output files already exist for this item
         expected_final_outputs = [
-	        base_output_dir / f"{item_name}.txt",
-	        base_output_dir / f"{item_name}.docx",
+            base_output_dir / f"{item_name}.txt",
         ]
 
         if config.SUMMARIZE:
-	        expected_final_outputs.extend([
-		        base_output_dir / f"{item_name}_summary.txt",
-		        base_output_dir / f"{item_name}_summary.docx"
-	        ])
+            expected_final_outputs.append(
+                base_output_dir / f"{item_name}_summary.docx"
+            )
 
         if all(path.exists() for path in expected_final_outputs):
 	        print(f"All output files for {item_name} already exist. Skipping.")

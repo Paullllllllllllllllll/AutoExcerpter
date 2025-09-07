@@ -1,0 +1,32 @@
+{
+  "name": "markdown_transcription_schema",
+  "strict": true,
+  "schema": {
+    "type": "object",
+    "properties": {
+      "image_analysis": {
+        "type": "string",
+        "description": "Return a brief summary of what you can see on the image, listing all formatting elements and visible text. Identify the position of page number(s) and footnote(s) on the image precisely."
+      },
+      "transcription": {
+        "type": ["string", "null"],
+        "description": "- Task: Return a **markdown-converted, verbatim transcription** of the provided image.\n- Scope — include everything: Transcribe **all** visible text and structural elements: headers; footers; page numbers; tables; etc.\n - Markdown formatting: Use markdown formatting for transcribing text, e.g., `*italic*` or `**bold**`; `# Heading 1`, `## Heading 2`, etc.\n- Equations: Convert any equations to **LaTeX** and enclose them in `$$ … $$`.\n- Page numbers — exact format: Write page numbers appearing on headers and footers (not in the main text or tables) like this example: `<page_number>9<page_number>`.\n - Footnotes: Format footnotes like in this example: `[^1]: My reference`.\n- Images or diagrams: Indicate their presence with a brief description in square brackets, e.g., `[Image: diagram of a cell]`.\n- Layout preservation: **Preserve all line breaks** exactly as in the image.\n- Multi-column text: Transcribe column by column (finish column 1 before column 2, etc.), keep line breaks within columns intact.\n- Cross-page continuity: This is likely one page of a multi-page document. **Preserve any sentences that continue from the previous or to the next page exactly as shown.**\n- Output format: Provide **only** the transcription. If **no transcribable text** is found, output `null`.\n- No fabrication: **Do not hallucinate.** Keep spelling, punctuation, and wording **verbatim**.\n"
+      },
+      "no_transcribable_text": {
+        "type": "boolean",
+        "description": "True if the image contains no transcribable text; otherwise, false."
+      },
+      "transcription_not_possible": {
+        "type": "boolean",
+        "description": "True *if and only if* transcription is entirely impossible; otherwise, false."
+      }
+    },
+    "required": [
+      "image_analysis",
+      "transcription",
+      "no_transcribable_text",
+      "transcription_not_possible"
+    ],
+    "additionalProperties": false
+  }
+}

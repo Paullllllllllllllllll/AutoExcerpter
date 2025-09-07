@@ -8,6 +8,8 @@ from openai import OpenAI
 
 import config
 from utils.rate_limiter import RateLimiter
+from modules.prompt_utils import render_prompt_with_schema
+from modules.config_loader import ConfigLoader, PROMPTS_DIR, SCHEMAS_DIR
 
 
 class OpenAISummaryManager:
@@ -15,73 +17,142 @@ class OpenAISummaryManager:
 
 	def __init__(self, api_key: str, model_name: str):
 		self.api_key = api_key
-		self.model_name = model_name  # e.g., "o4-mini"
+		self.model_name = model_name  # e.g., "gpt-5-mini"
 		self.client = OpenAI(api_key=api_key, timeout=config.OPENAI_API_TIMEOUT)
 		self.successful_requests = 0
 		self.failed_requests = 0
 		self.processing_times = deque(maxlen=50)
 		self.rate_limiter = RateLimiter(
 			config.OPENAI_RATE_LIMITS)  # Use configured OpenAI rate limits
+		# Determine service tier preference from concurrency config, fallback to config flag
+		try:
+			cc = ConfigLoader()
+			cc.load_configs()
+			st = (
+				(cc.get_concurrency_config().get("concurrency", {}) or {})
+				.get("transcription", {})
+				.get("service_tier")
+			)
+		except Exception:
+			st = None
+		self.service_tier = st if st else ("flex" if config.OPENAI_USE_FLEX else "auto")
+
+		# Load summary schema and system prompt from modules
+		self.summary_schema: Dict[str, Any] | None = None
+		self.summary_system_prompt_text: str = "Summarize the provided text according to the JSON schema below."
+		try:
+			schema_path = (SCHEMAS_DIR / "summary_schema.json").resolve()
+			if schema_path.exists():
+				with open(schema_path, "r", encoding="utf-8") as f:
+					self.summary_schema = json.load(f)
+			prompt_path = (PROMPTS_DIR / "summary_system_prompt.txt").resolve()
+			if prompt_path.exists():
+				with open(prompt_path, "r", encoding="utf-8") as f:
+					self.summary_system_prompt_text = f.read()
+		except Exception:
+			# leave defaults
+			pass
+
+	def _build_text_format(self) -> Dict[str, Any]:
+		"""Build the Responses API text.format object for Structured Outputs."""
+		schema_obj = self.summary_schema or {}
+		# Accept wrapper form { name, strict, schema } or bare schema
+		name = schema_obj.get("name", "article_page_summary") if isinstance(schema_obj, dict) else "article_page_summary"
+		strict = bool(schema_obj.get("strict", True)) if isinstance(schema_obj, dict) else True
+		schema = schema_obj.get("schema", schema_obj) if isinstance(schema_obj, dict) else {}
+		return {
+			"type": "json_schema",
+			"name": name,
+			"schema": schema,
+			"strict": strict,
+		}
+
+	@staticmethod
+	def _extract_output_text(data: Any) -> str:
+		"""Normalize Responses output into a single text string."""
+		# Try SDK convenience attr
+		try:
+			text_attr = getattr(data, "output_text", None)
+			if isinstance(text_attr, str):
+				return text_attr.strip()
+		except Exception:
+			pass
+		# Try dict-style
+		if isinstance(data, dict) and isinstance(data.get("output_text"), str):
+			return data["output_text"].strip()
+		# Fallback: reconstruct from output list
+		try:
+			obj = data
+			if not isinstance(obj, dict):
+				conv = getattr(data, "to_dict", None) or getattr(data, "model_dump", None)
+				if callable(conv):
+					obj = conv()
+			output = obj.get("output") if isinstance(obj, dict) else None
+			parts = []
+			if isinstance(output, list):
+				for item in output:
+					if isinstance(item, dict) and item.get("type") == "message":
+						for c in item.get("content", []):
+							t = c.get("text")
+							if isinstance(t, str):
+								parts.append(t)
+			return "".join(parts).strip()
+		except Exception:
+			return ""
 
 	def generate_summary(self, transcription: str, page_num: int,
 	                     max_retries: int = 3) -> Dict[str, Any]:
 		start_time = time.time()
 		retries = 0
 
-		messages_payload = [
+		# Responses API payload components
+		# Render system prompt with embedded schema
+		schema_obj = (self.summary_schema.get("schema") if isinstance(self.summary_schema, dict) and "schema" in self.summary_schema else self.summary_schema) or {}
+		system_text = render_prompt_with_schema(self.summary_system_prompt_text, schema_obj)
+		input_messages = [
 			{
 				"role": "system",
 				"content": [
-					{"type": "text", "text": config.SUMMARY_SYSTEM_PROMPT}]
+					{"type": "input_text", "text": system_text}
+				]
 			},
 			{
 				"role": "user",
-				"content": [{"type": "text", "text": transcription}]
+				"content": [
+					{"type": "input_text", "text": transcription}
+				]
 			}
 		]
-
-		# Defines the expected JSON structure for the API response.
-		# 'name', 'strict', and 'schema' are part of the ChatCompletionResponseFormatJSONSchema.
-		response_format_payload = {
-			"type": "json_schema",
-			"json_schema": {
-				"name": config.SUMMARY_SCHEMA["name"],
-				"strict": config.SUMMARY_SCHEMA["strict"],
-				"schema": config.SUMMARY_SCHEMA["schema"]
-			}
-		}
+		service_tier = self.service_tier
+		text_format = self._build_text_format()
 
 		try:
 			while retries <= max_retries:
 				try:
 					_ = self.rate_limiter.wait_for_capacity()
 
-					# Add flex processing configuration
-					service_tier = "flex" if config.OPENAI_USE_FLEX else "auto"
+					payload: Dict[str, Any] = {
+						"model": self.model_name,
+						"input": input_messages,
+						"service_tier": service_tier,
+						"max_output_tokens": 8192,
+						"reasoning": {"effort": "high"},
+					}
+					if text_format:
+						payload["text"] = {"format": text_format}
 
-					response = self.client.chat.completions.create(
-						model=self.model_name,
-						messages=messages_payload,
-						reasoning_effort="high",
-						response_format=response_format_payload,
-						service_tier=service_tier,
-					)
+					response = self.client.responses.create(**payload)
 
 					processing_time = time.time() - start_time
 					self.processing_times.append(processing_time)
 					self.successful_requests += 1
 					self.rate_limiter.report_success()
 
-					if not response.choices or not response.choices[
-						0].message or not response.choices[0].message.content:
-						raise ValueError(
-							"OpenAI API returned an invalid or empty response structure.")
-
-					summary_json_str = response.choices[0].message.content
+					summary_json_str = self._extract_output_text(response)
 					if not summary_json_str:
-						raise ValueError(
-							"OpenAI API returned an empty content string for summary.")
+						raise ValueError("OpenAI API returned an empty content string for summary.")
 
+					# The model should return JSON adhering to the schema
 					summary_json = json.loads(summary_json_str)
 
 					# Create page number object if it doesn't exist in the response

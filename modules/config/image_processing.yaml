@@ -1,0 +1,53 @@
+# Image processing configuration (two pipelines)
+
+# 1) OpenAI API image processing (preparing images to send to the OpenAI API)
+api_image_processing:
+  target_dpi: 300  # DPI for rendering/extracting images before API processing.
+  grayscale_conversion: true  # Convert color images to grayscale to reduce noise.
+  handle_transparency: true  # Flatten images with alpha onto white background.
+  # Controls the fidelity of images sent to the OpenAI Responses API.
+  # - high: better fidelity OCR, potentially higher token usage
+  # - low: faster/cheaper, lower fidelity
+  # - auto: omit the parameter and let the model decide
+  llm_detail: high
+
+  # JPEG compression quality (1-100) when saving processed images for API use.
+  jpeg_quality: 100
+
+  # Resizing behavior prior to sending to the API
+  # - auto: choose a resizing strategy based on llm_detail
+  # - none: do not resize (only transparency/grayscale steps applied)
+  resize_profile: high
+
+  # Parameters for resizing profiles
+  # For low detail, cap the longest side to this many pixels (preserve aspect ratio)
+  low_max_side_px: 512
+  # For high detail, fit into this box (width, height) with padding as needed
+  high_target_box: [768, 1536]
+
+# 2) Tesseract OCR image processing (preparing images for local Tesseract)
+tesseract_image_processing:
+  # Resolution for page rendering and image saving; DPI metadata is embedded if enabled.
+  target_dpi: 300
+
+  # OCR engine settings and optional binary location
+  ocr:
+    tesseract_config: "--oem 3 --psm 6"  # '--oem 3' default engine; '--psm 6' uniform block of text
+    tesseract_cmd: 'C:\\Program Files (x86)\\Tesseract-OCR\\tesseract.exe'  # Optional absolute path on Windows
+
+  # Preprocessing pipeline exclusively for Tesseract
+  preprocessing:
+    flatten_alpha: true            # Remove/flatten transparency to white background
+    grayscale: true                # Convert to grayscale before thresholding
+    invert_to_dark_on_light: auto  # auto|always|never -> ensure dark text on light bg
+    deskew: true                   # Detect and correct page skew
+    denoise: median                # none|median|bilateral
+    binarization: sauvola          # sauvola|adaptive|otsu
+    sauvola_window: 25             # odd window size for Sauvola
+    sauvola_k: 0.2                 # Sauvola k parameter
+    morphology: none               # none|open|close|erode|dilate
+    morph_kernel: 3                # odd kernel size for morphology
+    border_px: 10                  # add a white border to avoid cropping text near edges
+    output_format: png             # png|tiff (lossless)
+    preserve_resolution: true      # do not resize/box-fit for Tesseract
+    embed_dpi_metadata: true       # embed DPI metadata in output files
