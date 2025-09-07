@@ -9,11 +9,11 @@ from typing import Any, Dict, Optional
 from openai import OpenAI
 import base64
 
-import config
-from utils.rate_limiter import RateLimiter
+from modules import app_config as config
+from api.rate_limiter import RateLimiter
 from modules.prompt_utils import render_prompt_with_schema
 from modules.image_utils import ImageProcessor as ModImageProcessor
-from modules.config_loader import MODULES_DIR, ConfigLoader, PROMPTS_DIR, SCHEMAS_DIR
+from modules.config_loader import ConfigLoader, PROMPTS_DIR, SCHEMAS_DIR
 
 
 class OpenAITranscriptionManager:

@@ -5,9 +5,9 @@ from collections import deque
 from typing import Dict, Any
 
 from openai import OpenAI
-
-import config
-from utils.rate_limiter import RateLimiter
+ 
+from modules import app_config as config
+from api.rate_limiter import RateLimiter
 from modules.prompt_utils import render_prompt_with_schema
 from modules.config_loader import ConfigLoader, PROMPTS_DIR, SCHEMAS_DIR
 

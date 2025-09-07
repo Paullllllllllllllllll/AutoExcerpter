@@ -6,7 +6,7 @@ from typing import Dict, Any, List, Tuple, Optional
 
 from tqdm import tqdm
 
-import config
+from modules import app_config as config
 from api.openai_transcribe_api import OpenAITranscriptionManager
 from api.openai_api import OpenAISummaryManager
 from processors.pdf_processor import extract_pdf_pages_to_images, \
@@ -15,7 +15,7 @@ from processors.file_manager import (
 	create_docx_summary, write_transcription_to_text, initialize_log_file,
 	append_to_log
 )
-from utils.rate_limiter import RateLimiter
+from api.rate_limiter import RateLimiter
 from modules.config_loader import ConfigLoader
 
 

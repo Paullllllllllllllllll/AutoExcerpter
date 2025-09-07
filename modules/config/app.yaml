@@ -1,0 +1,28 @@
+# Application-level configuration migrated from config.py
+
+# Feature toggle
+summarize: true  # When false, only transcription will be performed
+
+# Folder Paths
+input_folder_path: 'C:\Users\paulg\OneDrive\Desktop\New Literature'
+output_folder_path: 'C:\Users\paulg\OneDrive\Desktop\New Literature'
+
+# Cleanup Settings
+delete_temp_working_dir: true  # Delete the item's temporary working directory (including all temp files/images)
+
+# Performance Settings
+concurrent_requests: 4
+api_timeout: 320  # Timeout for each API call in seconds
+
+openai:
+  # OpenAI API Configuration
+  model: 'gpt-5-mini'               # Summary/excerpting and default OpenAI model
+  transcription_model: 'gpt-5-mini' # Transcription model
+  api_timeout: 900                  # 15 minutes for flex processing
+  use_flex: true                    # Enable flex processing for cost savings
+  # Rate Limiting Configuration (OpenAI)
+  # Format: List of [max_requests, time_period_seconds]
+  rate_limits:
+    - [120, 1]
+    - [15000, 60]
+    - [15000, 3600]

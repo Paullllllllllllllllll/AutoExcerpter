@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 from typing import List, Dict, Any
 
-import config
+from modules import app_config as config
 from core.transcriber import ItemTranscriber
 from modules.image_utils import SUPPORTED_IMAGE_EXTENSIONS
 

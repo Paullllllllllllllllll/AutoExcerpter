@@ -3,7 +3,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, List
 import re
-import config
+from modules import app_config as config
 import docx
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 
