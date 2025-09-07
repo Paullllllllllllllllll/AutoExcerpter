@@ -1,0 +1,581 @@
+import concurrent.futures
+import shutil
+import time
+from pathlib import Path
+from typing import Dict, Any, List, Tuple, Optional
+
+from tqdm import tqdm
+
+import config
+from api.saia_api import APIRequestManager
+from api.openai_api import OpenAISummaryManager
+from processors.pdf_processor import extract_pdf_pages_to_images, \
+	get_image_paths_from_folder
+from processors.file_manager import (
+	create_docx_summary, write_transcription_to_text, initialize_log_file,
+	append_to_log
+)
+from utils.image_processor import ImageProcessor
+from utils.rate_limiter import RateLimiter
+
+
+class ItemTranscriber:
+	def __init__(self, input_path: Path, input_type: str,
+	             base_output_dir: Path):
+		self.input_path = input_path
+		self.input_type = input_type  # "pdf" or "image_folder"
+		self.name = self.input_path.stem
+
+		self.base_output_dir = base_output_dir
+		self.output_txt_path = self.base_output_dir / f"{self.name}.txt"
+		self.output_summary_docx_path = self.base_output_dir / f"{self.name}_summary.docx"
+
+		# Item-specific working directory for logs and temporary images
+		self.working_dir = self.base_output_dir / f"{self.name}_working_files"
+		self.working_dir.mkdir(parents=True, exist_ok=True)
+
+		self.images_dir = self.working_dir / "images"  # Temp images for this item
+		self.images_dir.mkdir(exist_ok=True)
+
+		self.log_path = self.working_dir / f"{self.name}_transcription_log.json"
+		self.summary_log_path = self.working_dir / f"{self.name}_summary_log.json"
+
+		self.total_items_to_transcribe = 0
+		self.start_time_processing: Optional[float] = None
+		self.transcription_times: List[
+			float] = []  # For successful transcriptions
+
+		# Use specific rate limiter configurations
+		self.saia_rate_limiter = RateLimiter(config.SAIA_RATE_LIMITS)
+		self.saia_api_manager = APIRequestManager(
+			config.SAIA_API_KEY, config.SAIA_API_BASE_URL,
+			config.SAIA_MODEL_NAME,
+			self.saia_rate_limiter, config.SAIA_API_TIMEOUT
+		)
+
+		# Only initialize OpenAI manager if summarization is enabled
+		self.openai_summary_manager = None
+		if config.SUMMARIZE:
+			self.openai_summary_manager = OpenAISummaryManager(
+				config.OPENAI_API_KEY, config.OPENAI_MODEL)
+
+		self.image_processor = ImageProcessor(
+			jpeg_quality=config.JPEG_QUALITY,
+			min_pixels=config.MIN_TOTAL_PIXELS_DEFAULT,
+			max_pixels=config.MAX_TOTAL_PIXELS_DEFAULT,
+		)
+
+	def _get_list_of_images_to_transcribe(self) -> List[Path]:
+		if self.input_type == "pdf":
+			return extract_pdf_pages_to_images(
+				self.input_path, self.images_dir, self.image_processor)
+		elif self.input_type == "image_folder":
+			# For image folders, we process images directly from their source path.
+			return get_image_paths_from_folder(self.input_path)
+		return []
+
+	def _transcribe_and_summarize(
+			self, image_paths: List[Path]
+	) -> Tuple[
+		List[Dict[str, Any]], List[Dict[str, Any]], List[Tuple[int, Path]]]:
+		transcription_results: List[Dict[str, Any]] = []
+		summary_results: List[Dict[str, Any]] = []
+		failed_items_to_retry: List[
+			Tuple[int, Path]] = []  # (original_input_order_index, path)
+		total_images = len(image_paths)
+		processed_count = 0
+		stats_update_interval_seconds = 20
+		last_stats_print_time = time.time()
+
+		print(
+			f"Starting transcription{' and summarization' if config.SUMMARIZE else ''} of {total_images} images...")
+
+		image_paths_with_indices = list(enumerate(image_paths))
+
+		if config.SUMMARIZE and self.openai_summary_manager:
+			initialize_log_file(
+				self.summary_log_path, self.name, str(self.input_path),
+				"PDF" if self.input_type == "pdf" else "Image Folder",
+				total_images, config.OPENAI_MODEL
+			)
+
+		def submit_task(args_tuple):
+			original_input_order_index, img_path = args_tuple
+			nonlocal processed_count
+			try:
+				transcription_result_raw = self.saia_api_manager.transcribe_image(
+					img_path, self.image_processor)
+				transcription_result = {
+					**transcription_result_raw,
+					"original_input_order_index": original_input_order_index
+				}
+
+				if config.SUMMARIZE and self.openai_summary_manager and "error" not in transcription_result:
+					page_num_model = transcription_result.get("page")
+					transcription_text = transcription_result.get(
+						"transcription", "")
+
+					has_valid_model_page_num = isinstance(page_num_model, int)
+					page_num_to_use = page_num_model if has_valid_model_page_num else original_input_order_index + 1
+
+					if "[empty page]" in transcription_text or "[no transcription possible]" in transcription_text:
+						summary_data = {
+							"page_number": {
+								"page_number_integer": page_num_to_use,
+								"contains_no_page_number": not has_valid_model_page_num
+							},
+							"bullet_points": [
+								"[Empty page or no transcription possible]"],
+							"references": [],
+							"contains_no_semantic_content": True
+						}
+					else:
+						summary_data = self.openai_summary_manager.generate_summary(
+							transcription_text,
+							page_num_to_use
+						)
+					summary_result = {
+						"original_input_order_index": original_input_order_index,
+						"model_page_number": page_num_model,
+						"summary": summary_data,
+						"image_filename": img_path.name
+					}
+					append_to_log(self.summary_log_path, summary_result)
+					summary_results.append(summary_result)
+				elif config.SUMMARIZE and self.openai_summary_manager:  # Handles transcription error case
+					page_num_model = transcription_result.get("page")
+					has_valid_model_page_num = isinstance(page_num_model, int)
+					page_num_to_use = page_num_model if has_valid_model_page_num else original_input_order_index + 1
+					error_msg = transcription_result.get("error",
+					                                     "Unknown error")
+					summary_data = {
+						"page_number": {
+							"page_number_integer": page_num_to_use,
+							"contains_no_page_number": not has_valid_model_page_num
+						},
+						"bullet_points": [
+							f"[Transcription failed: {error_msg}]"],
+						"references": [],
+						"contains_no_semantic_content": True
+					}
+					summary_result = {
+						"original_input_order_index": original_input_order_index,
+						"model_page_number": page_num_model,
+						"summary": summary_data,
+						"image_filename": img_path.name
+					}
+					append_to_log(self.summary_log_path, summary_result)
+					summary_results.append(summary_result)
+
+				append_to_log(self.log_path, transcription_result)
+				processed_count += 1
+
+				if "processing_time" in transcription_result and "error" not in transcription_result:
+					self.transcription_times.append(
+						transcription_result["processing_time"])
+
+				status = "SUCCESS" if "error" not in transcription_result else f"FAILED ({transcription_result.get('retries', 0)} retries)"
+				item_num_str = transcription_result.get("page", "?")
+
+				eta_str = "ETA: N/A"
+				if processed_count > 5 and self.start_time_processing:
+					elapsed_total = time.time() - self.start_time_processing
+					items_per_sec_overall = processed_count / elapsed_total
+					remaining_items = total_images - processed_count
+					if items_per_sec_overall > 0:
+						recent_avg_time_per_item = sum(
+							self.transcription_times[-10:]) / min(
+							len(self.transcription_times),
+							10) if self.transcription_times else 0
+						items_per_sec_recent = 1.0 / recent_avg_time_per_item if recent_avg_time_per_item > 0 else items_per_sec_overall
+						blended_ips = 0.7 * items_per_sec_overall + 0.3 * items_per_sec_recent
+						eta_seconds = remaining_items / blended_ips if blended_ips > 0 else float(
+							'inf')
+						if eta_seconds != float('inf'):
+							eta_str = f"ETA: {time.strftime('%H:%M:%S', time.gmtime(eta_seconds))}"
+
+				print(
+					f"Processed {processed_count}/{total_images} - Item {item_num_str} - Status: {status} - {eta_str}")
+				transcription_results.append(transcription_result)
+
+				if "error" in transcription_result and transcription_result.get(
+						"error_type") != "processing":
+					failed_items_to_retry.append(
+						(original_input_order_index, img_path))
+
+				return transcription_result
+
+			except Exception as e:
+				print(f"Critical error during task for {img_path.name}: {e}")
+				seq_num = self.saia_api_manager._get_sequence_number(img_path)
+				error_result = {
+					"page": seq_num, "image": img_path.name,
+					"transcription": f"[CRITICAL ERROR] Unhandled in task: {e}",
+					"error": str(e),
+					"original_input_order_index": original_input_order_index
+				}
+				transcription_results.append(error_result)
+				processed_count += 1
+				return error_result
+
+		max_workers = min(config.CONCURRENT_REQUESTS, len(image_paths))
+		if max_workers <= 0:
+			max_workers = 1
+		with concurrent.futures.ThreadPoolExecutor(
+				max_workers=max_workers) as executor:
+			list(tqdm(executor.map(submit_task, image_paths_with_indices),
+			          total=total_images,
+			          desc="Processing images"))
+
+		transcription_results.sort(
+			key=lambda x: x.get("original_input_order_index", 0))
+		return transcription_results, summary_results, failed_items_to_retry
+
+	def _adjust_and_sort_summary_page_numbers(self, summary_results: List[
+		Dict[str, Any]]) -> List[Dict[str, Any]]:
+		if not summary_results:
+			return []
+		
+		print("\nAdjusting page numbers based on model-detected page sequences...")
+		parsed_summaries = []
+		for r in summary_results:
+			# Extract model_page_number from the summary data structure
+			summary_dict = r.get("summary", {})
+			page_number_obj = summary_dict.get('page_number', {})
+			
+			# Get the page number integer and unnumbered flag from the correct location
+			model_page_num = None
+			is_genuinely_unnumbered = False
+			
+			if isinstance(page_number_obj, dict):
+				# New schema format with nested page_number object
+				model_page_num = page_number_obj.get('page_number_integer')
+				is_genuinely_unnumbered = page_number_obj.get('contains_no_page_number', False)
+			else:
+				# Fallback for old format or direct model_page_number value
+				model_page_str = r.get("model_page_number", "")
+				try:
+					if isinstance(model_page_str, (int, float)):
+						model_page_num = int(model_page_str)
+					elif isinstance(model_page_str, str) and model_page_str.isdigit():
+						model_page_num = int(model_page_str)
+				except ValueError:
+					pass  # model_page_num remains None
+				
+				# Check old schema for unnumbered flag
+				is_genuinely_unnumbered = summary_dict.get('contains_no_page_number', False)
+			
+			parsed_summaries.append({
+				"original_input_order_index": r["original_input_order_index"],
+				"model_page_number_int": model_page_num,
+				"data": r,
+				"is_genuinely_unnumbered": is_genuinely_unnumbered
+			})
+
+		# Pages used for anchor calculation must have a model page number AND not be marked as genuinely unnumbered
+		summaries_with_model_pages = [
+			s for s in parsed_summaries
+			if s["model_page_number_int"] is not None and not s["is_genuinely_unnumbered"]
+		]
+		
+		print(f"Found {len(summaries_with_model_pages)} pages with valid model-detected page numbers")
+		
+		anchor_model_page = 1
+		anchor_original_index = 0
+
+		if summaries_with_model_pages:
+			# Sort by model page number to find the longest consistent sequence
+			summaries_with_model_pages.sort(key=lambda x: x["model_page_number_int"])
+			
+			# Debug the detected page numbers
+			detected_page_nums = [s["model_page_number_int"] for s in summaries_with_model_pages]
+			print(f"Model-detected page numbers: {detected_page_nums}")
+			
+			longest_sequence = []
+			current_sequence = []
+			
+			for i, item in enumerate(summaries_with_model_pages):
+				# Start a new sequence or add to current if consecutive
+				if not current_sequence:
+					current_sequence = [item]
+				elif item["model_page_number_int"] == current_sequence[-1]["model_page_number_int"] + 1:
+					current_sequence.append(item)
+				else:
+					# End of sequence, check if it's longer than our longest
+					if len(current_sequence) > len(longest_sequence):
+						longest_sequence = current_sequence.copy()
+					# Start a new sequence with the current item
+					current_sequence = [item]
+			
+			# Check if the last sequence is the longest
+			if len(current_sequence) > len(longest_sequence):
+				longest_sequence = current_sequence
+			
+			if longest_sequence and len(longest_sequence) > 1:  # Prefer longer sequences
+				anchor_item = longest_sequence[0]
+				anchor_model_page = anchor_item["model_page_number_int"]
+				anchor_original_index = anchor_item["original_input_order_index"]
+				
+				# Debug the found sequence
+				sequence_page_nums = [s["model_page_number_int"] for s in longest_sequence]
+				sequence_indexes = [s["original_input_order_index"] for s in longest_sequence]
+				print(f"Longest consecutive sequence: {sequence_page_nums}")
+				print(f"Corresponding image indexes: {sequence_indexes}")
+				print(f"Using anchor: model page {anchor_model_page} at image index {anchor_original_index}")
+			elif summaries_with_model_pages:  # Fallback to the first page with a number if no sequence > 1
+				anchor_item = summaries_with_model_pages[0]
+				anchor_model_page = anchor_item["model_page_number_int"]
+				anchor_original_index = anchor_item["original_input_order_index"]
+				print(f"No consecutive sequence found. Using first detected page {anchor_model_page} at image index {anchor_original_index} as anchor")
+		else:
+			print("No valid model page numbers detected. Using default numbering starting from 1.")
+		# If no summaries_with_model_pages, default anchors (1, 0) are used.
+
+		final_ordered_summaries = []
+		for s_wrapper in parsed_summaries:
+			original_index = s_wrapper["original_input_order_index"]
+
+			# Ensure the 'summary' key exists and is a dictionary in the data part
+			if "summary" not in s_wrapper["data"] or not isinstance(
+					s_wrapper["data"]["summary"], dict):
+				s_wrapper["data"]["summary"] = {}
+			summary_data_dict = s_wrapper["data"]["summary"]
+
+			# Ensure page_number object structure exists
+			if "page_number" not in summary_data_dict or not isinstance(
+					summary_data_dict["page_number"], dict):
+				summary_data_dict["page_number"] = {"page_number_integer": 0,
+				                                    "contains_no_page_number": False}
+
+			if s_wrapper["is_genuinely_unnumbered"]:
+				summary_data_dict["page_number"][
+					"page_number_integer"] = 0  # Mark as unnumbered
+				summary_data_dict["page_number"][
+					"contains_no_page_number"] = True
+			else:
+				# Default to original_input_order_index + 1 if no reliable anchor logic could be applied
+				adjusted_page = original_index + 1
+				if summaries_with_model_pages:  # Only use anchor logic if valid anchors were derived
+					adjusted_page = anchor_model_page + (original_index - anchor_original_index)
+				adjusted_page = max(1, adjusted_page)  # Ensure numbered pages start at 1
+				summary_data_dict["page_number"]["page_number_integer"] = adjusted_page
+				summary_data_dict["page_number"]["contains_no_page_number"] = False
+
+			final_ordered_summaries.append(s_wrapper["data"])
+
+		# Sort by original input order to preserve document sequence, regardless of page_number
+		final_ordered_summaries.sort(
+			key=lambda x: x.get("original_input_order_index", float('inf'))
+		)
+		return final_ordered_summaries
+
+	def _retry_transcription(self, failed_items: List[Tuple[int, Path]]) -> \
+			Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+		"""Retry transcription for failed items with adjusted settings"""
+		print(
+			f"\n--- RETRY PHASE for {self.name}: {len(failed_items)} failed items ---")
+		# Sort by page number for ordered retries
+		failed_items.sort(key=lambda x: int(x[0]))  # x[0] is sequence_num
+		paths_to_retry = [item[1] for item in failed_items]
+
+		# More conservative rate limiter for retries
+		retry_rate_limiter = RateLimiter([(1, 2), (30, 60), (1500, 3600)])
+		retry_api_manager = APIRequestManager(
+			config.SAIA_API_KEY, config.SAIA_API_BASE_URL,
+			config.SAIA_MODEL_NAME,
+			retry_rate_limiter, int(config.SAIA_API_TIMEOUT * 1.5)
+		)
+
+		print(
+			f"Retrying {len(paths_to_retry)} image(s) with adjusted settings...")
+		retry_transcription_results = []
+		retry_summary_results = []
+
+		for img_path in tqdm(paths_to_retry, desc="Retrying failed items"):
+			# Retry transcription
+			retry_result = retry_api_manager.transcribe_image(
+				img_path, self.image_processor, max_retries=3)
+			retry_transcription_results.append(retry_result)
+
+			# Log retry result
+			append_to_log(self.log_path, retry_result)
+
+			# Generate summary for the retry if transcription succeeded and summarization is enabled
+			if config.SUMMARIZE and self.openai_summary_manager:
+				if "error" not in retry_result:
+					page_num = retry_result.get("page", 0)
+					transcription_text = retry_result.get("transcription", "")
+
+					if "[empty page]" in transcription_text or "[no transcription possible]" in transcription_text:
+						summary_result = {
+							"page": page_num,
+							"summary": {
+								"page_number": {
+									"page_number_integer": page_num,
+									"contains_no_page_number": False
+								},
+								"bullet_points": [
+									"[Empty page or no transcription possible]"],
+								"references": [],
+								"contains_no_semantic_content": True
+							}
+						}
+					else:
+						summary_result = self.openai_summary_manager.generate_summary(
+							transcription_text, page_num
+						)
+				else:
+					# If retry still failed, create dummy summary
+					page_num = retry_result.get("page", 0)
+					error_msg = retry_result.get("error", "Unknown error")
+					summary_result = {
+						"page": page_num,
+						"summary": {
+							"page_number": {
+								"page_number_integer": page_num,
+								"contains_no_page_number": False
+							},
+							"bullet_points": [
+								f"[Transcription failed after retry: {error_msg}]"],
+							"references": [],
+							"contains_no_semantic_content": True
+						},
+						"error": error_msg
+					}
+
+				retry_summary_results.append(summary_result)
+				append_to_log(self.summary_log_path, summary_result)
+
+		print(f"--- RETRY PHASE for {self.name} complete. ---")
+		return retry_transcription_results, retry_summary_results
+
+	def process_item(self) -> None:
+		item_type_str = "PDF" if self.input_type == "pdf" else "Image Folder"
+		print(
+			f"\n{'=' * 80}\nProcessing {self.name} ({item_type_str})\n{'=' * 80}")
+		self.start_time_processing = time.time()
+
+		# Prepare images (extract from PDF or list from folder)
+		image_paths_to_process = self._get_list_of_images_to_transcribe()
+
+		if not image_paths_to_process:
+			print(
+				f"No images found or extracted for {self.name}. Aborting this item.")
+			# Clean up empty working directory if it was created for this item
+			try:
+				if not any(self.working_dir.iterdir()):  # Check if empty
+					shutil.rmtree(self.working_dir)
+					print(
+						f"Removed empty working directory: {self.working_dir}")
+			except Exception as e:
+				print(
+					f"Warning: Could not remove working directory {self.working_dir}: {e}")
+			return
+
+		self.total_items_to_transcribe = len(image_paths_to_process)
+		print(
+			f"Prepared {self.total_items_to_transcribe} images for transcription{' and summarization' if config.SUMMARIZE else ''}.")
+
+		# Initialize log file with a header
+		initialize_log_file(
+			self.log_path, self.name, str(self.input_path), item_type_str,
+			self.total_items_to_transcribe, config.SAIA_MODEL_NAME,
+			config.EXTRACTION_DPI if self.input_type == "pdf" else None
+		)
+
+		# Process all images - transcribe and summarize
+		transcription_results, summary_results, failed_items = self._transcribe_and_summarize(
+			image_paths_to_process)
+
+		# Retry phase for items that failed due to retryable API errors
+		if failed_items:
+			retry_transcription_results, retry_summary_results = self._retry_transcription(
+				failed_items)
+
+			# Update all_results with retry_results
+			transcription_dict = {res.get("image"): res for res in
+			                      transcription_results}
+
+			for retry_trans_res in retry_transcription_results:
+				if retry_trans_res.get("image") in transcription_dict:
+					# Find and replace the original failed result
+					for i, original_res in enumerate(transcription_results):
+						if original_res.get("image") == retry_trans_res.get(
+								"image"):
+							transcription_results[i] = retry_trans_res
+							break
+				else:
+					transcription_results.append(retry_trans_res)
+
+			# Update summary results if summarization is enabled
+			if config.SUMMARIZE and summary_results:
+				summary_dict = {res.get("page"): res for res in summary_results}
+
+				for retry_summary_res in retry_summary_results:
+					page_num = retry_summary_res.get("page")
+					if page_num in summary_dict:
+						# Find and replace the original failed result
+						for i, original_res in enumerate(summary_results):
+							if original_res.get("page") == page_num:
+								summary_results[i] = retry_summary_res
+								break
+					else:
+						summary_results.append(retry_summary_res)
+
+		# Final processing and output
+		total_elapsed_time = time.time() - (
+				self.start_time_processing or time.time())
+		elapsed_str = time.strftime("%H:%M:%S", time.gmtime(total_elapsed_time))
+
+		# Sort results by page number
+		transcription_results.sort(key=lambda x: int(x.get("page", 0)))
+
+		final_success_count = sum(
+			1 for r in transcription_results if "error" not in r)
+		final_failure_count = len(transcription_results) - final_success_count
+
+		# Save transcription to text file
+		print(
+			f"\nWriting final transcription output to: {self.output_txt_path}")
+		write_transcription_to_text(
+			transcription_results, self.output_txt_path, self.name,
+			item_type_str, total_elapsed_time, self.input_path
+		)
+
+		# Save summaries to DOCX file if summarization is enabled
+		if config.SUMMARIZE and summary_results:
+			# Step 1: Adjust page numbers and sort (handles 'contains_no_page_number')
+			adjusted_summary_results = self._adjust_and_sort_summary_page_numbers(
+				summary_results)
+
+			try:
+				# Use the adjusted list for creating summary files
+				create_docx_summary(adjusted_summary_results,
+				                    self.output_summary_docx_path, self.name)
+
+			except Exception as e:
+				print(f"Error creating summary files: {e}")
+
+		print(f"\n{'=' * 80}")
+		print(f"PROCESSING COMPLETE for item: {self.name}")
+		print(f"  Total images for this item: {len(transcription_results)}")
+		print(f"  Successfully transcribed: {final_success_count}")
+		print(f"  Failed items: {final_failure_count}")
+		print(f"  Total time for this item: {elapsed_str}")
+		if self.transcription_times:  # Based on successful API calls
+			avg_api_time = sum(self.transcription_times) / len(
+				self.transcription_times)
+			print(
+				f"  Average API processing time per successful image: {avg_api_time:.2f}s")
+		if total_elapsed_time > 0 and final_success_count > 0:
+			throughput_iph = (final_success_count / total_elapsed_time) * 3600
+			print(
+				f"  Overall throughput for this item: {throughput_iph:.1f} successful images/hour")
+		print(
+			f"  Final transcription output: {self.output_txt_path}")
+		if config.SUMMARIZE:
+			print(
+				f"  Final summary outputs: {self.output_summary_docx_path}")
+		print(
+			f"  Detailed logs: {self.log_path}{' and ' + str(self.summary_log_path) if config.SUMMARIZE else ''}")
+		print(f"{'=' * 80}\n")
