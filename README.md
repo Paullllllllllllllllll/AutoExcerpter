@@ -22,23 +22,36 @@ pip install -r requirements.txt
 
 ## Configuration
 
-All settings live in `config.py`.
+This project uses YAML-based configuration under `modules/config/`, exposed via a thin Python facade `modules/app_config.py` (import it as `from modules import app_config as config`).
+
+Required environment variable:
 
 - `OPENAI_API_KEY` must be set in your environment.
   - Windows (PowerShell):
     ```powershell
     $env:OPENAI_API_KEY = "sk-..."
     ```
-- `OPENAI_TRANSCRIPTION_MODEL`: defaults to `gpt-5-mini`.
-- `OPENAI_MODEL`: defaults to `gpt-5-mini` for summarization.
-- `SUMMARIZE`: set to `True` to generate page summaries.
-- `INPUT_FOLDER_PATH`, `OUTPUT_FOLDER_PATH`: default locations for I/O.
-- Performance knobs:
-  - `CONCURRENT_REQUESTS`: parallelism for page processing
-  - `OPENAI_USE_FLEX`: use the Flex tier to reduce cost (longer latency tolerated)
-  - `modules/config/image_processing.yaml`: image processing settings
+
+Primary config files (edit these to change behavior):
+
+- `modules/config/app.yaml`
+  - `summarize`: whether to generate page summaries (true/false)
+  - `input_folder_path`, `output_folder_path`: default locations for I/O
+  - `concurrent_requests`: parallelism for page processing
+  - `openai.model`: default summarization model (default: `gpt-5-mini`)
+  - `openai.transcription_model`: transcription model (default: `gpt-5-mini`)
+  - `openai.api_timeout`: per-request timeout (seconds)
+  - `openai.use_flex`: prefer Flex tier to reduce cost
+  - `openai.rate_limits`: rate-limit windows used by the internal rate limiter
+
+- `modules/config/concurrency.yaml`
+  - Service-tier selection and concurrency for transcription and image processing. In particular, `concurrency.transcription.service_tier` can be set to one of `auto`, `default`, `flex`, `priority`.
+
+- `modules/config/image_processing.yaml`
+  - Image preprocessing settings for the OpenAI Responses API. Notable options:
     - `api_image_processing.target_dpi`: PDF rasterization DPI
     - `api_image_processing.jpeg_quality`: JPEG quality for API images
+    - `api_image_processing.llm_detail`: `low`, `high`, or `auto` to control resizing profile
 
 The transcription system prompt and JSON schema are sourced from:
 - `modules/prompts/system_prompt.txt`
@@ -62,7 +75,7 @@ The script will present an interactive selection of found items. Results are wri
 
 - Page images are extracted with PyMuPDF using the DPI from `modules/config/image_processing.yaml` (`api_image_processing.target_dpi`).
 - Images are preprocessed for OCR quality using `modules/image_utils.py` following `modules/config/image_processing.yaml` and sent as data URLs to the OpenAI Responses API.
-- Transcription and summarization both use `gpt-5-mini` by default. You can change the models in `config.py`.
+- Transcription and summarization both use `gpt-5-mini` by default. You can change the models in `modules/config/app.yaml`.
 - Logs for each processed item are stored under a temporary working directory alongside extracted page images and JSON logs. These temp directories are removed after processing if `DELETE_TEMP_WORKING_DIR = True`.
 
 ## Troubleshooting
@@ -70,3 +83,12 @@ The script will present an interactive selection of found items. Results are wri
 - Ensure `OPENAI_API_KEY` is set before running.
 - If you experience rate limits or timeouts, reduce `CONCURRENT_REQUESTS` and/or disable Flex (`OPENAI_USE_FLEX = False`).
 - Some PDFs may render slowly at high DPI; try lowering `api_image_processing.target_dpi` in `modules/config/image_processing.yaml` if necessary.
+
+## Logging
+
+This app uses the standard Python `logging` module via `modules/logger.py`.
+
+- Logs are emitted to stdout with a simple format and default level `INFO`.
+- To adjust verbosity programmatically, change the level in `modules/logger.py` or configure handlers as needed.
+- Runtime examples:
+  - For more verbose output during debugging, temporarily set `logger.setLevel(logging.DEBUG)` in `modules/logger.py`.

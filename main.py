@@ -13,12 +13,16 @@ import argparse
 import os
 import shutil
 import sys
+import stat
 from pathlib import Path
 from typing import List, Dict, Any
 
 from modules import app_config as config
 from core.transcriber import ItemTranscriber
 from modules.image_utils import SUPPORTED_IMAGE_EXTENSIONS
+from modules.logger import setup_logger
+
+logger = setup_logger(__name__)
 
 def setup_argparse() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -36,7 +40,7 @@ def setup_argparse() -> argparse.Namespace:
 def scan_input_path(path_to_scan: Path) -> List[Dict[str, Any]]:
     """Scans a given path. If it's a file, processes it. If it's a directory, walks it."""
     items_to_process: List[Dict[str, Any]] = []
-    print(f"Scanning input: {path_to_scan}")
+    logger.info(f"Scanning input: {path_to_scan}")
 
     if path_to_scan.is_file() and path_to_scan.suffix.lower() == ".pdf":
         items_to_process.append(
@@ -74,9 +78,9 @@ def scan_input_path(path_to_scan: Path) -> List[Dict[str, Any]]:
                     "image_count": len(image_files_list),
                 })
     else:
-        print(f"Warning: Input path {path_to_scan} is not a PDF file or a directory. Skipping.")
+        logger.warning(f"Input path {path_to_scan} is not a PDF file or a directory. Skipping.")
 
-    print(f"Found {len(items_to_process)} potential items from {path_to_scan}.")
+    logger.info(f"Found {len(items_to_process)} potential items from {path_to_scan}.")
     return items_to_process
 
 def prompt_for_item_selection(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -121,13 +125,13 @@ def prompt_for_item_selection(items: List[Dict[str, Any]]) -> List[Dict[str, Any
                     raise ValueError(f"Invalid input part: {part}. Use numbers, ranges (e.g., 1-3), or 'all'.")
 
             if not selected_indices:
-                print("No valid items selected from your input. Please try again.")
+                logger.warning("No valid items selected from your input. Please try again.")
                 continue
             return [items[i] for i in sorted(list(selected_indices))]
         except ValueError as e:
-            print(f"Invalid selection: {e}")
+            logger.warning(f"Invalid selection: {e}")
         except Exception as e_outer:
-            print(f"An unexpected error occurred during selection: {e_outer}")
+            logger.exception(f"An unexpected error occurred during selection: {e_outer}")
 
 def main():
     args = setup_argparse()
@@ -140,21 +144,21 @@ def main():
 
     all_items_to_consider = scan_input_path(input_path_arg)
     if not all_items_to_consider:
-        print("No items found to process. Exiting.")
+        logger.info("No items found to process. Exiting.")
         sys.exit(0)
 
     selected_items = prompt_for_item_selection(all_items_to_consider)
     if not selected_items:
-        print("No items selected for processing. Exiting.")
+        logger.info("No items selected for processing. Exiting.")
         sys.exit(0)
 
-    print(f"\nSelected {len(selected_items)} item(s) for processing.")
+    logger.info(f"Selected {len(selected_items)} item(s) for processing.")
     for i, item_spec in enumerate(selected_items):
         item_path = item_spec["path"]
         item_type = item_spec["type"]
         item_name = item_path.stem  # Used for naming output files and working dirs
 
-        print(f"\n--- Starting Item {i + 1} of {len(selected_items)}: {item_name} ({item_type}) ---")
+        logger.info(f"--- Starting Item {i + 1} of {len(selected_items)}: {item_name} ({item_type}) ---")
 
         # Check if final output files already exist for this item
         expected_final_outputs = [
@@ -167,56 +171,49 @@ def main():
             )
 
         if all(path.exists() for path in expected_final_outputs):
-	        print(f"All output files for {item_name} already exist. Skipping.")
-	        continue
+            logger.info(f"All output files for {item_name} already exist. Skipping.")
+            continue
 
         transcriber_instance = None
         try:
-	        transcriber_instance = ItemTranscriber(item_path, item_type,
-	                                               base_output_dir)
-	        transcriber_instance.process_item()
+            transcriber_instance = ItemTranscriber(item_path, item_type, base_output_dir)
+            transcriber_instance.process_item()
         except Exception as e:
-	        print(f"\n--- CRITICAL ERROR processing item: {item_name} ---")
-	        print(f"  Error Type: {type(e).__name__}")
-	        print(f"  Error Details: {e}")
-	        import traceback
-	        traceback.print_exc()
-	        print("--- Attempting to continue with the next item if any. ---")
+            logger.exception(f"CRITICAL ERROR processing item: {item_name}")
+            logger.info("--- Attempting to continue with the next item if any. ---")
         finally:
-	        if transcriber_instance:
-		        # Conditionally delete the temporary working directory for the processed item
-		        if config.DELETE_TEMP_WORKING_DIR and transcriber_instance.working_dir.exists():
-			        def onerror(func, path, exc_info):
-			            import stat
-			            import os
-			            # Try to change the file to writable and retry
-			            try:
-			                os.chmod(path, stat.S_IWRITE)
-			                func(path)
-			            except Exception as e:
-			                print(f"Warning: Could not forcibly remove {path}: {e}")
-			        try:
-			            shutil.rmtree(transcriber_instance.working_dir, onerror=onerror)
-			            print(
-			                f"Deleted temporary working directory: {transcriber_instance.working_dir}")
-			        except Exception as e:
-			            print(
-			                f"Warning: Failed to remove working directory {transcriber_instance.working_dir}: {e}")
-		        # The item's working directory (containing its log) is retained if not deleted.
+            if transcriber_instance:
+                # Conditionally delete the temporary working directory for the processed item
+                if config.DELETE_TEMP_WORKING_DIR and transcriber_instance.working_dir.exists():
+                    def onerror(func, path, exc_info):
+                        # Try to change the file to writable and retry
+                        try:
+                            os.chmod(path, stat.S_IWRITE)
+                            func(path)
+                        except Exception as e:
+                            logger.warning(f"Could not forcibly remove {path}: {e}")
+                    try:
+                        shutil.rmtree(transcriber_instance.working_dir, onerror=onerror)
+                        logger.info(
+                            f"Deleted temporary working directory: {transcriber_instance.working_dir}")
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to remove working directory {transcriber_instance.working_dir}: {e}")
+                # The item's working directory (containing its log) is retained if not deleted.
 
-    print("\nAll selected items have been processed.")
+    logger.info("All selected items have been processed.")
 
 
 if __name__ == "__main__":
-	try:
-		main()
-	except KeyboardInterrupt:
-		print("\nProcessing interrupted by user (Ctrl+C). Exiting.")
-		sys.exit(0)
-	except Exception as e:  # Catch-all for unexpected errors in main setup
-		print(
-			f"\nAn unexpected critical error occurred in the main execution flow: {e}")
-		import traceback
+    try:
+        main()
+    except KeyboardInterrupt:
+        logger.info("Processing interrupted by user (Ctrl+C). Exiting.")
+        sys.exit(0)
+    except Exception as e:  # Catch-all for unexpected errors in main setup
+        logger.exception(
+            f"An unexpected critical error occurred in the main execution flow: {e}")
+        import traceback
 
-		traceback.print_exc()
-		sys.exit(1)
+        traceback.print_exc()
+        sys.exit(1)

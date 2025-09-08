@@ -8,11 +8,14 @@ from tqdm import tqdm
 
 from modules.config_loader import ConfigLoader
 from modules.image_utils import SUPPORTED_IMAGE_EXTENSIONS
+from modules.logger import setup_logger
+
+logger = setup_logger(__name__)
 
 
 def extract_pdf_pages_to_images(pdf_path: Path, output_images_dir: Path) -> List[Path]:
     """Extracts pages from a PDF and saves them as images."""
-    print(f"Extracting pages from PDF: {pdf_path.name}...")
+    logger.info(f"Extracting pages from PDF: {pdf_path.name}...")
     extracted_image_paths: List[Path] = []
     pdf_document = None
 
@@ -20,7 +23,7 @@ def extract_pdf_pages_to_images(pdf_path: Path, output_images_dir: Path) -> List
         pdf_document = fitz.open(pdf_path)
         num_pages = len(pdf_document)
         if num_pages == 0:
-            print("PDF appears to be empty.")
+            logger.warning("PDF appears to be empty.")
             return []
 
         # Load target DPI and JPEG quality from modules/image_processing_config.yaml
@@ -44,7 +47,7 @@ def extract_pdf_pages_to_images(pdf_path: Path, output_images_dir: Path) -> List
                 pil_img.save(image_path, "JPEG", quality=jpeg_quality)
                 return page_num, image_path
             except Exception as e:
-                print(f"Error extracting page {page_num + 1}: {e}")
+                logger.error(f"Error extracting page {page_num + 1}: {e}")
                 return page_num, None
 
         with concurrent.futures.ThreadPoolExecutor(
@@ -67,23 +70,23 @@ def extract_pdf_pages_to_images(pdf_path: Path, output_images_dir: Path) -> List
                                  sorted(results_map.keys()) if i in results_map]
 
     except Exception as e:
-        print(f"Failed to process PDF {pdf_path.name}: {e}")
+        logger.exception(f"Failed to process PDF {pdf_path.name}: {e}")
         return []
     finally:
         if pdf_document:
             pdf_document.close()
 
-    print(
+    logger.info(
         f"Successfully extracted {len(extracted_image_paths)} pages to {output_images_dir}.")
     return extracted_image_paths
 
 
 def get_image_paths_from_folder(folder_path: Path) -> List[Path]:
     """Get a list of image paths from a folder, sorted by name."""
-    print(f"Scanning image folder: {folder_path.name}...")
+    logger.info(f"Scanning image folder: {folder_path.name}...")
     image_paths = sorted(
         [p for p in folder_path.glob("*") if p.suffix.lower() in SUPPORTED_IMAGE_EXTENSIONS],
         key=lambda p: p.name
     )
-    print(f"Found {len(image_paths)} images in folder.")
+    logger.info(f"Found {len(image_paths)} images in folder.")
     return image_paths

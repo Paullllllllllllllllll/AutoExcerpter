@@ -7,9 +7,13 @@ from typing import Dict, Any
 from openai import OpenAI
  
 from modules import app_config as config
+from modules.logger import setup_logger
 from api.rate_limiter import RateLimiter
 from modules.prompt_utils import render_prompt_with_schema
 from modules.config_loader import ConfigLoader, PROMPTS_DIR, SCHEMAS_DIR
+
+
+logger = setup_logger(__name__)
 
 
 class OpenAISummaryManager:
@@ -200,8 +204,8 @@ class OpenAISummaryManager:
 
 					if not is_retryable or retries > max_retries:
 						self.failed_requests += 1
-						print(
-							f"Summary API error for page {page_num} (final attempt): {type(e).__name__} - {e}")
+						logger.error(
+                            f"Summary API error for page {page_num} (final attempt): {type(e).__name__} - {e}")
 						return {
 							"page": page_num,
 							"summary": {
@@ -220,13 +224,13 @@ class OpenAISummaryManager:
 
 					wait_time = (2 ** retries) * (
 								0.5 + 0.5 * random.random())  # Exponential backoff with jitter
-					print(
-						f"Summary API error for page {page_num} (attempt {retries}/{max_retries + 1}). Retrying in {wait_time:.2f}s... Error: {type(e).__name__} - {e}")
+					logger.warning(
+                        f"Summary API error for page {page_num} (attempt {retries}/{max_retries + 1}). Retrying in {wait_time:.2f}s... Error: {type(e).__name__} - {e}")
 					time.sleep(wait_time)
 
 		except Exception as outer_e:  # Catch unexpected errors in the retry loop itself
-			print(
-				f"Critical error in generate_summary for page {page_num}: {type(outer_e).__name__} - {outer_e}")
+			logger.exception(
+                f"Critical error in generate_summary for page {page_num}: {type(outer_e).__name__} - {outer_e}")
 			self.failed_requests += 1
 			return {
 				"page": page_num,

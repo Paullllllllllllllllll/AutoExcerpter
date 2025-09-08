@@ -14,13 +14,17 @@ from api.rate_limiter import RateLimiter
 from modules.prompt_utils import render_prompt_with_schema
 from modules.image_utils import ImageProcessor as ModImageProcessor
 from modules.config_loader import ConfigLoader, PROMPTS_DIR, SCHEMAS_DIR
+from modules.logger import setup_logger
+
+
+logger = setup_logger(__name__)
 
 
 class OpenAITranscriptionManager:
     """Transcribes images using OpenAI Responses API with gpt-5-mini.
 
-    Uses a JSON schema (from modules/markdown_transcription_schema.json) and a
-    system prompt (from modules/system_prompt.txt) to enforce structured output.
+    Uses a JSON schema (from `modules/schemas/markdown_transcription_schema.json`) and a
+    system prompt (from `modules/prompts/system_prompt.txt`) to enforce structured output.
     Returns a dict compatible with the previous workflow: includes keys
     'page', 'image', 'transcription', optional 'processing_time', 'error', etc.
     """
@@ -185,7 +189,6 @@ class OpenAITranscriptionManager:
     def transcribe_image(
         self,
         image_path: Path,
-        image_processor: Any,
         max_retries: int = 5,
     ) -> Dict[str, Any]:
         sequence_num = self._get_sequence_number(image_path)
@@ -210,7 +213,7 @@ class OpenAITranscriptionManager:
                 with open(processed_file_path, 'rb') as f:
                     base64_image = base64.b64encode(f.read()).decode('utf-8')
             except Exception as proc_err:
-                print(f"Error processing image {image_path.name}: {proc_err}")
+                logger.error(f"Error processing image {image_path.name}: {proc_err}")
                 return {
                     "page": sequence_num,
                     "image": image_path.name,
@@ -332,12 +335,12 @@ class OpenAITranscriptionManager:
                     else:
                         wait_time = backoff_base * (2 ** (retries - 1)) * (0.5 + random.random())
                         msg_prefix = "Error"
-                    print(
+                    logger.warning(
                         f"{msg_prefix} for {image_path.name} (attempt {retries}/{max_retries + 1}). Retrying in {wait_time:.2f}s..."
                     )
                     time.sleep(wait_time)
         except Exception as outer_e:
-            print(f"Critical error in transcribe_image for {image_path.name}: {outer_e}")
+            logger.exception(f"Critical error in transcribe_image for {image_path.name}: {outer_e}")
             return {
                 "page": sequence_num,
                 "image": image_path.name,

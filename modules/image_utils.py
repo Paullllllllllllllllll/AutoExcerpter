@@ -2,11 +2,9 @@
 
 from PIL import Image, ImageOps
 from pathlib import Path
-from typing import List, Optional, Tuple
 
 from modules.config_loader import ConfigLoader
 from modules.logger import setup_logger
-from modules.multiprocessing_utils import run_multiprocessing_tasks
 
 logger = setup_logger(__name__)
 
@@ -127,103 +125,5 @@ class ImageProcessor:
             logger.error(f"Error processing image {self.image_path.name}: {e}")
             return f"Failed to process {self.image_path.name}: {e}"
 
-    # --- Static Methods for Folder-Level Processing ---
-
-    @staticmethod
-    def prepare_image_folder(folder: Path, image_output_dir: Path) -> Tuple[
-        Path, Path, Path, Path]:
-        """
-        Prepares the output directories for processing an image folder.
-
-        Returns a tuple of:
-          - parent_folder: The directory for outputs related to this folder.
-          - preprocessed_folder: Where preprocessed images will be stored.
-          - temp_jsonl_path: File for recording transcription logs.
-          - output_txt_path: Final transcription text file.
-        """
-        parent_folder = image_output_dir / folder.name
-        parent_folder.mkdir(parents=True, exist_ok=True)
-        preprocessed_folder = parent_folder / "preprocessed_images"
-        preprocessed_folder.mkdir(exist_ok=True)
-        temp_jsonl_path = parent_folder / f"{folder.name}_transcription.jsonl"
-        if not temp_jsonl_path.exists():
-            temp_jsonl_path.touch()
-        output_txt_path = parent_folder / f"{folder.name}_transcription.txt"
-        return parent_folder, preprocessed_folder, temp_jsonl_path, output_txt_path
-
-    @staticmethod
-    def process_images_multiprocessing(image_paths: List[Path],
-                                       output_paths: List[Path]) -> List[
-        Optional[str]]:
-        """
-        Process images using multiprocessing.
-
-        Parameters:
-            image_paths (List[Path]): List of source image paths.
-            output_paths (List[Path]): List of destination paths for processed images.
-
-        Returns:
-            List[Optional[str]]: Processing results for each image.
-        """
-        # Load concurrency settings
-        cfg_loader = ConfigLoader()
-        cfg_loader.load_configs()
-        conc = cfg_loader.get_concurrency_config()
-        img_conc = (conc.get('concurrency', {})
-                         .get('image_processing', {}))
-        processes = int(img_conc.get('concurrency_limit', 12))
-
-        args_list = list(zip(image_paths, output_paths))
-        results = run_multiprocessing_tasks(
-            ImageProcessor._process_image_task,
-            args_list,
-            processes=processes
-        )
-        return results
-
-    @staticmethod
-    def _process_image_task(img_path: Path, out_path: Path) -> str:
-        """
-        Helper task to process a single image and save it to out_path.
-
-        Parameters:
-            img_path (Path): Path to the input image.
-            out_path (Path): Path to save the processed image.
-
-        Returns:
-            str: A status message.
-        """
-        processor = ImageProcessor(img_path)
-        return processor.process_image(out_path)
-
-    @staticmethod
-    def process_and_save_images(source_folder: Path, preprocessed_folder: Path) -> List[Path]:
-        """
-        Reads images from source folder, processes them, and saves directly to preprocessed folder.
-        Eliminates the need for intermediate raw image storage.
-
-        Parameters:
-            source_folder (Path): Path to the source folder containing original images.
-            preprocessed_folder (Path): Path to save processed images.
-
-        Returns:
-            List[Path]: List of processed image paths.
-        """
-        # Find all image files in source folder
-        image_files: List[Path] = []
-        for ext in SUPPORTED_IMAGE_EXTENSIONS:
-            image_files.extend(list(source_folder.glob(f'*{ext}')))
-
-        if not image_files:
-            return []
-
-        # Create list of output paths
-        output_paths = [
-            preprocessed_folder / f"{img.stem}_pre_processed.jpg" for img in image_files
-        ]
-
-        # Process all images at once using multiprocessing
-        ImageProcessor.process_images_multiprocessing(image_files, output_paths)
-
-        # Return all processed image paths that exist
-        return [p for p in output_paths if p.exists()]
+    # Note: Removed unused folder-level processing helpers (prepare_image_folder,
+    # process_images_multiprocessing, _process_image_task, process_and_save_images)

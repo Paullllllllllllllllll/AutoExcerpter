@@ -17,9 +17,23 @@ from processors.file_manager import (
 )
 from api.rate_limiter import RateLimiter
 from modules.config_loader import ConfigLoader
+from modules.logger import setup_logger
+
+
+logger = setup_logger(__name__)
 
 
 class ItemTranscriber:
+	"""Process a single input item (PDF or image folder).
+
+	Attributes:
+		input_path: Source path of the item to process.
+		input_type: Either "pdf" or "image_folder".
+		base_output_dir: Base directory where outputs and working files are written.
+		working_dir: Item-specific working directory containing images and logs.
+		openai_transcribe_manager: Manages image transcription via OpenAI API.
+		openai_summary_manager: Manages summarization via OpenAI API (if enabled).
+	"""
 	def __init__(self, input_path: Path, input_type: str,
 	             base_output_dir: Path):
 		self.input_path = input_path
@@ -81,10 +95,9 @@ class ItemTranscriber:
 			Tuple[int, Path]] = []  # (original_input_order_index, path)
 		total_images = len(image_paths)
 		processed_count = 0
-		stats_update_interval_seconds = 20
-		last_stats_print_time = time.time()
+		# Removed unused stats tracking variables
 
-		print(
+		logger.info(
 			f"Starting transcription{' and summarization' if config.SUMMARIZE else ''} of {total_images} images...")
 
 		image_paths_with_indices = list(enumerate(image_paths))
@@ -101,7 +114,7 @@ class ItemTranscriber:
 			nonlocal processed_count
 			try:
 				transcription_result_raw = self.openai_transcribe_manager.transcribe_image(
-					img_path, None)
+					img_path)
 				transcription_result = {
 					**transcription_result_raw,
 					"original_input_order_index": original_input_order_index
@@ -191,7 +204,7 @@ class ItemTranscriber:
 						if eta_seconds != float('inf'):
 							eta_str = f"ETA: {time.strftime('%H:%M:%S', time.gmtime(eta_seconds))}"
 
-				print(
+				logger.info(
 					f"Processed {processed_count}/{total_images} - Item {item_num_str} - Status: {status} - {eta_str}")
 				transcription_results.append(transcription_result)
 
@@ -203,7 +216,7 @@ class ItemTranscriber:
 				return transcription_result
 
 			except Exception as e:
-				print(f"Critical error during task for {img_path.name}: {e}")
+				logger.exception(f"Critical error during task for {img_path.name}: {e}")
 				# Fallback to original order index + 1 for page numbering on error
 				seq_num = original_input_order_index + 1
 				error_result = {
@@ -234,7 +247,7 @@ class ItemTranscriber:
 		if not summary_results:
 			return []
 		
-		print("\nAdjusting page numbers based on model-detected page sequences...")
+		logger.info("Adjusting page numbers based on model-detected page sequences...")
 		parsed_summaries = []
 		for r in summary_results:
 			# Extract model_page_number from the summary data structure
@@ -265,8 +278,8 @@ class ItemTranscriber:
 				except ValueError:
 					pass  # model_page_num remains None
 				
-				# Check old schema for unnumbered flag
-				is_genuinely_unnumbered = summary_dict.get('contains_no_page_number', False)
+				# Check old schema for unnumbered flag on the container if present
+				is_genuinely_unnumbered = bool(summary_container.get('contains_no_page_number', False))
 			
 			parsed_summaries.append({
 				"original_input_order_index": r["original_input_order_index"],
@@ -281,7 +294,7 @@ class ItemTranscriber:
 			if s["model_page_number_int"] is not None and not s["is_genuinely_unnumbered"]
 		]
 		
-		print(f"Found {len(summaries_with_model_pages)} pages with valid model-detected page numbers")
+		logger.info(f"Found {len(summaries_with_model_pages)} pages with valid model-detected page numbers")
 		
 		anchor_model_page = 1
 		anchor_original_index = 0
@@ -292,7 +305,7 @@ class ItemTranscriber:
 			
 			# Debug the detected page numbers
 			detected_page_nums = [s["model_page_number_int"] for s in summaries_with_model_pages]
-			print(f"Model-detected page numbers: {detected_page_nums}")
+			logger.info(f"Model-detected page numbers: {detected_page_nums}")
 			
 			longest_sequence = []
 			current_sequence = []
@@ -322,16 +335,16 @@ class ItemTranscriber:
 				# Debug the found sequence
 				sequence_page_nums = [s["model_page_number_int"] for s in longest_sequence]
 				sequence_indexes = [s["original_input_order_index"] for s in longest_sequence]
-				print(f"Longest consecutive sequence: {sequence_page_nums}")
-				print(f"Corresponding image indexes: {sequence_indexes}")
-				print(f"Using anchor: model page {anchor_model_page} at image index {anchor_original_index}")
+				logger.info(f"Longest consecutive sequence: {sequence_page_nums}")
+				logger.info(f"Corresponding image indexes: {sequence_indexes}")
+				logger.info(f"Using anchor: model page {anchor_model_page} at image index {anchor_original_index}")
 			elif summaries_with_model_pages:  # Fallback to the first page with a number if no sequence > 1
 				anchor_item = summaries_with_model_pages[0]
 				anchor_model_page = anchor_item["model_page_number_int"]
 				anchor_original_index = anchor_item["original_input_order_index"]
-				print(f"No consecutive sequence found. Using first detected page {anchor_model_page} at image index {anchor_original_index} as anchor")
+				logger.info(f"No consecutive sequence found. Using first detected page {anchor_model_page} at image index {anchor_original_index} as anchor")
 		else:
-			print("No valid model page numbers detected. Using default numbering starting from 1.")
+			logger.info("No valid model page numbers detected. Using default numbering starting from 1.")
 		# If no summaries_with_model_pages, default anchors (1, 0) are used.
 
 		final_ordered_summaries = []
@@ -379,8 +392,8 @@ class ItemTranscriber:
 	def _retry_transcription(self, failed_items: List[Tuple[int, Path]]) -> \
 			Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
 		"""Retry transcription for failed items with adjusted settings"""
-		print(
-			f"\n--- RETRY PHASE for {self.name}: {len(failed_items)} failed items ---")
+		logger.info(
+			f"--- RETRY PHASE for {self.name}: {len(failed_items)} failed items ---")
 		# Sort by page number for ordered retries
 		failed_items.sort(key=lambda x: int(x[0]))  # x[0] is sequence_num
 		paths_to_retry = [item[1] for item in failed_items]
@@ -394,7 +407,7 @@ class ItemTranscriber:
 			timeout=int(config.OPENAI_API_TIMEOUT * 1.5),
 		)
 
-		print(
+		logger.info(
 			f"Retrying {len(paths_to_retry)} image(s) with adjusted settings...")
 		retry_transcription_results = []
 		retry_summary_results = []
@@ -402,7 +415,7 @@ class ItemTranscriber:
 		for img_path in tqdm(paths_to_retry, desc="Retrying failed items"):
 			# Retry transcription
 			retry_result = retry_api_manager.transcribe_image(
-				img_path, None, max_retries=3)
+				img_path, max_retries=3)
 			retry_transcription_results.append(retry_result)
 
 			# Log retry result
@@ -454,34 +467,34 @@ class ItemTranscriber:
 				retry_summary_results.append(summary_result)
 				append_to_log(self.summary_log_path, summary_result)
 
-		print(f"--- RETRY PHASE for {self.name} complete. ---")
+		logger.info(f"--- RETRY PHASE for {self.name} complete. ---")
 		return retry_transcription_results, retry_summary_results
 
 	def process_item(self) -> None:
 		item_type_str = "PDF" if self.input_type == "pdf" else "Image Folder"
-		print(
-			f"\n{'=' * 80}\nProcessing {self.name} ({item_type_str})\n{'=' * 80}")
+		logger.info(
+			f"Processing {self.name} ({item_type_str})")
 		self.start_time_processing = time.time()
 
 		# Prepare images (extract from PDF or list from folder)
 		image_paths_to_process = self._get_list_of_images_to_transcribe()
 
 		if not image_paths_to_process:
-			print(
+			logger.info(
 				f"No images found or extracted for {self.name}. Aborting this item.")
 			# Clean up empty working directory if it was created for this item
 			try:
 				if not any(self.working_dir.iterdir()):  # Check if empty
 					shutil.rmtree(self.working_dir)
-					print(
+					logger.info(
 						f"Removed empty working directory: {self.working_dir}")
 			except Exception as e:
-				print(
-					f"Warning: Could not remove working directory {self.working_dir}: {e}")
+				logger.warning(
+					f"Could not remove working directory {self.working_dir}: {e}")
 			return
 
 		self.total_items_to_transcribe = len(image_paths_to_process)
-		print(
+		logger.info(
 			f"Prepared {self.total_items_to_transcribe} images for transcription{' and summarization' if config.SUMMARIZE else ''}.")
 
 		# Initialize log file with a header
@@ -552,8 +565,8 @@ class ItemTranscriber:
 		final_failure_count = len(transcription_results) - final_success_count
 
 		# Save transcription to text file
-		print(
-			f"\nWriting final transcription output to: {self.output_txt_path}")
+		logger.info(
+			f"Writing final transcription output to: {self.output_txt_path}")
 		write_transcription_to_text(
 			transcription_results, self.output_txt_path, self.name,
 			item_type_str, total_elapsed_time, self.input_path
@@ -571,28 +584,26 @@ class ItemTranscriber:
 				                    self.output_summary_docx_path, self.name)
 
 			except Exception as e:
-				print(f"Error creating summary files: {e}")
+				logger.error(f"Error creating summary files: {e}")
 
-		print(f"\n{'=' * 80}")
-		print(f"PROCESSING COMPLETE for item: {self.name}")
-		print(f"  Total images for this item: {len(transcription_results)}")
-		print(f"  Successfully transcribed: {final_success_count}")
-		print(f"  Failed items: {final_failure_count}")
-		print(f"  Total time for this item: {elapsed_str}")
+		logger.info(f"PROCESSING COMPLETE for item: {self.name}")
+		logger.info(f"  Total images for this item: {len(transcription_results)}")
+		logger.info(f"  Successfully transcribed: {final_success_count}")
+		logger.info(f"  Failed items: {final_failure_count}")
+		logger.info(f"  Total time for this item: {elapsed_str}")
 		if self.transcription_times:  # Based on successful API calls
 			avg_api_time = sum(self.transcription_times) / len(
 				self.transcription_times)
-			print(
+			logger.info(
 				f"  Average API processing time per successful image: {avg_api_time:.2f}s")
 		if total_elapsed_time > 0 and final_success_count > 0:
 			throughput_iph = (final_success_count / total_elapsed_time) * 3600
-			print(
+			logger.info(
 				f"  Overall throughput for this item: {throughput_iph:.1f} successful images/hour")
-		print(
+		logger.info(
 			f"  Final transcription output: {self.output_txt_path}")
 		if config.SUMMARIZE:
-			print(
+			logger.info(
 				f"  Final summary outputs: {self.output_summary_docx_path}")
-		print(
+		logger.info(
 			f"  Detailed logs: {self.log_path}{' and ' + str(self.summary_log_path) if config.SUMMARIZE else ''}")
-		print(f"{'=' * 80}\n")
