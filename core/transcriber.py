@@ -85,6 +85,57 @@ class ItemTranscriber:
 			return get_image_paths_from_folder(self.input_path)
 		return []
 
+	def _build_summary_result(
+		self,
+		original_index: int,
+		image_name: str,
+		summary_payload: Dict[str, Any],
+		page_number: Optional[int],
+		model_page_number: Optional[int],
+		error_message: Optional[str] = None,
+	) -> Dict[str, Any]:
+		"""Create a consistent summary result structure for downstream consumers."""
+		if isinstance(summary_payload, dict) and page_number is not None:
+			summary_payload.setdefault("page", page_number)
+		result = {
+			"original_input_order_index": original_index,
+			"model_page_number": model_page_number,
+			"summary": summary_payload,
+			"image_filename": image_name,
+		}
+		if page_number is not None:
+			result["page"] = page_number
+		elif isinstance(summary_payload, dict) and "page" in summary_payload:
+			result["page"] = summary_payload.get("page")
+		if error_message:
+			result["error"] = error_message
+		return result
+
+	def _create_placeholder_summary(
+		self,
+		page_number: int,
+		contains_no_page_number: bool,
+		bullet_points: List[str],
+		references: Optional[List[str]] = None,
+		contains_no_semantic_content: bool = True,
+		error_message: Optional[str] = None,
+	) -> Dict[str, Any]:
+		payload = {
+			"page": page_number,
+			"summary": {
+				"page_number": {
+					"page_number_integer": page_number,
+					"contains_no_page_number": contains_no_page_number
+				},
+				"bullet_points": bullet_points,
+				"references": references or [],
+				"contains_no_semantic_content": contains_no_semantic_content
+			}
+		}
+		if error_message:
+			payload["error"] = error_message
+		return payload
+
 	def _transcribe_and_summarize(
 			self, image_paths: List[Path]
 	) -> Tuple[
@@ -129,27 +180,25 @@ class ItemTranscriber:
 					page_num_to_use = page_num_model if has_valid_model_page_num else original_input_order_index + 1
 
 					if "[empty page]" in transcription_text or "[no transcription possible]" in transcription_text:
-						summary_data = {
-							"page_number": {
-								"page_number_integer": page_num_to_use,
-								"contains_no_page_number": not has_valid_model_page_num
-							},
-							"bullet_points": [
-								"[Empty page or no transcription possible]"],
-							"references": [],
-							"contains_no_semantic_content": True
-						}
+						summary_data = self._create_placeholder_summary(
+							page_num_to_use,
+							not has_valid_model_page_num,
+							["[Empty page or no transcription possible]"],
+						)
 					else:
 						summary_data = self.openai_summary_manager.generate_summary(
 							transcription_text,
 							page_num_to_use
 						)
-					summary_result = {
-						"original_input_order_index": original_input_order_index,
-						"model_page_number": page_num_model,
-						"summary": summary_data,
-						"image_filename": img_path.name
-					}
+					summary_error = summary_data.get("error") if isinstance(summary_data, dict) else None
+					summary_result = self._build_summary_result(
+						original_input_order_index,
+						img_path.name,
+						summary_data,
+						page_num_to_use,
+						page_num_model,
+						summary_error,
+					)
 					append_to_log(self.summary_log_path, summary_result)
 					summary_results.append(summary_result)
 				elif config.SUMMARIZE and self.openai_summary_manager:  # Handles transcription error case
@@ -158,22 +207,19 @@ class ItemTranscriber:
 					page_num_to_use = page_num_model if has_valid_model_page_num else original_input_order_index + 1
 					error_msg = transcription_result.get("error",
 					                                     "Unknown error")
-					summary_data = {
-						"page_number": {
-							"page_number_integer": page_num_to_use,
-							"contains_no_page_number": not has_valid_model_page_num
-						},
-						"bullet_points": [
-							f"[Transcription failed: {error_msg}]"],
-						"references": [],
-						"contains_no_semantic_content": True
-					}
-					summary_result = {
-						"original_input_order_index": original_input_order_index,
-						"model_page_number": page_num_model,
-						"summary": summary_data,
-						"image_filename": img_path.name
-					}
+					summary_data = self._create_placeholder_summary(
+						page_num_to_use,
+						not has_valid_model_page_num,
+						[f"[Transcription failed: {error_msg}]"],
+						error_message=error_msg,
+					)
+					summary_result = self._build_summary_result(
+						original_input_order_index,
+						img_path.name,
+						summary_data,
+						page_num_to_use,
+						page_num_model,
+					)
 					append_to_log(self.summary_log_path, summary_result)
 					summary_results.append(summary_result)
 
@@ -396,7 +442,6 @@ class ItemTranscriber:
 			f"--- RETRY PHASE for {self.name}: {len(failed_items)} failed items ---")
 		# Sort by page number for ordered retries
 		failed_items.sort(key=lambda x: int(x[0]))  # x[0] is sequence_num
-		paths_to_retry = [item[1] for item in failed_items]
 
 		# More conservative rate limiter for retries (re-use OpenAI limits)
 		retry_rate_limiter = RateLimiter([(1, 2), (60, 60), (3000, 3600)])
@@ -408,14 +453,15 @@ class ItemTranscriber:
 		)
 
 		logger.info(
-			f"Retrying {len(paths_to_retry)} image(s) with adjusted settings...")
+			f"Retrying {len(failed_items)} image(s) with adjusted settings...")
 		retry_transcription_results = []
 		retry_summary_results = []
 
-		for img_path in tqdm(paths_to_retry, desc="Retrying failed items"):
+		for original_index, img_path in tqdm(failed_items, desc="Retrying failed items", total=len(failed_items)):
 			# Retry transcription
 			retry_result = retry_api_manager.transcribe_image(
 				img_path, max_retries=3)
+			retry_result["original_input_order_index"] = original_index
 			retry_transcription_results.append(retry_result)
 
 			# Log retry result
@@ -423,47 +469,42 @@ class ItemTranscriber:
 
 			# Generate summary for the retry if transcription succeeded and summarization is enabled
 			if config.SUMMARIZE and self.openai_summary_manager:
+				page_num_raw = retry_result.get("page")
+				if isinstance(page_num_raw, int) and page_num_raw > 0:
+					page_num = page_num_raw
+				else:
+					page_num = original_index + 1
+				model_page_num = page_num_raw if isinstance(page_num_raw, int) else None
+				contains_no_page_number = not isinstance(page_num_raw, int)
 				if "error" not in retry_result:
-					page_num = retry_result.get("page", 0)
 					transcription_text = retry_result.get("transcription", "")
-
 					if "[empty page]" in transcription_text or "[no transcription possible]" in transcription_text:
-						summary_result = {
-							"page": page_num,
-							"summary": {
-								"page_number": {
-									"page_number_integer": page_num,
-									"contains_no_page_number": False
-								},
-								"bullet_points": [
-									"[Empty page or no transcription possible]"],
-								"references": [],
-								"contains_no_semantic_content": True
-							}
-						}
+						summary_data = self._create_placeholder_summary(
+							page_num,
+							contains_no_page_number,
+							["[Empty page or no transcription possible]"],
+						)
 					else:
-						summary_result = self.openai_summary_manager.generate_summary(
+						summary_data = self.openai_summary_manager.generate_summary(
 							transcription_text, page_num
 						)
 				else:
-					# If retry still failed, create dummy summary
-					page_num = retry_result.get("page", 0)
 					error_msg = retry_result.get("error", "Unknown error")
-					summary_result = {
-						"page": page_num,
-						"summary": {
-							"page_number": {
-								"page_number_integer": page_num,
-								"contains_no_page_number": False
-							},
-							"bullet_points": [
-								f"[Transcription failed after retry: {error_msg}]"],
-							"references": [],
-							"contains_no_semantic_content": True
-						},
-						"error": error_msg
-					}
-
+					summary_data = self._create_placeholder_summary(
+						page_num,
+						contains_no_page_number,
+						[f"[Transcription failed after retry: {error_msg}]"],
+						error_message=error_msg,
+					)
+				summary_error = summary_data.get("error") if isinstance(summary_data, dict) else None
+				summary_result = self._build_summary_result(
+					original_index,
+					img_path.name,
+					summary_data,
+					page_num,
+					model_page_num,
+					summary_error,
+				)
 				retry_summary_results.append(summary_result)
 				append_to_log(self.summary_log_path, summary_result)
 
@@ -539,14 +580,18 @@ class ItemTranscriber:
 
 			# Update summary results if summarization is enabled
 			if config.SUMMARIZE and summary_results:
-				summary_dict = {res.get("page"): res for res in summary_results}
+				summary_dict = {
+					res.get("original_input_order_index"): res
+					for res in summary_results
+					if res.get("original_input_order_index") is not None
+				}
 
 				for retry_summary_res in retry_summary_results:
-					page_num = retry_summary_res.get("page")
-					if page_num in summary_dict:
+					idx = retry_summary_res.get("original_input_order_index")
+					if idx in summary_dict:
 						# Find and replace the original failed result
 						for i, original_res in enumerate(summary_results):
-							if original_res.get("page") == page_num:
+							if original_res.get("original_input_order_index") == idx:
 								summary_results[i] = retry_summary_res
 								break
 					else:

@@ -1,5 +1,5 @@
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, Any, List
 import re
@@ -139,8 +139,7 @@ def write_transcription_to_text(transcription_results: List[Dict[str, Any]],
                                 total_elapsed_time: float,
                                 source_path: Path):
 	"""Write transcription results to a text file"""
-	elapsed_str = datetime.fromtimestamp(total_elapsed_time).strftime(
-		"%H:%M:%S")
+	elapsed_str = str(timedelta(seconds=int(total_elapsed_time)))
 	final_success_count = sum(
 		1 for r in transcription_results if "error" not in r)
 	final_failure_count = len(transcription_results) - final_success_count
