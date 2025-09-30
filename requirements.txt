@@ -1,5 +1,6 @@
 # Core runtime
 openai>=1.44.0
+requests>=2.31.0
 
 # Imaging and PDF
 pillow>=10.3.0

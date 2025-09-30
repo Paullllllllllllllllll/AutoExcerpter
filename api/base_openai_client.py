@@ -175,11 +175,26 @@ class OpenAIClientBase:
             parts = []
             if isinstance(output, list):
                 for item in output:
-                    if isinstance(item, dict) and item.get("type") == "message":
-                        for content_item in item.get("content", []):
+                    # Skip items with null role or empty content
+                    if not isinstance(item, dict):
+                        continue
+                    
+                    item_content = item.get("content", [])
+                    if not item_content:
+                        continue
+                    
+                    # Extract text from content items
+                    for content_item in item_content:
+                        if not isinstance(content_item, dict):
+                            continue
+                        
+                        # Handle both "output_text" and "text" types
+                        content_type = content_item.get("type")
+                        if content_type in ["output_text", "text"]:
                             text = content_item.get("text")
                             if isinstance(text, str):
                                 parts.append(text)
+            
             return "".join(parts).strip()
         except Exception:
             return ""

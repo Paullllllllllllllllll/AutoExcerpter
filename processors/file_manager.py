@@ -11,9 +11,12 @@ from typing import Any, Dict, List, Optional
 from docx import Document
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 from docx.shared import Pt
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 
 from modules import app_config as config
 from modules.logger import setup_logger
+from processors.citation_manager import CitationManager
 
 logger = setup_logger(__name__)
 
@@ -63,6 +66,43 @@ def sanitize_for_xml(text: Optional[str]) -> str:
     sanitized = sanitized.replace('"', "&quot;")
     sanitized = sanitized.replace("'", "&apos;")
     return sanitized
+
+
+def add_hyperlink(paragraph, url: str, text: str) -> None:
+    """
+    Add a hyperlink to a paragraph in a DOCX document.
+    
+    Args:
+        paragraph: The paragraph object to add the hyperlink to.
+        url: The URL for the hyperlink.
+        text: The display text for the hyperlink.
+    """
+    # This gets access to the document.xml.rels file and gets a new relation id value
+    part = paragraph.part
+    r_id = part.relate_to(url, 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink', is_external=True)
+
+    # Create the w:hyperlink tag and add needed values
+    hyperlink = OxmlElement('w:hyperlink')
+    hyperlink.set(qn('r:id'), r_id)
+
+    # Create a new run object (a wrapper over a text element)
+    new_run = OxmlElement('w:r')
+    
+    # Set the run's text
+    rPr = OxmlElement('w:rPr')
+    
+    # Add run properties for hyperlink styling
+    rStyle = OxmlElement('w:rStyle')
+    rStyle.set(qn('w:val'), 'Hyperlink')
+    rPr.append(rStyle)
+    new_run.append(rPr)
+    
+    # Add the actual text
+    new_run.text = text
+    hyperlink.append(new_run)
+
+    # Add the hyperlink to the paragraph
+    paragraph._p.append(hyperlink)
 
 
 def _extract_summary_payload(result: Dict[str, Any]) -> Dict[str, Any]:
@@ -148,6 +188,7 @@ def create_docx_summary(
 ) -> None:
     """
     Create a compact DOCX summary document from structured summary results.
+    Citations are collected, deduplicated, and displayed at the end with page tracking.
 
     Args:
     summary_results (List[Dict[str, Any]]): A list of summary results.
@@ -161,6 +202,9 @@ def create_docx_summary(
             len(summary_results) - len(filtered_results),
         )
 
+    # Initialize citation manager for the document
+    citation_manager = CitationManager(polite_pool_email=config.CITATION_OPENALEX_EMAIL)
+    
     document = Document()
 
     # Configure default Normal style for compact spacing
@@ -190,6 +234,10 @@ def create_docx_summary(
         bullet_points = summary_payload.get("bullet_points", [])
         references = summary_payload.get("references", [])
 
+        # Collect citations for consolidated section
+        if references:
+            citation_manager.add_citations(references, page_number)
+
         # Page heading
         page_heading = document.add_heading(f"Page {page_number}", PAGE_HEADING_LEVEL)
         page_heading.paragraph_format.space_before = Pt(PAGE_HEADING_SPACE_BEFORE_PT)
@@ -209,20 +257,74 @@ def create_docx_summary(
             no_points = document.add_paragraph("No bullet points available for this page.")
             no_points.paragraph_format.left_indent = Pt(BULLET_INDENT_PT)
 
-        # References section (if any)
-        if references:
-            ref_heading = document.add_heading("References", REFERENCES_HEADING_LEVEL)
-            ref_heading.paragraph_format.space_before = Pt(REF_HEADING_SPACE_BEFORE_PT)
-            ref_heading.paragraph_format.space_after = Pt(PAGE_HEADING_SPACE_AFTER_PT)
+        # NOTE: Per-page references section removed - citations now consolidated at end
 
-            for reference in references:
-                ref_paragraph = document.add_paragraph(sanitize_for_xml(reference))
-                ref_paragraph.paragraph_format.space_before = Pt(0)
-                ref_paragraph.paragraph_format.space_after = Pt(BULLET_SPACE_AFTER_PT)
-                ref_paragraph.paragraph_format.left_indent = Pt(REF_INDENT_PT)
+    # Add consolidated references section at the end of the document
+    if citation_manager.citations:
+        logger.info("Processing %d unique citations for consolidated references section", 
+                   len(citation_manager.citations))
+        
+        # Enrich citations with metadata from OpenAlex API
+        citation_manager.enrich_with_metadata(max_requests=config.CITATION_MAX_API_REQUESTS)
+        
+        # Add references heading
+        document.add_page_break()
+        ref_main_heading = document.add_heading("Consolidated References", TITLE_HEADING_LEVEL)
+        ref_main_heading.paragraph_format.space_before = Pt(PAGE_HEADING_SPACE_BEFORE_PT)
+        ref_main_heading.paragraph_format.space_after = Pt(PAGE_HEADING_SPACE_AFTER_PT)
+        
+        # Add note about the references
+        note_text = ("The following references were extracted from the document and consolidated. "
+                    "Duplicate citations have been merged, showing all pages where each citation appears. "
+                    "Where available, hyperlinks provide access to extended metadata via OpenAlex.")
+        note_paragraph = document.add_paragraph(note_text)
+        note_paragraph.paragraph_format.space_after = Pt(PAGE_HEADING_SPACE_AFTER_PT)
+        
+        # Get sorted citations with page information
+        citations_with_pages = citation_manager.get_citations_with_pages()
+        
+        for idx, (citation, page_range_str) in enumerate(citations_with_pages, start=1):
+            # Create citation paragraph
+            ref_paragraph = document.add_paragraph()
+            ref_paragraph.paragraph_format.space_before = Pt(0)
+            ref_paragraph.paragraph_format.space_after = Pt(BULLET_SPACE_AFTER_PT)
+            ref_paragraph.paragraph_format.left_indent = Pt(REF_INDENT_PT)
+            ref_paragraph.paragraph_format.first_line_indent = Pt(-REF_INDENT_PT)
+            
+            # Add citation number
+            num_run = ref_paragraph.add_run(f"[{idx}] ")
+            num_run.bold = True
+            
+            # Add citation text
+            citation_text = sanitize_for_xml(citation.raw_text)
+            
+            # If we have metadata with a URL, add as hyperlink
+            if citation.url:
+                # Add citation text as hyperlink
+                add_hyperlink(ref_paragraph, citation.url, citation_text)
+            else:
+                ref_paragraph.add_run(citation_text)
+            
+            # Add page information
+            if page_range_str:
+                page_run = ref_paragraph.add_run(f" ({page_range_str})")
+                page_run.italic = True
+            
+            # Add metadata note if available
+            if citation.metadata:
+                meta_info_parts = []
+                if citation.doi:
+                    meta_info_parts.append(f"DOI: {citation.doi}")
+                if citation.metadata.get('publication_year'):
+                    meta_info_parts.append(f"Year: {citation.metadata['publication_year']}")
+                
+                if meta_info_parts:
+                    meta_run = ref_paragraph.add_run(f" [{', '.join(meta_info_parts)}]")
+                    meta_run.font.size = Pt(9)
+                    meta_run.italic = True
 
     document.save(output_path)
-    logger.info("Compact summary DOCX file saved: %s", output_path)
+    logger.info("Summary document saved to %s", output_path)
 
 
 def write_transcription_to_text(
@@ -288,6 +390,7 @@ def initialize_log_file(
     total_images: int,
     model_name: str,
     extraction_dpi: Optional[int] = None,
+    concurrency_limit: Optional[int] = None,
 ) -> bool:
     """
     Create the per-item log file header.
@@ -300,12 +403,13 @@ def initialize_log_file(
     total_images (int): The total number of images.
     model_name (str): The name of the model.
     extraction_dpi (Optional[int]): The extraction DPI. Defaults to None.
+    concurrency_limit (Optional[int]): The actual concurrency limit being used. Defaults to None.
 
     Returns:
     bool: True if the log file was initialized successfully, False otherwise.
     """
     configuration = {
-        "concurrent_requests": config.CONCURRENT_REQUESTS,
+        "concurrent_requests": concurrency_limit if concurrency_limit is not None else config.CONCURRENT_REQUESTS,
         "api_timeout_seconds": config.API_TIMEOUT,
         "model_name": model_name,
         "extraction_dpi": extraction_dpi if extraction_dpi is not None else "N/A",

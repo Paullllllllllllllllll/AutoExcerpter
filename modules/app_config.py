@@ -107,6 +107,7 @@ def _get_bool(data: Dict[str, Any], key: str, default: bool) -> bool:
 # Load configuration
 _APP_CFG: Dict[str, Any] = _load_yaml_app_config()
 _OA: Dict[str, Any] = _APP_CFG.get("openai", {}) if isinstance(_APP_CFG.get("openai"), dict) else {}
+_CITATION: Dict[str, Any] = _APP_CFG.get("citation", {}) if isinstance(_APP_CFG.get("citation"), dict) else {}
 
 # Feature toggle
 SUMMARIZE = _get_bool(_APP_CFG, "summarize", True)
@@ -121,6 +122,10 @@ DELETE_TEMP_WORKING_DIR = _get_bool(_APP_CFG, "delete_temp_working_dir", True)
 # Performance Settings
 CONCURRENT_REQUESTS = _get_int(_APP_CFG, "concurrent_requests", DEFAULT_CONCURRENT_REQUESTS)
 API_TIMEOUT = _get_int(_APP_CFG, "api_timeout", DEFAULT_API_TIMEOUT)
+
+# Citation Management Settings
+CITATION_OPENALEX_EMAIL = _get_str(_CITATION, "openalex_email", "your-email@example.com")
+CITATION_MAX_API_REQUESTS = _get_int(_CITATION, "max_api_requests", 50)
 
 # Rate Limiting Configuration (OpenAI)
 OPENAI_RATE_LIMITS = _as_rate_limits(_OA.get("rate_limits"))

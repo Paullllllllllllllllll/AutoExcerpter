@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import io
 from pathlib import Path
 from typing import Dict, Any
 
@@ -169,6 +171,53 @@ class ImageProcessor:
         except Exception as e:
             logger.error(f"Error processing image {self.image_path.name}: {e}")
             return f"Failed to process {self.image_path.name}: {e}"
+
+    def process_image_to_memory(self) -> Image.Image:
+        """
+        Process the image and return the PIL Image object in-memory.
+
+        Returns:
+            Image.Image: The processed PIL Image object.
+        
+        Raises:
+            Exception: If image processing fails.
+        """
+        with Image.open(self.image_path) as img:
+            img = img.copy()  # Create a copy to work with after closing the file
+            img = self.handle_transparency(img)
+            img = self.convert_to_grayscale(img)
+            # Choose resizing based on llm_detail and resize_profile
+            detail = (self.img_cfg.get('llm_detail', 'high') or 'high')
+            img = ImageProcessor.resize_for_detail(img, detail, self.img_cfg)
+            
+            # Convert to RGB if grayscale for JPEG encoding
+            if img.mode not in ('RGB', 'L'):
+                img = img.convert('RGB')
+            
+            logger.debug(
+                f"Processed image {self.image_path.name} in-memory: size={img.size} detail={detail}"
+            )
+            return img
+
+    @staticmethod
+    def pil_image_to_base64(img: Image.Image, jpeg_quality: int = DEFAULT_JPEG_QUALITY) -> str:
+        """
+        Convert a PIL Image to base64-encoded JPEG string.
+
+        Args:
+            img (Image.Image): The PIL Image object.
+            jpeg_quality (int): JPEG quality (1-100).
+
+        Returns:
+            str: Base64-encoded JPEG image string.
+        """
+        buffer = io.BytesIO()
+        # Ensure image is in RGB mode for JPEG
+        if img.mode not in ('RGB', 'L'):
+            img = img.convert('RGB')
+        img.save(buffer, format='JPEG', quality=jpeg_quality)
+        buffer.seek(0)
+        return base64.b64encode(buffer.read()).decode('utf-8')
 
     # Note: Removed unused folder-level processing helpers (prepare_image_folder,
     # process_images_multiprocessing, _process_image_task, process_and_save_images)

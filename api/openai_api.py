@@ -48,11 +48,17 @@ class OpenAISummaryManager(OpenAIClientBase):
             if schema_path.exists():
                 with open(schema_path, "r", encoding="utf-8") as f:
                     self.summary_schema = json.load(f)
+                logger.info(f"Loaded summary schema from {SUMMARY_SCHEMA_FILE}")
+            else:
+                logger.warning(f"Summary schema not found at {schema_path}")
 
             prompt_path = (PROMPTS_DIR / SUMMARY_PROMPT_FILE).resolve()
             if prompt_path.exists():
                 with open(prompt_path, "r", encoding="utf-8") as f:
                     self.summary_system_prompt_text = f.read()
+                logger.info(f"Loaded summary system prompt ({len(self.summary_system_prompt_text)} chars)")
+            else:
+                logger.warning(f"Summary prompt not found at {prompt_path}")
         except Exception as e:
             logger.warning(f"Error loading schema/prompt: {e}. Using defaults.")
 
@@ -152,7 +158,7 @@ class OpenAISummaryManager(OpenAIClientBase):
         input_messages = [
             {
                 "role": "system",
-                "content": [{"type": "input_text", "text": system_text}],
+                "content": system_text,
             },
             {
                 "role": "user",
@@ -207,11 +213,40 @@ class OpenAISummaryManager(OpenAIClientBase):
                     if "contains_no_page_number" in summary_json:
                         del summary_json["contains_no_page_number"]
 
-                return {
+                result = {
                     "page": page_num,
                     "summary": summary_json,
                     "processing_time": round(processing_time, 2),
                 }
+                
+                # Add full API response object for logging
+                try:
+                    result["api_response"] = {
+                        "id": response.id if hasattr(response, 'id') else None,
+                        "model": response.model if hasattr(response, 'model') else None,
+                        "created_at": response.created_at if hasattr(response, 'created_at') else None,
+                        "output": [
+                            {
+                                "role": item.role if hasattr(item, 'role') else None,
+                                "content": [
+                                    {
+                                        "type": c.type if hasattr(c, 'type') else None,
+                                        "text": c.text if hasattr(c, 'text') else None,
+                                    } for c in (item.content if hasattr(item, 'content') and item.content else [])
+                                ] if hasattr(item, 'content') else []
+                            } for item in (response.output if hasattr(response, 'output') and response.output else [])
+                        ] if hasattr(response, 'output') else [],
+                        "usage": {
+                            "input_tokens": response.usage.input_tokens if hasattr(response, 'usage') and hasattr(response.usage, 'input_tokens') else None,
+                            "output_tokens": response.usage.output_tokens if hasattr(response, 'usage') and hasattr(response.usage, 'output_tokens') else None,
+                            "total_tokens": response.usage.total_tokens if hasattr(response, 'usage') and hasattr(response.usage, 'total_tokens') else None,
+                        } if hasattr(response, 'usage') and response.usage else None,
+                    }
+                except Exception as e:
+                    logger.debug(f"Could not serialize full API response: {e}")
+                    result["api_response"] = {"serialization_error": str(e)}
+                
+                return result
 
             except Exception as e:
                 retries += 1

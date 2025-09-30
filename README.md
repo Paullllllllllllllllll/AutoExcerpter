@@ -46,6 +46,13 @@ AutoExcerpter processes PDF files or folders of images through a two-stage pipel
 
 - Generates concise bullet-point summaries for each page
 - Extracts full bibliographic citations in APA format
+- **Enhanced Citation Management:**
+  - Automatically deduplicates identical citations across the document
+  - Tracks and displays page numbers/ranges where each citation appears
+  - Consolidates all citations in a dedicated section at the end of the document
+  - Enriches citations with metadata from OpenAlex API (DOI, publication year, etc.)
+  - Adds clickable hyperlinks to citations for direct access to extended metadata
+  - Smart citation matching using normalized text and DOI extraction
 - Identifies pages without semantic content (reference lists, title pages, etc.)
 - Accurately tracks page numbers from document headers/footers
 - Outputs summaries as formatted DOCX documents
@@ -391,16 +398,34 @@ openai:
 
 Adjust these values based on your OpenAI tier limits.
 
-**Customizing Prompts and Schemas:**
+**Citation Management** (`modules/config/app.yaml`):
 
-Advanced users can modify the system prompts and JSON schemas to customize transcription and summarization behavior:
+The enhanced citation management system automatically consolidates citations across your document:
 
-- Edit `modules/prompts/transcription_system_prompt.txt` to change transcription instructions
-- Edit `modules/prompts/summary_system_prompt.txt` to change summarization instructions
-- Modify `modules/schemas/transcription_schema.json` to change transcription output structure
-- Modify `modules/schemas/summary_schema.json` to change summary output structure
+```yaml
+citation:
+  openalex_email: 'your-email@example.com'  # Your email for OpenAlex API polite pool
+  max_api_requests: 50  # Maximum API calls for metadata enrichment per document
+```
 
-**Note**: Schema modifications require understanding of OpenAI's structured output format. Ensure schemas remain valid and compatible with the `strict: true` mode.
+**Citation Features:**
+
+- **Automatic Deduplication**: Identical citations appearing on multiple pages are automatically merged into a single entry
+- **Page Tracking**: Each citation includes a list of all pages where it appears (e.g., "pp. 5, 12-15, 23")
+- **Metadata Enrichment**: Citations are enriched with metadata from the OpenAlex API, including:
+  - DOI (Digital Object Identifier)
+  - Publication year
+  - Authors
+  - Venue/journal information
+- **Clickable Hyperlinks**: Citations with sufficient metadata include hyperlinks to access extended information
+- **Polite Pool Access**: Providing your email in the configuration grants faster OpenAlex API response times
+
+**Best Practices:**
+
+- Replace `'your-email@example.com'` with your actual email address for optimal API performance
+- Set `max_api_requests` based on your needs (higher values = more enriched citations but longer processing time)
+- The OpenAlex API is free and requires no API key, just an email for rate limit pool prioritization
+- Citations are matched using normalized text comparison and DOI extraction when available
 
 ## Troubleshooting
 

@@ -170,10 +170,18 @@ class ItemTranscriber:
 		image_paths_with_indices = list(enumerate(image_paths))
 
 		if config.SUMMARIZE and self.openai_summary_manager:
+			try:
+				cfg_loader = ConfigLoader()
+				cfg_loader.load_configs()
+				concurrency_cfg = cfg_loader.get_concurrency_config()
+				max_workers = concurrency_cfg.get("concurrency", {}).get("transcription", {}).get("concurrency_limit", 4)
+			except Exception:
+				max_workers = config.CONCURRENT_REQUESTS
 			initialize_log_file(
 				self.summary_log_path, self.name, str(self.input_path),
 				"PDF" if self.input_type == "pdf" else "Image Folder",
-				total_images, config.OPENAI_MODEL
+				total_images, config.OPENAI_MODEL,
+				concurrency_limit=max_workers
 			)
 
 		def submit_task(args_tuple):
@@ -291,9 +299,20 @@ class ItemTranscriber:
 				processed_count += 1
 				return error_result
 
-		max_workers = min(config.CONCURRENT_REQUESTS, len(image_paths))
+		# Load concurrency settings from concurrency.yaml
+		try:
+			cfg_loader = ConfigLoader()
+			cfg_loader.load_configs()
+			concurrency_cfg = cfg_loader.get_concurrency_config()
+			max_workers = concurrency_cfg.get("concurrency", {}).get("transcription", {}).get("concurrency_limit", 4)
+		except Exception:
+			max_workers = config.CONCURRENT_REQUESTS
+		
+		max_workers = min(max_workers, len(image_paths))
 		if max_workers <= 0:
 			max_workers = 1
+		
+		logger.info(f"Using {max_workers} concurrent workers for transcription")
 		with concurrent.futures.ThreadPoolExecutor(
 				max_workers=max_workers) as executor:
 			list(tqdm(executor.map(submit_task, image_paths_with_indices),
@@ -568,10 +587,17 @@ class ItemTranscriber:
 				target_dpi = int(cl.get_image_processing_config().get('api_image_processing', {}).get('target_dpi', 300))
 			except Exception:
 				target_dpi = None
+		try:
+			cfg_loader = ConfigLoader()
+			cfg_loader.load_configs()
+			concurrency_cfg = cfg_loader.get_concurrency_config()
+			actual_concurrency = concurrency_cfg.get("concurrency", {}).get("transcription", {}).get("concurrency_limit", 4)
+		except Exception:
+			actual_concurrency = config.CONCURRENT_REQUESTS
 		initialize_log_file(
 			self.log_path, self.name, str(self.input_path), item_type_str,
 			self.total_items_to_transcribe, config.OPENAI_TRANSCRIPTION_MODEL,
-			target_dpi
+			target_dpi, concurrency_limit=actual_concurrency
 		)
 
 		# Process all images - transcribe and summarize
@@ -672,3 +698,21 @@ class ItemTranscriber:
 				f"  Final summary outputs: {self.output_summary_docx_path}")
 		logger.info(
 			f"  Detailed logs: {self.log_path}{' and ' + str(self.summary_log_path) if config.SUMMARIZE else ''}")
+
+		# Cleanup: Delete images directory after successful processing
+		# Only delete if we have successful outputs (transcription and/or summary)
+		should_cleanup = False
+		if self.output_txt_path.exists():
+			# We have a transcription output
+			should_cleanup = True
+		if config.SUMMARIZE and self.output_summary_docx_path.exists():
+			# We have a summary output
+			should_cleanup = True
+		
+		if should_cleanup and self.images_dir.exists():
+			try:
+				# Delete the images directory and all its contents
+				shutil.rmtree(self.images_dir)
+				logger.info(f"  Cleaned up images directory: {self.images_dir}")
+			except Exception as e:
+				logger.warning(f"  Could not delete images directory {self.images_dir}: {e}")

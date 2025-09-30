@@ -7,11 +7,11 @@ from pathlib import Path
 from typing import List
 
 import fitz  # PyMuPDF
-from PIL import Image
+from PIL import Image, ImageOps
 from tqdm import tqdm
 
 from modules.config_loader import ConfigLoader
-from modules.image_utils import SUPPORTED_IMAGE_EXTENSIONS
+from modules.image_utils import SUPPORTED_IMAGE_EXTENSIONS, ImageProcessor
 from modules.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -64,7 +64,7 @@ def extract_pdf_pages_to_images(pdf_path: Path, output_images_dir: Path) -> List
 
         def extract_page_task(page_num: int) -> tuple[int, Path | None]:
             """
-            Extract a single page from the PDF.
+            Extract a single page from the PDF and apply preprocessing.
 
             Args:
                 page_num: Zero-indexed page number
@@ -73,11 +73,31 @@ def extract_pdf_pages_to_images(pdf_path: Path, output_images_dir: Path) -> List
                 Tuple of (page_num, image_path or None on error)
             """
             try:
+                # Extract page from PDF
                 page = pdf_document[page_num]
                 zoom = target_dpi / PDF_DPI_CONVERSION_FACTOR
                 matrix = fitz.Matrix(zoom, zoom)
                 pix = page.get_pixmap(matrix=matrix, alpha=False)
                 pil_img = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
+                
+                # Apply preprocessing directly (grayscale, resize, etc.)
+                # Handle transparency
+                if img_cfg.get('handle_transparency', True):
+                    if pil_img.mode in ('RGBA', 'LA') or (
+                            pil_img.mode == 'P' and 'transparency' in pil_img.info):
+                        background = Image.new("RGB", pil_img.size, (255, 255, 255))
+                        background.paste(pil_img, mask=pil_img.split()[-1] if pil_img.mode in ('RGBA', 'LA') else None)
+                        pil_img = background
+                
+                # Grayscale conversion
+                if img_cfg.get('grayscale_conversion', True):
+                    pil_img = ImageOps.grayscale(pil_img)
+                
+                # Resize based on detail level
+                detail = (img_cfg.get('llm_detail', 'high') or 'high')
+                pil_img = ImageProcessor.resize_for_detail(pil_img, detail, img_cfg)
+                
+                # Save preprocessed image
                 image_path = output_images_dir / f"page_{page_num + 1:04d}.jpg"
                 pil_img.save(image_path, "JPEG", quality=jpeg_quality)
                 return page_num, image_path
