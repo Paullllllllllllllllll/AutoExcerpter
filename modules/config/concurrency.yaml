@@ -1,11 +1,98 @@
-# Concurrency settings for transcription and image processing tasks
-concurrency:
+# Concurrency and retry configuration for AutoExcerpter
+# This file controls parallel processing behavior for both local operations
+# and OpenAI API requests.
+
+# =============================================================================
+# IMAGE PROCESSING CONCURRENCY
+# =============================================================================
+# Controls local I/O operations: PDF extraction and image preprocessing
+# These operations are CPU/disk-bound and don't hit external APIs
+image_processing:
+  # Maximum concurrent image extraction/processing tasks
+  # Recommended: 8-24 for modern systems with SSD storage
+  concurrency_limit: 24
+  
+  # Delay between starting tasks (seconds)
+  # Set to 0 for local operations as there's no rate limiting concern
+  delay_between_tasks: 0
+
+# =============================================================================
+# API CONCURRENCY & RETRY CONFIGURATION
+# =============================================================================
+# Controls OpenAI Responses API requests for transcription and summarization
+# Based on OpenAI best practices for the Responses API
+api_requests:
+  # ---------------------------------------------------------------------------
+  # Transcription API Settings
+  # ---------------------------------------------------------------------------
   transcription:
-    concurrency_limit: 150  # Maximum number of concurrent transcription tasks
-    delay_between_tasks: 0.05  # Delay (in seconds) between starting transcription tasks
-    service_tier: flex        # Controls OpenAI Responses service tier, allowed
-    # tiers: 'auto', 'default', 'flex', and 'priority'
-    batch_chunk_size: 50         # Number of requests per batch part file (used by Batch API)
-  image_processing:
-    concurrency_limit: 24  # Maximum number of concurrent image processing tasks
-    delay_between_tasks: 0  # No delay for image processing tasks
+    # Maximum concurrent API requests
+    # Recommended: 50-150 for Tier 4+, lower for lower tiers
+    # The Responses API handles concurrent requests well with proper rate limiting
+    concurrency_limit: 150
+    
+    # Delay between starting API requests (seconds)
+    # Small delay helps prevent bursts that could trigger rate limits
+    delay_between_tasks: 0.05
+    
+    # OpenAI service tier for Responses API
+    # Options: 'auto', 'default', 'flex', 'priority'
+    # - 'flex': Lower cost, may queue during high demand (recommended for batch processing)
+    # - 'default': Standard processing speed
+    # - 'priority': Fastest processing, higher cost
+    service_tier: flex
+    
+    # Number of requests per batch part file (for future Batch API support)
+    batch_chunk_size: 50
+  
+  # ---------------------------------------------------------------------------
+  # Summary API Settings
+  # ---------------------------------------------------------------------------
+  summary:
+    # Maximum concurrent API requests for summarization
+    # Generally lower than transcription as summaries are larger/more complex
+    concurrency_limit: 150
+    
+    # Delay between starting API requests (seconds)
+    delay_between_tasks: 0.05
+    
+    # OpenAI service tier for Responses API
+    service_tier: flex
+    
+    # Batch configuration
+    batch_chunk_size: 50
+
+# =============================================================================
+# RETRY & BACKOFF CONFIGURATION
+# =============================================================================
+# Controls retry behavior for failed API requests
+# These settings apply to both transcription and summary API calls
+retry:
+  # Maximum number of retry attempts for failed requests
+  # After this many failures, the request is abandoned
+  max_attempts: 5
+  
+  # Base backoff time (seconds) for exponential backoff
+  # Actual wait time = base * (multiplier ^ attempt) + jitter
+  backoff_base: 1.0
+  
+  # Backoff multipliers for different error types
+  # Higher multipliers = longer waits between retries
+  backoff_multipliers:
+    rate_limit: 2.0      # 429 errors, "too many requests"
+    timeout: 1.5          # Request timeout errors
+    server_error: 2.0     # 500-series errors
+    other: 2.0            # All other retryable errors
+  
+  # Jitter range to prevent thundering herd
+  # Random value between [min, max] is added to backoff time
+  jitter:
+    min: 0.5
+    max: 1.0
+  
+  # Rate limits for retry attempts (prevents retry storms)
+  # Format: [max_requests, time_window_seconds]
+  retry_rate_limits:
+    - [1, 2]       # Max 1 retry per 2 seconds
+    - [60, 60]     # Max 60 retries per minute
+    - [3000, 3600] # Max 3000 retries per hour

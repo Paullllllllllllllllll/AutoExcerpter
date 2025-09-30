@@ -174,7 +174,7 @@ class ItemTranscriber:
 				cfg_loader = ConfigLoader()
 				cfg_loader.load_configs()
 				concurrency_cfg = cfg_loader.get_concurrency_config()
-				max_workers = concurrency_cfg.get("concurrency", {}).get("transcription", {}).get("concurrency_limit", 4)
+				max_workers = concurrency_cfg.get("api_requests", {}).get("transcription", {}).get("concurrency_limit", 4)
 			except Exception:
 				max_workers = config.CONCURRENT_REQUESTS
 			initialize_log_file(
@@ -304,7 +304,7 @@ class ItemTranscriber:
 			cfg_loader = ConfigLoader()
 			cfg_loader.load_configs()
 			concurrency_cfg = cfg_loader.get_concurrency_config()
-			max_workers = concurrency_cfg.get("concurrency", {}).get("transcription", {}).get("concurrency_limit", 4)
+			max_workers = concurrency_cfg.get("api_requests", {}).get("transcription", {}).get("concurrency_limit", 4)
 		except Exception:
 			max_workers = config.CONCURRENT_REQUESTS
 		
@@ -591,7 +591,7 @@ class ItemTranscriber:
 			cfg_loader = ConfigLoader()
 			cfg_loader.load_configs()
 			concurrency_cfg = cfg_loader.get_concurrency_config()
-			actual_concurrency = concurrency_cfg.get("concurrency", {}).get("transcription", {}).get("concurrency_limit", 4)
+			actual_concurrency = concurrency_cfg.get("api_requests", {}).get("transcription", {}).get("concurrency_limit", 4)
 		except Exception:
 			actual_concurrency = config.CONCURRENT_REQUESTS
 		initialize_log_file(
