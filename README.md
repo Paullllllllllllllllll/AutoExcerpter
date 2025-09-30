@@ -1,6 +1,6 @@
 # AutoExcerpter
 
-AutoExcerpter is an automated transcription and summarization pipeline for PDF documents and image collections. The tool leverages OpenAI's language models (default: gpt-5-mini) to extract text from scanned documents and optionally generate structured summaries with citations, making it ideal for academic research, document digitization, and literature review workflows.
+AutoExcerpter is an intelligent document processing pipeline that automatically transcribes and summarizes PDF documents and image collections. Powered by OpenAI's advanced language models (GPT-5-mini by default), the tool converts scanned documents into searchable, structured text with optional summaries and enriched bibliographic citations. It is designed for researchers, academics, and professionals who need to digitize and analyze large volumes of documents efficiently.
 
 ## Table of Contents
 
@@ -9,423 +9,734 @@ AutoExcerpter is an automated transcription and summarization pipeline for PDF d
 - [How It Works](#how-it-works)
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
+- [Quick Start](#quick-start)
 - [Configuration](#configuration)
+  - [Basic Configuration](#basic-configuration)
+  - [Model Configuration](#model-configuration)
+  - [Concurrency Configuration](#concurrency-configuration)
+  - [Image Processing Configuration](#image-processing-configuration)
+  - [Citation Management](#citation-management)
 - [Usage](#usage)
 - [Output Files](#output-files)
 - [Project Structure](#project-structure)
-- [Advanced Configuration](#advanced-configuration)
+- [Advanced Topics](#advanced-topics)
 - [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
 - [License](#license)
 
 ## Overview
 
-AutoExcerpter processes PDF files or folders of images through a two-stage pipeline. First, it transcribes each page using OpenAI's vision-enabled models with optical character recognition (OCR) capabilities. Second, it optionally generates structured summaries with bullet points and bibliographic citations. The pipeline is designed for high-volume processing with concurrent request handling, adaptive rate limiting, and robust error recovery.
+AutoExcerpter processes documents through a sophisticated two-stage pipeline that leverages OpenAI's vision-enabled models with optical character recognition (OCR) capabilities. In the first stage, each page is transcribed using the OpenAI Responses API with structured JSON schemas to ensure consistent output. In the second optional stage, transcribed text is analyzed to generate structured summaries with automatically deduplicated citations enriched with metadata from the OpenAlex academic database.
 
-**Use Cases:**
+**Primary Use Cases:**
 
-- Digitizing and transcribing scanned academic papers or books
-- Extracting structured summaries from research literature
-- Converting image-based documents into searchable text
-- Building searchable document databases from archival materials
-- Automating literature review processes
+- **Academic Research**: Digitize scanned academic papers, extract citations, and generate structured literature reviews
+- **Document Digitization**: Convert image-based archival documents into searchable, machine-readable text
+- **Literature Analysis**: Automatically summarize research papers with consolidated bibliographies
+- **Knowledge Management**: Build searchable databases from historical documents and scanned materials
+- **Content Extraction**: Process multi-column layouts, preserve mathematical equations, and capture visual content descriptions
 
 ## Key Features
 
-**Transcription Capabilities:**
+**Advanced Transcription:**
 
-- Processes PDF files (automatically extracts pages as images) or existing image folders
-- Supports multiple image formats: PNG, JPG, JPEG, TIFF, BMP, GIF, WEBP
-- Preserves document structure: headers, footers, page numbers, footnotes, tables
-- Handles mathematical equations (converts to LaTeX format)
-- Maintains multi-column layouts and line breaks
-- Provides detailed image/diagram descriptions for visual elements
-- Uses strict JSON schemas to ensure consistent output format
+- **Multi-Format Support**: Processes PDFs (with automatic page extraction) and direct image folders
+- **Format Compatibility**: Supports PNG, JPG, JPEG, TIFF, BMP, GIF, and WEBP image formats
+- **Structure Preservation**: Maintains document structure including headers, footers, page numbers, footnotes, tables, and multi-column layouts
+- **Mathematical Notation**: Converts mathematical equations to LaTeX format for accurate representation
+- **Visual Content**: Provides detailed descriptions of images, diagrams, charts, and figures
+- **Schema-Driven Output**: Uses strict JSON schemas to ensure consistent, parseable transcription results
+- **In-Memory Processing**: Optimized image preprocessing pipeline that eliminates disk I/O bottlenecks and prevents race conditions
+- **Intelligent Formatting**: Preserves markdown formatting (headings, bold, italic) and line breaks
 
-**Summarization Capabilities:**
+**Intelligent Summarization:**
 
-- Generates concise bullet-point summaries for each page
-- Extracts full bibliographic citations in APA format
-- **Enhanced Citation Management:**
-  - Automatically deduplicates identical citations across the document
-  - Tracks and displays page numbers/ranges where each citation appears
-  - Consolidates all citations in a dedicated section at the end of the document
-  - Enriches citations with metadata from OpenAlex API (DOI, publication year, etc.)
-  - Adds clickable hyperlinks to citations for direct access to extended metadata
-  - Smart citation matching using normalized text and DOI extraction
-- Identifies pages without semantic content (reference lists, title pages, etc.)
-- Accurately tracks page numbers from document headers/footers
-- Outputs summaries as formatted DOCX documents
+- **Concise Extraction**: Generates bullet-point summaries highlighting main ideas and key findings for each page
+- **Smart Filtering**: Automatically identifies and excludes pages without semantic content (title pages, blank pages, reference lists)
+- **Page Tracking**: Accurately tracks page numbers from document headers and footers
+- **Professional Output**: Exports summaries as formatted DOCX documents suitable for reports and documentation
+
+**Enhanced Citation Management:**
+
+- **Automatic Deduplication**: Uses normalized text hashing to identify and merge duplicate citations across the entire document
+- **Page Range Tracking**: Displays comprehensive page numbers where each citation appears (e.g., "pp. 5, 12-15, 23")
+- **Metadata Enrichment**: Integrates with OpenAlex API to enrich citations with DOI, publication year, authors, and venue information
+- **Clickable Hyperlinks**: Adds direct hyperlinks to citations for instant access to extended metadata
+- **Consolidated Bibliography**: Presents all citations in a dedicated section at the end of summary documents
+- **Smart Matching**: Uses both text similarity and DOI extraction for accurate citation identification
 
 **Performance and Reliability:**
 
-- Concurrent processing with configurable parallelism levels
-- Adaptive rate limiting to stay within OpenAI API quotas
-- Automatic retry logic with exponential backoff for transient errors
-- Support for OpenAI Flex tier to reduce processing costs
-- Progress tracking with estimated time of completion
-- Comprehensive logging for debugging and audit trails
+- **Concurrent Processing**: Configurable parallelism for both image preprocessing and API requests
+- **Adaptive Rate Limiting**: Sliding window rate limiter prevents API quota violations
+- **Intelligent Retry Logic**: Exponential backoff with jitter for transient errors
+- **Service Tier Support**: Full support for OpenAI Flex tier to reduce processing costs by up to 50%
+- **Progress Tracking**: Real-time progress bars with estimated time of completion
+- **Comprehensive Logging**: Detailed JSON logs for debugging, quality assurance, and audit trails
+- **Automatic Cleanup**: Optional deletion of temporary working directories after successful processing
 
-**Architecture Highlights:**
+**Architecture Excellence:**
 
-- Modular design with clear separation of concerns
-- YAML-based configuration with validation and sensible defaults
-- Base classes for shared API logic to eliminate code duplication
-- Testable components with well-defined interfaces
-- Public API definitions via `__all__` exports
+- **Modular Design**: Clear separation of concerns with well-defined component responsibilities
+- **YAML-Based Configuration**: Human-readable configuration with validation and sensible defaults
+- **Base Classes**: Shared API logic through inheritance to eliminate code duplication
+- **Testable Components**: Well-defined interfaces that facilitate unit testing
+- **Type Safety**: Comprehensive type hints throughout the codebase
+- **Public API**: Clear module exports via `__all__` declarations
 
 ## How It Works
 
-1. **Input Selection**: The tool scans your input directory for PDF files and image folders, presenting an interactive menu to select which items to process.
+AutoExcerpter follows a systematic workflow to transform documents into structured, searchable content:
 
-2. **Page Extraction**: For PDFs, each page is extracted as a high-resolution image (configurable DPI). Image folders are processed directly.
+**1. Input Selection and Scanning**
 
-3. **Transcription**: Each image is sent to OpenAI's vision API with a detailed system prompt and JSON schema that instructs the model to:
-   - Perform verbatim transcription with markdown formatting
-   - Preserve all structural elements (headers, footers, tables)
-   - Convert equations to LaTeX
-   - Mark page numbers with special tags
-   - Describe images and diagrams
+The application scans your configured input directory for processable items (PDF files and image folders). It presents an interactive menu where you can select specific items or process all available documents in batch.
 
-4. **Summarization** (Optional): Transcribed text is sent to OpenAI's API again with a summarization prompt that extracts:
-   - Concise bullet points of main ideas
-   - Full bibliographic citations
-   - Page number metadata
-   - Flags for pages without semantic content
+**2. Page Extraction (PDF Only)**
 
-5. **Output Generation**: The pipeline produces:
-   - Plain text file with all transcriptions
-   - DOCX file with formatted summaries (if enabled)
-   - JSON log files with detailed processing metadata
+For PDF inputs, each page is extracted as a high-resolution image using configurable DPI settings (default: 300 DPI). The extraction process applies optimizations including grayscale conversion, transparency handling, and format normalization. For image folder inputs, existing images are processed directly.
 
-## Prerequisites
+**3. Image Preprocessing**
 
-**System Requirements:**
+Images undergo in-memory preprocessing to optimize OCR accuracy:
+- Grayscale conversion to reduce noise and improve text recognition
+- Transparency handling to flatten alpha channels onto white backgrounds
+- Intelligent resizing based on detail level (maintains aspect ratio)
+- JPEG compression optimization for API transmission
+- All processing happens in memory to prevent race conditions and improve performance
 
-- Python 3.10 or higher
-- Operating System: Windows, macOS, or Linux
-- Sufficient disk space for temporary image files (varies by document size)
+**4. Transcription via OpenAI Responses API**
 
-**API Access:**
+Each preprocessed image is sent to OpenAI's Responses API with:
+- A detailed system prompt instructing the model to perform verbatim transcription
+- Structured JSON schema defining the expected output format
+- Configuration for reasoning effort and text verbosity (from model.yaml)
+- Model parameters including max_output_tokens and service tier settings
 
-- OpenAI API key with access to vision-enabled models (gpt-5-mini or compatible)
-- API credits sufficient for your processing volume (see cost estimation below)
+The API returns structured JSON containing:
+- Full verbatim transcription with markdown formatting
+- Preserved structural elements (headers, footers, tables, footnotes)
+- Mathematical equations in LaTeX notation
+- Page numbers marked with special XML-style tags
+- Detailed descriptions of visual elements (images, diagrams, charts)
 
-**Cost Estimation:**
+**5. Summarization (Optional)**
 
-Processing costs depend on your document length and OpenAI pricing. As a rough estimate:
-- Transcription: ~$0.50-2.00 per 100 pages (varies by image complexity and resolution)
-- Summarization: Additional ~$0.20-0.80 per 100 pages
-- Using Flex tier can reduce costs significantly (lower priority, longer processing time)
+When enabled, transcribed text is processed by the OpenAI API again with a summarization prompt that extracts:
+- Concise bullet-point summaries of main ideas
+- Full bibliographic citations in APA format
+- Page number metadata for accurate referencing
+- Flags indicating pages without semantic content
 
-## Installation
+**6. Citation Processing**
 
-**Step 1: Clone or Download the Repository**
+The citation manager processes extracted citations through:
+- Normalization of citation text for duplicate detection
+- Deduplication using text similarity hashing
+- Page range consolidation (merges consecutive and discontinuous page references)
+- OpenAlex API enrichment for DOI, authors, publication year, and venue
+- Hyperlink generation for citations with sufficient metadata
 
-```bash
-git clone https://github.com/yourusername/AutoExcerpter.git
-cd AutoExcerpter
-```
+**7. Output Generation**
 
-**Step 2: Create a Virtual Environment (Recommended)**
+The pipeline produces multiple output files:
+- Plain text file with complete transcriptions including metadata headers
+- Formatted DOCX file with structured summaries and consolidated citations
+- JSON log files with detailed processing metadata, timing, and error information
 
-```bash
-# Windows
-python -m venv .venv
-.venv\Scripts\activate
+**8. Cleanup**
 
-# macOS/Linux
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
-**Step 3: Install Dependencies**
-
-```bash
-pip install -r requirements.txt
-```
-
-The following packages will be installed:
-- `openai>=1.44.0` - OpenAI API client
-- `pillow>=10.3.0` - Image processing
-- `PyMuPDF>=1.24.0` - PDF manipulation
-- `tqdm>=4.66.0` - Progress bars
-- `python-docx>=1.1.0` - DOCX generation
-- `PyYAML>=6.0.1` - Configuration parsing
-
-**Step 4: Set Up Your OpenAI API Key**
-
-The application requires your OpenAI API key as an environment variable.
-
-**Windows (PowerShell):**
-```powershell
-$env:OPENAI_API_KEY = "sk-your-api-key-here"
-```
-
-**macOS/Linux (Bash/Zsh):**
-```bash
-export OPENAI_API_KEY="sk-your-api-key-here"
-```
-
-For persistent configuration, add the export command to your shell profile file (`.bashrc`, `.zshrc`, or PowerShell profile).
+If configured, the system automatically deletes temporary working directories including extracted images and intermediate processing files, keeping only the final outputs.
 
 ## Configuration
 
-AutoExcerpter uses YAML-based configuration files located in `modules/config/`. The system validates all configuration values and provides sensible defaults for missing or invalid entries.
+AutoExcerpter uses a multi-file YAML configuration system that provides fine-grained control over every aspect of processing. All configuration files are located in `modules/config/`.
 
-**Quick Configuration:**
+### Basic Configuration
 
-Edit `modules/config/app.yaml` to customize basic settings:
+**File**: `modules/config/app.yaml`
+
+This is the primary configuration file for application-level settings.
 
 ```yaml
-# Feature toggle
-summarize: true  # Set to false for transcription only
+# Feature Toggle
+summarize: true  # Enable/disable summarization; false = transcription only
 
-# Input/Output Paths
+# Folder Paths
 input_folder_path: 'C:\Users\yourname\Documents\PDFs'
 output_folder_path: 'C:\Users\yourname\Documents\Output'
 
+# Cleanup Settings
+delete_temp_working_dir: true  # Delete temporary files after processing
+
 # Performance Settings
-concurrent_requests: 4  # Number of parallel API requests
-api_timeout: 320  # Timeout per API request (seconds)
+concurrent_requests: 250  # Maximum concurrent API requests
+api_timeout: 600  # Timeout per API request in seconds
+
+# Citation Management
+citation:
+  openalex_email: 'your-email@example.com'  # Email for OpenAlex API polite pool
+  max_api_requests: 50  # Maximum metadata enrichment calls per document
 
 # OpenAI Configuration
 openai:
   model: 'gpt-5-mini'  # Model for summarization
   transcription_model: 'gpt-5-mini'  # Model for transcription
-  use_flex: true  # Use Flex tier for cost savings
+  api_timeout: 900  # Extended timeout for Flex processing (seconds)
+  use_flex: true  # Enable Flex tier for cost savings
+  
+  # Rate Limiting (adjust based on your OpenAI tier)
+  rate_limits:
+    - [120, 1]      # Max 120 requests per second
+    - [15000, 60]   # Max 15,000 requests per minute
+    - [15000, 3600] # Max 15,000 requests per hour
 ```
 
-**Configuration Files:**
+**Key Settings Explained:**
 
-- **`app.yaml`**: Main application settings (I/O paths, API configuration, feature toggles)
-- **`concurrency.yaml`**: Concurrency limits and service tier selection
-- **`image_processing.yaml`**: Image preprocessing settings (DPI, JPEG quality, detail level)
+- **summarize**: Set to `false` if you only need transcription without summaries (faster and cheaper)
+- **concurrent_requests**: Higher values increase speed but may hit rate limits; adjust based on your OpenAI tier
+- **use_flex**: Flex tier offers 50% cost savings with slightly longer processing times (recommended for batch jobs)
+- **rate_limits**: Must match your OpenAI account tier limits; check your account dashboard for specific limits
 
-For detailed configuration options, see the [Advanced Configuration](#advanced-configuration) section below.
+### Model Configuration
+
+**File**: `modules/config/model.yaml`
+
+This file controls advanced model-specific parameters for GPT-5 and o-series models. These settings allow fine-tuning of model behavior for optimal transcription and summarization quality.
+
+```yaml
+# Transcription Model Configuration
+transcription_model:
+  name: "gpt-5-mini"  # Model identifier
+  max_output_tokens: 28000  # Maximum tokens for model output
+  reasoning:
+    effort: medium  # Options: minimal, low, medium, high
+  text:
+    verbosity: medium  # Options: low, medium, high
+
+# Summary Model Configuration
+summary_model:
+  name: "gpt-5-mini"  # Model identifier
+  max_output_tokens: 12000  # Maximum tokens for model output
+  reasoning:
+    effort: medium  # Options: minimal, low, medium, high
+  text:
+    verbosity: low  # Options: low, medium, high (low for concise summaries)
+```
+
+**Parameter Details:**
+
+- **max_output_tokens**: Controls the maximum length of model responses; increase for longer documents
+- **reasoning.effort**: Higher effort improves accuracy but increases processing time and cost
+  - `minimal`: Fastest, lowest cost, basic reasoning
+  - `low`: Balanced for simple documents
+  - `medium`: Good balance for most documents (recommended)
+  - `high`: Maximum accuracy for complex technical content
+- **text.verbosity**: Controls output detail level
+  - `low`: More concise, fewer details (good for summaries)
+  - `medium`: Balanced detail level (good for transcriptions)
+  - `high`: Maximum detail, comprehensive output
+
+**Usage Recommendations:**
+
+- For **technical papers** with equations: Use `medium` or `high` reasoning effort
+- For **general documents**: Use `medium` reasoning effort and verbosity
+- For **summaries**: Use `low` verbosity to keep them concise
+- For **transcriptions**: Use `medium` verbosity to capture all content
+
+### Concurrency Configuration
+
+**File**: `modules/config/concurrency.yaml`
+
+Controls parallel processing behavior for both local operations and API requests.
+
+```yaml
+# Local Image Processing (CPU/Disk bound)
+image_processing:
+  concurrency_limit: 24  # Concurrent image extraction/processing tasks
+  delay_between_tasks: 0  # No delay needed for local operations
+
+# API Request Concurrency
+api_requests:
+  transcription:
+    concurrency_limit: 150  # Concurrent API requests for transcription
+    delay_between_tasks: 0.05  # Small delay to prevent bursts
+    service_tier: flex  # Options: auto, default, flex, priority
+    batch_chunk_size: 50  # Requests per batch (future Batch API support)
+  
+  summary:
+    concurrency_limit: 150  # Concurrent API requests for summarization
+    delay_between_tasks: 0.05
+    service_tier: flex
+    batch_chunk_size: 50
+
+# Retry Configuration
+retry:
+  max_attempts: 5  # Maximum retry attempts per failed request
+  backoff_base: 1.0  # Base backoff time in seconds
+  backoff_multipliers:
+    rate_limit: 2.0  # Multiplier for 429 rate limit errors
+    timeout: 1.5  # Multiplier for timeout errors
+    server_error: 2.0  # Multiplier for 500-series errors
+    other: 2.0  # Multiplier for other retryable errors
+  jitter:
+    min: 0.5  # Minimum random jitter (seconds)
+    max: 1.0  # Maximum random jitter (seconds)
+  retry_rate_limits:
+    - [1, 2]       # Max 1 retry per 2 seconds
+    - [60, 60]     # Max 60 retries per minute
+    - [3000, 3600] # Max 3000 retries per hour
+```
+
+**Service Tier Options:**
+
+- **`auto`**: Let OpenAI choose the best tier automatically
+- **`default`**: Standard processing speed and cost
+- **`flex`**: Lower cost, longer processing time (recommended for batch processing)
+- **`priority`**: Faster processing, higher cost (for time-sensitive work)
+
+**Tuning Guidelines:**
+
+- **Lower OpenAI Tiers (1-2)**: Set `concurrency_limit: 10-30`
+- **Mid-Tier (3-4)**: Set `concurrency_limit: 50-100`
+- **High Tier (4-5)**: Set `concurrency_limit: 100-200`
+- **Image Processing**: 8-24 for HDD, 24-48 for SSD systems
+
+### Image Processing Configuration
+
+**File**: `modules/config/image_processing.yaml`
+
+Controls image preprocessing and optimization for API submission.
+
+```yaml
+api_image_processing:
+  target_dpi: 300  # DPI for PDF page extraction
+  grayscale_conversion: true  # Convert to grayscale to reduce noise
+  handle_transparency: true  # Flatten alpha channels onto white
+  llm_detail: high  # Options: low, high, auto
+  jpeg_quality: 100  # JPEG compression quality (1-100)
+  resize_profile: high  # Options: auto, none, low, high
+  
+  # Resize Parameters
+  low_max_side_px: 512  # Max dimension for low detail
+  high_target_box: [768, 1536]  # Target dimensions for high detail
+```
+
+**Parameter Effects:**
+
+- **target_dpi**: Higher DPI improves OCR accuracy but increases file size and processing time
+  - 200-250: Basic documents, low quality scans
+  - 300: Standard (recommended for most documents)
+  - 400-600: High quality, small text, or complex layouts
+- **llm_detail**: Controls OpenAI's processing fidelity
+  - `low`: Faster, cheaper, suitable for clean text
+  - `high`: Better accuracy for complex layouts (recommended)
+  - `auto`: Let the model decide based on image characteristics
+- **jpeg_quality**: Higher quality preserves text clarity
+  - 85-95: Good balance of quality and file size
+  - 95-100: Maximum quality for difficult documents
+
+### Citation Management
+
+**File**: `modules/config/app.yaml` (citation section)
+
+Configure the enhanced citation system with OpenAlex integration.
+
+```yaml
+citation:
+  openalex_email: 'your-email@example.com'  # Email for OpenAlex API polite pool
+  max_api_requests: 50  # Maximum metadata enrichment calls per document
+```
+
+**Citation Features:**
+
+The citation manager automatically:
+1. **Deduplicates** identical citations using normalized text comparison
+2. **Tracks pages** where each citation appears and displays as ranges (e.g., "pp. 3, 7-9, 15")
+3. **Enriches metadata** via OpenAlex API: DOI, authors, publication year, venue
+4. **Adds hyperlinks** to citations with DOIs for direct access to extended metadata
+5. **Consolidates** all citations in a dedicated bibliography section
+6. **Smart Matching**: Uses both text similarity and DOI extraction for accurate citation identification
+
+**Best Practices:**
+
+- Replace `your-email@example.com` with your real email for faster OpenAlex response times (polite pool)
+- Set `max_api_requests` based on expected citation count (50 handles most papers)
+- OpenAlex API is free and requires no API key
+- Citation matching uses both text similarity and DOI extraction for accuracy
 
 ## Usage
 
-**Basic Usage:**
+### Basic Usage
 
-Run the application from the command line:
+Run AutoExcerpter from the command line:
 
 ```bash
 python main.py
 ```
 
-The application will:
-1. Scan the default input folder (configured in `app.yaml`)
-2. Display an interactive menu of available PDFs and image folders
-3. Prompt you to select which items to process
-4. Process selected items with progress tracking
-5. Save outputs to the configured output folder
+The application will scan the configured input directory and present an interactive menu.
 
-**Custom Input Path:**
+### Command-Line Options
 
-Process a specific file or directory:
+**Process Specific File or Directory:**
 
 ```bash
-# Process a single PDF
+# Process a single PDF file
 python main.py --input "C:\Users\yourname\Documents\paper.pdf"
 
-# Process a specific folder
-python main.py --input "C:\Users\yourname\Documents\ScannedImages"
+# Process a specific folder of images
+python main.py --input "C:\Users\yourname\Documents\ScannedBook"
+
+# Process all items in a directory
+python main.py --input "C:\Users\yourname\Documents\Research"
 ```
 
-**Interactive Selection Examples:**
+### Interactive Selection
 
-When prompted, you can select items using various formats:
+When prompted, use flexible selection syntax:
 
 ```
 Enter your choice(s) (e.g., 1; 3-5; all): 
 
-# Process item 1 only
+# Single item
 1
 
-# Process items 3, 4, and 5
+# Range of items
 3-5
 
-# Process items 1 and 5
-1; 5
+# Multiple individual items
+1; 5; 8
 
-# Process items 2, 3, and 7 through 10
-2; 3; 7-10
+# Combined ranges and items
+2; 4-7; 10
 
 # Process all items
 all
 ```
 
+### Processing Modes
+
 **Transcription-Only Mode:**
 
-To skip summarization and only transcribe documents:
+For faster processing without summaries, set `summarize: false` in `modules/config/app.yaml`:
 
-1. Set `summarize: false` in `modules/config/app.yaml`
-2. Run the application as normal
+```yaml
+summarize: false
+```
 
-This mode is faster and less expensive, ideal for creating searchable text archives.
+This mode is ideal for:
+- Creating searchable text archives
+- Quick digitization projects
+- Cost-sensitive workflows
+- Building document databases for later analysis
+
+**Transcription + Summarization Mode:**
+
+Enable full processing with `summarize: true`:
+
+```yaml
+summarize: true
+```
+
+This mode provides:
+- Complete transcriptions
+- Structured summaries
+- Extracted and enriched citations
+- Professional DOCX output
+
+### Batch Processing
+
+Process multiple documents in sequence:
+
+1. Place all PDFs and image folders in your input directory
+2. Run `python main.py`
+3. Select "all" when prompted
+4. The system processes each item sequentially with progress tracking
+
+The application automatically skips items that have already been processed (output files exist).
 
 ## Output Files
 
-AutoExcerpter generates several output files for each processed item:
+AutoExcerpter generates organized outputs for each processed document.
 
-**Main Outputs:**
+### Main Output Files
 
-1. **`<name>.txt`**: Plain text transcription
-   - Contains verbatim transcription of all pages
-   - Includes markdown formatting (headings, bold, italic)
-   - Mathematical equations in LaTeX format
-   - Page numbers marked with `<page_number>X</page_number>` tags
-   - Footnotes formatted as `[^1]: Reference text`
-   - Processing metadata header (total time, page count, source file)
+Located in the configured output directory:
 
-2. **`<name>_summary.docx`**: Formatted summary document (if summarization enabled)
-   - Structured by page with clear headings
-   - Bullet points of main ideas and findings
-   - Bibliographic citations in APA format
-   - Excludes pages without semantic content (reference lists, title pages)
-   - Professional formatting suitable for documentation
+**1. `<document_name>.txt` - Complete Transcription**
 
-**Working Files:**
+Plain text file containing:
+- Metadata header with processing information (source file, total time, page count, model used)
+- Full verbatim transcription with markdown formatting
+- Mathematical equations in LaTeX notation (e.g., `$E = mc^2$`)
+- Page numbers marked with XML-style tags: `<page_number>15</page_number>`
+- Footnotes in markdown format: `[^1]: Reference text here`
+- Preserved tables, headers, footers, and multi-column layouts
+- Descriptions of visual elements (images, diagrams, charts)
 
-Located in `<name>_working_files/` subdirectory (deleted after processing if `delete_temp_working_dir: true`):
+Example snippet:
+```
+# Metadata
+Source: research_paper.pdf
+Total Processing Time: 00:05:32
+Total Pages: 42
+Model: gpt-5-mini
 
-3. **`images/`**: Temporary folder with extracted page images (for PDFs)
+# Transcription
 
-4. **`<name>_transcription_log.json`**: Detailed transcription log
-   - Metadata: input path, model name, extraction DPI, total pages
-   - Per-page entries with original text, processing time, status
-   - Error messages for failed pages
-   - Useful for debugging and quality assurance
+<page_number>1</page_number>
 
-5. **`<name>_summary_log.json`**: Detailed summarization log (if enabled)
-   - Per-page summary data with timestamps
-   - Error tracking for failed summaries
-   - Page number verification information
+# Quantum Computing Fundamentals
+
+**Abstract**
+
+This paper explores the mathematical foundations of quantum computing...
+
+The Schrödinger equation is represented as: $i\hbar\frac{\partial}{\partial t}\Psi = \hat{H}\Psi$
+```
+
+**2. `<document_name>_summary.docx` - Formatted Summary** (if summarization enabled)
+
+Professional DOCX document containing:
+- Document title and metadata
+- Page-by-page structured summaries with clear headings (e.g., "Page 5 Summary")
+- Bullet-point extraction of main ideas and key findings
+- Automatic exclusion of non-semantic pages (title pages, blank pages, reference lists)
+- Consolidated bibliography section at the end
+- Deduplicated citations with page ranges (e.g., "Smith et al. (2023) - pp. 3, 7-9, 15")
+- Clickable hyperlinks to citations with DOI information
+- Professional formatting suitable for reports and documentation
+
+### Working Files
+
+Located in `<document_name>_working_files/` subdirectory (automatically deleted if `delete_temp_working_dir: true`):
+
+**3. `images/` - Temporary Images** (PDF processing only)
+
+Directory containing extracted page images:
+- Named sequentially: `page_0001.jpg`, `page_0002.jpg`, etc.
+- Preprocessed format: grayscale JPEG at configured DPI
+- Used for API submission during transcription
+
+**4. `<document_name>_transcription_log.json` - Transcription Log**
+
+Detailed JSON log containing:
+
+```json
+{
+  "metadata": {
+    "input_path": "C:\\Users\\...\\research_paper.pdf",
+    "model": "gpt-5-mini",
+    "extraction_dpi": 300,
+    "total_pages": 42,
+    "start_time": "2025-09-30T18:30:00",
+    "end_time": "2025-09-30T18:35:32",
+    "total_duration_seconds": 332
+  },
+  "pages": [
+    {
+      "page_number": 1,
+      "status": "success",
+      "transcription": "...",
+      "processing_time_seconds": 3.2,
+      "timestamp": "2025-09-30T18:30:03"
+    }
+  ],
+  "errors": []
+}
+```
+
+Useful for:
+- Debugging transcription issues
+- Quality assurance and verification
+- Performance analysis and optimization
+- Audit trails and documentation
+
+**5. `<document_name>_summary_log.json` - Summary Log** (if summarization enabled)
+
+Detailed JSON log for summarization:
+
+```json
+{
+  "metadata": {
+    "transcription_log_path": "..._transcription_log.json",
+    "model": "gpt-5-mini",
+    "total_pages_summarized": 40,
+    "pages_excluded": 2
+  },
+  "summaries": [
+    {
+      "page_number": 5,
+      "summary_text": "...",
+      "citations": ["Smith et al. (2023)"],
+      "has_semantic_content": true,
+      "processing_time_seconds": 2.1
+    }
+  ]
+}
+```
 
 ## Project Structure
 
-The project is organized into clear, modular components:
+AutoExcerpter follows a modular architecture with clear separation of concerns:
 
 ```
 AutoExcerpter/
-├── api/                          # OpenAI API clients
-│   ├── base_openai_client.py    # Base class with shared retry logic and error handling
-│   ├── openai_api.py             # Summary generation client
-│   ├── openai_transcribe_api.py # Transcription client
-│   └── rate_limiter.py           # Adaptive rate limiting to stay within API quotas
-├── core/
-│   └── transcriber.py            # Main orchestration logic for the processing pipeline
-├── processors/
-│   ├── pdf_processor.py          # PDF extraction utilities (page-to-image conversion)
-│   └── file_manager.py           # Output file management (TXT, DOCX, JSON logging)
-├── modules/
-│   ├── config/                   # YAML configuration files
-│   │   ├── app.yaml              # Main application settings
-│   │   ├── concurrency.yaml      # Concurrency and service tier settings
-│   │   └── image_processing.yaml # Image preprocessing configuration
-│   ├── prompts/                  # System prompts for OpenAI models
-│   │   ├── transcription_system_prompt.txt
-│   │   └── summary_system_prompt.txt
-│   ├── schemas/                  # JSON schemas for structured outputs
-│   │   ├── transcription_schema.json
-│   │   └── summary_schema.json
-│   ├── app_config.py             # Configuration loader with validation
-│   ├── config_loader.py          # YAML config utilities
-│   ├── image_utils.py            # Image preprocessing and format handling
-│   ├── prompt_utils.py           # Prompt rendering utilities
-│   └── logger.py                 # Logging configuration
-├── tests/
-│   └── test_prompt_utils.py     # Unit tests
-├── main.py                       # Entry point and CLI interface
-├── requirements.txt              # Python dependencies
-└── README.md                     # This file
+├── api/                                # OpenAI API Integration Layer
+│   ├── __init__.py                     # Package initialization
+│   ├── base_openai_client.py          # Base class with shared retry/error handling logic
+│   ├── openai_api.py                   # Summary generation API client
+│   ├── openai_transcribe_api.py       # Transcription API client with vision support and model.yaml parameter loading
+│   └── rate_limiter.py                 # Sliding window rate limiter for API quotas
+│
+├── core/                               # Core Processing Logic
+│   ├── __init__.py                     # Package initialization
+│   └── transcriber.py                  # Main ItemTranscriber orchestration class
+│
+├── processors/                         # File I/O and Processing Utilities
+│   ├── __init__.py                     # Package initialization
+│   ├── citation_manager.py            # Citation deduplication and enrichment
+│   ├── file_manager.py                 # Output file management (TXT, DOCX, JSON)
+│   └── pdf_processor.py                # PDF page extraction and conversion
+│
+├── modules/                            # Configuration and Utilities
+│   ├── config/                         # Configuration Files
+│   │   ├── __init__.py                 # Package initialization
+│   │   ├── app.yaml                    # Main application settings
+│   │   ├── concurrency.yaml            # Concurrency and retry configuration
+│   │   ├── image_processing.yaml       # Image preprocessing parameters
+│   │   └── model.yaml                  # Model-specific parameters (GPT-5, o-series)
+│   │
+│   ├── prompts/                        # System Prompts for AI Models
+│   │   ├── transcription_system_prompt.txt  # Detailed transcription instructions
+│   │   └── summary_system_prompt.txt        # Summarization and citation extraction
+│   │
+│   ├── schemas/                        # JSON Schemas for Structured Outputs
+│   │   ├── transcription_schema.json   # Schema for transcription API responses
+│   │   └── summary_schema.json         # Schema for summarization API responses
+│   │
+│   ├── __init__.py                     # Package initialization
+│   ├── app_config.py                   # Configuration loader with validation
+│   ├── config_loader.py                # YAML parsing utilities
+│   ├── image_utils.py                  # Image preprocessing and format handling
+│   ├── logger.py                       # Logging configuration
+│   └── prompt_utils.py                 # Prompt rendering utilities
+│
+├── tests/                              # Unit Tests
+│   └── test_prompt_utils.py           # Tests for prompt utilities
+│
+├── main.py                             # Entry point and CLI interface
+├── requirements.txt                    # Python dependencies
+└── README.md                           # This file
 ```
 
 **Module Responsibilities:**
 
-- **`api/`**: Encapsulates all OpenAI API interactions with retry logic, rate limiting, and error handling
-- **`core/`**: Contains the main `ItemTranscriber` class that orchestrates the entire processing pipeline
-- **`processors/`**: Handles file I/O operations (PDF extraction, DOCX creation, text writing)
-- **`modules/`**: Provides configuration management, utilities, and resources (prompts, schemas)
-- **`main.py`**: CLI interface with input scanning, user selection, and high-level workflow coordination
+**`api/` - OpenAI API Integration**
+- Encapsulates all OpenAI API interactions with retry logic, rate limiting, and error handling
+- `base_openai_client.py`: Provides shared functionality for API clients including exponential backoff, jitter, and error recovery
+- `openai_api.py`: Handles summarization API calls with the standard OpenAI API
+- `openai_transcribe_api.py`: Manages transcription using the Responses API with vision support and model.yaml parameter loading
+- `rate_limiter.py`: Implements sliding window rate limiting to prevent quota violations
 
-## Advanced Configuration
+**`core/` - Pipeline Orchestration**
+- Contains the main `ItemTranscriber` class that orchestrates the entire processing pipeline
+- Manages workflow from input selection through transcription, summarization, and output generation
+- Handles progress tracking, ETA calculation, and error recovery
+- Coordinates between API clients, file processors, and configuration modules
 
-**Concurrency Settings** (`modules/config/concurrency.yaml`):
+**`processors/` - File Operations**
+- Handles all file I/O operations including reading, writing, and format conversion
+- `citation_manager.py`: Manages citation deduplication, page tracking, and OpenAlex API enrichment
+- `file_manager.py`: Creates output files (TXT transcriptions, DOCX summaries, JSON logs)
+- `pdf_processor.py`: Extracts PDF pages as images with preprocessing (grayscale, transparency, resizing)
 
-```yaml
-concurrency:
-  transcription:
-    concurrency_limit: 150  # Max concurrent transcription requests
-    delay_between_tasks: 0.05  # Delay between starting tasks (seconds)
-    service_tier: flex  # Options: auto, default, flex, priority
-  image_processing:
-    concurrency_limit: 24  # Max concurrent image preprocessing tasks
-```
+**`modules/` - Configuration and Utilities**
+- Provides configuration management, utility functions, and resources
+- `config/`: YAML configuration files for all aspects of the application
+- `prompts/`: System prompts that instruct the AI models on how to process content
+- `schemas/`: JSON schemas that enforce structured output from API responses
+- `app_config.py`: Loads and validates configuration with sensible defaults
+- `image_utils.py`: In-memory image preprocessing to eliminate disk I/O bottlenecks
+- `logger.py`: Centralized logging configuration for debugging and audit trails
+- `prompt_utils.py`: Utilities for loading and formatting prompts
 
-**Service Tiers:**
-- **`auto`**: Let OpenAI choose the best tier automatically
-- **`default`**: Standard processing speed and cost
-- **`flex`**: Lower cost, longer processing time (recommended for large batches)
-- **`priority`**: Faster processing, higher cost (for time-sensitive work)
+**`main.py` - Application Entry Point**
+- CLI interface with input scanning and user selection
+- High-level workflow coordination
+- Error handling and cleanup logic
+- Manages temporary working directories
 
-**Image Processing Settings** (`modules/config/image_processing.yaml`):
+## Advanced Topics
 
-```yaml
-api_image_processing:
-  target_dpi: 300  # PDF rasterization DPI (higher = better quality, larger files)
-  jpeg_quality: 95  # JPEG compression quality (1-100)
-  llm_detail: auto  # Options: low, high, auto
-```
+### Performance Optimization
 
-**LLM Detail Levels:**
-- **`low`**: Faster processing, lower cost, reduced accuracy
-- **`high`**: Slower processing, higher cost, improved accuracy
-- **`auto`**: Automatically choose based on image characteristics
+**Maximizing Throughput:**
 
-**Rate Limiting** (`modules/config/app.yaml`):
+To achieve optimal processing speed:
+1. Set `concurrent_requests` based on your OpenAI tier (50-200 for Tier 4+)
+2. Use `service_tier: flex` for batch processing (slower but 50% cheaper)
+3. Increase `image_processing.concurrency_limit` to 24-48 on SSD systems
+4. Use `llm_detail: auto` or `low` for straightforward documents
+5. Set appropriate `target_dpi` (300 is usually optimal)
 
-The rate limiter uses a sliding window approach to prevent API quota violations:
+**Memory Management:**
 
-```yaml
-openai:
-  rate_limits:
-    - [120, 1]      # Max 120 requests per 1 second
-    - [15000, 60]   # Max 15,000 requests per minute
-    - [15000, 3600] # Max 15,000 requests per hour
-```
+For large batch processing:
+- Enable `delete_temp_working_dir: true` to clean up temporary files
+- Process documents in batches rather than all at once
+- Reduce `concurrent_requests` if experiencing memory pressure
+- Monitor system resources during processing
 
-Adjust these values based on your OpenAI tier limits.
+### Cost Management
 
-**Citation Management** (`modules/config/app.yaml`):
+**Reducing Processing Costs:**
 
-The enhanced citation management system automatically consolidates citations across your document:
+1. **Use Flex Tier**: Set `service_tier: flex` for 40-50% cost savings
+2. **Lower Image Quality**: Reduce `target_dpi` to 200-250 for clean documents
+3. **Transcription-Only Mode**: Set `summarize: false` if summaries aren't needed
+4. **Optimize Detail Level**: Use `llm_detail: low` for straightforward text
+5. **Batch Processing**: Process multiple documents in one session to amortize startup costs
 
-```yaml
-citation:
-  openalex_email: 'your-email@example.com'  # Your email for OpenAlex API polite pool
-  max_api_requests: 50  # Maximum API calls for metadata enrichment per document
-```
+**Cost Tracking:**
 
-**Citation Features:**
+Monitor your OpenAI API usage at https://platform.openai.com/usage to understand:
+- Cost per page for different document types
+- Impact of various configuration settings
+- Optimal settings for your use cases
 
-- **Automatic Deduplication**: Identical citations appearing on multiple pages are automatically merged into a single entry
-- **Page Tracking**: Each citation includes a list of all pages where it appears (e.g., "pp. 5, 12-15, 23")
-- **Metadata Enrichment**: Citations are enriched with metadata from the OpenAlex API, including:
-  - DOI (Digital Object Identifier)
-  - Publication year
-  - Authors
-  - Venue/journal information
-- **Clickable Hyperlinks**: Citations with sufficient metadata include hyperlinks to access extended information
-- **Polite Pool Access**: Providing your email in the configuration grants faster OpenAlex API response times
+### Best Practices
 
-**Best Practices:**
+**Document Preparation:**
 
-- Replace `'your-email@example.com'` with your actual email address for optimal API performance
-- Set `max_api_requests` based on your needs (higher values = more enriched citations but longer processing time)
-- The OpenAlex API is free and requires no API key, just an email for rate limit pool prioritization
-- Citations are matched using normalized text comparison and DOI extraction when available
+- Ensure scanned documents are clear and high-contrast
+- Remove unnecessary blank pages before processing
+- Verify PDFs are not already text-based (use native PDF text extraction if possible)
+- Organize documents in logical folders for batch processing
+
+**Configuration Management:**
+
+- Start with default settings and adjust based on results
+- Test with a small document before processing large batches
+- Keep separate configuration files for different document types
+- Document your configuration choices for reproducibility
+
+**Quality Assurance:**
+
+- Review transcription logs for errors and failed pages
+- Spot-check transcriptions against source documents
+- Verify citations are correctly extracted and deduplicated
+- Check page number alignment in summaries
+
+**Security and Privacy:**
+
+- Never commit your OpenAI API key to version control
+- Be mindful of sensitive information in documents
+- Review OpenAI's data usage policies for your organization
+- Consider using environment variables or secret management tools
+- Keep temporary working directories secure during processing
 
 ## Troubleshooting
 
