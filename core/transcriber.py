@@ -362,21 +362,25 @@ class ItemTranscriber:
 		anchor_original_index = 0
 
 		if summaries_with_model_pages:
-			# Sort by model page number to find the longest consistent sequence
-			summaries_with_model_pages.sort(key=lambda x: x["model_page_number_int"])
+			# Sort by original document order (not page number) to find consecutive sequences
+			summaries_with_model_pages.sort(key=lambda x: x["original_input_order_index"])
 			
-			# Debug the detected page numbers
+			# Debug the detected page numbers in document order
 			detected_page_nums = [s["model_page_number_int"] for s in summaries_with_model_pages]
-			logger.info(f"Model-detected page numbers: {detected_page_nums}")
+			detected_positions = [s["original_input_order_index"] for s in summaries_with_model_pages]
+			logger.info(f"Model-detected page numbers (in document order): {detected_page_nums}")
+			logger.info(f"At document positions: {detected_positions}")
 			
 			longest_sequence = []
 			current_sequence = []
 			
 			for i, item in enumerate(summaries_with_model_pages):
-				# Start a new sequence or add to current if consecutive
+				# Start a new sequence or add to current if consecutive in BOTH page number AND document position
 				if not current_sequence:
 					current_sequence = [item]
-				elif item["model_page_number_int"] == current_sequence[-1]["model_page_number_int"] + 1:
+				elif (item["model_page_number_int"] == current_sequence[-1]["model_page_number_int"] + 1 
+				      and item["original_input_order_index"] == current_sequence[-1]["original_input_order_index"] + 1):
+					# Both page number and document position are consecutive
 					current_sequence.append(item)
 				else:
 					# End of sequence, check if it's longer than our longest
@@ -397,8 +401,8 @@ class ItemTranscriber:
 				# Debug the found sequence
 				sequence_page_nums = [s["model_page_number_int"] for s in longest_sequence]
 				sequence_indexes = [s["original_input_order_index"] for s in longest_sequence]
-				logger.info(f"Longest consecutive sequence: {sequence_page_nums}")
-				logger.info(f"Corresponding image indexes: {sequence_indexes}")
+				logger.info(f"Longest consecutive sequence (page numbers): {sequence_page_nums}")
+				logger.info(f"At document positions: {sequence_indexes}")
 				logger.info(f"Using anchor: model page {anchor_model_page} at image index {anchor_original_index}")
 			elif summaries_with_model_pages:  # Fallback to the first page with a number if no sequence > 1
 				anchor_item = summaries_with_model_pages[0]
