@@ -31,17 +31,13 @@ __all__ = [
 TITLE_HEADING_LEVEL = 0
 PAGE_HEADING_LEVEL = 1
 REFERENCES_HEADING_LEVEL = 2
-NORMAL_SPACE_BEFORE_PT = 0
-NORMAL_SPACE_AFTER_PT = 4
-HEADING1_SPACE_BEFORE_PT = 12
-HEADING_OTHER_SPACE_BEFORE_PT = 8
-HEADING_SPACE_AFTER_PT = 4
-TITLE_SPACE_AFTER_PT = 8
-METADATA_SPACE_AFTER_PT = 8
-BULLET_INDENT_PT = 12
-REF_INDENT_PT = 12
-BULLET_SPACE_BEFORE_PT = 0
+TITLE_SPACE_AFTER_PT = 6
+PAGE_HEADING_SPACE_BEFORE_PT = 6
+PAGE_HEADING_SPACE_AFTER_PT = 3
+REF_HEADING_SPACE_BEFORE_PT = 4
 BULLET_SPACE_AFTER_PT = 2
+REF_INDENT_PT = 18
+BULLET_INDENT_PT = 18
 
 # Constants for error markers
 ERROR_MARKERS = ["[empty page", "no transcription possible", "empty page", "error"]
@@ -167,70 +163,63 @@ def create_docx_summary(
 
     document = Document()
 
+    # Configure default Normal style for compact spacing
     normal_style = document.styles["Normal"]
-    normal_style.paragraph_format.space_before = Pt(NORMAL_SPACE_BEFORE_PT)
-    normal_style.paragraph_format.space_after = Pt(NORMAL_SPACE_AFTER_PT)
+    normal_style.paragraph_format.space_before = Pt(0)
+    normal_style.paragraph_format.space_after = Pt(BULLET_SPACE_AFTER_PT)
 
-    for level in range(1, 4):
-        heading_style = document.styles[f"Heading {level}"]
-        heading_style.paragraph_format.space_before = Pt(
-            HEADING1_SPACE_BEFORE_PT if level == 1 else HEADING_OTHER_SPACE_BEFORE_PT
-        )
-        heading_style.paragraph_format.space_after = Pt(HEADING_SPACE_AFTER_PT)
-
+    # Title section
     title = document.add_heading(f"Summary of {sanitize_for_xml(document_name)}", TITLE_HEADING_LEVEL)
     title.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
     title.paragraph_format.space_after = Pt(TITLE_SPACE_AFTER_PT)
 
+    # Metadata line
     metadata = "Processed: %s | Pages: %s" % (
         datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         len(filtered_results),
     )
     meta_paragraph = document.add_paragraph(metadata)
-    meta_paragraph.paragraph_format.space_after = Pt(METADATA_SPACE_AFTER_PT)
+    meta_paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+    meta_paragraph.paragraph_format.space_after = Pt(TITLE_SPACE_AFTER_PT)
 
-    for index, result in enumerate(filtered_results):
+    # Process each page
+    for result in filtered_results:
         summary_payload = _extract_summary_payload(result)
         page_info = _page_number_and_flags(summary_payload)
         page_number = page_info["page_number_integer"]
         bullet_points = summary_payload.get("bullet_points", [])
         references = summary_payload.get("references", [])
 
+        # Page heading
         page_heading = document.add_heading(f"Page {page_number}", PAGE_HEADING_LEVEL)
-        page_heading.paragraph_format.space_before = Pt(HEADING_OTHER_SPACE_BEFORE_PT if index == 0 else HEADING_OTHER_SPACE_BEFORE_PT)
-        page_heading.paragraph_format.space_after = Pt(HEADING_SPACE_AFTER_PT)
+        page_heading.paragraph_format.space_before = Pt(PAGE_HEADING_SPACE_BEFORE_PT)
+        page_heading.paragraph_format.space_after = Pt(PAGE_HEADING_SPACE_AFTER_PT)
 
+        # Bullet points
         if bullet_points:
             for point in bullet_points:
                 paragraph = document.add_paragraph()
-                paragraph.paragraph_format.space_before = Pt(BULLET_SPACE_BEFORE_PT)
+                paragraph.paragraph_format.space_before = Pt(0)
                 paragraph.paragraph_format.space_after = Pt(BULLET_SPACE_AFTER_PT)
                 paragraph.paragraph_format.left_indent = Pt(BULLET_INDENT_PT)
                 bullet_run = paragraph.add_run("• ")
                 bullet_run.bold = True
                 paragraph.add_run(sanitize_for_xml(point))
         else:
-            no_points_paragraph = document.add_paragraph(
-                "No bullet points available for this page."
-            )
-            no_points_paragraph.paragraph_format.space_after = Pt(NORMAL_SPACE_AFTER_PT)
+            no_points = document.add_paragraph("No bullet points available for this page.")
+            no_points.paragraph_format.left_indent = Pt(BULLET_INDENT_PT)
 
+        # References section (if any)
         if references:
             ref_heading = document.add_heading("References", REFERENCES_HEADING_LEVEL)
-            ref_heading.paragraph_format.space_before = Pt(HEADING_OTHER_SPACE_BEFORE_PT)
-            ref_heading.paragraph_format.space_after = Pt(HEADING_SPACE_AFTER_PT)
+            ref_heading.paragraph_format.space_before = Pt(REF_HEADING_SPACE_BEFORE_PT)
+            ref_heading.paragraph_format.space_after = Pt(PAGE_HEADING_SPACE_AFTER_PT)
 
             for reference in references:
                 ref_paragraph = document.add_paragraph(sanitize_for_xml(reference))
-                ref_paragraph.paragraph_format.space_before = Pt(BULLET_SPACE_BEFORE_PT)
+                ref_paragraph.paragraph_format.space_before = Pt(0)
                 ref_paragraph.paragraph_format.space_after = Pt(BULLET_SPACE_AFTER_PT)
                 ref_paragraph.paragraph_format.left_indent = Pt(REF_INDENT_PT)
-
-        if index < len(filtered_results) - 1:
-            separator = document.add_paragraph()
-            separator.paragraph_format.space_before = Pt(HEADING_OTHER_SPACE_BEFORE_PT)
-            separator.paragraph_format.space_after = Pt(HEADING_OTHER_SPACE_BEFORE_PT)
-            separator.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
 
     document.save(output_path)
     logger.info("Compact summary DOCX file saved: %s", output_path)
