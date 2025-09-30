@@ -1,33 +1,35 @@
+"""OpenAI transcription API client using Responses API with structured outputs."""
+
+from __future__ import annotations
+
+import base64
 import json
-import random
+import re
 import time
-from collections import deque
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from openai import OpenAI
-import base64
-
 from modules import app_config as config
+from api.base_openai_client import OpenAIClientBase, DEFAULT_MAX_RETRIES
 from api.rate_limiter import RateLimiter
 from modules.prompt_utils import render_prompt_with_schema
-from modules.image_utils import ImageProcessor as ModImageProcessor
+from modules.image_utils import ImageProcessor
 from modules.config_loader import ConfigLoader, PROMPTS_DIR, SCHEMAS_DIR
 from modules.logger import setup_logger
 
-
 logger = setup_logger(__name__)
 
+# Constants
+TRANSCRIPTION_SCHEMA_FILE = "markdown_transcription_schema.json"
+SYSTEM_PROMPT_FILE = "system_prompt.txt"
+DEFAULT_SYSTEM_PROMPT = "You are an expert OCR system. Return only the transcription."
+MAX_OUTPUT_TOKENS = 8192
+REASONING_EFFORT = "medium"
 
-class OpenAITranscriptionManager:
-    """Transcribes images using OpenAI Responses API with gpt-5-mini.
 
-    Uses a JSON schema (from `modules/schemas/markdown_transcription_schema.json`) and a
-    system prompt (from `modules/prompts/system_prompt.txt`) to enforce structured output.
-    Returns a dict compatible with the previous workflow: includes keys
-    'page', 'image', 'transcription', optional 'processing_time', 'error', etc.
-    """
+class OpenAITranscriptionManager(OpenAIClientBase):
+    """Transcribes images using OpenAI Responses API with structured outputs."""
 
     def __init__(
         self,
@@ -36,54 +38,75 @@ class OpenAITranscriptionManager:
         rate_limiter: Optional[RateLimiter] = None,
         timeout: int = config.OPENAI_API_TIMEOUT,
     ) -> None:
-        self.api_key = api_key
-        self.model_name = model_name
-        self.timeout = timeout
-        self.client = OpenAI(api_key=api_key, timeout=timeout)
+        """
+        Initialize the transcription manager.
 
-        self.rate_limiter = rate_limiter or RateLimiter(config.OPENAI_RATE_LIMITS)
-        self.successful_requests = 0
-        self.failed_requests = 0
-        self.processing_times = deque(maxlen=50)
+        Args:
+            api_key: OpenAI API key
+            model_name: Model to use (e.g., 'gpt-5-mini')
+            rate_limiter: Optional RateLimiter instance
+            timeout: Request timeout in seconds
+        """
+        super().__init__(api_key, model_name, timeout, rate_limiter)
 
-        # Load schema and system prompt from modules/
+        # Load schema and system prompt
         self.transcription_schema: Optional[Dict[str, Any]] = None
-        self.system_prompt: str = "You are an expert OCR system. Return only the transcription."
+        self.system_prompt: str = DEFAULT_SYSTEM_PROMPT
+
+        self._load_schema_and_prompt()
+        self._determine_service_tier()
+
+    def _load_schema_and_prompt(self) -> None:
+        """Load transcription schema and system prompt from configuration files."""
         try:
-            schema_path = (SCHEMAS_DIR / "markdown_transcription_schema.json").resolve()
+            schema_path = (SCHEMAS_DIR / TRANSCRIPTION_SCHEMA_FILE).resolve()
             if schema_path.exists():
                 with open(schema_path, "r", encoding="utf-8") as f:
                     self.transcription_schema = json.load(f)
-            prompt_path = (PROMPTS_DIR / "system_prompt.txt").resolve()
+
+            prompt_path = (PROMPTS_DIR / SYSTEM_PROMPT_FILE).resolve()
             if prompt_path.exists():
                 with open(prompt_path, "r", encoding="utf-8") as f:
                     raw_prompt = f.read()
-                # Render prompt with schema injection using prompt_utils
+
+                # Render prompt with schema injection
                 if self.transcription_schema is not None:
                     bare_schema = self.transcription_schema.get("schema", self.transcription_schema)
                     self.system_prompt = render_prompt_with_schema(raw_prompt, bare_schema)
                 else:
                     self.system_prompt = raw_prompt
-        except Exception:
-            # Fallback silently; defaults are already set
-            pass
+        except Exception as e:
+            logger.warning(f"Error loading schema/prompt: {e}. Using defaults.")
 
-        # Determine service tier preference from concurrency config, fallback to config flag
+    def _determine_service_tier(self) -> None:
+        """Determine service tier from configuration."""
         try:
-            cc = ConfigLoader()
-            cc.load_configs()
-            st = (
-                (cc.get_concurrency_config().get("concurrency", {}) or {})
+            config_loader = ConfigLoader()
+            config_loader.load_configs()
+            service_tier = (
+                config_loader.get_concurrency_config()
+                .get("concurrency", {})
                 .get("transcription", {})
                 .get("service_tier")
             )
+            self.service_tier = service_tier if service_tier else (
+                "flex" if config.OPENAI_USE_FLEX else "auto"
+            )
         except Exception:
-            st = None
-        self.service_tier = st if st else ("flex" if config.OPENAI_USE_FLEX else "auto")
+            self.service_tier = "flex" if config.OPENAI_USE_FLEX else "auto"
 
-    def _get_sequence_number(self, image_path: Path) -> int:
+    def _extract_sequence_number(self, image_path: Path) -> int:
+        """
+        Extract page/sequence number from image filename.
+
+        Args:
+            image_path: Path to the image file
+
+        Returns:
+            Extracted sequence number, or 0 if not found
+        """
         try:
-            # typical pattern: page_0001 -> 1
+            # Pattern: page_0001 -> 1
             stem = image_path.stem
             parts = stem.split("_")
             last = parts[-1]
@@ -91,23 +114,31 @@ class OpenAITranscriptionManager:
                 return int(last)
         except Exception:
             pass
-        # Fallback: try to extract last number anywhere in the stem
+
+        # Fallback: extract last number from filename
         try:
-            import re
             nums = [int(s) for s in re.findall(r"\d+", image_path.stem)]
             return nums[-1] if nums else 0
         except Exception:
             return 0
 
     def _build_text_format(self) -> Optional[Dict[str, Any]]:
+        """
+        Build the Responses API text.format object for Structured Outputs.
+
+        Returns:
+            Format specification dictionary, or None if schema not available
+        """
         if not isinstance(self.transcription_schema, dict):
             return None
-        # Accept wrapper form { name, strict, schema } or bare schema
+
         name = self.transcription_schema.get("name", "markdown_transcription_schema")
         strict = bool(self.transcription_schema.get("strict", True))
         schema_obj = self.transcription_schema.get("schema", self.transcription_schema)
+
         if not isinstance(schema_obj, dict) or not schema_obj:
             return None
+
         return {
             "type": "json_schema",
             "name": name,
@@ -115,265 +146,210 @@ class OpenAITranscriptionManager:
             "strict": strict,
         }
 
-    @staticmethod
-    def _extract_output_text(data: Any) -> str:
-        # Attempt to normalize Responses API result into a plain string
-        try:
-            # SDK object may expose output_text directly
-            text_attr = getattr(data, "output_text", None)
-            if isinstance(text_attr, str):
-                return text_attr.strip()
-        except Exception:
-            pass
-        # Try dict-style
-        try:
-            if isinstance(data, dict) and isinstance(data.get("output_text"), str):
-                return data["output_text"].strip()
-        except Exception:
-            pass
-        # Fallback: attempt to collect from output list
-        try:
-            obj = data
-            if not isinstance(obj, dict):
-                # try to_dict
-                to_dict = getattr(data, "to_dict", None) or getattr(data, "model_dump", None)
-                if callable(to_dict):
-                    obj = to_dict()
-            output = obj.get("output") if isinstance(obj, dict) else None
-            parts = []
-            if isinstance(output, list):
-                for item in output:
-                    if isinstance(item, dict) and item.get("type") == "message":
-                        for c in item.get("content", []):
-                            t = c.get("text")
-                            if isinstance(t, str):
-                                parts.append(t)
-            return "".join(parts).strip()
-        except Exception:
-            return ""
+    def _parse_transcription_from_text(self, text: str, image_name: str = "") -> str:
+        """
+        Parse transcription from JSON response, handling special flags.
 
-    @staticmethod
-    def _parse_transcription_from_text(text: str, image_name: str = "") -> str:
-        # If JSON is returned, prefer the 'transcription' field with flags
+        Args:
+            text: Raw text response from API
+            image_name: Name of the image being processed
+
+        Returns:
+            Parsed transcription text or error/status message
+        """
         if not text:
             return f"[transcription error: {image_name or '[unknown image]'}]"
+
         stripped = text.lstrip()
-        if stripped.startswith("{"):
-            try:
-                obj = json.loads(stripped)
-            except Exception:
-                # try to salvage the last JSON object in the string
-                last_close = stripped.rfind("}")
-                obj = None
-                if last_close != -1:
-                    i = last_close
-                    while i >= 0:
-                        if stripped[i] == "{":
-                            candidate = stripped[i:last_close + 1]
-                            try:
-                                obj = json.loads(candidate)
-                                break
-                            except Exception:
-                                pass
-                        i -= 1
-            if isinstance(obj, dict):
-                if obj.get("no_transcribable_text", False):
-                    return "[empty page]"
-                if obj.get("transcription_not_possible", False):
-                    return "[no transcription possible]"
-                if "transcription" in obj:
-                    val = obj.get("transcription")
-                    return (val or "").strip() if isinstance(val, str) else ""
+        if not stripped.startswith("{"):
+            return text
+
+        # Try to parse JSON response
+        try:
+            obj = json.loads(stripped)
+        except Exception:
+            # Attempt to salvage JSON from the string
+            last_close = stripped.rfind("}")
+            obj = None
+            if last_close != -1:
+                for i in range(last_close, -1, -1):
+                    if stripped[i] == "{":
+                        candidate = stripped[i:last_close + 1]
+                        try:
+                            obj = json.loads(candidate)
+                            break
+                        except Exception:
+                            pass
+
+        if isinstance(obj, dict):
+            # Check for special flags
+            if obj.get("no_transcribable_text", False):
+                return "[empty page]"
+            if obj.get("transcription_not_possible", False):
+                return "[no transcription possible]"
+            if "transcription" in obj:
+                val = obj.get("transcription")
+                return (val or "").strip() if isinstance(val, str) else ""
+
         return text
+
+    def _preprocess_image(self, image_path: Path) -> Optional[str]:
+        """
+        Preprocess image and encode to base64.
+
+        Args:
+            image_path: Path to the image file
+
+        Returns:
+            Base64-encoded image string, or None on error
+        """
+        try:
+            pre_dir = image_path.parent / "preprocessed_images"
+            pre_dir.mkdir(exist_ok=True)
+            out_base = pre_dir / image_path.stem
+
+            processor = ImageProcessor(image_path)
+            processor.process_image(out_base)
+
+            processed_file_path = out_base.with_suffix('.jpg')
+            if not processed_file_path.exists():
+                raise FileNotFoundError(f"Processed image not found: {processed_file_path}")
+
+            with open(processed_file_path, 'rb') as f:
+                return base64.b64encode(f.read()).decode('utf-8')
+
+        except Exception as e:
+            logger.error(f"Error preprocessing image {image_path.name}: {e}")
+            return None
 
     def transcribe_image(
         self,
         image_path: Path,
-        max_retries: int = 5,
+        max_retries: int = DEFAULT_MAX_RETRIES,
     ) -> Dict[str, Any]:
-        sequence_num = self._get_sequence_number(image_path)
-        retries = 0
+        """
+        Transcribe an image using OpenAI Responses API.
+
+        Args:
+            image_path: Path to the image file
+            max_retries: Maximum number of retry attempts
+
+        Returns:
+            Dictionary containing transcription result and metadata
+        """
+        sequence_num = self._extract_sequence_number(image_path)
         start_time = time.time()
-        backoff_base = 1.0
 
-        processed_file_path: Optional[Path] = None
+        # Preprocess and encode image
+        base64_image = self._preprocess_image(image_path)
+        if base64_image is None:
+            return self._create_error_result(
+                sequence_num, image_path.name, "Image preprocessing failed", "processing", 0
+            )
 
-        try:
+        # Prepare API request
+        input_messages = [
+            {
+                "role": "system",
+                "content": [{"type": "input_text", "text": self.system_prompt}],
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": "Please transcribe the text from this image following the schema.",
+                    },
+                    {
+                        "type": "input_image",
+                        "image_url": f"data:image/jpeg;base64,{base64_image}",
+                    },
+                ],
+            },
+        ]
+
+        text_format = self._build_text_format()
+        retries = 0
+
+        # Retry loop
+        while retries <= max_retries:
             try:
-                # Preprocess to a dedicated folder using modules.image_utils settings
-                pre_dir = image_path.parent / "preprocessed_images"
-                pre_dir.mkdir(exist_ok=True)
-                out_base = pre_dir / image_path.stem
-                proc = ModImageProcessor(image_path)
-                _msg = proc.process_image(out_base)
-                processed_file_path = out_base.with_suffix('.jpg')
-                if not processed_file_path.exists():
-                    raise FileNotFoundError(f"Processed image not found: {processed_file_path}")
-                # Read and encode processed file
-                with open(processed_file_path, 'rb') as f:
-                    base64_image = base64.b64encode(f.read()).decode('utf-8')
-            except Exception as proc_err:
-                logger.error(f"Error processing image {image_path.name}: {proc_err}")
+                self._wait_for_rate_limit()
+
+                payload: Dict[str, Any] = {
+                    "model": self.model_name,
+                    "input": input_messages,
+                    "service_tier": self.service_tier,
+                    "max_output_tokens": MAX_OUTPUT_TOKENS,
+                    "reasoning": {"effort": REASONING_EFFORT},
+                }
+                if text_format is not None:
+                    payload["text"] = {"format": text_format}
+
+                response = self.client.responses.create(**payload)
+
+                # Success - extract and parse response
+                processing_time = time.time() - start_time
+                self.processing_times.append(processing_time)
+                self._report_success()
+
+                out_text = self._extract_output_text(response)
+                transcription_text = self._parse_transcription_from_text(out_text, image_path.name)
+
                 return {
                     "page": sequence_num,
                     "image": image_path.name,
-                    "transcription": f"[ERROR] Image loading/processing: {proc_err}",
+                    "transcription": transcription_text,
                     "timestamp": datetime.now().isoformat(),
-                    "error": str(proc_err),
-                    "error_type": "processing",
-                    "retries": 0,
+                    "processing_time": round(processing_time, 2),
                 }
 
-            if not base64_image:
-                return {
-                    "page": sequence_num,
-                    "image": image_path.name,
-                    "transcription": "[ERROR] Failed to encode image.",
-                    "timestamp": datetime.now().isoformat(),
-                    "error": "Image encoding failed",
-                    "error_type": "encoding",
-                    "retries": 0,
-                }
+            except Exception as e:
+                retries += 1
+                is_retryable, error_type = self._classify_error(str(e))
+                self._report_error(error_type in ["rate_limit", "server", "resource_unavailable"])
 
-            service_tier = self.service_tier
-            text_format = self._build_text_format()
-
-            while retries <= max_retries:
-                try:
-                    _ = self.rate_limiter.wait_for_capacity()
-
-                    input_messages = [
-                        {
-                            "role": "system",
-                            "content": [
-                                {"type": "input_text", "text": self.system_prompt}
-                            ],
-                        },
-                        {
-                            "role": "user",
-                            "content": [
-                                {
-                                    "type": "input_text",
-                                    "text": "Please transcribe the text from this image following the schema.",
-                                },
-                                {
-                                    "type": "input_image",
-                                    "image_url": f"data:image/jpeg;base64,{base64_image}",
-                                },
-                            ],
-                        },
-                    ]
-
-                    payload: Dict[str, Any] = {
-                        "model": self.model_name,
-                        "input": input_messages,
-                        "service_tier": service_tier,
-                        "max_output_tokens": 8192,
-                        "reasoning": {"effort": "medium"},
-                    }
-                    if text_format is not None:
-                        payload["text"] = {"format": text_format}
-
-                    response = self.client.responses.create(**payload)
-
-                    processing_time = time.time() - start_time
-                    self.processing_times.append(processing_time)
-                    self.successful_requests += 1
-                    self.rate_limiter.report_success()
-
-                    out_text = self._extract_output_text(response)
-                    transcription_text = self._parse_transcription_from_text(out_text, image_path.name)
-
-                    return {
-                        "page": sequence_num,
-                        "image": image_path.name,
-                        "transcription": transcription_text,
-                        "timestamp": datetime.now().isoformat(),
-                        "processing_time": round(processing_time, 2),
-                    }
-                except Exception as e:
-                    retries += 1
-                    error_message = str(e).lower()
-                    is_rate_limit = any(err in error_message for err in ["rate limit", "too many", "429"]) or "retry-after" in error_message
-                    is_server_error = any(err in error_message for err in ["server error", "500", "502", "503", "504", "service unavailable"])
-                    is_timeout = any(err in error_message for err in ["timeout", "timed out"]) or "deadline" in error_message
-                    is_network_error = any(err in error_message for err in ["connection", "network", "temporarily unavailable"])
-                    is_retryable = is_rate_limit or is_server_error or is_timeout or is_network_error
-
-                    self.rate_limiter.report_error(is_rate_limit or is_server_error)
-
-                    if not is_retryable or retries > max_retries:
-                        error_type = (
-                            "rate_limit"
-                            if is_rate_limit
-                            else "server"
-                            if is_server_error
-                            else "timeout"
-                            if is_timeout
-                            else "network"
-                            if is_network_error
-                            else "other"
-                        )
-                        self.failed_requests += 1
-                        return {
-                            "page": sequence_num,
-                            "image": image_path.name,
-                            "transcription": f"[ERROR] API failure after {retries - 1} retries: {e}",
-                            "timestamp": datetime.now().isoformat(),
-                            "error": str(e),
-                            "error_type": error_type,
-                            "retries": retries - 1,
-                        }
-
-                    # backoff with jitter
-                    if is_rate_limit:
-                        wait_time = backoff_base * (2 ** retries) * (0.8 + 0.4 * random.random())
-                        msg_prefix = "Rate limit"
-                    elif is_timeout:
-                        wait_time = backoff_base * (1.5 ** retries) * (0.5 + 0.5 * random.random())
-                        msg_prefix = "API timeout"
-                    else:
-                        wait_time = backoff_base * (2 ** (retries - 1)) * (0.5 + random.random())
-                        msg_prefix = "Error"
-                    logger.warning(
-                        f"{msg_prefix} for {image_path.name} (attempt {retries}/{max_retries + 1}). Retrying in {wait_time:.2f}s..."
+                if not is_retryable or retries > max_retries:
+                    self.failed_requests += 1
+                    return self._create_error_result(
+                        sequence_num, image_path.name, str(e), error_type, retries - 1
                     )
-                    time.sleep(wait_time)
-        except Exception as outer_e:
-            logger.exception(f"Critical error in transcribe_image for {image_path.name}: {outer_e}")
-            return {
-                "page": sequence_num,
-                "image": image_path.name,
-                "transcription": f"[CRITICAL ERROR] Task-level: {outer_e}",
-                "timestamp": datetime.now().isoformat(),
-                "error": str(outer_e),
-                "error_type": "task_unexpected",
-                "retries": retries,
-            }
-        finally:
-            # Keep processed files in working dir for potential inspection; no cleanup here
-            pass
 
-        # Fallback (should not be reached under normal conditions)
-        return {
-            "page": sequence_num,
-            "image": image_path.name,
-            "transcription": f"[ERROR] Unknown failure after {max_retries} retries.",
-            "timestamp": datetime.now().isoformat(),
-            "error": "Max retries loop completed",
-            "error_type": "unknown_max_retries",
-            "retries": max_retries,
-        }
+                # Calculate backoff and retry
+                wait_time = self._calculate_backoff_time(retries, error_type)
+                logger.warning(
+                    f"{'Rate limit' if error_type == 'rate_limit' else 'Error'} for {image_path.name} "
+                    f"(attempt {retries}/{max_retries + 1}). Retrying in {wait_time:.2f}s..."
+                )
+                time.sleep(wait_time)
 
-    def get_stats(self) -> Dict[str, Any]:
-        import statistics
-        avg_time = statistics.mean(self.processing_times) if self.processing_times else 0
-        success_rate = (
-            self.successful_requests / max(1, self.successful_requests + self.failed_requests) * 100
+        # Should not reach here, but provide fallback
+        return self._create_error_result(
+            sequence_num, image_path.name, "Max retries exceeded", "max_retries", max_retries
         )
+
+    def _create_error_result(
+        self, page: int, image_name: str, error: str, error_type: str, retries: int
+    ) -> Dict[str, Any]:
+        """
+        Create a standardized error result dictionary.
+
+        Args:
+            page: Page/sequence number
+            image_name: Name of the image file
+            error: Error message
+            error_type: Type of error
+            retries: Number of retries attempted
+
+        Returns:
+            Error result dictionary
+        """
         return {
-            "successful_requests": self.successful_requests,
-            "failed_requests": self.failed_requests,
-            "average_processing_time": round(avg_time, 2),
-            "recent_success_rate": round(success_rate, 1),
+            "page": page,
+            "image": image_name,
+            "transcription": f"[ERROR] {error}",
+            "timestamp": datetime.now().isoformat(),
+            "error": error,
+            "error_type": error_type,
+            "retries": retries,
         }

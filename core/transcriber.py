@@ -22,6 +22,22 @@ from modules.logger import setup_logger
 
 logger = setup_logger(__name__)
 
+# Constants for ETA calculation
+MIN_SAMPLES_FOR_ETA = 5
+RECENT_SAMPLES_FOR_ETA = 10
+ETA_BLEND_WEIGHT_OVERALL = 0.7
+ETA_BLEND_WEIGHT_RECENT = 0.3
+
+# Constants for retry logic
+RETRY_RATE_LIMIT_PER_2_SECONDS = 1
+RETRY_RATE_LIMIT_PER_MINUTE = 60
+RETRY_RATE_LIMIT_PER_HOUR = 3000
+RETRY_MAX_ATTEMPTS = 3
+RETRY_TIMEOUT_MULTIPLIER = 1.5
+
+# Constants for page number adjustment
+MIN_SEQUENCE_LENGTH_FOR_ANCHOR = 2
+
 
 class ItemTranscriber:
 	"""Process a single input item (PDF or image folder).

@@ -27,6 +27,9 @@ from modules.logger import setup_logger
 
 logger = setup_logger(__name__)
 
+# Constants
+MIN_VALID_CHOICE = 1
+SELECTION_PROMPT = "\nEnter your choice(s) (e.g., 1; 3-5; all): "
 
 @dataclass(frozen=True)
 class ItemSpec:
@@ -100,7 +103,7 @@ def prompt_for_item_selection(items: Sequence[ItemSpec]) -> List[ItemSpec]:
 
     while True:
         try:
-            choice_str = input("\nEnter your choice(s) (e.g., 1; 3-5; all): ").lower().strip()
+            choice_str = input(SELECTION_PROMPT).lower().strip()
 
             if not choice_str:
                 print("No selection made. Please enter choices or 'all'.")
@@ -116,16 +119,16 @@ def prompt_for_item_selection(items: Sequence[ItemSpec]) -> List[ItemSpec]:
                     start_str, end_str = part.split("-", 1)
                     start = int(start_str)
                     end = int(end_str)
-                    if not (1 <= start <= end <= len(items)):
+                    if not (MIN_VALID_CHOICE <= start <= end <= len(items)):
                         raise ValueError(
-                            f"Invalid range: {part}. Must be between 1 and {len(items)}."
+                            f"Invalid range: {part}. Must be between {MIN_VALID_CHOICE} and {len(items)}."
                         )
                     selected_indices.update(range(start - 1, end))
                 elif part.isdigit():
                     index = int(part) - 1
                     if not (0 <= index < len(items)):
                         raise ValueError(
-                            f"Invalid index: {part}. Must be between 1 and {len(items)}."
+                            f"Invalid index: {part}. Must be between {MIN_VALID_CHOICE} and {len(items)}."
                         )
                     selected_indices.add(index)
                 else:
