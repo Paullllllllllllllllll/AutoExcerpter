@@ -154,14 +154,16 @@ class OpenAIClientBase:
         # Try SDK convenience attribute
         try:
             text_attr = getattr(data, "output_text", None)
-            if isinstance(text_attr, str):
+            if isinstance(text_attr, str) and text_attr.strip():
                 return text_attr.strip()
         except Exception:
             pass
 
         # Try dict-style access
         if isinstance(data, dict) and isinstance(data.get("output_text"), str):
-            return data["output_text"].strip()
+            output_text = data["output_text"].strip()
+            if output_text:
+                return output_text
 
         # Fallback: reconstruct from output list
         try:
@@ -192,11 +194,22 @@ class OpenAIClientBase:
                         content_type = content_item.get("type")
                         if content_type in ["output_text", "text"]:
                             text = content_item.get("text")
-                            if isinstance(text, str):
+                            if isinstance(text, str) and text.strip():
                                 parts.append(text)
             
-            return "".join(parts).strip()
-        except Exception:
+            result = "".join(parts).strip()
+            
+            # Log warning if empty content detected
+            if not result:
+                logger.warning(
+                    "Empty content extracted from API response. "
+                    f"Response structure: output={'list' if isinstance(output, list) else type(output).__name__}, "
+                    f"items={len(output) if isinstance(output, list) else 0}"
+                )
+            
+            return result
+        except Exception as e:
+            logger.warning(f"Error extracting output text: {e}")
             return ""
 
     def get_stats(self) -> Dict[str, Any]:

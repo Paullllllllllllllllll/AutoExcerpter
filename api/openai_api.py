@@ -195,7 +195,15 @@ class OpenAISummaryManager(OpenAIClientBase):
                 if not summary_json_str:
                     raise ValueError("OpenAI API returned empty content for summary.")
 
-                summary_json = json.loads(summary_json_str)
+                # Parse JSON with better error handling
+                try:
+                    summary_json = json.loads(summary_json_str)
+                except json.JSONDecodeError as json_err:
+                    logger.error(
+                        f"JSON decode error for page {page_num}: {json_err}. "
+                        f"Raw content (first 500 chars): {summary_json_str[:500]}"
+                    )
+                    raise ValueError(f"Invalid JSON in API response: {json_err}")
 
                 # Ensure page_number structure is correct
                 if "page_number" not in summary_json:

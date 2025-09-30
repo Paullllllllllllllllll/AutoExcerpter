@@ -238,14 +238,14 @@ class CitationManager:
         """Query OpenAlex API using citation text search."""
         # Extract key terms for better search
         search_query = self._extract_search_terms(citation_text)
-        if not search_query:
+        if not search_query or len(search_query) < 10:
             return None
         
         url = f"{OPENALEX_API_BASE}/works"
         params = {
-            "search": search_query,
+            "filter": f"display_name.search:{search_query}",
             "mailto": self.polite_pool_email,
-            "per-page": 1,
+            "per_page": 1,
         }
         
         for attempt in range(MAX_API_RETRIES):
@@ -258,15 +258,22 @@ class CitationManager:
                         # Verify the result matches reasonably well
                         if self._verify_citation_match(citation_text, results[0]):
                             return self._extract_metadata_from_response(results[0])
-                elif response.status_code != 404:
-                    logger.warning("OpenAlex API returned status %d for search query", 
-                                 response.status_code)
+                elif response.status_code == 404:
+                    # 404 is expected when no results found
+                    return None
+                else:
+                    logger.warning("OpenAlex API returned status %d for search query: %s", 
+                                 response.status_code, search_query[:50])
+                    return None  # Don't retry on client errors
                     
             except requests.RequestException as e:
                 logger.warning("Error querying OpenAlex (attempt %d): %s", 
                              attempt + 1, str(e))
                 if attempt < MAX_API_RETRIES - 1:
                     time.sleep(API_RETRY_DELAY)
+            except Exception as e:
+                logger.warning("Unexpected error querying OpenAlex: %s", str(e))
+                return None
         
         return None
     
