@@ -13,19 +13,21 @@ logger = setup_logger(__name__)
 __all__ = ["render_prompt_with_schema"]
 
 # Constants
-SCHEMA_TOKEN = "{{TRANSCRIPTION_SCHEMA}}"
+SCHEMA_TOKEN = "{{TRANSCRIPTION_SCHEMA}}"  # Legacy token for backward compatibility
+SCHEMA_TOKEN_GENERIC = "{{SCHEMA}}"  # Generic token for any schema
 SCHEMA_MARKER = "The JSON schema:"
 DEFAULT_INDENT = 2
 
 
 def render_prompt_with_schema(prompt_text: str, schema_obj: Dict[str, Any]) -> str:
     """
-    Inject a JSON schema into a prompt using one of three strategies.
+    Inject a JSON schema into a prompt using one of four strategies.
 
-    This function supports three ways to inject a schema:
-    1. Token replacement: If "{{TRANSCRIPTION_SCHEMA}}" exists, replace it
-    2. Marker replacement: If "The JSON schema:" exists, replace JSON after it
-    3. Append: If neither exists, append schema at the end
+    This function supports four ways to inject a schema:
+    1. Token replacement: If "{{SCHEMA}}" exists, replace it
+    2. Legacy token replacement: If "{{TRANSCRIPTION_SCHEMA}}" exists, replace it
+    3. Marker replacement: If "The JSON schema:" exists, replace JSON after it
+    4. Append: If none exist, append schema at the end
 
     Args:
         prompt_text: The prompt template text
@@ -39,7 +41,7 @@ def render_prompt_with_schema(prompt_text: str, schema_obj: Dict[str, Any]) -> s
 
     Example:
         >>> schema = {"type": "object", "properties": {...}}
-        >>> prompt = "Transcribe this. {{TRANSCRIPTION_SCHEMA}}"
+        >>> prompt = "Transcribe this. {{SCHEMA}}"
         >>> result = render_prompt_with_schema(prompt, schema)
     """
     # Validation
@@ -59,15 +61,19 @@ def render_prompt_with_schema(prompt_text: str, schema_obj: Dict[str, Any]) -> s
         # Fallback to string representation
         schema_str = str(schema_obj)
 
-    # Strategy 1: Token replacement
+    # Strategy 1: Generic token replacement (preferred)
+    if SCHEMA_TOKEN_GENERIC in prompt_text:
+        return prompt_text.replace(SCHEMA_TOKEN_GENERIC, schema_str)
+    
+    # Strategy 2: Legacy token replacement (for backward compatibility)
     if SCHEMA_TOKEN in prompt_text:
         return prompt_text.replace(SCHEMA_TOKEN, schema_str)
 
-    # Strategy 2: Marker replacement
+    # Strategy 3: Marker replacement
     if SCHEMA_MARKER in prompt_text:
         return _replace_schema_at_marker(prompt_text, schema_str)
 
-    # Strategy 3: Append to end
+    # Strategy 4: Append to end
     return prompt_text + f"\n\n{SCHEMA_MARKER}\n" + schema_str
 
 

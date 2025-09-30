@@ -6,4 +6,4 @@ Notes:
 - If you really cannot transcribe the image at all or the page is empty, set transcription_not_possible or no_transcribable_text to true.
 
 The JSON schema:
-{{TRANSCRIPTION_SCHEMA}}
+{{SCHEMA}}
