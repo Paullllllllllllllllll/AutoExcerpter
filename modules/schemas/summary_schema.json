@@ -31,7 +31,7 @@
       },
       "bullet_points": {
         "type": "array",
-        "description": "Concise bullet-point statements that capture the main ideas or findings on the page. Return an empty string if contains_no_semantic_content is true.",
+        "description": "Concise bullet-point statements (1-2 sentences maximum per bullet) that capture only the most essential ideas or findings on the page. Prioritize brevity and clarity. Avoid lengthy explanations or excessive detail. Return an empty string if contains_no_semantic_content is true.",
         "items": {
           "type": "string"
         }

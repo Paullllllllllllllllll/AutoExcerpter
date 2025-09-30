@@ -11,8 +11,8 @@ output_folder_path: 'C:\Users\pagoetz\Desktop\New Literature'
 delete_temp_working_dir: true  # Delete the item's temporary working directory (including all temp files/images)
 
 # Performance Settings
-concurrent_requests: 4
-api_timeout: 320  # Timeout for each API call in seconds
+concurrent_requests: 250
+api_timeout: 600  # Timeout for each API call in seconds
 
 # Citation Management
 citation:

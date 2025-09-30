@@ -37,8 +37,12 @@ class OpenAISummaryManager(OpenAIClientBase):
         # Load schema and system prompt
         self.summary_schema: Dict[str, Any] | None = None
         self.summary_system_prompt_text: str = DEFAULT_SUMMARY_PROMPT
+        
+        # Load model configuration parameters
+        self.model_config: Dict[str, Any] = {}
 
         self._load_schema_and_prompt()
+        self._load_model_config()
         self._determine_service_tier()
 
     def _load_schema_and_prompt(self) -> None:
@@ -61,6 +65,20 @@ class OpenAISummaryManager(OpenAIClientBase):
                 logger.warning(f"Summary prompt not found at {prompt_path}")
         except Exception as e:
             logger.warning(f"Error loading schema/prompt: {e}. Using defaults.")
+
+    def _load_model_config(self) -> None:
+        """Load model configuration from model.yaml."""
+        try:
+            config_loader = ConfigLoader()
+            config_loader.load_configs()
+            model_cfg = config_loader.get_model_config()
+            self.model_config = model_cfg.get("summary_model", {})
+            
+            if self.model_config:
+                logger.debug(f"Loaded model config: {self.model_config.get('name', 'unknown')}")
+        except Exception as e:
+            logger.warning(f"Error loading model config: {e}. Using defaults.")
+            self.model_config = {}
 
     def _determine_service_tier(self) -> None:
         """Determine service tier from configuration."""
@@ -178,12 +196,39 @@ class OpenAISummaryManager(OpenAIClientBase):
                     "model": self.model_name,
                     "input": input_messages,
                     "service_tier": self.service_tier,
-                    "max_output_tokens": MAX_OUTPUT_TOKENS,
-                    "reasoning": {"effort": REASONING_EFFORT},
                 }
-                if text_format:
+                
+                # Add max_output_tokens from config (default to 8192 if not specified)
+                max_tokens = self.model_config.get("max_output_tokens", MAX_OUTPUT_TOKENS)
+                payload["max_output_tokens"] = max_tokens
+                
+                # Add reasoning parameters if specified (for GPT-5 and o-series models)
+                if "reasoning" in self.model_config:
+                    reasoning_cfg = self.model_config["reasoning"]
+                    if isinstance(reasoning_cfg, dict) and "effort" in reasoning_cfg:
+                        payload["reasoning"] = {"effort": reasoning_cfg["effort"]}
+                else:
+                    # Fallback to default
+                    payload["reasoning"] = {"effort": REASONING_EFFORT}
+                
+                # Add text parameters if specified (for GPT-5 family)
+                if "text" in self.model_config:
+                    text_cfg = self.model_config["text"]
+                    if isinstance(text_cfg, dict):
+                        text_params = {}
+                        if "verbosity" in text_cfg:
+                            text_params["verbosity"] = text_cfg["verbosity"]
+                        
+                        # Add format if we have a schema
+                        if text_format:
+                            text_params["format"] = text_format
+                        
+                        if text_params:
+                            payload["text"] = text_params
+                elif text_format:
+                    # No text config, but we have a format
                     payload["text"] = {"format": text_format}
-
+                
                 response = self.client.responses.create(**payload)
 
                 # Success - extract and parse response

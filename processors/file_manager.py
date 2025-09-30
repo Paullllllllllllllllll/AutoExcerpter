@@ -48,23 +48,22 @@ ERROR_MARKERS = ["[empty page", "no transcription possible", "empty page", "erro
 
 def sanitize_for_xml(text: Optional[str]) -> str:
     """
-    Return XML-safe text for DOCX output.
+    Return XML-safe text for DOCX output by removing control characters.
+    
+    Note: python-docx handles XML entity encoding automatically (e.g., &, <, >, ', ")
+    so we only need to remove invalid control characters.
 
     Args:
     text (Optional[str]): The text to be sanitized.
 
     Returns:
-    str: The sanitized text.
+    str: The sanitized text with control characters removed.
     """
     if not text:
         return ""
 
+    # Remove control characters (except tab \x09, newline \x0A, and carriage return \x0D)
     sanitized = re.sub(r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]", "", text)
-    sanitized = sanitized.replace("&", "&amp;")
-    sanitized = sanitized.replace("<", "&lt;")
-    sanitized = sanitized.replace(">", "&gt;")
-    sanitized = sanitized.replace('"', "&quot;")
-    sanitized = sanitized.replace("'", "&apos;")
     return sanitized
 
 
