@@ -238,7 +238,9 @@ class OpenAITranscriptionManager(OpenAIClientBase):
         # Preprocess and encode image in-memory
         try:
             image_processor = ImageProcessor(image_path)
-            base64_image = image_processor.process_image_in_memory()
+            pil_image = image_processor.process_image_to_memory()
+            jpeg_quality = image_processor.img_cfg.get('jpeg_quality', 95)
+            base64_image = ImageProcessor.pil_image_to_base64(pil_image, jpeg_quality)
         except Exception as e:
             logger.error(f"Error preprocessing image {image_path.name}: {e}")
             return {
@@ -261,11 +263,7 @@ class OpenAITranscriptionManager(OpenAIClientBase):
                 "content": [
                     {
                         "type": "input_image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": "image/jpeg",
-                            "data": base64_image,
-                        },
+                        "image_url": f"data:image/jpeg;base64,{base64_image}",
                     }
                 ],
             },

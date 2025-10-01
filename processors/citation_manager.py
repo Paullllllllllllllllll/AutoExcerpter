@@ -217,15 +217,26 @@ class CitationManager:
         for attempt in range(MAX_API_RETRIES):
             try:
                 response = requests.get(url, params=params, timeout=API_REQUEST_TIMEOUT)
+                
+                # Log the actual request URL for debugging
+                if attempt == 0 and response.status_code != 200:
+                    logger.debug("OpenAlex request URL: %s", response.url)
+                
                 if response.status_code == 200:
                     data = response.json()
                     return self._extract_metadata_from_response(data)
                 elif response.status_code == 404:
                     return None
                 else:
-                    logger.warning("OpenAlex API returned status %d for DOI %s", 
-                                 response.status_code, doi)
-                    
+                    # Log the error response for debugging
+                    try:
+                        error_detail = response.json()
+                        logger.warning("OpenAlex API returned status %d: %s", 
+                                     response.status_code, error_detail)
+                    except:
+                        logger.warning("OpenAlex API returned status %d for DOI %s", 
+                                     response.status_code, doi)
+                    return None  # Don't retry on client errors
             except requests.RequestException as e:
                 logger.warning("Error querying OpenAlex for DOI %s (attempt %d): %s", 
                              doi, attempt + 1, str(e))
@@ -243,14 +254,19 @@ class CitationManager:
         
         url = f"{OPENALEX_API_BASE}/works"
         params = {
-            "filter": f"display_name.search:{search_query}",
+            "search": search_query,  # Use 'search' parameter instead of filter
             "mailto": self.polite_pool_email,
-            "per_page": 1,
+            "per-page": 1,  # OpenAlex uses hyphen, not underscore
         }
         
         for attempt in range(MAX_API_RETRIES):
             try:
                 response = requests.get(url, params=params, timeout=API_REQUEST_TIMEOUT)
+                
+                # Log the actual request URL for debugging
+                if attempt == 0 and response.status_code != 200:
+                    logger.debug("OpenAlex request URL: %s", response.url)
+                
                 if response.status_code == 200:
                     data = response.json()
                     results = data.get('results', [])
@@ -262,10 +278,15 @@ class CitationManager:
                     # 404 is expected when no results found
                     return None
                 else:
-                    logger.warning("OpenAlex API returned status %d for search query: %s", 
-                                 response.status_code, search_query[:50])
+                    # Log the error response for debugging
+                    try:
+                        error_detail = response.json()
+                        logger.warning("OpenAlex API returned status %d: %s", 
+                                     response.status_code, error_detail)
+                    except:
+                        logger.warning("OpenAlex API returned status %d for search query: %s", 
+                                     response.status_code, search_query[:50])
                     return None  # Don't retry on client errors
-                    
             except requests.RequestException as e:
                 logger.warning("Error querying OpenAlex (attempt %d): %s", 
                              attempt + 1, str(e))

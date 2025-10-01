@@ -26,6 +26,7 @@ __all__ = [
     "write_transcription_to_text",
     "initialize_log_file",
     "append_to_log",
+    "finalize_log_file",
     "filter_empty_pages",
     "sanitize_for_xml",
 ]
@@ -392,7 +393,7 @@ def initialize_log_file(
     concurrency_limit: Optional[int] = None,
 ) -> bool:
     """
-    Create the per-item log file header.
+    Create the per-item log file header as the start of a JSON array.
 
     Args:
     log_path (Path): The log file path.
@@ -426,8 +427,8 @@ def initialize_log_file(
 
     try:
         with log_path.open("w", encoding="utf-8") as log_file:
+            log_file.write("[\n")  # Start JSON array
             json.dump(payload, log_file)
-            log_file.write("\n")
         return True
     except Exception as exc:  # pylint: disable=broad-except
         logger.warning("Failed to initialize log file %s: %s", log_path, exc)
@@ -436,7 +437,7 @@ def initialize_log_file(
 
 def append_to_log(log_path: Path, entry: Dict[str, Any]) -> bool:
     """
-    Append a JSON line to an existing log file.
+    Append a JSON entry to the log file array (comma-separated).
 
     Args:
     log_path (Path): The log file path.
@@ -447,10 +448,30 @@ def append_to_log(log_path: Path, entry: Dict[str, Any]) -> bool:
     """
     try:
         with log_path.open("a", encoding="utf-8") as log_file:
-            log_file.write(json.dumps(entry) + "\n")
+            log_file.write(",\n")  # Add comma separator
+            json.dump(entry, log_file)
         return True
     except Exception as exc:  # pylint: disable=broad-except
         logger.warning("Failed to write to log file %s: %s", log_path, exc)
+        return False
+
+
+def finalize_log_file(log_path: Path) -> bool:
+    """
+    Finalize the log file by closing the JSON array.
+
+    Args:
+    log_path (Path): The log file path.
+
+    Returns:
+    bool: True if the log file was finalized successfully, False otherwise.
+    """
+    try:
+        with log_path.open("a", encoding="utf-8") as log_file:
+            log_file.write("\n]")  # Close JSON array
+        return True
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.warning("Failed to finalize log file %s: %s", log_path, exc)
         return False
 
 

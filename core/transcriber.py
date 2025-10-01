@@ -13,7 +13,7 @@ from processors.pdf_processor import extract_pdf_pages_to_images, \
 	get_image_paths_from_folder
 from processors.file_manager import (
 	create_docx_summary, write_transcription_to_text, initialize_log_file,
-	append_to_log
+	append_to_log, finalize_log_file
 )
 from api.rate_limiter import RateLimiter
 from modules.config_loader import ConfigLoader
@@ -600,119 +600,131 @@ class ItemTranscriber:
 			target_dpi, concurrency_limit=actual_concurrency
 		)
 
-		# Process all images - transcribe and summarize
-		transcription_results, summary_results, failed_items = self._transcribe_and_summarize(
-			image_paths_to_process)
+		# Initialize variables that will be used in finally block
+		should_cleanup = False
+		transcription_results = []
+		summary_results = []
 
-		# Retry phase for items that failed due to retryable API errors
-		if failed_items:
-			retry_transcription_results, retry_summary_results = self._retry_transcription(
-				failed_items)
+		try:
+			# Process all images - transcribe and summarize
+			transcription_results, summary_results, failed_items = self._transcribe_and_summarize(
+				image_paths_to_process)
 
-			# Update all_results with retry_results
-			transcription_dict = {res.get("image"): res for res in
-			                      transcription_results}
+			# Retry phase for items that failed due to retryable API errors
+			if failed_items:
+				retry_transcription_results, retry_summary_results = self._retry_transcription(
+					failed_items)
 
-			for retry_trans_res in retry_transcription_results:
-				if retry_trans_res.get("image") in transcription_dict:
-					# Find and replace the original failed result
-					for i, original_res in enumerate(transcription_results):
-						if original_res.get("image") == retry_trans_res.get(
-								"image"):
-							transcription_results[i] = retry_trans_res
-							break
-				else:
-					transcription_results.append(retry_trans_res)
+				# Update all_results with retry_results
+				transcription_dict = {res.get("image"): res for res in
+				                      transcription_results}
 
-			# Update summary results if summarization is enabled
-			if config.SUMMARIZE and summary_results:
-				summary_dict = {
-					res.get("original_input_order_index"): res
-					for res in summary_results
-					if res.get("original_input_order_index") is not None
-				}
-
-				for retry_summary_res in retry_summary_results:
-					idx = retry_summary_res.get("original_input_order_index")
-					if idx in summary_dict:
+				for retry_trans_res in retry_transcription_results:
+					if retry_trans_res.get("image") in transcription_dict:
 						# Find and replace the original failed result
-						for i, original_res in enumerate(summary_results):
-							if original_res.get("original_input_order_index") == idx:
-								summary_results[i] = retry_summary_res
+						for i, original_res in enumerate(transcription_results):
+							if original_res.get("image") == retry_trans_res.get(
+									"image"):
+								transcription_results[i] = retry_trans_res
 								break
 					else:
-						summary_results.append(retry_summary_res)
+						transcription_results.append(retry_trans_res)
 
-		# Final processing and output
-		total_elapsed_time = time.time() - (
-				self.start_time_processing or time.time())
-		elapsed_str = time.strftime("%H:%M:%S", time.gmtime(total_elapsed_time))
+				# Update summary results if summarization is enabled
+				if config.SUMMARIZE and summary_results:
+					summary_dict = {
+						res.get("original_input_order_index"): res
+						for res in summary_results
+						if res.get("original_input_order_index") is not None
+					}
 
-		# Sort results by page number
-		transcription_results.sort(key=lambda x: int(x.get("page", 0)))
+					for retry_summary_res in retry_summary_results:
+						idx = retry_summary_res.get("original_input_order_index")
+						if idx in summary_dict:
+							# Find and replace the original failed result
+							for i, original_res in enumerate(summary_results):
+								if original_res.get("original_input_order_index") == idx:
+									summary_results[i] = retry_summary_res
+									break
+						else:
+							summary_results.append(retry_summary_res)
 
-		final_success_count = sum(
-			1 for r in transcription_results if "error" not in r)
-		final_failure_count = len(transcription_results) - final_success_count
+			# Final processing and output
+			total_elapsed_time = time.time() - (
+					self.start_time_processing or time.time())
+			elapsed_str = time.strftime("%H:%M:%S", time.gmtime(total_elapsed_time))
 
-		# Save transcription to text file
-		logger.info(
-			f"Writing final transcription output to: {self.output_txt_path}")
-		write_transcription_to_text(
-			transcription_results, self.output_txt_path, self.name,
-			item_type_str, total_elapsed_time, self.input_path
-		)
+			# Sort results by page number
+			transcription_results.sort(key=lambda x: int(x.get("page", 0)))
 
-		# Save summaries to DOCX file if summarization is enabled
-		if config.SUMMARIZE and summary_results:
-			# Step 1: Adjust page numbers and sort (handles 'contains_no_page_number')
-			adjusted_summary_results = self._adjust_and_sort_summary_page_numbers(
-				summary_results)
+			final_success_count = sum(
+				1 for r in transcription_results if "error" not in r)
+			final_failure_count = len(transcription_results) - final_success_count
 
-			try:
-				# Use the adjusted list for creating summary files
-				create_docx_summary(adjusted_summary_results,
-				                    self.output_summary_docx_path, self.name)
-
-			except Exception as e:
-				logger.error(f"Error creating summary files: {e}")
-
-		logger.info(f"PROCESSING COMPLETE for item: {self.name}")
-		logger.info(f"  Total images for this item: {len(transcription_results)}")
-		logger.info(f"  Successfully transcribed: {final_success_count}")
-		logger.info(f"  Failed items: {final_failure_count}")
-		logger.info(f"  Total time for this item: {elapsed_str}")
-		if self.transcription_times:  # Based on successful API calls
-			avg_api_time = sum(self.transcription_times) / len(
-				self.transcription_times)
+			# Save transcription to text file
 			logger.info(
-				f"  Average API processing time per successful image: {avg_api_time:.2f}s")
-		if total_elapsed_time > 0 and final_success_count > 0:
-			throughput_iph = (final_success_count / total_elapsed_time) * 3600
-			logger.info(
-				f"  Overall throughput for this item: {throughput_iph:.1f} successful images/hour")
-		logger.info(
-			f"  Final transcription output: {self.output_txt_path}")
-		if config.SUMMARIZE:
-			logger.info(
-				f"  Final summary outputs: {self.output_summary_docx_path}")
-		logger.info(
-			f"  Detailed logs: {self.log_path}{' and ' + str(self.summary_log_path) if config.SUMMARIZE else ''}")
+				f"Writing final transcription output to: {self.output_txt_path}")
+			write_transcription_to_text(
+				transcription_results, self.output_txt_path, self.name,
+				item_type_str, total_elapsed_time, self.input_path
+			)
 
-		# Cleanup: Delete images directory after successful processing
-		# Only delete if we have successful outputs (transcription and/or summary)
-		should_cleanup = False
-		if self.output_txt_path.exists():
-			# We have a transcription output
-			should_cleanup = True
-		if config.SUMMARIZE and self.output_summary_docx_path.exists():
-			# We have a summary output
-			should_cleanup = True
+			# Save summaries to DOCX file if summarization is enabled
+			if config.SUMMARIZE and summary_results:
+				# Step 1: Adjust page numbers and sort (handles 'contains_no_page_number')
+				adjusted_summary_results = self._adjust_and_sort_summary_page_numbers(
+					summary_results)
+
+				try:
+					# Use the adjusted list for creating summary files
+					create_docx_summary(adjusted_summary_results,
+					                    self.output_summary_docx_path, self.name)
+
+				except Exception as e:
+					logger.error(f"Error creating summary files: {e}")
+
+			logger.info(f"PROCESSING COMPLETE for item: {self.name}")
+			logger.info(f"  Total images for this item: {len(transcription_results)}")
+			logger.info(f"  Successfully transcribed: {final_success_count}")
+			logger.info(f"  Failed items: {final_failure_count}")
+			logger.info(f"  Total time for this item: {elapsed_str}")
+			if self.transcription_times:  # Based on successful API calls
+				avg_api_time = sum(self.transcription_times) / len(
+					self.transcription_times)
+				logger.info(
+					f"  Average API processing time per successful image: {avg_api_time:.2f}s")
+			if total_elapsed_time > 0 and final_success_count > 0:
+				throughput_iph = (final_success_count / total_elapsed_time) * 3600
+				logger.info(
+					f"  Overall throughput for this item: {throughput_iph:.1f} successful images/hour")
+			logger.info(
+				f"  Final transcription output: {self.output_txt_path}")
+			if config.SUMMARIZE:
+				logger.info(
+					f"  Final summary outputs: {self.output_summary_docx_path}")
+			logger.info(
+				f"  Detailed logs: {self.log_path}{' and ' + str(self.summary_log_path) if config.SUMMARIZE else ''}")
+
+			# Determine if we should cleanup images directory
+			# Only delete if we have successful outputs (transcription and/or summary)
+			if self.output_txt_path.exists():
+				# We have a transcription output
+				should_cleanup = True
+			if config.SUMMARIZE and self.output_summary_docx_path.exists():
+				# We have a summary output
+				should_cleanup = True
 		
-		if should_cleanup and self.images_dir.exists():
-			try:
-				# Delete the images directory and all its contents
-				shutil.rmtree(self.images_dir)
-				logger.info(f"  Cleaned up images directory: {self.images_dir}")
-			except Exception as e:
-				logger.warning(f"  Could not delete images directory {self.images_dir}: {e}")
+		finally:
+			# Always finalize log files by closing JSON arrays, even if errors occurred
+			finalize_log_file(self.log_path)
+			if config.SUMMARIZE:
+				finalize_log_file(self.summary_log_path)
+
+			# Cleanup: Delete images directory after successful processing
+			if should_cleanup and self.images_dir.exists():
+				try:
+					# Delete the images directory and all its contents
+					shutil.rmtree(self.images_dir)
+					logger.info(f"  Cleaned up images directory: {self.images_dir}")
+				except Exception as e:
+					logger.warning(f"  Could not delete images directory {self.images_dir}: {e}")
