@@ -47,11 +47,47 @@ class Citation:
     
     def _generate_normalized_key(self) -> str:
         """Create a normalized key for citation deduplication."""
-        # Remove extra whitespace and normalize
-        text = re.sub(r'\s+', ' ', self.raw_text.strip().lower())
+        # Start with lowercase text
+        text = self.raw_text.strip().lower()
         
-        # Remove common punctuation variations that shouldn't affect matching
-        text = re.sub(r'[,.:;]', '', text)
+        # Remove URLs (http/https)
+        text = re.sub(r'https?://[^\s]+', '', text)
+        
+        # Remove DOIs
+        text = re.sub(r'doi:\s*[\d.]+/[^\s]+', '', text)
+        
+        # Remove page numbers in various formats: p. 123, pp. 123-145, (p. 123), (pp. 123-145)
+        text = re.sub(r'\(?\s*pp?\.\s*\d+[-–—]?\d*\s*\)?', '', text)
+        
+        # Remove years in parentheses: (2002), (n.d.), (1984/1996), (forthcoming)
+        text = re.sub(r'\(\s*(?:\d{4}(?:[-/]\d{4})?|n\.?d\.?|forthcoming)\s*\)', '', text)
+        
+        # Remove standalone years: 1984, 2002
+        text = re.sub(r'\b\d{4}\b', '', text)
+        
+        # Remove "n.d." standalone
+        text = re.sub(r'\bn\.?\s*d\.?\b', '', text)
+        
+        # Remove editor references: (Ed.), (Eds.), (Trans.)
+        text = re.sub(r'\(\s*(?:ed|eds|trans)\.?\s*\)', '', text, flags=re.IGNORECASE)
+        
+        # Remove volume references: Vol. 4, Volume 4
+        text = re.sub(r'\b(?:vol|volume)\.?\s*\d+\b', '', text, flags=re.IGNORECASE)
+        
+        # Remove issue/page references in journals: 63(3), 101,
+        text = re.sub(r'\d+\(\d+\)', '', text)
+        
+        # Remove common publisher locations and publishers
+        text = re.sub(r'\b(?:london|cambridge|oxford|new york|berkeley|chicago|press|university|publisher)\b', '', text, flags=re.IGNORECASE)
+        
+        # Remove common citation elements: [publisher], [Place of publication not identified]
+        text = re.sub(r'\[.*?\]', '', text)
+        
+        # Remove remaining punctuation except spaces
+        text = re.sub(r'[,.:;()\[\]"\'–—]', ' ', text)
+        
+        # Normalize whitespace
+        text = re.sub(r'\s+', ' ', text).strip()
         
         # Create hash for efficient comparison
         return hashlib.md5(text.encode('utf-8')).hexdigest()
@@ -146,7 +182,15 @@ class CitationManager:
         logger.info("Enriching %d unique citations with metadata", len(self.citations))
         
         requests_made = 0
+        processed = 0
         for citation in self.citations.values():
+            processed += 1
+            
+            # Log progress every 5 citations
+            if processed % 5 == 0:
+                logger.info("Processed %d/%d citations, enriched %d with metadata", 
+                          processed, len(self.citations), requests_made)
+            
             if max_requests and requests_made >= max_requests:
                 logger.info("Reached maximum API requests limit (%d)", max_requests)
                 break
@@ -312,9 +356,10 @@ class CitationManager:
     
     def _verify_citation_match(self, citation_text: str, work_data: Dict) -> bool:
         """Verify that OpenAlex result matches the citation."""
-        title = work_data.get('title', '').lower()
+        raw_title = work_data.get('title') or work_data.get('display_name') or ''
+        title = raw_title.lower()
         citation_lower = citation_text.lower()
-        
+
         # Check if title appears in citation (at least 50% of title words)
         if title:
             title_words = set(re.findall(r'\w+', title))
