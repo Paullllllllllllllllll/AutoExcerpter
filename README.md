@@ -822,13 +822,24 @@ Contributions to AutoExcerpter are welcome! Whether you are fixing bugs, adding 
 
 ## License
 
-This project is provided as-is for educational and research purposes. Please ensure compliance with OpenAI's Terms of Service when using this tool, particularly regarding API usage and data handling.
+MIT License
 
-**Important Notes:**
+Copyright (c) 2025 Paul Goetz
 
-- This tool sends document images to OpenAI's API for processing
-- Ensure you have the right to process and transmit your documents
-- Be mindful of sensitive or confidential information in your documents
-- Review OpenAI's data usage policies for your use case
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-For questions about licensing or usage rights, please contact the repository maintainer.
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
