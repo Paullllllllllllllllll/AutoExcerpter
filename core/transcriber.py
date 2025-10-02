@@ -7,6 +7,7 @@ from typing import Dict, Any, List, Tuple, Optional
 from tqdm import tqdm
 
 from modules import app_config as config
+from modules.path_utils import create_safe_directory_name, create_safe_log_filename
 from api.openai_transcribe_api import OpenAITranscriptionManager
 from api.openai_api import OpenAISummaryManager
 from processors.pdf_processor import extract_pdf_pages_to_images, \
@@ -54,14 +55,19 @@ class ItemTranscriber:
 		self.output_summary_docx_path = self.base_output_dir / f"{self.name}_summary.docx"
 
 		# Item-specific working directory for logs and temporary images
-		self.working_dir = self.base_output_dir / f"{self.name}_working_files"
+		# Use safe directory name to avoid Windows MAX_PATH (260 char) limitations
+		safe_working_dir_name = create_safe_directory_name(self.name, "_working_files")
+		self.working_dir = self.base_output_dir / safe_working_dir_name
 		self.working_dir.mkdir(parents=True, exist_ok=True)
 
 		self.images_dir = self.working_dir / "images"  # Temp images for this item
 		self.images_dir.mkdir(exist_ok=True)
 
-		self.log_path = self.working_dir / f"{self.name}_transcription_log.json"
-		self.summary_log_path = self.working_dir / f"{self.name}_summary_log.json"
+		# Use safe log filenames to avoid path length issues
+		safe_transcription_log_name = create_safe_log_filename(self.name, "transcription")
+		safe_summary_log_name = create_safe_log_filename(self.name, "summary")
+		self.log_path = self.working_dir / safe_transcription_log_name
+		self.summary_log_path = self.working_dir / safe_summary_log_name
 
 		self.total_items_to_transcribe = 0
 		self.start_time_processing: Optional[float] = None
