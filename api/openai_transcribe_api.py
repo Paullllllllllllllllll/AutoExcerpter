@@ -61,6 +61,9 @@ class OpenAITranscriptionManager(OpenAIClientBase):
         # Load model configuration and determine service tier using base class methods
         self.model_config = self._load_model_config("transcription_model")
         self.service_tier = self._determine_service_tier("transcription")
+        
+        # Load schema-specific retry configuration
+        self.schema_retry_config = self._load_schema_retry_config("transcription")
 
     def _load_schema_and_prompt(self) -> None:
         """Load transcription schema and system prompt from configuration files."""
@@ -224,10 +227,14 @@ class OpenAITranscriptionManager(OpenAIClientBase):
     ) -> Dict[str, Any]:
         """
         Transcribe a single image using OpenAI Responses API.
+        
+        This method implements two levels of retries:
+        1. API error retries: For rate limits, timeouts, server errors, etc.
+        2. Schema-specific retries: For content validation flags like no_transcribable_text.
 
         Args:
             image_path: Path to the image file.
-            max_retries: Maximum number of retry attempts.
+            max_retries: Maximum number of retry attempts for API errors.
 
         Returns:
             Dictionary containing transcription result and metadata.
@@ -270,10 +277,14 @@ class OpenAITranscriptionManager(OpenAIClientBase):
         ]
 
         text_format = self._build_text_format()
-        retries = 0
+        api_retries = 0
+        schema_retry_attempts = {
+            "no_transcribable_text": 0,
+            "transcription_not_possible": 0,
+        }
 
-        # Retry loop
-        while retries <= max_retries:
+        # Main retry loop
+        while api_retries <= max_retries:
             try:
                 self._wait_for_rate_limit()
 
@@ -320,6 +331,52 @@ class OpenAITranscriptionManager(OpenAIClientBase):
                 transcription = self._parse_transcription_from_text(
                     raw_text, image_path.name
                 )
+                
+                # Parse the raw text as JSON to check for schema flags
+                parsed_response = None
+                try:
+                    parsed_response = json.loads(raw_text)
+                except (json.JSONDecodeError, TypeError):
+                    # If not valid JSON, continue with transcription as-is
+                    pass
+                
+                # Check for schema-specific retry conditions
+                if isinstance(parsed_response, dict):
+                    # Check no_transcribable_text flag
+                    if parsed_response.get("no_transcribable_text") is True:
+                        should_retry, backoff_time, max_attempts = self._should_retry_for_schema_flag(
+                            "no_transcribable_text",
+                            True,
+                            schema_retry_attempts["no_transcribable_text"]
+                        )
+                        
+                        if should_retry:
+                            schema_retry_attempts["no_transcribable_text"] += 1
+                            logger.warning(
+                                f"Schema flag 'no_transcribable_text' detected for {image_path.name}. "
+                                f"Retrying ({schema_retry_attempts['no_transcribable_text']}/{max_attempts}) "
+                                f"in {backoff_time:.2f}s..."
+                            )
+                            time.sleep(backoff_time)
+                            continue  # Retry the request
+                    
+                    # Check transcription_not_possible flag
+                    if parsed_response.get("transcription_not_possible") is True:
+                        should_retry, backoff_time, max_attempts = self._should_retry_for_schema_flag(
+                            "transcription_not_possible",
+                            True,
+                            schema_retry_attempts["transcription_not_possible"]
+                        )
+                        
+                        if should_retry:
+                            schema_retry_attempts["transcription_not_possible"] += 1
+                            logger.warning(
+                                f"Schema flag 'transcription_not_possible' detected for {image_path.name}. "
+                                f"Retrying ({schema_retry_attempts['transcription_not_possible']}/{max_attempts}) "
+                                f"in {backoff_time:.2f}s..."
+                            )
+                            time.sleep(backoff_time)
+                            continue  # Retry the request
 
                 result = {
                     "image": image_path.name,
@@ -327,17 +384,22 @@ class OpenAITranscriptionManager(OpenAIClientBase):
                     "transcription": transcription,
                     "processing_time": round(processing_time, 2),
                 }
+                
+                # Include schema retry statistics if any occurred
+                total_schema_retries = sum(schema_retry_attempts.values())
+                if total_schema_retries > 0:
+                    result["schema_retries"] = schema_retry_attempts.copy()
 
                 return result
 
             except Exception as e:
-                retries += 1
+                api_retries += 1
                 is_retryable, error_type = self._classify_error(str(e))
                 self._report_error(
                     error_type in ["rate_limit", "server", "resource_unavailable"]
                 )
 
-                if not is_retryable or retries > max_retries:
+                if not is_retryable or api_retries > max_retries:
                     self.failed_requests += 1
                     logger.error(
                         f"Transcription API error for {image_path.name} (final attempt): "
@@ -350,13 +412,14 @@ class OpenAITranscriptionManager(OpenAIClientBase):
                         "processing_time": round(time.time() - start_time, 2),
                         "error": str(e),
                         "error_type": "api_failure",
+                        "api_retries": api_retries - 1,
                     }
 
                 # Calculate backoff and retry
-                wait_time = self._calculate_backoff_time(retries, error_type)
+                wait_time = self._calculate_backoff_time(api_retries, error_type)
                 logger.warning(
                     f"Transcription API error for {image_path.name} "
-                    f"(attempt {retries}/{max_retries + 1}). "
+                    f"(attempt {api_retries}/{max_retries + 1}). "
                     f"Retrying in {wait_time:.2f}s... "
                     f"Error: {type(e).__name__} - {e}"
                 )
@@ -371,6 +434,7 @@ class OpenAITranscriptionManager(OpenAIClientBase):
             "processing_time": round(time.time() - start_time, 2),
             "error": "Max retries exceeded",
             "error_type": "max_retries_exceeded",
+            "api_retries": max_retries,
         }
 
     def get_stats(self) -> Dict[str, Any]:

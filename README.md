@@ -69,7 +69,7 @@ AutoExcerpter processes documents through a sophisticated two-stage pipeline tha
 
 - **Concurrent Processing**: Configurable parallelism for both image preprocessing and API requests
 - **Adaptive Rate Limiting**: Sliding window rate limiter prevents API quota violations
-- **Intelligent Retry Logic**: Exponential backoff with jitter for transient errors
+- **Intelligent Retry Logic**: Configurable dual-layer retries combining exponential backoff with schema-aware content retries
 - **Service Tier Support**: Full support for OpenAI Flex tier to reduce processing costs by up to 50%
 - **Progress Tracking**: Real-time progress bars with estimated time of completion
 - **Comprehensive Logging**: Detailed JSON logs for debugging, quality assurance, and audit trails
@@ -119,6 +119,7 @@ The API returns structured JSON containing:
 - Mathematical equations in LaTeX notation
 - Page numbers marked with special XML-style tags
 - Detailed descriptions of visual elements (images, diagrams, charts)
+ - Built-in exponential backoff with jitter and schema-specific retries to gracefully recover from transient errors or ambiguous content flags
 
 **5. Summarization (Optional)**
 
@@ -254,39 +255,57 @@ Controls parallel processing behavior for both local operations and API requests
 ```yaml
 # Local Image Processing (CPU/Disk bound)
 image_processing:
-  concurrency_limit: 24  # Concurrent image extraction/processing tasks
-  delay_between_tasks: 0  # No delay needed for local operations
+  concurrency_limit: 24
+  delay_between_tasks: 0
 
 # API Request Concurrency
 api_requests:
   transcription:
-    concurrency_limit: 150  # Concurrent API requests for transcription
-    delay_between_tasks: 0.05  # Small delay to prevent bursts
-    service_tier: flex  # Options: auto, default, flex, priority
-    batch_chunk_size: 50  # Requests per batch (future Batch API support)
-  
+    concurrency_limit: 150
+    delay_between_tasks: 0.05
+    service_tier: flex
+    batch_chunk_size: 50
   summary:
-    concurrency_limit: 150  # Concurrent API requests for summarization
+    concurrency_limit: 150
     delay_between_tasks: 0.05
     service_tier: flex
     batch_chunk_size: 50
 
 # Retry Configuration
 retry:
-  max_attempts: 5  # Maximum retry attempts per failed request
-  backoff_base: 1.0  # Base backoff time in seconds
+  max_attempts: 5
+  backoff_base: 1.0
   backoff_multipliers:
-    rate_limit: 2.0  # Multiplier for 429 rate limit errors
-    timeout: 1.5  # Multiplier for timeout errors
-    server_error: 2.0  # Multiplier for 500-series errors
-    other: 2.0  # Multiplier for other retryable errors
+    rate_limit: 2.0
+    timeout: 1.5
+    server_error: 2.0
+    other: 2.0
   jitter:
-    min: 0.5  # Minimum random jitter (seconds)
-    max: 1.0  # Maximum random jitter (seconds)
-  retry_rate_limits:
-    - [1, 2]       # Max 1 retry per 2 seconds
-    - [60, 60]     # Max 60 retries per minute
-    - [3000, 3600] # Max 3000 retries per hour
+    min: 0.5
+    max: 1.0
+  schema_retries:
+    transcription:
+      no_transcribable_text:
+        enabled: true
+        max_attempts: 0
+        backoff_base: 2.0
+        backoff_multiplier: 1.5
+      transcription_not_possible:
+        enabled: true
+        max_attempts: 0
+        backoff_base: 2.0
+        backoff_multiplier: 1.5
+    summary:
+      contains_no_semantic_content:
+        enabled: true
+        max_attempts: 0
+        backoff_base: 2.0
+        backoff_multiplier: 1.5
+      contains_no_page_number:
+        enabled: true
+        max_attempts: 0
+        backoff_base: 2.0
+        backoff_multiplier: 1.5
 ```
 
 **Service Tier Options:**
@@ -302,6 +321,20 @@ retry:
 - **Mid-Tier (3-4)**: Set `concurrency_limit: 50-100`
 - **High Tier (4-5)**: Set `concurrency_limit: 100-200`
 - **Image Processing**: 8-24 for HDD, 24-48 for SSD systems
+
+#### Schema-Aware Retry Controls
+
+AutoExcerpter implements two complementary retry layers:
+
+* __API errors__: Controlled by `max_attempts`, `backoff_base`, and `backoff_multipliers`. Applies to rate limits, timeouts, and server-side errors using exponential backoff with jitter, based on OpenAI cookbook guidance.
+* __Schema flags__: Configure per-flag policies under `schema_retries`. Each flag exposes `enabled`, `max_attempts`, `backoff_base`, and `backoff_multiplier`. Defaults keep these retries disabled (`max_attempts: 0`) to avoid unnecessary reprocessing, but you can increase attempts when working with noisy scans or documents that frequently trigger these flags.
+
+**Supported Flags:**
+
+* __Transcription__: `no_transcribable_text`, `transcription_not_possible`
+* __Summary__: `contains_no_semantic_content`, `contains_no_page_number`
+
+When a flag is enabled and the model returns `true`, AutoExcerpter automatically re-issues the same request after waiting `backoff_base * backoff_multiplier^attempt + jitter`. Statistics for both API-level and schema-level retries are logged per page for auditing.
 
 ### Image Processing Configuration
 

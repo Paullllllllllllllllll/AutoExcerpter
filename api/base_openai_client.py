@@ -6,7 +6,7 @@ import json
 import random
 import time
 from collections import deque
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from openai import OpenAI
 
@@ -67,7 +67,8 @@ class OpenAIClientBase:
     Base class for OpenAI API clients with common retry and error handling logic.
     
     This class provides:
-    - Retry logic with exponential backoff
+    - Retry logic with exponential backoff for API errors
+    - Schema-specific retry logic for content validation flags
     - Error classification and handling
     - Rate limiting integration
     - Model configuration loading
@@ -107,6 +108,9 @@ class OpenAIClientBase:
         # Model configuration and service tier (loaded by subclasses)
         self.model_config: Dict[str, Any] = {}
         self.service_tier: str = "auto"
+        
+        # Schema retry configuration (loaded by subclasses)
+        self.schema_retry_config: Dict[str, Any] = {}
 
     def _load_model_config(self, config_key: str) -> Dict[str, Any]:
         """
@@ -368,3 +372,79 @@ class OpenAIClientBase:
             "average_processing_time": round(avg_time, 2),
             "recent_success_rate": round(success_rate, 1),
         }
+
+    def _load_schema_retry_config(self, api_type: str) -> Dict[str, Any]:
+        """
+        Load schema-specific retry configuration from concurrency.yaml.
+        
+        Args:
+            api_type: Type of API request ('transcription' or 'summary').
+            
+        Returns:
+            Schema retry configuration dictionary.
+        """
+        try:
+            config_loader = ConfigLoader()
+            config_loader.load_configs()
+            concurrency_cfg = config_loader.get_concurrency_config()
+            
+            schema_retries = (
+                concurrency_cfg
+                .get("retry", {})
+                .get("schema_retries", {})
+                .get(api_type, {})
+            )
+            
+            if schema_retries:
+                logger.debug(f"Loaded schema retry config for {api_type}: {list(schema_retries.keys())}")
+            else:
+                logger.debug(f"No schema retry config found for {api_type}")
+                
+            return schema_retries
+        except Exception as e:
+            logger.warning(f"Error loading schema retry config for {api_type}: {e}")
+            return {}
+
+    def _should_retry_for_schema_flag(
+        self, 
+        flag_name: str, 
+        flag_value: Any,
+        current_attempt: int
+    ) -> Tuple[bool, float, int]:
+        """
+        Check if we should retry based on a schema flag value.
+        
+        Args:
+            flag_name: Name of the schema flag (e.g., 'no_transcribable_text').
+            flag_value: Value of the flag from the API response.
+            current_attempt: Current retry attempt number for this flag.
+            
+        Returns:
+            Tuple of (should_retry, backoff_time, max_attempts).
+        """
+        # Get configuration for this specific flag
+        flag_config = self.schema_retry_config.get(flag_name, {})
+        
+        # Check if retries are enabled for this flag
+        if not flag_config.get("enabled", False):
+            return False, 0.0, 0
+        
+        # Check if flag is set to a truthy value
+        if not flag_value:
+            return False, 0.0, 0
+        
+        # Get max attempts for this flag
+        max_attempts = flag_config.get("max_attempts", 0)
+        
+        # Check if we've exceeded max attempts
+        if current_attempt >= max_attempts:
+            return False, 0.0, max_attempts
+        
+        # Calculate backoff time
+        backoff_base = flag_config.get("backoff_base", 2.0)
+        backoff_multiplier = flag_config.get("backoff_multiplier", 1.5)
+        jitter = random.uniform(JITTER_MIN, JITTER_MAX)
+        
+        backoff_time = backoff_base * (backoff_multiplier ** current_attempt) * jitter
+        
+        return True, backoff_time, max_attempts

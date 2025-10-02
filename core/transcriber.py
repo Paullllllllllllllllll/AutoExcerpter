@@ -28,13 +28,6 @@ RECENT_SAMPLES_FOR_ETA = 10
 ETA_BLEND_WEIGHT_OVERALL = 0.7
 ETA_BLEND_WEIGHT_RECENT = 0.3
 
-# Constants for retry logic
-RETRY_RATE_LIMIT_PER_2_SECONDS = 1
-RETRY_RATE_LIMIT_PER_MINUTE = 60
-RETRY_RATE_LIMIT_PER_HOUR = 3000
-RETRY_MAX_ATTEMPTS = 3
-RETRY_TIMEOUT_MULTIPLIER = 1.5
-
 # Constants for page number adjustment
 MIN_SEQUENCE_LENGTH_FOR_ANCHOR = 2
 
@@ -154,15 +147,11 @@ class ItemTranscriber:
 
 	def _transcribe_and_summarize(
 			self, image_paths: List[Path]
-	) -> Tuple[
-		List[Dict[str, Any]], List[Dict[str, Any]], List[Tuple[int, Path]]]:
+	) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
 		transcription_results: List[Dict[str, Any]] = []
 		summary_results: List[Dict[str, Any]] = []
-		failed_items_to_retry: List[
-			Tuple[int, Path]] = []  # (original_input_order_index, path)
 		total_images = len(image_paths)
 		processed_count = 0
-		# Removed unused stats tracking variables
 
 		logger.info(
 			f"Starting transcription{' and summarization' if config.SUMMARIZE else ''} of {total_images} images...")
@@ -278,11 +267,6 @@ class ItemTranscriber:
 					f"Processed {processed_count}/{total_images} - Item {item_num_str} - Status: {status} - {eta_str}")
 				transcription_results.append(transcription_result)
 
-				if "error" in transcription_result and transcription_result.get(
-						"error_type") != "processing":
-					failed_items_to_retry.append(
-						(original_input_order_index, img_path))
-
 				return transcription_result
 
 			except Exception as e:
@@ -321,7 +305,7 @@ class ItemTranscriber:
 
 		transcription_results.sort(
 			key=lambda x: x.get("original_input_order_index", 0))
-		return transcription_results, summary_results, failed_items_to_retry
+		return transcription_results, summary_results
 
 	def _adjust_and_sort_summary_page_numbers(self, summary_results: List[
 		Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -474,82 +458,6 @@ class ItemTranscriber:
 		)
 		return final_ordered_summaries
 
-	def _retry_transcription(self, failed_items: List[Tuple[int, Path]]) -> \
-			Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-		"""Retry transcription for failed items with adjusted settings"""
-		logger.info(
-			f"--- RETRY PHASE for {self.name}: {len(failed_items)} failed items ---")
-		# Sort by page number for ordered retries
-		failed_items.sort(key=lambda x: int(x[0]))  # x[0] is sequence_num
-
-		# More conservative rate limiter for retries (re-use OpenAI limits)
-		retry_rate_limiter = RateLimiter([(1, 2), (60, 60), (3000, 3600)])
-		retry_api_manager = OpenAITranscriptionManager(
-			config.OPENAI_API_KEY,
-			config.OPENAI_TRANSCRIPTION_MODEL,
-			rate_limiter=retry_rate_limiter,
-			timeout=int(config.OPENAI_API_TIMEOUT * 1.5),
-		)
-
-		logger.info(
-			f"Retrying {len(failed_items)} image(s) with adjusted settings...")
-		retry_transcription_results = []
-		retry_summary_results = []
-
-		for original_index, img_path in tqdm(failed_items, desc="Retrying failed items", total=len(failed_items)):
-			# Retry transcription
-			retry_result = retry_api_manager.transcribe_image(
-				img_path, max_retries=3)
-			retry_result["original_input_order_index"] = original_index
-			retry_transcription_results.append(retry_result)
-
-			# Log retry result
-			append_to_log(self.log_path, retry_result)
-
-			# Generate summary for the retry if transcription succeeded and summarization is enabled
-			if config.SUMMARIZE and self.openai_summary_manager:
-				page_num_raw = retry_result.get("page")
-				if isinstance(page_num_raw, int) and page_num_raw > 0:
-					page_num = page_num_raw
-				else:
-					page_num = original_index + 1
-				model_page_num = page_num_raw if isinstance(page_num_raw, int) else None
-				contains_no_page_number = not isinstance(page_num_raw, int)
-				if "error" not in retry_result:
-					transcription_text = retry_result.get("transcription", "")
-					if "[empty page]" in transcription_text or "[no transcription possible]" in transcription_text:
-						summary_data = self._create_placeholder_summary(
-							page_num,
-							contains_no_page_number,
-							["[Empty page or no transcription possible]"],
-						)
-					else:
-						summary_data = self.openai_summary_manager.generate_summary(
-							transcription_text, page_num
-						)
-				else:
-					error_msg = retry_result.get("error", "Unknown error")
-					summary_data = self._create_placeholder_summary(
-						page_num,
-						contains_no_page_number,
-						[f"[Transcription failed after retry: {error_msg}]"],
-						error_message=error_msg,
-					)
-				summary_error = summary_data.get("error") if isinstance(summary_data, dict) else None
-				summary_result = self._build_summary_result(
-					original_index,
-					img_path.name,
-					summary_data,
-					page_num,
-					model_page_num,
-					summary_error,
-				)
-				retry_summary_results.append(summary_result)
-				append_to_log(self.summary_log_path, summary_result)
-
-		logger.info(f"--- RETRY PHASE for {self.name} complete. ---")
-		return retry_transcription_results, retry_summary_results
-
 	def process_item(self) -> None:
 		item_type_str = "PDF" if self.input_type == "pdf" else "Image Folder"
 		logger.info(
@@ -607,47 +515,8 @@ class ItemTranscriber:
 
 		try:
 			# Process all images - transcribe and summarize
-			transcription_results, summary_results, failed_items = self._transcribe_and_summarize(
+			transcription_results, summary_results = self._transcribe_and_summarize(
 				image_paths_to_process)
-
-			# Retry phase for items that failed due to retryable API errors
-			if failed_items:
-				retry_transcription_results, retry_summary_results = self._retry_transcription(
-					failed_items)
-
-				# Update all_results with retry_results
-				transcription_dict = {res.get("image"): res for res in
-				                      transcription_results}
-
-				for retry_trans_res in retry_transcription_results:
-					if retry_trans_res.get("image") in transcription_dict:
-						# Find and replace the original failed result
-						for i, original_res in enumerate(transcription_results):
-							if original_res.get("image") == retry_trans_res.get(
-									"image"):
-								transcription_results[i] = retry_trans_res
-								break
-					else:
-						transcription_results.append(retry_trans_res)
-
-				# Update summary results if summarization is enabled
-				if config.SUMMARIZE and summary_results:
-					summary_dict = {
-						res.get("original_input_order_index"): res
-						for res in summary_results
-						if res.get("original_input_order_index") is not None
-					}
-
-					for retry_summary_res in retry_summary_results:
-						idx = retry_summary_res.get("original_input_order_index")
-						if idx in summary_dict:
-							# Find and replace the original failed result
-							for i, original_res in enumerate(summary_results):
-								if original_res.get("original_input_order_index") == idx:
-									summary_results[i] = retry_summary_res
-									break
-						else:
-							summary_results.append(retry_summary_res)
 
 			# Final processing and output
 			total_elapsed_time = time.time() - (

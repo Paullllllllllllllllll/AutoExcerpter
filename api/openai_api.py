@@ -48,6 +48,9 @@ class OpenAISummaryManager(OpenAIClientBase):
         # Load model configuration and determine service tier using base class methods
         self.model_config = self._load_model_config("summary_model")
         self.service_tier = self._determine_service_tier("summary")
+        
+        # Load schema-specific retry configuration
+        self.schema_retry_config = self._load_schema_retry_config("summary")
 
     def _load_schema_and_prompt(self) -> None:
         """Load summary schema and system prompt from configuration files."""
@@ -152,11 +155,15 @@ class OpenAISummaryManager(OpenAIClientBase):
     ) -> Dict[str, Any]:
         """
         Generate a structured summary from transcription text.
+        
+        This method implements two levels of retries:
+        1. API error retries: For rate limits, timeouts, server errors, etc.
+        2. Schema-specific retries: For content validation flags like contains_no_semantic_content.
 
         Args:
             transcription: The transcribed text to summarize.
             page_num: Page number for context.
-            max_retries: Maximum number of retry attempts.
+            max_retries: Maximum number of retry attempts for API errors.
 
         Returns:
             Dictionary containing summary result and metadata.
@@ -185,10 +192,14 @@ class OpenAISummaryManager(OpenAIClientBase):
         ]
 
         text_format = self._build_text_format()
-        retries = 0
+        api_retries = 0
+        schema_retry_attempts = {
+            "contains_no_semantic_content": 0,
+            "contains_no_page_number": 0,
+        }
 
-        # Retry loop
-        while retries <= max_retries:
+        # Main retry loop
+        while api_retries <= max_retries:
             try:
                 self._wait_for_rate_limit()
 
@@ -264,12 +275,56 @@ class OpenAISummaryManager(OpenAIClientBase):
                     }
                     if "contains_no_page_number" in summary_json:
                         del summary_json["contains_no_page_number"]
+                
+                # Check for schema-specific retry conditions
+                # Check contains_no_semantic_content flag
+                if summary_json.get("contains_no_semantic_content") is True:
+                    should_retry, backoff_time, max_attempts = self._should_retry_for_schema_flag(
+                        "contains_no_semantic_content",
+                        True,
+                        schema_retry_attempts["contains_no_semantic_content"]
+                    )
+                    
+                    if should_retry:
+                        schema_retry_attempts["contains_no_semantic_content"] += 1
+                        logger.warning(
+                            f"Schema flag 'contains_no_semantic_content' detected for page {page_num}. "
+                            f"Retrying ({schema_retry_attempts['contains_no_semantic_content']}/{max_attempts}) "
+                            f"in {backoff_time:.2f}s..."
+                        )
+                        time.sleep(backoff_time)
+                        continue  # Retry the request
+                
+                # Check contains_no_page_number flag (nested in page_number object)
+                page_number_obj = summary_json.get("page_number", {})
+                if isinstance(page_number_obj, dict):
+                    if page_number_obj.get("contains_no_page_number") is True:
+                        should_retry, backoff_time, max_attempts = self._should_retry_for_schema_flag(
+                            "contains_no_page_number",
+                            True,
+                            schema_retry_attempts["contains_no_page_number"]
+                        )
+                        
+                        if should_retry:
+                            schema_retry_attempts["contains_no_page_number"] += 1
+                            logger.warning(
+                                f"Schema flag 'contains_no_page_number' detected for page {page_num}. "
+                                f"Retrying ({schema_retry_attempts['contains_no_page_number']}/{max_attempts}) "
+                                f"in {backoff_time:.2f}s..."
+                            )
+                            time.sleep(backoff_time)
+                            continue  # Retry the request
 
                 result = {
                     "page": page_num,
                     "summary": summary_json,
                     "processing_time": round(processing_time, 2),
                 }
+                
+                # Include schema retry statistics if any occurred
+                total_schema_retries = sum(schema_retry_attempts.values())
+                if total_schema_retries > 0:
+                    result["schema_retries"] = schema_retry_attempts.copy()
 
                 # Add full API response object for logging
                 try:
@@ -340,13 +395,13 @@ class OpenAISummaryManager(OpenAIClientBase):
                 return result
 
             except Exception as e:
-                retries += 1
+                api_retries += 1
                 is_retryable, error_type = self._classify_error(str(e))
                 self._report_error(
                     error_type in ["rate_limit", "server", "resource_unavailable"]
                 )
 
-                if not is_retryable or retries > max_retries:
+                if not is_retryable or api_retries > max_retries:
                     self.failed_requests += 1
                     logger.error(
                         f"Summary API error for page {page_num} (final attempt): "
@@ -354,13 +409,14 @@ class OpenAISummaryManager(OpenAIClientBase):
                     )
                     placeholder = self._create_placeholder_summary(page_num, str(e))
                     placeholder["error_type"] = "api_failure"
+                    placeholder["api_retries"] = api_retries - 1
                     return placeholder
 
                 # Calculate backoff and retry
-                wait_time = self._calculate_backoff_time(retries, error_type)
+                wait_time = self._calculate_backoff_time(api_retries, error_type)
                 logger.warning(
                     f"Summary API error for page {page_num} "
-                    f"(attempt {retries}/{max_retries + 1}). "
+                    f"(attempt {api_retries}/{max_retries + 1}). "
                     f"Retrying in {wait_time:.2f}s... "
                     f"Error: {type(e).__name__} - {e}"
                 )
@@ -370,6 +426,7 @@ class OpenAISummaryManager(OpenAIClientBase):
         self.failed_requests += 1
         placeholder = self._create_placeholder_summary(page_num, "Max retries exceeded")
         placeholder["error_type"] = "max_retries_exceeded"
+        placeholder["api_retries"] = max_retries
         return placeholder
 
     def get_stats(self) -> Dict[str, Any]:

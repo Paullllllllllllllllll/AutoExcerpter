@@ -65,15 +65,22 @@ api_requests:
 # =============================================================================
 # RETRY & BACKOFF CONFIGURATION
 # =============================================================================
-# Controls retry behavior for failed API requests
-# These settings apply to both transcription and summary API calls
+# Controls retry behavior for failed API requests following OpenAI best practices
+# Uses exponential backoff with jitter to prevent thundering herd problems
 retry:
-  # Maximum number of retry attempts for failed requests
+  # ---------------------------------------------------------------------------
+  # General API Error Retries
+  # ---------------------------------------------------------------------------
+  # These retries apply to all API errors (rate limits, timeouts, server errors, etc.)
+  
+  # Maximum number of retry attempts for API errors
   # After this many failures, the request is abandoned
+  # Recommended: 3-6 attempts (OpenAI recommends 5-6 for production)
   max_attempts: 5
   
   # Base backoff time (seconds) for exponential backoff
   # Actual wait time = base * (multiplier ^ attempt) + jitter
+  # Recommended: 1.0 seconds
   backoff_base: 1.0
   
   # Backoff multipliers for different error types
@@ -90,9 +97,49 @@ retry:
     min: 0.5
     max: 1.0
   
-  # Rate limits for retry attempts (prevents retry storms)
-  # Format: [max_requests, time_window_seconds]
-  retry_rate_limits:
-    - [1, 2]       # Max 1 retry per 2 seconds
-    - [60, 60]     # Max 60 retries per minute
-    - [3000, 3600] # Max 3000 retries per hour
+  # ---------------------------------------------------------------------------
+  # Schema-Specific Content Retries (Transcription Phase)
+  # ---------------------------------------------------------------------------
+  # Additional retries when the model returns specific boolean flags in the
+  # transcription schema, indicating content issues rather than API errors
+  schema_retries:
+    transcription:
+      # Retry if model sets no_transcribable_text=true
+      # This indicates the image contains no text to transcribe
+      # Set to 0 to disable (recommended for most use cases)
+      no_transcribable_text:
+        enabled: true
+        max_attempts: 1
+        backoff_base: 0.5
+        backoff_multiplier: 1.5
+      
+      # Retry if model sets transcription_not_possible=true
+      # This indicates transcription is impossible (e.g., illegible, corrupted image)
+      # Set to 0 to disable (recommended for most use cases)
+      transcription_not_possible:
+        enabled: true
+        max_attempts: 3
+        backoff_base: 0.5
+        backoff_multiplier: 1.5
+    
+    # ---------------------------------------------------------------------------
+    # Schema-Specific Content Retries (Summary Phase)
+    # ---------------------------------------------------------------------------
+    summary:
+      # Retry if model sets contains_no_semantic_content=true
+      # This indicates the page has no substantial content (e.g., blank page, TOC)
+      # Set to 0 to disable (recommended for most use cases)
+      contains_no_semantic_content:
+        enabled: true
+        max_attempts: 0
+        backoff_base: 0.5
+        backoff_multiplier: 1.5
+      
+      # Retry if model sets contains_no_page_number=true
+      # This indicates the page has no visible page number
+      # Set to 0 to disable (recommended for most use cases)
+      contains_no_page_number:
+        enabled: true
+        max_attempts: 0
+        backoff_base: 0.5
+        backoff_multiplier: 1.5
