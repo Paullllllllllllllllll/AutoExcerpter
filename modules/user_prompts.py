@@ -200,7 +200,7 @@ def prompt_selection(
     # Build hint text
     hints = []
     if allow_multiple:
-        hints.append("e.g., 1; 3-5")
+        hints.append("e.g., 1, 5, 6 or 3-5")
     if allow_all:
         hints.append("'all' for all items")
     if allow_back:
@@ -232,8 +232,10 @@ def prompt_selection(
             # Parse selection
             selected_indices: Set[int] = set()
             
-            # Split by semicolon for multiple selections
-            parts = choice_str.replace(" ", "").split(";") if allow_multiple else [choice_str]
+            # Split by semicolon or comma for multiple selections
+            # Normalize separators: replace semicolons with commas
+            normalized_input = choice_str.replace(";", ",").replace(" ", "")
+            parts = normalized_input.split(",") if allow_multiple else [choice_str]
             
             for part in parts:
                 if not part:
