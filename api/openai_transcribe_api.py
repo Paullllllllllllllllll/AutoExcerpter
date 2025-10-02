@@ -412,7 +412,7 @@ class OpenAITranscriptionManager(OpenAIClientBase):
                 api_retries += 1
                 is_retryable, error_type = self._classify_error(str(e))
                 self._report_error(
-                    error_type in ["rate_limit", "server", "resource_unavailable"]
+                    error_type in ["rate_limit", "server", "resource_unavailable", "malformed_response"]
                 )
 
                 if not is_retryable or api_retries > max_retries:

@@ -251,6 +251,13 @@ class OpenAIClientBase:
         if "resource unavailable" in error_lower:
             return True, "resource_unavailable"
 
+        # Check for JSON decode errors (usually caused by API glitches)
+        if any(
+            err in error_lower
+            for err in ["invalid json", "json decode", "expecting", "delimiter"]
+        ):
+            return True, "malformed_response"
+
         return False, "other"
 
     def _calculate_backoff_time(
@@ -273,7 +280,7 @@ class OpenAIClientBase:
             multiplier = BACKOFF_MULTIPLIER_RATE_LIMIT
         elif error_type == "timeout":
             multiplier = BACKOFF_MULTIPLIER_TIMEOUT
-        elif error_type == "server":
+        elif error_type in ("server", "malformed_response"):
             multiplier = BACKOFF_MULTIPLIER_SERVER
         else:
             multiplier = BACKOFF_MULTIPLIER_OTHER
