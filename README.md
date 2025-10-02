@@ -10,6 +10,7 @@ AutoExcerpter is an intelligent document processing pipeline that automatically 
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
+- [CLI Mode and Interactive Mode](#cli-mode-and-interactive-mode)
 - [Configuration](#configuration)
   - [Basic Configuration](#basic-configuration)
   - [Model Configuration](#model-configuration)
@@ -148,6 +149,81 @@ The pipeline produces multiple output files:
 **8. Cleanup**
 
 If configured, the system automatically deletes temporary working directories including extracted images and intermediate processing files, keeping only the final outputs.
+
+## CLI Mode and Interactive Mode
+
+AutoExcerpter supports two execution modes: **Interactive Mode** (default) for user-friendly document processing, and **CLI Mode** for automation and scripting.
+
+### Execution Modes
+
+#### Interactive Mode (Default)
+
+Interactive mode provides a guided experience with structured prompts and visual feedback.
+
+**Enable Interactive Mode** in `modules/config/app.yaml`:
+```yaml
+cli_mode: false
+```
+
+**Run the application:**
+```bash
+python main.py
+```
+
+**Highlights:**
+- Styled console output with headers, sections, and status indicators
+- Guided item selection for PDFs and image folders discovered under the input path
+- Exit options available at every prompt (`exit`, `quit`, or `q`)
+- Flexible selection syntax supporting single indices (`1`), multiple selections (`1;3;5`), ranges (`1-5`), or `all`
+- Immediate confirmation and error feedback for each action
+- Inline progress updates for every document processed
+
+The full interactive interface is documented in `docs/USER_PROMPTS_AND_LOGGING.md`.
+
+#### CLI Mode (Automation-Friendly)
+
+CLI mode is optimized for batch processing, automation, and integration into pipelines without interactive prompts.
+
+**Enable CLI Mode** in `modules/config/app.yaml`:
+```yaml
+cli_mode: true
+```
+
+**Command syntax:**
+```bash
+python main.py <input> <output> [--all]
+```
+
+**Arguments:**
+- `input` (required): Path to a PDF file, an image folder, or a directory containing multiple items
+- `output` (required): Destination directory for generated transcriptions and summaries
+- `--all` (optional): Process every item discovered under the input directory. When omitted, only the first item is processed if multiple items exist.
+
+**Usage examples:**
+
+```bash
+# Process a single PDF using relative paths
+python main.py "./documents/paper.pdf" "./output"
+
+# Process every item found in a directory
+python main.py "./documents" "./output" --all
+
+# Process with absolute paths on Windows
+python main.py "C:\\Documents\\paper.pdf" "C:\\Output"
+
+# Automate multiple PDFs in a shell script
+for pdf in ./papers/*.pdf; do
+    python main.py "$pdf" "./output"
+done
+```
+
+**Highlights:**
+- No interactive prompts; suitable for cron jobs and CI/CD workflows
+- Console output limited to structured logging
+- Respects all configuration values defined in YAML files (models, concurrency, retries, cleanup)
+- Allows absolute or relative input/output paths and resolves them before processing
+
+Additional CLI guidance, including scripting patterns and CI/CD samples, is available in `docs/CLI_MODE.md`.
 
 ## Configuration
 

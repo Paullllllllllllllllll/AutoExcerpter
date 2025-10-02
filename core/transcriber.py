@@ -263,7 +263,7 @@ class ItemTranscriber:
 						if eta_seconds != float('inf'):
 							eta_str = f"ETA: {time.strftime('%H:%M:%S', time.gmtime(eta_seconds))}"
 
-				logger.info(
+				logger.debug(
 					f"Processed {processed_count}/{total_images} - Item {item_num_str} - Status: {status} - {eta_str}")
 				transcription_results.append(transcription_result)
 

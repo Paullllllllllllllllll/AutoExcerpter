@@ -109,6 +109,9 @@ _APP_CFG: Dict[str, Any] = _load_yaml_app_config()
 _OA: Dict[str, Any] = _APP_CFG.get("openai", {}) if isinstance(_APP_CFG.get("openai"), dict) else {}
 _CITATION: Dict[str, Any] = _APP_CFG.get("citation", {}) if isinstance(_APP_CFG.get("citation"), dict) else {}
 
+# Execution Mode
+CLI_MODE = _get_bool(_APP_CFG, "cli_mode", False)
+
 # Feature toggle
 SUMMARIZE = _get_bool(_APP_CFG, "summarize", True)
 
@@ -142,5 +145,5 @@ OPENAI_API_TIMEOUT = _get_int(_OA, "api_timeout", DEFAULT_OPENAI_TIMEOUT)
 OPENAI_USE_FLEX = _get_bool(_OA, "use_flex", True)
 
 # Log loaded configuration
-logger.debug(f"Configuration loaded: SUMMARIZE={SUMMARIZE}, CONCURRENT_REQUESTS={CONCURRENT_REQUESTS}")
+logger.debug(f"Configuration loaded: CLI_MODE={CLI_MODE}, SUMMARIZE={SUMMARIZE}, CONCURRENT_REQUESTS={CONCURRENT_REQUESTS}")
 logger.debug(f"Models: transcription={OPENAI_TRANSCRIPTION_MODEL}, summary={OPENAI_MODEL}")

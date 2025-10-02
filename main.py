@@ -24,6 +24,16 @@ from core.transcriber import ItemTranscriber
 from modules import app_config as config
 from modules.image_utils import SUPPORTED_IMAGE_EXTENSIONS
 from modules.logger import setup_logger
+from modules.user_prompts import (
+    print_header,
+    print_section,
+    print_success,
+    print_warning,
+    print_error,
+    print_info,
+    prompt_selection,
+    exit_program,
+)
 
 logger = setup_logger(__name__)
 
@@ -56,19 +66,40 @@ def setup_argparse() -> argparse.Namespace:
         description="PDF and Image Folder Transcription and Summarization",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument(
-        "--input",
-        type=str,
-        default=config.INPUT_FOLDER_PATH,
-        help="Path to the folder containing PDFs and/or image folders, or path to a single PDF/image folder.",
-    )
+    
+    if config.CLI_MODE:
+        # CLI mode: require input and output arguments
+        parser.add_argument(
+            "input",
+            type=str,
+            help="Path to PDF file, image folder, or directory containing PDFs/image folders (relative or absolute).",
+        )
+        parser.add_argument(
+            "output",
+            type=str,
+            help="Output directory path for transcriptions and summaries (relative or absolute).",
+        )
+        parser.add_argument(
+            "--all",
+            action="store_true",
+            help="Process all items found in input directory without prompting.",
+        )
+    else:
+        # Interactive mode: optional input argument with default from config
+        parser.add_argument(
+            "--input",
+            type=str,
+            default=config.INPUT_FOLDER_PATH,
+            help="Path to the folder containing PDFs and/or image folders, or path to a single PDF/image folder.",
+        )
+    
     return parser.parse_args()
 
 
 def scan_input_path(path_to_scan: Path) -> List[ItemSpec]:
     """Gather items from a file or directory path."""
 
-    logger.info("Scanning input: %s", path_to_scan)
+    logger.debug("Scanning input: %s", path_to_scan)
     collected: List[ItemSpec] = []
 
     if path_to_scan.is_file():
@@ -87,63 +118,30 @@ def scan_input_path(path_to_scan: Path) -> List[ItemSpec]:
             path_to_scan,
         )
 
-    logger.info("Found %s potential items from %s.", len(collected), path_to_scan)
+    logger.debug("Found %s potential items from %s.", len(collected), path_to_scan)
     return collected
 
 
 def prompt_for_item_selection(items: Sequence[ItemSpec]) -> List[ItemSpec]:
+    """Prompt user to select items to process with improved UX."""
     if not items:
-        print("No processable PDF files or image folders found in the input.")
+        print_warning("No processable PDF files or image folders found in the input.")
         return []
 
-    print("\nFound the following items to process:")
-    for index, item in enumerate(items, start=1):
-        print(f"  [{index}] {item.display_label()}")
-    print(f"  [{len(items) + 1}] Process ALL listed items")
-
-    while True:
-        try:
-            choice_str = input(SELECTION_PROMPT).lower().strip()
-
-            if not choice_str:
-                print("No selection made. Please enter choices or 'all'.")
-                continue
-            if choice_str == "all" or choice_str == str(len(items) + 1):
-                return list(items)
-
-            selected_indices: Set[int] = set()
-            for part in choice_str.replace(" ", "").split(";"):
-                if not part:
-                    continue
-                if "-" in part:
-                    start_str, end_str = part.split("-", 1)
-                    start = int(start_str)
-                    end = int(end_str)
-                    if not (MIN_VALID_CHOICE <= start <= end <= len(items)):
-                        raise ValueError(
-                            f"Invalid range: {part}. Must be between {MIN_VALID_CHOICE} and {len(items)}."
-                        )
-                    selected_indices.update(range(start - 1, end))
-                elif part.isdigit():
-                    index = int(part) - 1
-                    if not (0 <= index < len(items)):
-                        raise ValueError(
-                            f"Invalid index: {part}. Must be between {MIN_VALID_CHOICE} and {len(items)}."
-                        )
-                    selected_indices.add(index)
-                else:
-                    raise ValueError(
-                        f"Invalid input part: {part}. Use numbers, ranges (e.g., 1-3), or 'all'."
-                    )
-
-            if not selected_indices:
-                logger.warning("No valid items selected from your input. Please try again.")
-                continue
-            return [items[i] for i in sorted(selected_indices)]
-        except ValueError as exc:
-            logger.warning("Invalid selection: %s", exc)
-        except Exception as exc:  # pylint: disable=broad-except
-            logger.exception("An unexpected error occurred during selection: %s", exc)
+    print_section("Available Items to Process")
+    
+    selected = prompt_selection(
+        items=items,
+        display_func=lambda item: item.display_label(),
+        prompt_message="Select items to process",
+        allow_multiple=True,
+        allow_all=True,
+        allow_back=False,
+        allow_exit=True,
+        process_all_label="Process ALL listed items",
+    )
+    
+    return selected if selected is not None else []
 
 
 def _collect_items_from_directory(path_to_scan: Path) -> Iterable[ItemSpec]:
@@ -199,22 +197,66 @@ def _is_supported_image(path: Path) -> bool:
 
 def main() -> None:
     args = setup_argparse()
-    input_path_arg = Path(args.input)
-
-    base_output_dir = Path(config.OUTPUT_FOLDER_PATH)
+    
+    # Determine input and output paths based on mode
+    if config.CLI_MODE:
+        # CLI mode: use command line arguments
+        input_path_arg = Path(args.input)
+        base_output_dir = Path(args.output)
+        process_all = args.all
+        
+        # Resolve relative paths to absolute
+        if not input_path_arg.is_absolute():
+            input_path_arg = Path.cwd() / input_path_arg
+        if not base_output_dir.is_absolute():
+            base_output_dir = Path.cwd() / base_output_dir
+        
+        logger.info(f"CLI Mode: Input={input_path_arg}, Output={base_output_dir}")
+    else:
+        # Interactive mode: use config defaults and prompts
+        input_path_arg = Path(args.input)
+        base_output_dir = Path(config.OUTPUT_FOLDER_PATH)
+        process_all = False
+        
+        print_header("AutoExcerpter - PDF & Image Transcription Tool")
+    
+    # Create output directory
     base_output_dir.mkdir(parents=True, exist_ok=True)
 
+    # Scan for items to process
     all_items_to_consider = scan_input_path(input_path_arg)
     if not all_items_to_consider:
-        logger.info("No items found to process. Exiting.")
-        sys.exit(0)
+        if config.CLI_MODE:
+            logger.error(f"No items found to process in: {input_path_arg}")
+            sys.exit(1)
+        else:
+            print_info("No items found to process. Please check your input path.")
+            logger.debug("No items found in: %s", input_path_arg)
+            sys.exit(0)
 
-    selected_items = prompt_for_item_selection(all_items_to_consider)
-    if not selected_items:
-        logger.info("No items selected for processing. Exiting.")
-        sys.exit(0)
+    # Select items based on mode
+    if config.CLI_MODE:
+        # CLI mode: process all items or just the single item
+        if process_all or len(all_items_to_consider) == 1:
+            selected_items = list(all_items_to_consider)
+            logger.info(f"Processing {len(selected_items)} item(s) in CLI mode")
+        else:
+            # If multiple items found but --all not specified, process only the first
+            selected_items = [all_items_to_consider[0]]
+            logger.info(f"Processing first item (use --all to process all {len(all_items_to_consider)} items)")
+    else:
+        # Interactive mode: prompt user for selection
+        selected_items = prompt_for_item_selection(all_items_to_consider)
+        if not selected_items:
+            print_info("No items selected for processing. Exiting.")
+            sys.exit(0)
 
     logger.info("Selected %s item(s) for processing.", len(selected_items))
+    
+    if not config.CLI_MODE:
+        print_section(f"Processing {len(selected_items)} Item(s)")
+    
+    # Process selected items
     for index, item_spec in enumerate(selected_items, start=1):
         logger.info(
             "--- Starting Item %s of %s: %s (%s) ---",
@@ -223,12 +265,19 @@ def main() -> None:
             item_spec.output_stem,
             item_spec.kind,
         )
+        
+        if not config.CLI_MODE:
+            print_info(f"Processing [{index}/{len(selected_items)}]: {item_spec.output_stem}")
 
         expected_outputs = [base_output_dir / f"{item_spec.output_stem}.txt"]
         if config.SUMMARIZE:
             expected_outputs.append(base_output_dir / f"{item_spec.output_stem}_summary.docx")
 
         if all(path.exists() for path in expected_outputs):
+            if config.CLI_MODE:
+                logger.warning(f"Output files for '{item_spec.output_stem}' already exist. Skipping.")
+            else:
+                print_warning(f"Output files for '{item_spec.output_stem}' already exist. Skipping.")
             logger.info("All output files for %s already exist. Skipping.", item_spec.output_stem)
             continue
 
@@ -236,8 +285,15 @@ def main() -> None:
         try:
             transcriber_instance = ItemTranscriber(item_spec.path, item_spec.kind, base_output_dir)
             transcriber_instance.process_item()
+            
+            if config.CLI_MODE:
+                logger.info(f"Successfully processed: {item_spec.output_stem}")
+            else:
+                print_success(f"Successfully processed: {item_spec.output_stem}")
         except Exception as exc:  # pylint: disable=broad-except
             logger.exception("CRITICAL ERROR processing item: %s", item_spec.output_stem)
+            if not config.CLI_MODE:
+                print_error(f"Critical error processing '{item_spec.output_stem}'. Check logs for details.")
             logger.info("--- Attempting to continue with the next item if any. ---")
         finally:
             if not transcriber_instance:
@@ -255,10 +311,15 @@ def main() -> None:
 
             try:
                 shutil.rmtree(working_dir, onerror=_on_remove_error)
-                logger.info("Deleted temporary working directory: %s", working_dir)
+                logger.debug("Deleted temporary working directory: %s", working_dir)
             except Exception as exc:  # pylint: disable=broad-except
                 logger.warning("Failed to remove working directory %s: %s", working_dir, exc)
 
+    # Final summary
+    if config.CLI_MODE:
+        logger.info(f"All {len(selected_items)} selected item(s) have been processed.")
+    else:
+        print_success(f"\n✓ All {len(selected_items)} selected item(s) have been processed!")
     logger.info("All selected items have been processed.")
 
 
@@ -267,9 +328,10 @@ if __name__ == "__main__":
         main()
     except KeyboardInterrupt:
         logger.info("Processing interrupted by user (Ctrl+C). Exiting.")
-        sys.exit(0)
+        exit_program("\nProcessing interrupted by user.")
     except Exception as exc:  # pylint: disable=broad-except
         logger.exception("An unexpected critical error occurred in the main execution flow: %s", exc)
+        print_error(f"An unexpected critical error occurred: {exc}")
         import traceback
 
         traceback.print_exc()

@@ -1,11 +1,14 @@
 # Application-level configuration migrated from config.py
 
+# Execution Mode
+cli_mode: false  # When true, run as CLI tool with arguments; when false, use interactive prompts
+
 # Feature toggle
 summarize: true  # When false, only transcription will be performed
 
 # Folder Paths
-input_folder_path: 'C:\Users\pagoetz\Desktop\New Literature'
-output_folder_path: 'C:\Users\pagoetz\Desktop\New Literature'
+input_folder_path: ''
+output_folder_path: ''
 
 # Cleanup Settings
 delete_temp_working_dir: true  # Delete the item's temporary working directory (including all temp files/images)
@@ -16,8 +19,8 @@ api_timeout: 600  # Timeout for each API call in seconds
 
 # Citation Management
 citation:
-  openalex_email: 'your-email@example.com'  # Email for OpenAlex API polite pool (faster response times)
-  max_api_requests: 50  # Maximum number of API calls for metadata enrichment per document
+  openalex_email: ''  # Email for OpenAlex API polite pool (faster response times)
+  max_api_requests: 150  # Maximum number of API calls for metadata enrichment per document
 
 openai:
   # OpenAI API Configuration
