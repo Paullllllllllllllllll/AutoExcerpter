@@ -1,4 +1,27 @@
-"""PDF page extraction and image folder processing utilities."""
+"""PDF page extraction and image folder processing utilities.
+
+This module provides functions for extracting pages from PDF files and
+processing image folders for the AutoExcerpter transcription pipeline.
+
+Key Features:
+1. **Parallel PDF Extraction**: Uses ThreadPoolExecutor to extract multiple
+   PDF pages concurrently for improved performance
+   
+2. **Integrated Preprocessing**: Applies image preprocessing (grayscale, resize,
+   transparency handling) during extraction to eliminate redundant operations
+   
+3. **Configuration-Driven**: Loads target DPI, JPEG quality, and preprocessing
+   settings from image_processing.yaml
+   
+4. **Error Resilient**: Continues processing even if individual pages fail,
+   logging errors for troubleshooting
+
+5. **Image Folder Support**: Scans directories for supported image formats
+   and returns sorted paths for processing
+
+The extracted/processed images are saved as JPEG files with consistent naming
+(page_0001.jpg, page_0002.jpg, etc.) for predictable ordering in transcription.
+"""
 
 from __future__ import annotations
 
@@ -22,13 +45,18 @@ __all__ = [
     "get_image_paths_from_folder",
 ]
 
+# ============================================================================
 # Constants
+# ============================================================================
 DEFAULT_TARGET_DPI = 300
 DEFAULT_JPEG_QUALITY = 95
 MAX_EXTRACTION_WORKERS = 8
 PDF_DPI_CONVERSION_FACTOR = 72.0
 
 
+# ============================================================================
+# PDF Extraction Functions
+# ============================================================================
 def extract_pdf_pages_to_images(pdf_path: Path, output_images_dir: Path) -> List[Path]:
     """
     Extract pages from a PDF and save them as images.
@@ -137,6 +165,9 @@ def extract_pdf_pages_to_images(pdf_path: Path, output_images_dir: Path) -> List
     return extracted_image_paths
 
 
+# ============================================================================
+# Image Folder Processing Functions
+# ============================================================================
 def get_image_paths_from_folder(folder_path: Path) -> List[Path]:
     """
     Get a sorted list of image paths from a folder.

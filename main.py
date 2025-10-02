@@ -195,6 +195,97 @@ def _is_supported_image(path: Path) -> bool:
     return path.suffix.lower() in SUPPORTED_IMAGE_EXTENSIONS
 
 
+def _process_single_item(
+    item_spec: ItemSpec,
+    index: int,
+    total_items: int,
+    base_output_dir: Path,
+) -> bool:
+    """
+    Process a single PDF or image folder item.
+    
+    Args:
+        item_spec: Specification of the item to process.
+        index: Current item index (1-based).
+        total_items: Total number of items to process.
+        base_output_dir: Base directory for outputs.
+        
+    Returns:
+        True if processing succeeded, False otherwise.
+    """
+    logger.info(
+        "--- Starting Item %s of %s: %s (%s) ---",
+        index,
+        total_items,
+        item_spec.output_stem,
+        item_spec.kind,
+    )
+    
+    if not config.CLI_MODE:
+        print_info(f"Processing [{index}/{total_items}]: {item_spec.output_stem}")
+
+    # Check if output files already exist
+    expected_outputs = [base_output_dir / f"{item_spec.output_stem}.txt"]
+    if config.SUMMARIZE:
+        expected_outputs.append(base_output_dir / f"{item_spec.output_stem}_summary.docx")
+
+    if all(path.exists() for path in expected_outputs):
+        if config.CLI_MODE:
+            logger.warning(f"Output files for '{item_spec.output_stem}' already exist. Skipping.")
+        else:
+            print_warning(f"Output files for '{item_spec.output_stem}' already exist. Skipping.")
+        logger.info("All output files for %s already exist. Skipping.", item_spec.output_stem)
+        return True
+
+    # Process the item
+    transcriber_instance: Optional[ItemTranscriber] = None
+    try:
+        transcriber_instance = ItemTranscriber(item_spec.path, item_spec.kind, base_output_dir)
+        transcriber_instance.process_item()
+        
+        if config.CLI_MODE:
+            logger.info(f"Successfully processed: {item_spec.output_stem}")
+        else:
+            print_success(f"Successfully processed: {item_spec.output_stem}")
+        return True
+        
+    except Exception as exc:
+        logger.exception("CRITICAL ERROR processing item: %s", item_spec.output_stem)
+        if not config.CLI_MODE:
+            print_error(f"Critical error processing '{item_spec.output_stem}'. Check logs for details.")
+        logger.info("--- Attempting to continue with the next item if any. ---")
+        return False
+        
+    finally:
+        # Clean up temporary working directory if configured
+        if transcriber_instance and config.DELETE_TEMP_WORKING_DIR:
+            working_dir = transcriber_instance.working_dir
+            if working_dir.exists():
+                _cleanup_working_directory(working_dir)
+
+
+def _cleanup_working_directory(working_dir: Path) -> None:
+    """
+    Clean up temporary working directory with proper error handling.
+    
+    Args:
+        working_dir: Path to working directory to remove.
+    """
+    def _on_remove_error(func, path_to_fix, _exc_info):
+        """Handle permission errors during directory removal."""
+        try:
+            os.chmod(path_to_fix, stat.S_IWRITE)
+            func(path_to_fix)
+        except Exception as exc_inner:
+            logger.warning("Could not forcibly remove %s: %s", path_to_fix, exc_inner)
+
+    try:
+        shutil.rmtree(working_dir, onerror=_on_remove_error)
+        logger.debug("Deleted temporary working directory: %s", working_dir)
+    except Exception as exc:
+        logger.warning("Failed to remove working directory %s: %s", working_dir, exc)
+
+
 def main() -> None:
     args = setup_argparse()
     
@@ -258,62 +349,7 @@ def main() -> None:
     
     # Process selected items
     for index, item_spec in enumerate(selected_items, start=1):
-        logger.info(
-            "--- Starting Item %s of %s: %s (%s) ---",
-            index,
-            len(selected_items),
-            item_spec.output_stem,
-            item_spec.kind,
-        )
-        
-        if not config.CLI_MODE:
-            print_info(f"Processing [{index}/{len(selected_items)}]: {item_spec.output_stem}")
-
-        expected_outputs = [base_output_dir / f"{item_spec.output_stem}.txt"]
-        if config.SUMMARIZE:
-            expected_outputs.append(base_output_dir / f"{item_spec.output_stem}_summary.docx")
-
-        if all(path.exists() for path in expected_outputs):
-            if config.CLI_MODE:
-                logger.warning(f"Output files for '{item_spec.output_stem}' already exist. Skipping.")
-            else:
-                print_warning(f"Output files for '{item_spec.output_stem}' already exist. Skipping.")
-            logger.info("All output files for %s already exist. Skipping.", item_spec.output_stem)
-            continue
-
-        transcriber_instance: Optional[ItemTranscriber] = None
-        try:
-            transcriber_instance = ItemTranscriber(item_spec.path, item_spec.kind, base_output_dir)
-            transcriber_instance.process_item()
-            
-            if config.CLI_MODE:
-                logger.info(f"Successfully processed: {item_spec.output_stem}")
-            else:
-                print_success(f"Successfully processed: {item_spec.output_stem}")
-        except Exception as exc:  # pylint: disable=broad-except
-            logger.exception("CRITICAL ERROR processing item: %s", item_spec.output_stem)
-            if not config.CLI_MODE:
-                print_error(f"Critical error processing '{item_spec.output_stem}'. Check logs for details.")
-            logger.info("--- Attempting to continue with the next item if any. ---")
-        finally:
-            if not transcriber_instance:
-                continue
-            working_dir = transcriber_instance.working_dir
-            if not (config.DELETE_TEMP_WORKING_DIR and working_dir.exists()):
-                continue
-
-            def _on_remove_error(func, path_to_fix, _exc_info):
-                try:
-                    os.chmod(path_to_fix, stat.S_IWRITE)
-                    func(path_to_fix)
-                except Exception as exc_inner:  # pylint: disable=broad-except
-                    logger.warning("Could not forcibly remove %s: %s", path_to_fix, exc_inner)
-
-            try:
-                shutil.rmtree(working_dir, onerror=_on_remove_error)
-                logger.debug("Deleted temporary working directory: %s", working_dir)
-            except Exception as exc:  # pylint: disable=broad-except
-                logger.warning("Failed to remove working directory %s: %s", working_dir, exc)
+        _process_single_item(item_spec, index, len(selected_items), base_output_dir)
 
     # Final summary
     if config.CLI_MODE:

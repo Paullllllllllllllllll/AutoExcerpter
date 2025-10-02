@@ -14,7 +14,9 @@ from typing import Optional
 # Public API
 __all__ = ["setup_logger", "set_log_level", "setup_console_handler", "setup_file_handler"]
 
+# ============================================================================
 # Constants
+# ============================================================================
 DEFAULT_LOG_LEVEL = logging.INFO
 USER_LOG_LEVEL = logging.WARNING  # Only show warnings and errors to users by default
 DETAILED_FORMAT = "[%(levelname)s] %(asctime)s - %(name)s - %(message)s"
@@ -22,6 +24,9 @@ SIMPLE_FORMAT = "[%(levelname)s] %(message)s"
 DEFAULT_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 
+# ============================================================================
+# Logger Setup Functions
+# ============================================================================
 def setup_logger(
     name: str,
     level: int = DEFAULT_LOG_LEVEL,
@@ -80,6 +85,9 @@ def setup_logger(
     return logger
 
 
+# ============================================================================
+# Handler Management Functions
+# ============================================================================
 def setup_console_handler(
     logger: logging.Logger,
     level: int = USER_LOG_LEVEL,
@@ -133,6 +141,9 @@ def setup_file_handler(
     logger.addHandler(file_handler)
 
 
+# ============================================================================
+# Logger Configuration Functions
+# ============================================================================
 def set_log_level(logger: logging.Logger, level: int) -> None:
     """
     Change the log level of an existing logger.

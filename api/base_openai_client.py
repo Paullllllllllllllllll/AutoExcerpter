@@ -1,4 +1,28 @@
-"""Base OpenAI client with shared retry logic and error handling."""
+"""Base OpenAI client with shared retry logic and error handling.
+
+This module provides the foundational OpenAI API client implementation with:
+
+1. **Dual-Level Retry System**:
+   - API Error Retries: Handles rate limits, timeouts, server errors with exponential backoff
+   - Schema-Specific Retries: Retries based on model-returned boolean flags in responses
+   
+2. **Error Classification**: Categorizes errors (rate_limit, timeout, server, network, other)
+   and applies appropriate backoff strategies
+
+3. **Rate Limiting Integration**: Works with RateLimiter to throttle requests and prevent
+   API quota exhaustion
+
+4. **Configuration Loading**: Dynamically loads model parameters, service tiers, and retry
+   settings from YAML configuration files
+
+5. **Statistics Tracking**: Monitors request success rates, processing times, and error patterns
+
+Subclasses (OpenAITranscriptionManager, OpenAISummaryManager) implement specific API endpoints
+while inheriting the robust retry and error handling infrastructure.
+
+Architecture follows OpenAI Cookbook best practices for the Responses API:
+https://cookbook.openai.com/examples/how_to_handle_rate_limits
+"""
 
 from __future__ import annotations
 

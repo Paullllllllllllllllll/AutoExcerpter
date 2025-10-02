@@ -1,4 +1,32 @@
-"""Configuration loader for YAML-based settings."""
+"""Configuration loader for YAML-based settings.
+
+This module provides centralized configuration loading for the AutoExcerpter application.
+It loads YAML configuration files from the modules/config/ directory and provides
+type-safe access to configuration values.
+
+Supported Configuration Files:
+1. **image_processing.yaml**: Image preprocessing settings (DPI, quality, resize, etc.)
+2. **concurrency.yaml**: API concurrency, service tiers, and retry configuration
+3. **model.yaml**: Model-specific parameters (GPT-5 settings, reasoning effort, etc.)
+
+Usage Pattern:
+    >>> from modules.config_loader import ConfigLoader
+    >>> loader = ConfigLoader()
+    >>> loader.load_configs()
+    >>> img_config = loader.get_image_processing_config()
+    >>> concurrency_config = loader.get_concurrency_config()
+    >>> model_config = loader.get_model_config()
+
+Path Constants:
+- PROJECT_ROOT: Root directory of the project
+- MODULES_DIR: modules/ directory
+- CONFIG_DIR: modules/config/ directory
+- PROMPTS_DIR: modules/prompts/ directory
+- SCHEMAS_DIR: modules/schemas/ directory
+
+The loader handles missing files gracefully, returning empty dictionaries and logging
+warnings when configuration files are not found or contain invalid YAML.
+"""
 
 from __future__ import annotations
 
@@ -22,7 +50,9 @@ __all__ = [
     "SCHEMAS_DIR",
 ]
 
-# Resolve project paths
+# ============================================================================
+# Path Resolution
+# ============================================================================
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 MODULES_DIR = Path(__file__).resolve().parent
 CONFIG_DIR = MODULES_DIR / "config"
@@ -30,6 +60,9 @@ PROMPTS_DIR = MODULES_DIR / "prompts"
 SCHEMAS_DIR = MODULES_DIR / "schemas"
 
 
+# ============================================================================
+# Configuration Loader Class
+# ============================================================================
 class ConfigLoader:
     """
     Lightweight loader for YAML/JSON configs residing under modules/.

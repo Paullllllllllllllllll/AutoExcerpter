@@ -1,4 +1,28 @@
-"""Image preprocessing utilities for OCR optimization."""
+"""Image preprocessing utilities for OCR optimization.
+
+This module provides image processing functionality optimized for OpenAI Vision API
+and OCR quality. All processing can be done in-memory to avoid disk I/O overhead.
+
+Key Features:
+1. **In-Memory Processing**: Process images without intermediate disk writes using
+   PIL and base64 encoding
+   
+2. **Configurable Preprocessing**:
+   - Grayscale conversion for better OCR
+   - Transparency handling (paste on white background)
+   - Intelligent resizing based on detail level (low/high/auto)
+   - JPEG compression with configurable quality
+
+3. **Detail-Level Optimization**:
+   - 'low': Downscale to max side length for faster processing
+   - 'high': Fit into target box with padding for maximum quality
+   - 'auto': Defaults to high quality
+
+4. **Configuration-Driven**: All settings loaded from image_processing.yaml
+
+The ImageProcessor class handles individual image processing with full configuration
+support, while static methods provide utilities for batch operations.
+"""
 
 from __future__ import annotations
 
@@ -20,7 +44,9 @@ __all__ = [
     "SUPPORTED_IMAGE_EXTENSIONS",
 ]
 
+# ============================================================================
 # Constants
+# ============================================================================
 SUPPORTED_IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.tiff', '.tif', '.bmp', '.gif', '.webp'}
 DEFAULT_LOW_MAX_SIDE_PX = 512
 DEFAULT_HIGH_TARGET_WIDTH = 768
@@ -29,6 +55,9 @@ DEFAULT_JPEG_QUALITY = 95
 WHITE_BACKGROUND_COLOR = (255, 255, 255)
 
 
+# ============================================================================
+# Image Processing Class
+# ============================================================================
 class ImageProcessor:
     def __init__(self, image_path: Path) -> None:
         """

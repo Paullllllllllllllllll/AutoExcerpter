@@ -1,4 +1,36 @@
-"""Rate limiter for API calls with adaptive backoff."""
+"""Rate limiter for API calls with adaptive backoff.
+
+This module implements an intelligent rate limiter with adaptive backoff for API calls.
+It tracks requests across multiple time windows and automatically adjusts wait times
+based on error patterns.
+
+Key Features:
+1. **Multi-Window Rate Limiting**: Enforces multiple concurrent rate limits (e.g., 
+   per-second, per-minute, per-hour) to comply with API quotas
+
+2. **Adaptive Backoff**: Dynamically adjusts wait times based on consecutive errors:
+   - Increases multiplier on rate limit/server errors
+   - Gradually decreases on successful requests
+   - Prevents thundering herd with jitter
+
+3. **Thread-Safe**: Uses locks to ensure thread-safe operation in concurrent environments
+
+4. **Statistics Tracking**: Monitors total requests, wait times, current rates, and
+   error patterns for performance analysis
+
+Usage:
+    >>> limits = [(120, 1), (15000, 60)]  # 120/sec, 15000/min
+    >>> limiter = RateLimiter(limits)
+    >>> 
+    >>> limiter.wait_for_capacity()  # Blocks until capacity available
+    >>> # ... make API call ...
+    >>> limiter.report_success()  # or limiter.report_error(is_rate_limit=True)
+    >>> 
+    >>> stats = limiter.get_stats()  # Get performance metrics
+
+The adaptive error multiplier starts at 1.0 and can increase up to 5.0 based on
+error frequency, providing intelligent backoff during API issues.
+"""
 
 from __future__ import annotations
 
@@ -10,7 +42,9 @@ from typing import Any, Dict, List, Tuple
 # Public API
 __all__ = ["RateLimiter"]
 
+# ============================================================================
 # Constants
+# ============================================================================
 MIN_SLEEP_TIME = 0.05
 MAX_SLEEP_TIME = 0.50
 ERROR_MULTIPLIER_DECREASE_RATE = 0.9
@@ -19,6 +53,9 @@ ERROR_MULTIPLIER_INCREASE_OTHER = 1.2
 CONSECUTIVE_ERRORS_THRESHOLD = 2
 
 
+# ============================================================================
+# Rate Limiter Class
+# ============================================================================
 class RateLimiter:
     """
     Manages API call rates with adaptive backoff.

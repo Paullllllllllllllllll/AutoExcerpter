@@ -1,4 +1,32 @@
-"""File management utilities for transcription and summary outputs."""
+"""File management utilities for transcription and summary outputs.
+
+This module handles all file I/O operations for the AutoExcerpter application:
+
+1. **DOCX Summary Creation**: 
+   - Generates formatted Word documents with summaries
+   - Manages citation deduplication and consolidation
+   - Adds hyperlinks to citations with metadata
+   - Applies consistent formatting (headings, bullets, spacing)
+
+2. **Transcription Text Output**:
+   - Writes raw transcriptions to text files
+   - Includes metadata (timestamps, statistics, source info)
+
+3. **JSON Logging**:
+   - Initializes structured log files for API results
+   - Appends entries during processing
+   - Finalizes logs with proper JSON formatting
+
+4. **Content Filtering**:
+   - Filters out empty/error pages from summaries
+   - Validates semantic content
+
+5. **XML Safety**:
+   - Sanitizes text for safe DOCX/XML output
+   - Removes invalid control characters
+
+All functions handle errors gracefully and provide detailed logging.
+"""
 
 from __future__ import annotations
 
@@ -31,7 +59,9 @@ __all__ = [
     "sanitize_for_xml",
 ]
 
-# Constants for document formatting
+# ============================================================================
+# Document Formatting Constants
+# ============================================================================
 TITLE_HEADING_LEVEL = 0
 PAGE_HEADING_LEVEL = 1
 REFERENCES_HEADING_LEVEL = 2
@@ -43,10 +73,15 @@ BULLET_SPACE_AFTER_PT = 2
 REF_INDENT_PT = 18
 BULLET_INDENT_PT = 18
 
-# Constants for error markers
+# ============================================================================
+# Error Detection Constants
+# ============================================================================
 ERROR_MARKERS = ["[empty page", "no transcription possible", "empty page", "error"]
 
 
+# ============================================================================
+# Text Sanitization Functions
+# ============================================================================
 def sanitize_for_xml(text: Optional[str]) -> str:
     """
     Return XML-safe text for DOCX output by removing control characters.

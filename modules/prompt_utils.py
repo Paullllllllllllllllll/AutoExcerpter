@@ -1,4 +1,29 @@
-"""Utilities for rendering prompts with embedded JSON schemas."""
+"""Utilities for rendering prompts with embedded JSON schemas.
+
+This module provides flexible prompt template rendering with JSON schema injection.
+It supports multiple injection strategies to accommodate different prompt formats.
+
+Injection Strategies (applied in order):
+1. **Generic Token Replacement**: Replaces {{SCHEMA}} with formatted JSON
+2. **Legacy Token Replacement**: Replaces {{TRANSCRIPTION_SCHEMA}} for backward compatibility
+3. **Marker Replacement**: Finds "The JSON schema:" and replaces/appends JSON after it
+4. **Append Strategy**: Appends schema at end if no token/marker found
+
+Features:
+- Pretty-prints JSON with configurable indentation
+- Validates input parameters (prompt text, schema object)
+- Handles malformed JSON gracefully with fallback strategies
+- Supports both token-based and marker-based templates
+
+Usage:
+    >>> schema = {"type": "object", "properties": {...}}
+    >>> prompt = "Transcribe this image. {{SCHEMA}}"
+    >>> rendered = render_prompt_with_schema(prompt, schema)
+    # Returns prompt with {{SCHEMA}} replaced by formatted JSON
+
+This ensures prompts include structured output specifications for the OpenAI API
+while maintaining flexibility in template design.
+"""
 
 from __future__ import annotations
 
@@ -12,13 +37,18 @@ logger = setup_logger(__name__)
 # Public API
 __all__ = ["render_prompt_with_schema"]
 
+# ============================================================================
 # Constants
+# ============================================================================
 SCHEMA_TOKEN = "{{TRANSCRIPTION_SCHEMA}}"  # Legacy token for backward compatibility
 SCHEMA_TOKEN_GENERIC = "{{SCHEMA}}"  # Generic token for any schema
 SCHEMA_MARKER = "The JSON schema:"
 DEFAULT_INDENT = 2
 
 
+# ============================================================================
+# Prompt Rendering Functions
+# ============================================================================
 def render_prompt_with_schema(prompt_text: str, schema_obj: Dict[str, Any]) -> str:
     """
     Inject a JSON schema into a prompt using one of four strategies.

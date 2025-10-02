@@ -150,6 +150,104 @@ class OpenAISummaryManager(OpenAIClientBase):
 
         return result
 
+    def _build_api_payload(self, transcription: str) -> Dict[str, Any]:
+        """
+        Build the API request payload for summary generation.
+        
+        Args:
+            transcription: The transcribed text to summarize.
+            
+        Returns:
+            Dictionary containing the complete API request payload.
+        """
+        # Prepare system prompt with schema
+        schema_obj = (
+            self.summary_schema.get("schema")
+            if isinstance(self.summary_schema, dict) and "schema" in self.summary_schema
+            else self.summary_schema
+        ) or {}
+        system_text = render_prompt_with_schema(
+            self.summary_system_prompt_text, schema_obj
+        )
+
+        # Build input messages
+        input_messages = [
+            {
+                "role": "system",
+                "content": system_text,
+            },
+            {
+                "role": "user",
+                "content": [{"type": "input_text", "text": transcription}],
+            },
+        ]
+
+        # Build base payload
+        text_format = self._build_text_format()
+        payload: Dict[str, Any] = {
+            "model": self.model_name,
+            "input": input_messages,
+            "service_tier": self.service_tier,
+        }
+
+        # Add max_output_tokens from config (required parameter)
+        max_tokens = self.model_config.get("max_output_tokens", 8192)
+        payload["max_output_tokens"] = max_tokens
+
+        # Add reasoning parameters if specified (for GPT-5 and o-series models)
+        if "reasoning" in self.model_config:
+            reasoning_cfg = self.model_config["reasoning"]
+            if isinstance(reasoning_cfg, dict) and "effort" in reasoning_cfg:
+                payload["reasoning"] = {"effort": reasoning_cfg["effort"]}
+
+        # Add text parameters if specified (for GPT-5 family)
+        if "text" in self.model_config:
+            text_cfg = self.model_config["text"]
+            if isinstance(text_cfg, dict):
+                text_params = {}
+                if "verbosity" in text_cfg:
+                    text_params["verbosity"] = text_cfg["verbosity"]
+
+                # Add format if we have a schema
+                if text_format:
+                    text_params["format"] = text_format
+
+                if text_params:
+                    payload["text"] = text_params
+        elif text_format:
+            # No text config, but we have a format
+            payload["text"] = {"format": text_format}
+
+        return payload
+
+    def _ensure_page_number_structure(
+        self, summary_json: Dict[str, Any], page_num: int
+    ) -> None:
+        """
+        Ensure page_number structure is correct in the summary JSON.
+        
+        Args:
+            summary_json: The summary JSON to validate/fix.
+            page_num: The page number to use as fallback.
+        """
+        # Ensure page_number structure is correct
+        if "page_number" not in summary_json:
+            summary_json["page_number"] = {
+                "page_number_integer": page_num,
+                "contains_no_page_number": False,
+            }
+        elif not isinstance(summary_json["page_number"], dict):
+            # Handle malformed responses
+            contains_no_page_number = summary_json.get(
+                "contains_no_page_number", False
+            )
+            summary_json["page_number"] = {
+                "page_number_integer": page_num,
+                "contains_no_page_number": contains_no_page_number,
+            }
+            if "contains_no_page_number" in summary_json:
+                del summary_json["contains_no_page_number"]
+
     def generate_summary(
         self, transcription: str, page_num: int, max_retries: int = DEFAULT_MAX_RETRIES
     ) -> Dict[str, Any]:
@@ -170,28 +268,6 @@ class OpenAISummaryManager(OpenAIClientBase):
         """
         start_time = time.time()
 
-        # Prepare request payload
-        schema_obj = (
-            self.summary_schema.get("schema")
-            if isinstance(self.summary_schema, dict) and "schema" in self.summary_schema
-            else self.summary_schema
-        ) or {}
-        system_text = render_prompt_with_schema(
-            self.summary_system_prompt_text, schema_obj
-        )
-
-        input_messages = [
-            {
-                "role": "system",
-                "content": system_text,
-            },
-            {
-                "role": "user",
-                "content": [{"type": "input_text", "text": transcription}],
-            },
-        ]
-
-        text_format = self._build_text_format()
         api_retries = 0
         schema_retry_attempts = {
             "contains_no_semantic_content": 0,
@@ -203,39 +279,8 @@ class OpenAISummaryManager(OpenAIClientBase):
             try:
                 self._wait_for_rate_limit()
 
-                payload: Dict[str, Any] = {
-                    "model": self.model_name,
-                    "input": input_messages,
-                    "service_tier": self.service_tier,
-                }
-
-                # Add max_output_tokens from config (required parameter)
-                max_tokens = self.model_config.get("max_output_tokens", 8192)
-                payload["max_output_tokens"] = max_tokens
-
-                # Add reasoning parameters if specified (for GPT-5 and o-series models)
-                if "reasoning" in self.model_config:
-                    reasoning_cfg = self.model_config["reasoning"]
-                    if isinstance(reasoning_cfg, dict) and "effort" in reasoning_cfg:
-                        payload["reasoning"] = {"effort": reasoning_cfg["effort"]}
-
-                # Add text parameters if specified (for GPT-5 family)
-                if "text" in self.model_config:
-                    text_cfg = self.model_config["text"]
-                    if isinstance(text_cfg, dict):
-                        text_params = {}
-                        if "verbosity" in text_cfg:
-                            text_params["verbosity"] = text_cfg["verbosity"]
-
-                        # Add format if we have a schema
-                        if text_format:
-                            text_params["format"] = text_format
-
-                        if text_params:
-                            payload["text"] = text_params
-                elif text_format:
-                    # No text config, but we have a format
-                    payload["text"] = {"format": text_format}
+                # Build API request payload
+                payload = self._build_api_payload(transcription)
 
                 response = self.client.responses.create(**payload)
 
@@ -259,23 +304,8 @@ class OpenAISummaryManager(OpenAIClientBase):
                     raise ValueError(f"Invalid JSON in API response: {json_err}")
 
                 # Ensure page_number structure is correct
-                if "page_number" not in summary_json:
-                    summary_json["page_number"] = {
-                        "page_number_integer": page_num,
-                        "contains_no_page_number": False,
-                    }
-                elif not isinstance(summary_json["page_number"], dict):
-                    # Handle malformed responses
-                    contains_no_page_number = summary_json.get(
-                        "contains_no_page_number", False
-                    )
-                    summary_json["page_number"] = {
-                        "page_number_integer": page_num,
-                        "contains_no_page_number": contains_no_page_number,
-                    }
-                    if "contains_no_page_number" in summary_json:
-                        del summary_json["contains_no_page_number"]
-                
+                self._ensure_page_number_structure(summary_json, page_num)
+
                 # Check for schema-specific retry conditions
                 # Check contains_no_semantic_content flag
                 if summary_json.get("contains_no_semantic_content") is True:

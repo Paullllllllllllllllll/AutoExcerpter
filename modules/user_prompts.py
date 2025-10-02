@@ -2,6 +2,13 @@
 
 This module provides a standardized way to interact with users through the CLI,
 including options to exit, go back, and make selections with clear formatting.
+
+Features:
+- Color-coded output (success, warning, error, info)
+- Interactive selection prompts with multiple options
+- Yes/No prompts with defaults
+- Exit and back navigation support
+- Consistent formatting with dividers and headers
 """
 
 from __future__ import annotations
@@ -23,8 +30,11 @@ __all__ = [
     "exit_program",
 ]
 
-# ANSI color codes for prettier output
+# ============================================================================
+# ANSI Color Codes
+# ============================================================================
 class Colors:
+    """ANSI color codes for terminal output formatting."""
     HEADER = '\033[95m'
     OKBLUE = '\033[94m'
     OKCYAN = '\033[96m'
@@ -37,7 +47,9 @@ class Colors:
 
 T = TypeVar('T')
 
+# ============================================================================
 # Constants
+# ============================================================================
 EXIT_COMMANDS = {'exit', 'quit', 'q'}
 BACK_COMMANDS = {'back', 'b'}
 ALL_COMMANDS = {'all', 'a'}
@@ -45,6 +57,9 @@ DIVIDER_CHAR = '─'
 DIVIDER_LENGTH = 70
 
 
+# ============================================================================
+# Output Functions (Print Messages)
+# ============================================================================
 def print_header(message: str) -> None:
     """Print a prominent header message."""
     print(f"\n{Colors.BOLD}{Colors.HEADER}{'=' * DIVIDER_LENGTH}{Colors.ENDC}")
@@ -79,12 +94,18 @@ def print_info(message: str) -> None:
     print(f"{Colors.OKCYAN}ℹ {message}{Colors.ENDC}")
 
 
+# ============================================================================
+# Program Control Functions
+# ============================================================================
 def exit_program(message: str = "Exiting program. Goodbye!", exit_code: int = 0) -> None:
     """Exit the program gracefully with a message."""
     print(f"\n{Colors.OKCYAN}{message}{Colors.ENDC}\n")
     sys.exit(exit_code)
 
 
+# ============================================================================
+# Interactive Prompt Functions
+# ============================================================================
 def prompt_yes_no(
     question: str,
     default: Optional[bool] = None,

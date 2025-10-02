@@ -1,8 +1,24 @@
 """Application configuration loader from YAML files.
 
 This module loads configuration from modules/config/app.yaml and exposes
-settings as module-level constants. Import as:
+settings as module-level constants. Configuration includes:
+- Execution mode (CLI vs interactive)
+- Feature toggles (summarization, cleanup)
+- File paths (input/output directories)
+- API settings (OpenAI credentials, rate limits, timeouts)
+- Citation management settings (OpenAlex integration)
+
+Import as:
     from modules import app_config as config
+
+Configuration is loaded at module import time and exposed as constants:
+    - CLI_MODE: bool
+    - SUMMARIZE: bool
+    - INPUT_FOLDER_PATH: str
+    - OUTPUT_FOLDER_PATH: str
+    - OPENAI_API_KEY: str
+    - OPENAI_MODEL: str
+    - etc.
 """
 
 from __future__ import annotations
@@ -17,18 +33,25 @@ from modules.logger import setup_logger
 
 logger = setup_logger(__name__)
 
-# Constants
+# ============================================================================
+# Constants and Defaults
+# ============================================================================
 DEFAULT_CONCURRENT_REQUESTS = 4
 DEFAULT_API_TIMEOUT = 320
 DEFAULT_OPENAI_TIMEOUT = 900
 DEFAULT_MODEL = "gpt-5-mini"
 DEFAULT_RATE_LIMITS: List[Tuple[int, int]] = [(120, 1), (15000, 60), (15000, 3600)]
 
-# Path resolution
+# ============================================================================
+# Configuration File Paths
+# ============================================================================
 _MODULES_DIR = Path(__file__).resolve().parent
 _APP_CONFIG_PATH = _MODULES_DIR / "config" / "app.yaml"
 
 
+# ============================================================================
+# Configuration Loading Functions
+# ============================================================================
 def _load_yaml_app_config() -> Dict[str, Any]:
     """
     Load the application config YAML.
@@ -104,46 +127,52 @@ def _get_bool(data: Dict[str, Any], key: str, default: bool) -> bool:
     return bool(value)
 
 
+# ============================================================================
+# Configuration Values (loaded at module import)
+# ============================================================================
 # Load configuration
 _APP_CFG: Dict[str, Any] = _load_yaml_app_config()
 _OA: Dict[str, Any] = _APP_CFG.get("openai", {}) if isinstance(_APP_CFG.get("openai"), dict) else {}
 _CITATION: Dict[str, Any] = _APP_CFG.get("citation", {}) if isinstance(_APP_CFG.get("citation"), dict) else {}
 
-# Execution Mode
+# --- Execution Mode ---
 CLI_MODE = _get_bool(_APP_CFG, "cli_mode", False)
 
-# Feature toggle
+# --- Feature Toggles ---
 SUMMARIZE = _get_bool(_APP_CFG, "summarize", True)
 
-# Folder Paths
+# --- File Paths ---
 INPUT_FOLDER_PATH = _get_str(_APP_CFG, "input_folder_path", r"C:\Users\paulg\OneDrive\Desktop\New Literature")
 OUTPUT_FOLDER_PATH = _get_str(_APP_CFG, "output_folder_path", r"C:\Users\paulg\OneDrive\Desktop\New Literature")
 
-# Cleanup Settings
+# --- Cleanup Settings ---
 DELETE_TEMP_WORKING_DIR = _get_bool(_APP_CFG, "delete_temp_working_dir", True)
 
-# Performance Settings
+# --- Performance Settings ---
 CONCURRENT_REQUESTS = _get_int(_APP_CFG, "concurrent_requests", DEFAULT_CONCURRENT_REQUESTS)
 API_TIMEOUT = _get_int(_APP_CFG, "api_timeout", DEFAULT_API_TIMEOUT)
 
-# Citation Management Settings
+# --- Citation Management Settings ---
 CITATION_OPENALEX_EMAIL = _get_str(_CITATION, "openalex_email", "your-email@example.com")
 CITATION_MAX_API_REQUESTS = _get_int(_CITATION, "max_api_requests", 50)
 
-# Rate Limiting Configuration (OpenAI)
+# --- OpenAI Rate Limiting ---
 OPENAI_RATE_LIMITS = _as_rate_limits(_OA.get("rate_limits"))
 
-# OpenAI API Configuration
+# --- OpenAI API Configuration ---
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 if not OPENAI_API_KEY:
-    logger.error("OPENAI_API_KEY environment variable is not set")
-    raise EnvironmentError("OPENAI_API_KEY environment variable is not set")
+    error_msg = "OPENAI_API_KEY environment variable is not set. Please set it before running the application."
+    logger.error(error_msg)
+    raise EnvironmentError(error_msg)
 
 OPENAI_MODEL = _get_str(_OA, "model", DEFAULT_MODEL)
 OPENAI_TRANSCRIPTION_MODEL = _get_str(_OA, "transcription_model", DEFAULT_MODEL)
 OPENAI_API_TIMEOUT = _get_int(_OA, "api_timeout", DEFAULT_OPENAI_TIMEOUT)
 OPENAI_USE_FLEX = _get_bool(_OA, "use_flex", True)
 
-# Log loaded configuration
+# ============================================================================
+# Logging
+# ============================================================================
 logger.debug(f"Configuration loaded: CLI_MODE={CLI_MODE}, SUMMARIZE={SUMMARIZE}, CONCURRENT_REQUESTS={CONCURRENT_REQUESTS}")
 logger.debug(f"Models: transcription={OPENAI_TRANSCRIPTION_MODEL}, summary={OPENAI_MODEL}")

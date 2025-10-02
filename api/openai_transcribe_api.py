@@ -220,6 +220,69 @@ class OpenAITranscriptionManager(OpenAIClientBase):
         # Fallback: return original text
         return text
 
+    def _build_api_payload(self, base64_image: str) -> Dict[str, Any]:
+        """
+        Build the API request payload for image transcription.
+        
+        Args:
+            base64_image: Base64-encoded image string.
+            
+        Returns:
+            Dictionary containing the complete API request payload.
+        """
+        # Prepare input messages
+        input_messages = [
+            {
+                "role": "system",
+                "content": self.system_prompt,
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_image",
+                        "image_url": f"data:image/jpeg;base64,{base64_image}",
+                    }
+                ],
+            },
+        ]
+
+        # Build base payload
+        text_format = self._build_text_format()
+        payload: Dict[str, Any] = {
+            "model": self.model_name,
+            "input": input_messages,
+            "service_tier": self.service_tier,
+        }
+
+        # Add max_output_tokens from config
+        max_tokens = self.model_config.get("max_output_tokens", 16384)
+        payload["max_output_tokens"] = max_tokens
+
+        # Add reasoning parameters if specified
+        if "reasoning" in self.model_config:
+            reasoning_cfg = self.model_config["reasoning"]
+            if isinstance(reasoning_cfg, dict) and "effort" in reasoning_cfg:
+                payload["reasoning"] = {"effort": reasoning_cfg["effort"]}
+
+        # Add text parameters if specified
+        if "text" in self.model_config:
+            text_cfg = self.model_config["text"]
+            if isinstance(text_cfg, dict):
+                text_params = {}
+                if "verbosity" in text_cfg:
+                    text_params["verbosity"] = text_cfg["verbosity"]
+
+                if text_format:
+                    text_params["format"] = text_format
+
+                if text_params:
+                    payload["text"] = text_params
+        elif text_format:
+            payload["text"] = {"format": text_format}
+
+        return payload
+
     def transcribe_image(
         self,
         image_path: Path,
@@ -259,24 +322,6 @@ class OpenAITranscriptionManager(OpenAIClientBase):
                 "error_type": "preprocessing_failure",
             }
 
-        # Prepare API request
-        input_messages = [
-            {
-                "role": "system",
-                "content": self.system_prompt,
-            },
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "input_image",
-                        "image_url": f"data:image/jpeg;base64,{base64_image}",
-                    }
-                ],
-            },
-        ]
-
-        text_format = self._build_text_format()
         api_retries = 0
         schema_retry_attempts = {
             "no_transcribable_text": 0,
@@ -288,37 +333,8 @@ class OpenAITranscriptionManager(OpenAIClientBase):
             try:
                 self._wait_for_rate_limit()
 
-                payload: Dict[str, Any] = {
-                    "model": self.model_name,
-                    "input": input_messages,
-                    "service_tier": self.service_tier,
-                }
-
-                # Add max_output_tokens from config
-                max_tokens = self.model_config.get("max_output_tokens", 16384)
-                payload["max_output_tokens"] = max_tokens
-
-                # Add reasoning parameters if specified
-                if "reasoning" in self.model_config:
-                    reasoning_cfg = self.model_config["reasoning"]
-                    if isinstance(reasoning_cfg, dict) and "effort" in reasoning_cfg:
-                        payload["reasoning"] = {"effort": reasoning_cfg["effort"]}
-
-                # Add text parameters if specified
-                if "text" in self.model_config:
-                    text_cfg = self.model_config["text"]
-                    if isinstance(text_cfg, dict):
-                        text_params = {}
-                        if "verbosity" in text_cfg:
-                            text_params["verbosity"] = text_cfg["verbosity"]
-
-                        if text_format:
-                            text_params["format"] = text_format
-
-                        if text_params:
-                            payload["text"] = text_params
-                elif text_format:
-                    payload["text"] = {"format": text_format}
+                # Build API request payload
+                payload = self._build_api_payload(base64_image)
 
                 response = self.client.responses.create(**payload)
 

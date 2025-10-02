@@ -246,22 +246,7 @@ class ItemTranscriber:
 				status = "SUCCESS" if "error" not in transcription_result else f"FAILED ({transcription_result.get('retries', 0)} retries)"
 				item_num_str = transcription_result.get("page", "?")
 
-				eta_str = "ETA: N/A"
-				if processed_count > 5 and self.start_time_processing:
-					elapsed_total = time.time() - self.start_time_processing
-					items_per_sec_overall = processed_count / elapsed_total
-					remaining_items = total_images - processed_count
-					if items_per_sec_overall > 0:
-						recent_avg_time_per_item = sum(
-							self.transcription_times[-10:]) / min(
-							len(self.transcription_times),
-							10) if self.transcription_times else 0
-						items_per_sec_recent = 1.0 / recent_avg_time_per_item if recent_avg_time_per_item > 0 else items_per_sec_overall
-						blended_ips = 0.7 * items_per_sec_overall + 0.3 * items_per_sec_recent
-						eta_seconds = remaining_items / blended_ips if blended_ips > 0 else float(
-							'inf')
-						if eta_seconds != float('inf'):
-							eta_str = f"ETA: {time.strftime('%H:%M:%S', time.gmtime(eta_seconds))}"
+				eta_str = self._calculate_eta(processed_count, total_images)
 
 				logger.debug(
 					f"Processed {processed_count}/{total_images} - Item {item_num_str} - Status: {status} - {eta_str}")
@@ -307,115 +292,242 @@ class ItemTranscriber:
 			key=lambda x: x.get("original_input_order_index", 0))
 		return transcription_results, summary_results
 
-	def _adjust_and_sort_summary_page_numbers(self, summary_results: List[
-		Dict[str, Any]]) -> List[Dict[str, Any]]:
+	def _calculate_eta(
+		self, processed_count: int, total_images: int
+	) -> str:
+		"""
+		Calculate estimated time of arrival for remaining items.
+		
+		Args:
+			processed_count: Number of items processed so far.
+			total_images: Total number of images to process.
+			
+		Returns:
+			Formatted ETA string.
+		"""
+		if processed_count <= MIN_SAMPLES_FOR_ETA or not self.start_time_processing:
+			return "ETA: N/A"
+		
+		elapsed_total = time.time() - self.start_time_processing
+		items_per_sec_overall = processed_count / elapsed_total
+		remaining_items = total_images - processed_count
+		
+		if items_per_sec_overall <= 0:
+			return "ETA: N/A"
+		
+		# Calculate recent average for more accurate short-term estimates
+		recent_samples = self.transcription_times[-RECENT_SAMPLES_FOR_ETA:]
+		recent_avg_time = sum(recent_samples) / len(recent_samples) if recent_samples else 0
+		
+		items_per_sec_recent = (
+			1.0 / recent_avg_time if recent_avg_time > 0 else items_per_sec_overall
+		)
+		
+		# Blend overall and recent rates for stability
+		blended_ips = (
+			ETA_BLEND_WEIGHT_OVERALL * items_per_sec_overall + 
+			ETA_BLEND_WEIGHT_RECENT * items_per_sec_recent
+		)
+		
+		if blended_ips <= 0:
+			return "ETA: N/A"
+		
+		eta_seconds = remaining_items / blended_ips
+		return f"ETA: {time.strftime('%H:%M:%S', time.gmtime(eta_seconds))}"
+
+	def _parse_page_number_from_summary(
+		self, summary_result: Dict[str, Any]
+	) -> Tuple[Optional[int], bool]:
+		"""
+		Extract page number information from a summary result.
+		
+		Args:
+			summary_result: Summary result dictionary.
+			
+		Returns:
+			Tuple of (model_page_number, is_genuinely_unnumbered).
+		"""
+		summary_container = summary_result.get("summary", {})
+		inner_summary = summary_container.get("summary") if isinstance(
+			summary_container, dict
+		) else None
+		
+		if isinstance(inner_summary, dict):
+			page_number_obj = inner_summary.get('page_number', {})
+		else:
+			page_number_obj = summary_container.get('page_number', {})
+		
+		model_page_num = None
+		is_genuinely_unnumbered = False
+		
+		if isinstance(page_number_obj, dict):
+			# New schema format with nested page_number object
+			model_page_num = page_number_obj.get('page_number_integer')
+			is_genuinely_unnumbered = page_number_obj.get('contains_no_page_number', False)
+		else:
+			# Fallback for old format or direct model_page_number value
+			model_page_str = summary_result.get("model_page_number", "")
+			try:
+				if isinstance(model_page_str, (int, float)):
+					model_page_num = int(model_page_str)
+				elif isinstance(model_page_str, str) and model_page_str.isdigit():
+					model_page_num = int(model_page_str)
+			except ValueError:
+				pass  # model_page_num remains None
+			
+			# Check old schema for unnumbered flag on the container if present
+			is_genuinely_unnumbered = bool(
+				summary_container.get('contains_no_page_number', False)
+			)
+		
+		return model_page_num, is_genuinely_unnumbered
+
+	def _find_longest_consecutive_sequence(
+		self, summaries_with_pages: List[Dict[str, Any]]
+	) -> List[Dict[str, Any]]:
+		"""
+		Find the longest consecutive sequence of page numbers in document order.
+		
+		Args:
+			summaries_with_pages: List of summary wrappers with page number info.
+			
+		Returns:
+			Longest consecutive sequence of summaries.
+		"""
+		if not summaries_with_pages:
+			return []
+		
+		longest_sequence = []
+		current_sequence = []
+		
+		for item in summaries_with_pages:
+			# Start a new sequence or add to current if consecutive
+			if not current_sequence:
+				current_sequence = [item]
+			elif (
+				item["model_page_number_int"] == current_sequence[-1]["model_page_number_int"] + 1
+				and item["original_input_order_index"] == current_sequence[-1]["original_input_order_index"] + 1
+			):
+				# Both page number and document position are consecutive
+				current_sequence.append(item)
+			else:
+				# End of sequence, check if it's longer than our longest
+				if len(current_sequence) > len(longest_sequence):
+					longest_sequence = current_sequence.copy()
+				# Start a new sequence with the current item
+				current_sequence = [item]
+		
+		# Check if the last sequence is the longest
+		if len(current_sequence) > len(longest_sequence):
+			longest_sequence = current_sequence
+		
+		return longest_sequence
+
+	def _calculate_adjusted_page_number(
+		self, 
+		original_index: int, 
+		anchor_model_page: int, 
+		anchor_original_index: int
+	) -> int:
+		"""
+		Calculate adjusted page number based on anchor point.
+		
+		Args:
+			original_index: Original position in document.
+			anchor_model_page: Model-detected page number at anchor.
+			anchor_original_index: Original position of anchor.
+			
+		Returns:
+			Adjusted page number.
+		"""
+		offset = original_index - anchor_original_index
+		adjusted_page = anchor_model_page + offset
+		return max(1, adjusted_page)  # Ensure page number is at least 1
+
+	def _adjust_and_sort_summary_page_numbers(
+		self, summary_results: List[Dict[str, Any]]
+	) -> List[Dict[str, Any]]:
+		"""
+		Adjust page numbers based on model-detected sequences and sort results.
+		
+		Args:
+			summary_results: List of summary results with page information.
+			
+		Returns:
+			Sorted list of summaries with adjusted page numbers.
+		"""
 		if not summary_results:
 			return []
 		
 		logger.info("Adjusting page numbers based on model-detected page sequences...")
+		
+		# Parse page numbers from all summaries
 		parsed_summaries = []
 		for r in summary_results:
-			# Extract model_page_number from the summary data structure
-			summary_container = r.get("summary", {})
-			# Prefer nested 'summary' JSON if present
-			inner_summary = summary_container.get("summary") if isinstance(summary_container, dict) else None
-			if isinstance(inner_summary, dict):
-				page_number_obj = inner_summary.get('page_number', {})
-			else:
-				page_number_obj = summary_container.get('page_number', {})
-			
-			# Get the page number integer and unnumbered flag from the correct location
-			model_page_num = None
-			is_genuinely_unnumbered = False
-			
-			if isinstance(page_number_obj, dict):
-				# New schema format with nested page_number object
-				model_page_num = page_number_obj.get('page_number_integer')
-				is_genuinely_unnumbered = page_number_obj.get('contains_no_page_number', False)
-			else:
-				# Fallback for old format or direct model_page_number value
-				model_page_str = r.get("model_page_number", "")
-				try:
-					if isinstance(model_page_str, (int, float)):
-						model_page_num = int(model_page_str)
-					elif isinstance(model_page_str, str) and model_page_str.isdigit():
-						model_page_num = int(model_page_str)
-				except ValueError:
-					pass  # model_page_num remains None
-				
-				# Check old schema for unnumbered flag on the container if present
-				is_genuinely_unnumbered = bool(summary_container.get('contains_no_page_number', False))
-			
+			model_page_num, is_unnumbered = self._parse_page_number_from_summary(r)
 			parsed_summaries.append({
 				"original_input_order_index": r["original_input_order_index"],
 				"model_page_number_int": model_page_num,
 				"data": r,
-				"is_genuinely_unnumbered": is_genuinely_unnumbered
+				"is_genuinely_unnumbered": is_unnumbered
 			})
 
-		# Pages used for anchor calculation must have a model page number AND not be marked as genuinely unnumbered
+		# Filter to valid model pages for anchor calculation
 		summaries_with_model_pages = [
 			s for s in parsed_summaries
 			if s["model_page_number_int"] is not None and not s["is_genuinely_unnumbered"]
 		]
 		
-		logger.info(f"Found {len(summaries_with_model_pages)} pages with valid model-detected page numbers")
+		logger.info(
+			f"Found {len(summaries_with_model_pages)} pages with valid "
+			"model-detected page numbers"
+		)
 		
+		# Determine anchor point for page number adjustment
 		anchor_model_page = 1
 		anchor_original_index = 0
 
 		if summaries_with_model_pages:
-			# Sort by original document order (not page number) to find consecutive sequences
+			# Sort by original document order
 			summaries_with_model_pages.sort(key=lambda x: x["original_input_order_index"])
 			
-			# Debug the detected page numbers in document order
+			# Log detected page numbers for debugging
 			detected_page_nums = [s["model_page_number_int"] for s in summaries_with_model_pages]
 			detected_positions = [s["original_input_order_index"] for s in summaries_with_model_pages]
 			logger.info(f"Model-detected page numbers (in document order): {detected_page_nums}")
 			logger.info(f"At document positions: {detected_positions}")
 			
-			longest_sequence = []
-			current_sequence = []
+			# Find longest consecutive sequence
+			longest_sequence = self._find_longest_consecutive_sequence(summaries_with_model_pages)
 			
-			for i, item in enumerate(summaries_with_model_pages):
-				# Start a new sequence or add to current if consecutive in BOTH page number AND document position
-				if not current_sequence:
-					current_sequence = [item]
-				elif (item["model_page_number_int"] == current_sequence[-1]["model_page_number_int"] + 1 
-				      and item["original_input_order_index"] == current_sequence[-1]["original_input_order_index"] + 1):
-					# Both page number and document position are consecutive
-					current_sequence.append(item)
-				else:
-					# End of sequence, check if it's longer than our longest
-					if len(current_sequence) > len(longest_sequence):
-						longest_sequence = current_sequence.copy()
-					# Start a new sequence with the current item
-					current_sequence = [item]
-			
-			# Check if the last sequence is the longest
-			if len(current_sequence) > len(longest_sequence):
-				longest_sequence = current_sequence
-			
-			if longest_sequence and len(longest_sequence) > 1:  # Prefer longer sequences
+			if longest_sequence and len(longest_sequence) > MIN_SEQUENCE_LENGTH_FOR_ANCHOR:
+				# Use first item of longest sequence as anchor
 				anchor_item = longest_sequence[0]
 				anchor_model_page = anchor_item["model_page_number_int"]
 				anchor_original_index = anchor_item["original_input_order_index"]
 				
-				# Debug the found sequence
+				# Log the found sequence
 				sequence_page_nums = [s["model_page_number_int"] for s in longest_sequence]
 				sequence_indexes = [s["original_input_order_index"] for s in longest_sequence]
 				logger.info(f"Longest consecutive sequence (page numbers): {sequence_page_nums}")
 				logger.info(f"At document positions: {sequence_indexes}")
-				logger.info(f"Using anchor: model page {anchor_model_page} at image index {anchor_original_index}")
-			elif summaries_with_model_pages:  # Fallback to the first page with a number if no sequence > 1
+				logger.info(
+					f"Using anchor: model page {anchor_model_page} "
+					f"at image index {anchor_original_index}"
+				)
+			elif summaries_with_model_pages:
+				# Fallback to first page with a number if no sequence > threshold
 				anchor_item = summaries_with_model_pages[0]
 				anchor_model_page = anchor_item["model_page_number_int"]
 				anchor_original_index = anchor_item["original_input_order_index"]
-				logger.info(f"No consecutive sequence found. Using first detected page {anchor_model_page} at image index {anchor_original_index} as anchor")
+				logger.info(
+					f"No consecutive sequence found. Using first detected page "
+					f"{anchor_model_page} at image index {anchor_original_index} as anchor"
+				)
 		else:
 			logger.info("No valid model page numbers detected. Using default numbering starting from 1.")
-		# If no summaries_with_model_pages, default anchors (1, 0) are used.
 
+		# Apply page number adjustment to all summaries
 		final_ordered_summaries = []
 		for s_wrapper in parsed_summaries:
 			original_index = s_wrapper["original_input_order_index"]
@@ -445,7 +557,8 @@ class ItemTranscriber:
 				# Default to original_input_order_index + 1 if no reliable anchor logic could be applied
 				adjusted_page = original_index + 1
 				if summaries_with_model_pages:  # Only use anchor logic if valid anchors were derived
-					adjusted_page = anchor_model_page + (original_index - anchor_original_index)
+					adjusted_page = self._calculate_adjusted_page_number(
+						original_index, anchor_model_page, anchor_original_index)
 				adjusted_page = max(1, adjusted_page)  # Ensure numbered pages start at 1
 				target_summary_json["page_number"]["page_number_integer"] = adjusted_page
 				target_summary_json["page_number"]["contains_no_page_number"] = False
