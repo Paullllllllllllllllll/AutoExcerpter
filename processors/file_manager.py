@@ -39,9 +39,15 @@ from typing import Any, Dict, List, Optional, Tuple
 from docx import Document
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 from docx.shared import Pt
-from docx.oxml import OxmlElement
+from docx.oxml import OxmlElement, parse_xml
 from docx.oxml.ns import qn
 from latex2mathml.converter import convert as latex_to_mathml
+import mathml2omml
+
+# ============================================================================
+# Math Conversion Constants
+# ============================================================================
+MATH_NAMESPACE = "http://schemas.openxmlformats.org/officeDocument/2006/math"
 
 from modules import app_config as config
 from modules.logger import setup_logger
@@ -138,33 +144,37 @@ def parse_latex_in_text(text: str) -> List[Tuple[str, str]]:
 
 def add_math_to_paragraph(paragraph, latex_code: str) -> None:
     """
-    Add a mathematical formula to a paragraph using MathML.
+    Add a mathematical formula to a paragraph using OMML so Word renders it
+    as a native equation.
     
     Args:
         paragraph: The paragraph object to add the formula to.
         latex_code: The LaTeX code for the formula.
     """
     try:
-        # Convert LaTeX to MathML
+        # Convert LaTeX -> MathML -> OMML
         mathml = latex_to_mathml(latex_code)
-        
-        # Create the OMML (Office Math Markup Language) element
-        # Word uses OMML, but we can insert MathML and Word will convert it
-        run = paragraph.add_run()
-        
-        # Create math element
-        math_elem = OxmlElement('m:oMath')
-        math_elem_ns = OxmlElement('m:oMathPara')
-        
-        # Parse the MathML and create Word OMML
-        # For simplicity, we'll insert the formula as an equation field
-        # This is a simplified approach - full MathML->OMML conversion is complex
-        
-        # Fallback: Add LaTeX as formatted text if conversion fails
-        run.text = f" {latex_code} "
-        run.font.name = 'Cambria Math'
-        run.italic = True
-        
+        omml_markup = mathml2omml.convert(mathml)
+
+        # Ensure the OMML output has the proper namespace declaration
+        if "xmlns:m" not in omml_markup.split("\n", 1)[0]:
+            omml_markup = omml_markup.replace(
+                "<m:oMath",
+                f'<m:oMath xmlns:m="{MATH_NAMESPACE}"',
+                1,
+            )
+
+        # Wrap in oMathPara for compatibility with Word paragraphs
+        if not omml_markup.strip().startswith("<m:oMath"):
+            omml_markup = f'<m:oMath xmlns:m="{MATH_NAMESPACE}">{omml_markup}</m:oMath>'
+
+        omml_para = (
+            f'<m:oMathPara xmlns:m="{MATH_NAMESPACE}">{omml_markup}</m:oMathPara>'
+        )
+        omml_element = parse_xml(omml_para)
+
+        # Append native equation to the paragraph
+        paragraph._p.append(omml_element)
     except Exception as exc:
         # If conversion fails, add as formatted text
         logger.warning("Failed to convert LaTeX to MathML: %s. Displaying as text.", exc)
