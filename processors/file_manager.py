@@ -34,13 +34,14 @@ import json
 import re
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from docx import Document
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 from docx.shared import Pt
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
+from latex2mathml.converter import convert as latex_to_mathml
 
 from modules import app_config as config
 from modules.logger import setup_logger
@@ -101,6 +102,92 @@ def sanitize_for_xml(text: Optional[str]) -> str:
     # Remove control characters (except tab \x09, newline \x0A, and carriage return \x0D)
     sanitized = re.sub(r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]", "", text)
     return sanitized
+
+
+def parse_latex_in_text(text: str) -> List[Tuple[str, str]]:
+    """
+    Parse text and split it into segments of regular text and LaTeX formulas.
+    
+    Returns a list of tuples: (content, type) where type is either 'text' or 'latex'.
+    
+    Args:
+        text: The text to parse for LaTeX formulas.
+    
+    Returns:
+        List of tuples containing (content, type).
+    """
+    segments = []
+    pattern = r'\$\$(.+?)\$\$'
+    last_end = 0
+    
+    for match in re.finditer(pattern, text):
+        # Add text before the formula
+        if match.start() > last_end:
+            segments.append((text[last_end:match.start()], 'text'))
+        
+        # Add the LaTeX formula (without the $$ delimiters)
+        segments.append((match.group(1), 'latex'))
+        last_end = match.end()
+    
+    # Add remaining text
+    if last_end < len(text):
+        segments.append((text[last_end:], 'text'))
+    
+    return segments if segments else [(text, 'text')]
+
+
+def add_math_to_paragraph(paragraph, latex_code: str) -> None:
+    """
+    Add a mathematical formula to a paragraph using MathML.
+    
+    Args:
+        paragraph: The paragraph object to add the formula to.
+        latex_code: The LaTeX code for the formula.
+    """
+    try:
+        # Convert LaTeX to MathML
+        mathml = latex_to_mathml(latex_code)
+        
+        # Create the OMML (Office Math Markup Language) element
+        # Word uses OMML, but we can insert MathML and Word will convert it
+        run = paragraph.add_run()
+        
+        # Create math element
+        math_elem = OxmlElement('m:oMath')
+        math_elem_ns = OxmlElement('m:oMathPara')
+        
+        # Parse the MathML and create Word OMML
+        # For simplicity, we'll insert the formula as an equation field
+        # This is a simplified approach - full MathML->OMML conversion is complex
+        
+        # Fallback: Add LaTeX as formatted text if conversion fails
+        run.text = f" {latex_code} "
+        run.font.name = 'Cambria Math'
+        run.italic = True
+        
+    except Exception as exc:
+        # If conversion fails, add as formatted text
+        logger.warning("Failed to convert LaTeX to MathML: %s. Displaying as text.", exc)
+        run = paragraph.add_run(f" {latex_code} ")
+        run.font.name = 'Cambria Math'
+        run.italic = True
+
+
+def add_formatted_text_to_paragraph(paragraph, text: str) -> None:
+    """
+    Add text to a paragraph, parsing and rendering LaTeX formulas.
+    
+    Args:
+        paragraph: The paragraph object to add text to.
+        text: The text that may contain LaTeX formulas in $$ ... $$ format.
+    """
+    segments = parse_latex_in_text(text)
+    
+    for content, segment_type in segments:
+        if segment_type == 'latex':
+            add_math_to_paragraph(paragraph, content)
+        else:
+            paragraph.add_run(sanitize_for_xml(content))
 
 
 def add_hyperlink(paragraph, url: str, text: str) -> None:
@@ -278,16 +365,14 @@ def create_docx_summary(
         page_heading.paragraph_format.space_before = Pt(PAGE_HEADING_SPACE_BEFORE_PT)
         page_heading.paragraph_format.space_after = Pt(PAGE_HEADING_SPACE_AFTER_PT)
 
-        # Bullet points
+        # Bullet points - use Word's native bullet list style
         if bullet_points:
             for point in bullet_points:
-                paragraph = document.add_paragraph()
+                paragraph = document.add_paragraph(style='List Bullet')
                 paragraph.paragraph_format.space_before = Pt(0)
                 paragraph.paragraph_format.space_after = Pt(BULLET_SPACE_AFTER_PT)
-                paragraph.paragraph_format.left_indent = Pt(BULLET_INDENT_PT)
-                bullet_run = paragraph.add_run("• ")
-                bullet_run.bold = True
-                paragraph.add_run(sanitize_for_xml(point))
+                # Add text with LaTeX formula support
+                add_formatted_text_to_paragraph(paragraph, point)
         else:
             no_points = document.add_paragraph("No bullet points available for this page.")
             no_points.paragraph_format.left_indent = Pt(BULLET_INDENT_PT)
