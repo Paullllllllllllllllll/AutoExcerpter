@@ -31,7 +31,7 @@
       },
       "bullet_points": {
         "type": "array",
-        "description": "Concise bullet-point statements that capture the most essential ideas or findings on the page. Each item will be formatted as a native bullet point in the output document. Include mathematical formulas in LaTeX format enclosed in $$ ... $$ delimiters (e.g., $$E = mc^2$$). Return an empty array if contains_no_semantic_content is true.",
+        "description": "2-5 concise bullet-point statements that capture the most essential ideas or findings on the page. Include mathematical formulas in LaTeX format enclosed in $$ ... $$ delimiters (e.g., $$E = mc^2$$). Return an empty array if contains_no_semantic_content is true.",
         "items": {
           "type": "string"
         }
