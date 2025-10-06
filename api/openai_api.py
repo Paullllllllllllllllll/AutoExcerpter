@@ -10,6 +10,7 @@ from api.rate_limiter import RateLimiter
 from modules.prompt_utils import render_prompt_with_schema
 from modules.config_loader import ConfigLoader, PROMPTS_DIR, SCHEMAS_DIR
 from modules.logger import setup_logger
+from modules.token_tracker import get_token_tracker
 
 logger = setup_logger(__name__)
 
@@ -288,6 +289,21 @@ class OpenAISummaryManager(OpenAIClientBase):
                 processing_time = time.time() - start_time
                 self.processing_times.append(processing_time)
                 self._report_success()
+                
+                # Report token usage immediately after successful API call
+                # This includes tokens from schema flag retries (as those consume real tokens)
+                try:
+                    if hasattr(response, "usage") and response.usage:
+                        total_tokens = getattr(response.usage, "total_tokens", None)
+                        if total_tokens and isinstance(total_tokens, int):
+                            token_tracker = get_token_tracker()
+                            token_tracker.add_tokens(total_tokens)
+                            logger.debug(
+                                f"[TOKEN] Summary for page {page_num}: "
+                                f"added {total_tokens} tokens (total now: {token_tracker.get_tokens_used_today():,})"
+                            )
+                except Exception as e:
+                    logger.warning(f"Error reporting token usage for page {page_num}: {e}")
 
                 summary_json_str = self._extract_output_text(response)
                 if not summary_json_str:

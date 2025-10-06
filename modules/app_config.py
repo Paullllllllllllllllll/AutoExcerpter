@@ -134,6 +134,7 @@ def _get_bool(data: Dict[str, Any], key: str, default: bool) -> bool:
 _APP_CFG: Dict[str, Any] = _load_yaml_app_config()
 _OA: Dict[str, Any] = _APP_CFG.get("openai", {}) if isinstance(_APP_CFG.get("openai"), dict) else {}
 _CITATION: Dict[str, Any] = _APP_CFG.get("citation", {}) if isinstance(_APP_CFG.get("citation"), dict) else {}
+_TOKEN_LIMIT: Dict[str, Any] = _APP_CFG.get("daily_token_limit", {}) if isinstance(_APP_CFG.get("daily_token_limit"), dict) else {}
 
 # --- Execution Mode ---
 CLI_MODE = _get_bool(_APP_CFG, "cli_mode", False)
@@ -171,8 +172,13 @@ OPENAI_TRANSCRIPTION_MODEL = _get_str(_OA, "transcription_model", DEFAULT_MODEL)
 OPENAI_API_TIMEOUT = _get_int(_OA, "api_timeout", DEFAULT_OPENAI_TIMEOUT)
 OPENAI_USE_FLEX = _get_bool(_OA, "use_flex", True)
 
+# --- Daily Token Limit ---
+DAILY_TOKEN_LIMIT_ENABLED = _get_bool(_TOKEN_LIMIT, "enabled", False)
+DAILY_TOKEN_LIMIT = _get_int(_TOKEN_LIMIT, "daily_tokens", 10000000)
+
 # ============================================================================
 # Logging
 # ============================================================================
 logger.debug(f"Configuration loaded: CLI_MODE={CLI_MODE}, SUMMARIZE={SUMMARIZE}, CONCURRENT_REQUESTS={CONCURRENT_REQUESTS}")
 logger.debug(f"Models: transcription={OPENAI_TRANSCRIPTION_MODEL}, summary={OPENAI_MODEL}")
+logger.debug(f"Daily token limit: enabled={DAILY_TOKEN_LIMIT_ENABLED}, limit={DAILY_TOKEN_LIMIT}")

@@ -17,6 +17,7 @@ AutoExcerpter is an intelligent document processing pipeline that automatically 
   - [Concurrency Configuration](#concurrency-configuration)
   - [Image Processing Configuration](#image-processing-configuration)
   - [Citation Management](#citation-management)
+  - [Daily Token Limit Tracking](#daily-token-limit-tracking)
 - [Usage](#usage)
 - [Output Files](#output-files)
 - [Project Structure](#project-structure)
@@ -71,6 +72,7 @@ AutoExcerpter processes documents through a sophisticated two-stage pipeline tha
 - **Concurrent Processing**: Configurable parallelism for both image preprocessing and API requests
 - **Adaptive Rate Limiting**: Sliding window rate limiter prevents API quota violations
 - **Intelligent Retry Logic**: Configurable dual-layer retries combining exponential backoff with schema-aware content retries
+- **Daily Token Budgeting**: Built-in token tracker enforces configurable daily limits with automatic midnight resets and per-request accounting
 - **Service Tier Support**: Full support for OpenAI Flex tier to reduce processing costs by up to 50%
 - **Progress Tracking**: Real-time progress bars with estimated time of completion
 - **Comprehensive Logging**: Detailed JSON logs for debugging, quality assurance, and audit trails
@@ -174,6 +176,7 @@ python main.py
 - Styled console output with headers, sections, and status indicators
 - Guided item selection for PDFs and image folders discovered under the input path
 - Exit options available at every prompt (`exit`, `quit`, or `q`)
+- Daily token-limit wait screen can be cancelled instantly by typing `q` and pressing Enter
 - Flexible selection syntax supporting single indices (`1`), multiple selections (`1;3;5`), ranges (`1-5`), or `all`
 - Immediate confirmation and error feedback for each action
 - Inline progress updates for every document processed
@@ -474,6 +477,26 @@ The citation manager automatically:
 - Set `max_api_requests` based on expected citation count (50 handles most papers)
 - OpenAlex API is free and requires no API key
 - Citation matching uses both text similarity and DOI extraction for accuracy
+
+### Daily Token Limit Tracking
+
+**File**: `modules/config/app.yaml` (`daily_token_limit` section)
+
+AutoExcerpter enforces a configurable daily token budget to keep usage aligned with your OpenAI allowance. Tokens are counted after every OpenAI API response (including retried attempts) and persisted to `.autoexcerpter_token_state.json` so limits survive restarts.
+
+```yaml
+daily_token_limit:
+  enabled: true           # Toggle token tracking and enforcement
+  daily_tokens: 3000000   # Maximum tokens allowed per calendar day
+```
+
+**Behavior:**
+
+- **Accurate Accounting**: Tracks `usage.total_tokens` from each OpenAI Responses API call (transcription + summary).
+- **Daily Reset**: Counter resets automatically at local midnight; tokens persist across restarts until reset.
+- **Wait Handling**: When the limit is reached, processing pauses and shows the reset ETA.
+- **Interactive Cancellation**: During the wait, type `q` + Enter to cancel immediately (no need for Ctrl+C).
+- **Manual Overrides**: Delete or edit `.autoexcerpter_token_state.json` to synchronize with official dashboard totals if required.
 
 ## Usage
 

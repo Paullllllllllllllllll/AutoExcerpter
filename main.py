@@ -16,6 +16,7 @@ import os
 import shutil
 import stat
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, List, Optional, Sequence, Set
@@ -24,6 +25,7 @@ from core.transcriber import ItemTranscriber
 from modules import app_config as config
 from modules.image_utils import SUPPORTED_IMAGE_EXTENSIONS
 from modules.logger import setup_logger
+from modules.token_tracker import get_token_tracker
 from modules.user_prompts import (
     print_header,
     print_section,
@@ -286,6 +288,115 @@ def _cleanup_working_directory(working_dir: Path) -> None:
         logger.warning("Failed to remove working directory %s: %s", working_dir, exc)
 
 
+def _check_and_wait_for_token_limit() -> bool:
+    """
+    Check if daily token limit is reached and wait until next day if needed.
+    
+    Returns:
+        True if processing can continue, False if user cancelled wait.
+    """
+    if not config.DAILY_TOKEN_LIMIT_ENABLED:
+        return True
+    
+    token_tracker = get_token_tracker()
+    
+    if not token_tracker.is_limit_reached():
+        return True
+    
+    # Token limit reached - need to wait until next day
+    stats = token_tracker.get_stats()
+    reset_time = token_tracker.get_reset_time()
+    seconds_until_reset = token_tracker.get_seconds_until_reset()
+    
+    logger.warning(
+        f"Daily token limit reached: {stats['tokens_used_today']:,}/{stats['daily_limit']:,} tokens used"
+    )
+    logger.info(
+        f"Waiting until {reset_time.strftime('%Y-%m-%d %H:%M:%S')} "
+        f"({seconds_until_reset // 3600}h {(seconds_until_reset % 3600) // 60}m) "
+        "for token limit reset..."
+    )
+    
+    cancel_prompt = "Type 'q' and press Enter to cancel and exit."
+    if config.CLI_MODE:
+        logger.info(cancel_prompt)
+    else:
+        print_warning(
+            f"\n⚠ Daily token limit reached: {stats['tokens_used_today']:,}/{stats['daily_limit']:,} tokens used"
+        )
+        print_info(
+            f"Waiting until {reset_time.strftime('%Y-%m-%d %H:%M:%S')} for daily reset "
+            f"({seconds_until_reset // 3600}h {(seconds_until_reset % 3600) // 60}m remaining)"
+        )
+        print_info(cancel_prompt)
+
+    try:
+        # Sleep in smaller intervals to allow for interruption
+        sleep_interval = 1  # Check every second for responsiveness
+        elapsed = 0
+
+        while elapsed < seconds_until_reset:
+            if _user_requested_cancel():
+                logger.info("Wait cancelled by user ('q').")
+                if not config.CLI_MODE:
+                    print_warning("\nWait cancelled by user.")
+                return False
+
+            interval = min(sleep_interval, max(0, seconds_until_reset - elapsed))
+            time.sleep(interval)
+            elapsed += interval
+
+            # Re-check if it's a new day
+            if not token_tracker.is_limit_reached():
+                logger.info("Token limit has been reset. Resuming processing.")
+                if not config.CLI_MODE:
+                    print_success("Token limit has been reset. Resuming processing.")
+
+        logger.info("Token limit has been reset. Resuming processing.")
+        if not config.CLI_MODE:
+            print_success("\nToken limit has been reset. Resuming processing.")
+        return True
+        
+    except KeyboardInterrupt:
+        logger.info("Wait cancelled by user (KeyboardInterrupt).")
+        if not config.CLI_MODE:
+            print_warning("\nWait cancelled by user.")
+        return False
+
+
+def _user_requested_cancel() -> bool:
+    """Check if the user requested cancellation by pressing 'q'."""
+    try:
+        if os.name == "nt":
+            import msvcrt  # type: ignore
+
+            cancelled = False
+            while msvcrt.kbhit():
+                ch = msvcrt.getwch()
+                if ch in ("\r", "\n"):
+                    continue
+                if ch.lower() == "q":
+                    cancelled = True
+                # Consume remaining characters to avoid re-processing
+            if cancelled:
+                # Clear any trailing newline characters
+                while msvcrt.kbhit():
+                    _ = msvcrt.getwch()
+                return True
+            return False
+
+        import select
+
+        if select.select([sys.stdin], [], [], 0)[0]:
+            line = sys.stdin.readline().strip()
+            if line.lower() == "q":
+                return True
+        return False
+    except Exception:
+        # If any error occurs (e.g., select not supported), fall back to KeyboardInterrupt handling.
+        return False
+
+
 def main() -> None:
     args = setup_argparse()
     
@@ -347,16 +458,67 @@ def main() -> None:
     if not config.CLI_MODE:
         print_section(f"Processing {len(selected_items)} Item(s)")
     
-    # Process selected items
+    # Display initial token usage statistics if enabled
+    if config.DAILY_TOKEN_LIMIT_ENABLED:
+        token_tracker = get_token_tracker()
+        stats = token_tracker.get_stats()
+        logger.info(
+            f"Token usage: {stats['tokens_used_today']:,}/{stats['daily_limit']:,} "
+            f"({stats['usage_percentage']:.1f}%) - "
+            f"{stats['tokens_remaining']:,} tokens remaining today"
+        )
+        if not config.CLI_MODE:
+            print_info(
+                f"Daily token usage: {stats['tokens_used_today']:,}/{stats['daily_limit']:,} "
+                f"({stats['usage_percentage']:.1f}%)"
+            )
+    
+    # Process selected items sequentially (file-by-file to support token limit enforcement)
+    processed_count = 0
     for index, item_spec in enumerate(selected_items, start=1):
-        _process_single_item(item_spec, index, len(selected_items), base_output_dir)
+        # Check token limit before starting each new file
+        if not _check_and_wait_for_token_limit():
+            # User cancelled wait - stop processing
+            logger.info(f"Processing stopped by user. Processed {processed_count}/{len(selected_items)} items.")
+            if not config.CLI_MODE:
+                print_warning(f"\nProcessing stopped. Completed {processed_count}/{len(selected_items)} items.")
+            break
+        
+        # Process this file
+        success = _process_single_item(item_spec, index, len(selected_items), base_output_dir)
+        if success:
+            processed_count += 1
+        
+        # Log token usage after each file if enabled
+        if config.DAILY_TOKEN_LIMIT_ENABLED:
+            token_tracker = get_token_tracker()
+            stats = token_tracker.get_stats()
+            logger.info(
+                f"Token usage after file {index}/{len(selected_items)}: "
+                f"{stats['tokens_used_today']:,}/{stats['daily_limit']:,} "
+                f"({stats['usage_percentage']:.1f}%)"
+            )
 
     # Final summary
     if config.CLI_MODE:
-        logger.info(f"All {len(selected_items)} selected item(s) have been processed.")
+        logger.info(f"{processed_count}/{len(selected_items)} selected item(s) have been processed.")
     else:
-        print_success(f"\n✓ All {len(selected_items)} selected item(s) have been processed!")
-    logger.info("All selected items have been processed.")
+        print_success(f"\n✓ {processed_count}/{len(selected_items)} selected item(s) have been processed!")
+    logger.info(f"{processed_count}/{len(selected_items)} selected items have been processed.")
+    
+    # Final token usage statistics
+    if config.DAILY_TOKEN_LIMIT_ENABLED:
+        token_tracker = get_token_tracker()
+        stats = token_tracker.get_stats()
+        logger.info(
+            f"Final token usage: {stats['tokens_used_today']:,}/{stats['daily_limit']:,} "
+            f"({stats['usage_percentage']:.1f}%)"
+        )
+        if not config.CLI_MODE:
+            print_info(
+                f"\nFinal daily token usage: {stats['tokens_used_today']:,}/{stats['daily_limit']:,} "
+                f"({stats['usage_percentage']:.1f}%)"
+            )
 
 
 if __name__ == "__main__":
