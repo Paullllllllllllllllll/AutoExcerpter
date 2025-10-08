@@ -105,42 +105,58 @@ class ImageProcessor:
         - auto: default to 'high' strategy.
 
         Args:
-            image (Image.Image): The input image.
-            detail (str): The desired level of detail.
-            img_cfg (Dict[str, Any]): The image configuration.
+            image: The input image.
+            detail: The desired level of detail.
+            img_cfg: The image configuration.
 
         Returns:
-            Image.Image: The resized image.
+            The resized image.
         """
-        # Normalize flags and defaults
+        # Check if resizing is disabled
         resize_profile = (img_cfg.get('resize_profile', 'auto') or 'auto').lower()
         if resize_profile == 'none':
             return image
+        
+        # Normalize detail level
         detail_norm = (detail or 'high').lower()
         if detail_norm not in ('low', 'high', 'auto'):
             detail_norm = 'high'
+        
+        # Apply appropriate resize strategy
         if detail_norm == 'low':
-            max_side = int(img_cfg.get('low_max_side_px', DEFAULT_LOW_MAX_SIDE_PX))
-            w, h = image.size
-            longest = max(w, h)
-            if longest <= max_side:
-                return image
-            scale = max_side / float(longest)
-            new_size = (max(1, int(w * scale)), max(1, int(h * scale)))
-            return image.resize(new_size, Image.Resampling.LANCZOS)
-        # high or auto -> box/pad
+            return ImageProcessor._resize_low_detail(image, img_cfg)
+        else:
+            return ImageProcessor._resize_high_detail(image, img_cfg)
+    
+    @staticmethod
+    def _resize_low_detail(image: Image.Image, img_cfg: Dict[str, Any]) -> Image.Image:
+        """Downscale image to max side length for low detail."""
+        max_side = int(img_cfg.get('low_max_side_px', DEFAULT_LOW_MAX_SIDE_PX))
+        w, h = image.size
+        longest = max(w, h)
+        
+        if longest <= max_side:
+            return image
+        
+        scale = max_side / float(longest)
+        new_size = (max(1, int(w * scale)), max(1, int(h * scale)))
+        return image.resize(new_size, Image.Resampling.LANCZOS)
+    
+    @staticmethod
+    def _resize_high_detail(image: Image.Image, img_cfg: Dict[str, Any]) -> Image.Image:
+        """Fit and pad image into target box for high detail."""
         box = img_cfg.get('high_target_box', [DEFAULT_HIGH_TARGET_WIDTH, DEFAULT_HIGH_TARGET_HEIGHT])
         try:
             target_width = int(box[0])
             target_height = int(box[1])
         except Exception:
             target_width, target_height = DEFAULT_HIGH_TARGET_WIDTH, DEFAULT_HIGH_TARGET_HEIGHT
+        
         orig_width, orig_height = image.size
-        scale_w = target_width / orig_width
-        scale_h = target_height / orig_height
-        scale = min(scale_w, scale_h)
+        scale = min(target_width / orig_width, target_height / orig_height)
         new_width = max(1, int(orig_width * scale))
         new_height = max(1, int(orig_height * scale))
+        
         resized_img = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
         final_img = Image.new("RGB", (target_width, target_height), WHITE_BACKGROUND_COLOR)
         paste_x = (target_width - new_width) // 2

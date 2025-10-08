@@ -55,6 +55,31 @@ PDF_DPI_CONVERSION_FACTOR = 72.0
 
 
 # ============================================================================
+# Helper Functions
+# ============================================================================
+def _apply_image_preprocessing(pil_img: Image.Image, img_cfg: dict) -> Image.Image:
+    """Apply preprocessing steps to an image (transparency, grayscale, resize)."""
+    # Handle transparency
+    if img_cfg.get('handle_transparency', True):
+        if pil_img.mode in ('RGBA', 'LA') or (
+                pil_img.mode == 'P' and 'transparency' in pil_img.info):
+            background = Image.new("RGB", pil_img.size, (255, 255, 255))
+            mask = pil_img.split()[-1] if pil_img.mode in ('RGBA', 'LA') else None
+            background.paste(pil_img, mask=mask)
+            pil_img = background
+    
+    # Grayscale conversion
+    if img_cfg.get('grayscale_conversion', True):
+        pil_img = ImageOps.grayscale(pil_img)
+    
+    # Resize based on detail level
+    detail = img_cfg.get('llm_detail', 'high') or 'high'
+    pil_img = ImageProcessor.resize_for_detail(pil_img, detail, img_cfg)
+    
+    return pil_img
+
+
+# ============================================================================
 # PDF Extraction Functions
 # ============================================================================
 def extract_pdf_pages_to_images(pdf_path: Path, output_images_dir: Path) -> List[Path]:
@@ -109,21 +134,7 @@ def extract_pdf_pages_to_images(pdf_path: Path, output_images_dir: Path) -> List
                 pil_img = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
                 
                 # Apply preprocessing directly (grayscale, resize, etc.)
-                # Handle transparency
-                if img_cfg.get('handle_transparency', True):
-                    if pil_img.mode in ('RGBA', 'LA') or (
-                            pil_img.mode == 'P' and 'transparency' in pil_img.info):
-                        background = Image.new("RGB", pil_img.size, (255, 255, 255))
-                        background.paste(pil_img, mask=pil_img.split()[-1] if pil_img.mode in ('RGBA', 'LA') else None)
-                        pil_img = background
-                
-                # Grayscale conversion
-                if img_cfg.get('grayscale_conversion', True):
-                    pil_img = ImageOps.grayscale(pil_img)
-                
-                # Resize based on detail level
-                detail = (img_cfg.get('llm_detail', 'high') or 'high')
-                pil_img = ImageProcessor.resize_for_detail(pil_img, detail, img_cfg)
+                pil_img = _apply_image_preprocessing(pil_img, img_cfg)
                 
                 # Save preprocessed image
                 image_path = output_images_dir / f"page_{page_num + 1:04d}.jpg"

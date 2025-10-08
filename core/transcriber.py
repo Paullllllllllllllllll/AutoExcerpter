@@ -298,9 +298,7 @@ class ItemTranscriber:
 			key=lambda x: x.get("original_input_order_index", 0))
 		return transcription_results, summary_results
 
-	def _calculate_eta(
-		self, processed_count: int, total_images: int
-	) -> str:
+	def _calculate_eta(self, processed_count: int, total_images: int) -> str:
 		"""
 		Calculate estimated time of arrival for remaining items.
 		
@@ -316,30 +314,33 @@ class ItemTranscriber:
 		
 		elapsed_total = time.time() - self.start_time_processing
 		items_per_sec_overall = processed_count / elapsed_total
-		remaining_items = total_images - processed_count
 		
 		if items_per_sec_overall <= 0:
 			return "ETA: N/A"
 		
-		# Calculate recent average for more accurate short-term estimates
-		recent_samples = self.transcription_times[-RECENT_SAMPLES_FOR_ETA:]
-		recent_avg_time = sum(recent_samples) / len(recent_samples) if recent_samples else 0
-		
-		items_per_sec_recent = (
-			1.0 / recent_avg_time if recent_avg_time > 0 else items_per_sec_overall
+		# Blend overall and recent rates for more accurate estimates
+		blended_rate = self._calculate_blended_processing_rate(
+			items_per_sec_overall
 		)
 		
-		# Blend overall and recent rates for stability
-		blended_ips = (
-			ETA_BLEND_WEIGHT_OVERALL * items_per_sec_overall + 
-			ETA_BLEND_WEIGHT_RECENT * items_per_sec_recent
-		)
-		
-		if blended_ips <= 0:
+		if blended_rate <= 0:
 			return "ETA: N/A"
 		
-		eta_seconds = remaining_items / blended_ips
+		remaining_items = total_images - processed_count
+		eta_seconds = remaining_items / blended_rate
 		return f"ETA: {time.strftime('%H:%M:%S', time.gmtime(eta_seconds))}"
+	
+	def _calculate_blended_processing_rate(self, overall_rate: float) -> float:
+		"""Calculate blended processing rate from overall and recent samples."""
+		recent_samples = self.transcription_times[-RECENT_SAMPLES_FOR_ETA:]
+		if not recent_samples:
+			return overall_rate
+		
+		recent_avg_time = sum(recent_samples) / len(recent_samples)
+		recent_rate = 1.0 / recent_avg_time if recent_avg_time > 0 else overall_rate
+		
+		return (ETA_BLEND_WEIGHT_OVERALL * overall_rate + 
+		        ETA_BLEND_WEIGHT_RECENT * recent_rate)
 
 	def _parse_page_number_from_summary(
 		self, summary_result: Dict[str, Any]

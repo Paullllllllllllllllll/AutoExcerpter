@@ -96,12 +96,12 @@ def _as_rate_limits(val: Any) -> List[Tuple[int, int]]:
 
     out: List[Tuple[int, int]] = []
     for item in val:
-        try:
-            if isinstance(item, (list, tuple)) and len(item) == 2:
-                out.append((int(item[0]), int(item[1])))
-        except (ValueError, TypeError):
-            # Skip malformed entries
+        if not isinstance(item, (list, tuple)) or len(item) != 2:
             continue
+        try:
+            out.append((int(item[0]), int(item[1])))
+        except (ValueError, TypeError):
+            continue  # Skip malformed entries
 
     return out if out else DEFAULT_RATE_LIMITS
 

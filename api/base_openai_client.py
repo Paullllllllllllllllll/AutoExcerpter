@@ -203,7 +203,7 @@ class OpenAIClientBase:
             logger.debug(f"Error determining service tier: {e}")
             return "flex" if config.OPENAI_USE_FLEX else "auto"
 
-    def _classify_error(self, error_message: str) -> tuple[bool, str]:
+    def _classify_error(self, error_message: str) -> Tuple[bool, str]:
         """
         Classify an error and determine if it's retryable.
 

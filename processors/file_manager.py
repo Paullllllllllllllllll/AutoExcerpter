@@ -262,22 +262,28 @@ def _page_number_and_flags(summary_data: Dict[str, Any]) -> Dict[str, Any]:
     Normalize page number information from summary payload.
 
     Args:
-    summary_data (Dict[str, Any]): The summary data dictionary.
+        summary_data: The summary data dictionary.
 
     Returns:
-    Dict[str, Any]: A dictionary containing page number information.
+        Dictionary containing page number information.
     """
     page_number = summary_data.get("page_number", {})
+    
+    # Handle dict format (preferred)
     if isinstance(page_number, dict):
         return {
             "page_number_integer": page_number.get("page_number_integer", "?"),
             "contains_no_page_number": bool(page_number.get("contains_no_page_number", False)),
         }
+    
+    # Handle int format (legacy)
     if isinstance(page_number, int):
         return {
             "page_number_integer": page_number,
             "contains_no_page_number": page_number == 0,
         }
+    
+    # Fallback to page field
     return {
         "page_number_integer": summary_data.get("page", "?"),
         "contains_no_page_number": False,
@@ -286,20 +292,22 @@ def _page_number_and_flags(summary_data: Dict[str, Any]) -> Dict[str, Any]:
 
 def _is_meaningful_summary(summary_data: Dict[str, Any]) -> bool:
     """
-    Check if a summary is meaningful.
+    Check if a summary is meaningful (not empty, error, or unnumbered).
 
     Args:
-    summary_data (Dict[str, Any]): The summary data dictionary.
+        summary_data: The summary data dictionary.
 
     Returns:
-    bool: True if the summary is meaningful, False otherwise.
+        True if the summary is meaningful, False otherwise.
     """
+    # Check for unnumbered pages (page 0)
     page_info = _page_number_and_flags(summary_data)
     if page_info["contains_no_page_number"]:
         page_int = page_info["page_number_integer"]
         if isinstance(page_int, int) and page_int == 0:
             return False
 
+    # Check for empty or error bullet points
     bullet_points = summary_data.get("bullet_points", [])
     if not bullet_points:
         return False
@@ -309,6 +317,7 @@ def _is_meaningful_summary(summary_data: Dict[str, Any]) -> bool:
         if any(marker in marker_text for marker in ERROR_MARKERS):
             return False
 
+    # Check semantic content flag
     if summary_data.get("contains_no_semantic_content", False):
         return False
 

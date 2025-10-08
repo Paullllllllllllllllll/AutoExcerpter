@@ -22,11 +22,16 @@ OPENALEX_POLITE_POOL_EMAIL = "your-email@example.com"  # Users should update thi
 API_REQUEST_TIMEOUT = 10
 API_RETRY_DELAY = 1.0
 MAX_API_RETRIES = 3
+API_POLITE_DELAY = 0.1  # Delay between API calls to be polite
 
 # Constants for citation matching
 MIN_AUTHOR_LENGTH = 3
 MIN_TITLE_LENGTH = 10
 MIN_YEAR_LENGTH = 4
+MATCH_RATIO_THRESHOLD = 0.3  # Minimum word overlap ratio for citation matching
+MAX_AUTHORS_TO_EXTRACT = 5  # Limit authors in metadata
+SEARCH_QUERY_MAX_LENGTH = 100  # Maximum length for search queries
+PROGRESS_LOG_INTERVAL = 5  # Log progress every N citations
 
 
 @dataclass
@@ -186,8 +191,8 @@ class CitationManager:
         for citation in self.citations.values():
             processed += 1
             
-            # Log progress every 5 citations
-            if processed % 5 == 0:
+            # Log progress periodically
+            if processed % PROGRESS_LOG_INTERVAL == 0:
                 logger.info("Processed %d/%d citations, enriched %d with metadata", 
                           processed, len(self.citations), requests_made)
             
@@ -204,7 +209,7 @@ class CitationManager:
                 requests_made += 1
                 
                 # Be polite to the API
-                time.sleep(0.1)
+                time.sleep(API_POLITE_DELAY)
         
         logger.info("Successfully enriched %d citations with metadata", requests_made)
     
@@ -353,8 +358,8 @@ class CitationManager:
         text = re.sub(r'[,.:;]', ' ', text)  # Replace punctuation with spaces
         text = re.sub(r'\s+', ' ', text).strip()  # Normalize spaces
         
-        # Take first ~100 chars for search
-        return text[:100] if len(text) > 100 else text
+        # Take first N chars for search
+        return text[:SEARCH_QUERY_MAX_LENGTH] if len(text) > SEARCH_QUERY_MAX_LENGTH else text
     
     def _verify_citation_match(self, citation_text: str, work_data: Dict) -> bool:
         """Verify that OpenAlex result matches the citation."""
@@ -372,7 +377,7 @@ class CitationManager:
                 common_words = title_words & citation_words
                 match_ratio = len(common_words) / len(title_words)
                 
-                return match_ratio >= 0.3
+                return match_ratio >= MATCH_RATIO_THRESHOLD
         
         return False
     
@@ -389,7 +394,7 @@ class CitationManager:
         
         # Extract authors
         authorships = work_data.get('authorships', [])
-        for authorship in authorships[:5]:  # Limit to first 5 authors
+        for authorship in authorships[:MAX_AUTHORS_TO_EXTRACT]:
             author = authorship.get('author', {})
             if author.get('display_name'):
                 metadata['authors'].append(author['display_name'])

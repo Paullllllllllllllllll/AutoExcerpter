@@ -19,7 +19,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, List, Optional, Sequence, Set
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from core.transcriber import ItemTranscriber
 from modules import app_config as config
@@ -299,69 +299,111 @@ def _check_and_wait_for_token_limit() -> bool:
         return True
     
     token_tracker = get_token_tracker()
-    
     if not token_tracker.is_limit_reached():
         return True
     
-    # Token limit reached - need to wait until next day
+    # Token limit reached - display information and wait
     stats = token_tracker.get_stats()
     reset_time = token_tracker.get_reset_time()
     seconds_until_reset = token_tracker.get_seconds_until_reset()
+    hours = seconds_until_reset // 3600
+    minutes = (seconds_until_reset % 3600) // 60
     
-    logger.warning(
-        f"Daily token limit reached: {stats['tokens_used_today']:,}/{stats['daily_limit']:,} tokens used"
-    )
-    logger.info(
-        f"Waiting until {reset_time.strftime('%Y-%m-%d %H:%M:%S')} "
-        f"({seconds_until_reset // 3600}h {(seconds_until_reset % 3600) // 60}m) "
-        "for token limit reset..."
-    )
+    _log_token_limit_reached(stats, reset_time, hours, minutes)
     
-    cancel_prompt = "Type 'q' and press Enter to cancel and exit."
-    if config.CLI_MODE:
-        logger.info(cancel_prompt)
-    else:
-        print_warning(
-            f"\n⚠ Daily token limit reached: {stats['tokens_used_today']:,}/{stats['daily_limit']:,} tokens used"
-        )
-        print_info(
-            f"Waiting until {reset_time.strftime('%Y-%m-%d %H:%M:%S')} for daily reset "
-            f"({seconds_until_reset // 3600}h {(seconds_until_reset % 3600) // 60}m remaining)"
-        )
-        print_info(cancel_prompt)
-
     try:
-        # Sleep in smaller intervals to allow for interruption
-        sleep_interval = 1  # Check every second for responsiveness
-        elapsed = 0
-
-        while elapsed < seconds_until_reset:
-            if _user_requested_cancel():
-                logger.info("Wait cancelled by user ('q').")
-                if not config.CLI_MODE:
-                    print_warning("\nWait cancelled by user.")
-                return False
-
-            interval = min(sleep_interval, max(0, seconds_until_reset - elapsed))
-            time.sleep(interval)
-            elapsed += interval
-
-            # Re-check if it's a new day
-            if not token_tracker.is_limit_reached():
-                logger.info("Token limit has been reset. Resuming processing.")
-                if not config.CLI_MODE:
-                    print_success("Token limit has been reset. Resuming processing.")
-
-        logger.info("Token limit has been reset. Resuming processing.")
-        if not config.CLI_MODE:
-            print_success("\nToken limit has been reset. Resuming processing.")
-        return True
-        
+        return _wait_for_token_reset(token_tracker, seconds_until_reset)
     except KeyboardInterrupt:
         logger.info("Wait cancelled by user (KeyboardInterrupt).")
         if not config.CLI_MODE:
             print_warning("\nWait cancelled by user.")
         return False
+
+
+def _log_token_limit_reached(stats: Dict[str, Any], reset_time, hours: int, minutes: int) -> None:
+    """Log token limit reached message to appropriate output."""
+    logger.warning(
+        f"Daily token limit reached: {stats['tokens_used_today']:,}/{stats['daily_limit']:,} tokens used"
+    )
+    logger.info(f"Waiting until {reset_time.strftime('%Y-%m-%d %H:%M:%S')} ({hours}h {minutes}m) for token limit reset...")
+    
+    if config.CLI_MODE:
+        logger.info("Type 'q' and press Enter to cancel and exit.")
+    else:
+        print_warning(f"\n⚠ Daily token limit reached: {stats['tokens_used_today']:,}/{stats['daily_limit']:,} tokens used")
+        print_info(f"Waiting until {reset_time.strftime('%Y-%m-%d %H:%M:%S')} for daily reset ({hours}h {minutes}m remaining)")
+        print_info("Type 'q' and press Enter to cancel and exit.")
+
+
+def _wait_for_token_reset(token_tracker, seconds_until_reset: int) -> bool:
+    """Wait for token limit reset with cancellation support."""
+    elapsed = 0
+    sleep_interval = 1  # Check every second for responsiveness
+
+    while elapsed < seconds_until_reset:
+        if _user_requested_cancel():
+            logger.info("Wait cancelled by user ('q').")
+            if not config.CLI_MODE:
+                print_warning("\nWait cancelled by user.")
+            return False
+
+        interval = min(sleep_interval, max(0, seconds_until_reset - elapsed))
+        time.sleep(interval)
+        elapsed += interval
+
+        # Re-check if it's a new day
+        if not token_tracker.is_limit_reached():
+            logger.info("Token limit has been reset. Resuming processing.")
+            if not config.CLI_MODE:
+                print_success("Token limit has been reset. Resuming processing.")
+            return True
+
+    logger.info("Token limit has been reset. Resuming processing.")
+    if not config.CLI_MODE:
+        print_success("\nToken limit has been reset. Resuming processing.")
+    return True
+
+
+def _parse_execution_mode(args: argparse.Namespace) -> Tuple[Path, Path, bool]:
+    """Parse execution mode and return input path, output path, and process_all flag."""
+    if config.CLI_MODE:
+        # CLI mode: use command line arguments
+        input_path_arg = Path(args.input)
+        base_output_dir = Path(args.output)
+        process_all = args.all
+        
+        # Resolve relative paths to absolute
+        if not input_path_arg.is_absolute():
+            input_path_arg = Path.cwd() / input_path_arg
+        if not base_output_dir.is_absolute():
+            base_output_dir = Path.cwd() / base_output_dir
+        
+        logger.info(f"CLI Mode: Input={input_path_arg}, Output={base_output_dir}")
+    else:
+        # Interactive mode: use config defaults and prompts
+        input_path_arg = Path(args.input)
+        base_output_dir = Path(config.OUTPUT_FOLDER_PATH)
+        process_all = False
+    
+    return input_path_arg, base_output_dir, process_all
+
+
+def _select_items_for_processing(
+    all_items: List[ItemSpec], process_all: bool
+) -> List[ItemSpec]:
+    """Select items for processing based on mode and user input."""
+    if config.CLI_MODE:
+        # CLI mode: process all items or just the single item
+        if process_all or len(all_items) == 1:
+            logger.info(f"Processing {len(all_items)} item(s) in CLI mode")
+            return list(all_items)
+        else:
+            # If multiple items found but --all not specified, process only the first
+            logger.info(f"Processing first item (use --all to process all {len(all_items)} items)")
+            return [all_items[0]]
+    else:
+        # Interactive mode: prompt user for selection
+        return prompt_for_item_selection(all_items) or []
 
 
 def _user_requested_cancel() -> bool:
@@ -401,25 +443,9 @@ def main() -> None:
     args = setup_argparse()
     
     # Determine input and output paths based on mode
-    if config.CLI_MODE:
-        # CLI mode: use command line arguments
-        input_path_arg = Path(args.input)
-        base_output_dir = Path(args.output)
-        process_all = args.all
-        
-        # Resolve relative paths to absolute
-        if not input_path_arg.is_absolute():
-            input_path_arg = Path.cwd() / input_path_arg
-        if not base_output_dir.is_absolute():
-            base_output_dir = Path.cwd() / base_output_dir
-        
-        logger.info(f"CLI Mode: Input={input_path_arg}, Output={base_output_dir}")
-    else:
-        # Interactive mode: use config defaults and prompts
-        input_path_arg = Path(args.input)
-        base_output_dir = Path(config.OUTPUT_FOLDER_PATH)
-        process_all = False
-        
+    input_path_arg, base_output_dir, process_all = _parse_execution_mode(args)
+    
+    if not config.CLI_MODE:
         print_header("AutoExcerpter - PDF & Image Transcription Tool")
     
     # Create output directory
@@ -437,21 +463,13 @@ def main() -> None:
             sys.exit(0)
 
     # Select items based on mode
-    if config.CLI_MODE:
-        # CLI mode: process all items or just the single item
-        if process_all or len(all_items_to_consider) == 1:
-            selected_items = list(all_items_to_consider)
-            logger.info(f"Processing {len(selected_items)} item(s) in CLI mode")
-        else:
-            # If multiple items found but --all not specified, process only the first
-            selected_items = [all_items_to_consider[0]]
-            logger.info(f"Processing first item (use --all to process all {len(all_items_to_consider)} items)")
-    else:
-        # Interactive mode: prompt user for selection
-        selected_items = prompt_for_item_selection(all_items_to_consider)
-        if not selected_items:
+    selected_items = _select_items_for_processing(
+        all_items_to_consider, process_all
+    )
+    if not selected_items:
+        if not config.CLI_MODE:
             print_info("No items selected for processing. Exiting.")
-            sys.exit(0)
+        sys.exit(0)
 
     logger.info("Selected %s item(s) for processing.", len(selected_items))
     
