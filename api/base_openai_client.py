@@ -35,7 +35,7 @@ from typing import Any, Dict, Optional, Tuple
 from openai import OpenAI
 
 from modules import app_config as config
-from modules.config_loader import ConfigLoader
+from modules.config_loader import get_config_loader
 from modules.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -55,8 +55,7 @@ def _load_retry_config() -> Dict[str, Any]:
         Dictionary with retry configuration, or defaults if loading fails.
     """
     try:
-        config_loader = ConfigLoader()
-        config_loader.load_configs()
+        config_loader = get_config_loader()
         retry_cfg = config_loader.get_concurrency_config().get("retry", {})
         
         if not retry_cfg:
@@ -147,8 +146,7 @@ class OpenAIClientBase:
             Model configuration dictionary.
         """
         try:
-            config_loader = ConfigLoader()
-            config_loader.load_configs()
+            config_loader = get_config_loader()
             model_cfg = config_loader.get_model_config()
             config_dict = model_cfg.get(config_key, {})
             
@@ -181,8 +179,7 @@ class OpenAIClientBase:
             Service tier string.
         """
         try:
-            config_loader = ConfigLoader()
-            config_loader.load_configs()
+            config_loader = get_config_loader()
             concurrency_cfg = config_loader.get_concurrency_config()
             
             # Get service tier from new config structure
@@ -415,8 +412,7 @@ class OpenAIClientBase:
             Schema retry configuration dictionary.
         """
         try:
-            config_loader = ConfigLoader()
-            config_loader.load_configs()
+            config_loader = get_config_loader()
             concurrency_cfg = config_loader.get_concurrency_config()
             
             schema_retries = (

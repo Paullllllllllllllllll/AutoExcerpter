@@ -43,6 +43,7 @@ logger = setup_logger(__name__)
 # Public API
 __all__ = [
     "ConfigLoader",
+    "get_config_loader",
     "PROJECT_ROOT",
     "MODULES_DIR",
     "CONFIG_DIR",
@@ -165,3 +166,28 @@ class ConfigLoader:
             True if at least one configuration has been loaded
         """
         return bool(self._image_processing or self._concurrency or self._model)
+
+
+# ============================================================================
+# Singleton Pattern for Config Loader
+# ============================================================================
+_config_loader_instance: Optional[ConfigLoader] = None
+
+
+def get_config_loader() -> ConfigLoader:
+    """
+    Get or create a singleton ConfigLoader instance.
+    
+    This ensures configuration is loaded once and reused throughout the application.
+    
+    Returns:
+        Singleton ConfigLoader instance with loaded configurations.
+    """
+    global _config_loader_instance
+    
+    if _config_loader_instance is None:
+        _config_loader_instance = ConfigLoader()
+        _config_loader_instance.load_configs()
+        logger.debug("Initialized singleton ConfigLoader")
+    
+    return _config_loader_instance

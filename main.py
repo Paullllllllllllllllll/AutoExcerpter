@@ -17,15 +17,16 @@ import shutil
 import stat
 import sys
 import time
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from core.transcriber import ItemTranscriber
 from modules import app_config as config
-from modules.image_utils import SUPPORTED_IMAGE_EXTENSIONS
+from modules.error_handler import handle_critical_error
+from modules.item_scanner import scan_input_path
 from modules.logger import setup_logger
 from modules.token_tracker import get_token_tracker
+from modules.types import ItemSpec
 from modules.user_prompts import (
     print_header,
     print_section,
@@ -42,25 +43,6 @@ logger = setup_logger(__name__)
 # Constants
 MIN_VALID_CHOICE = 1
 SELECTION_PROMPT = "\nEnter your choice(s) (e.g., 1; 3-5; all): "
-
-@dataclass(frozen=True)
-class ItemSpec:
-    """Descriptor for a PDF file or image folder to process."""
-
-    kind: str
-    path: Path
-    image_count: Optional[int] = None
-
-    @property
-    def output_stem(self) -> str:
-        return self.path.stem
-
-    def display_label(self) -> str:
-        item_type_label = "PDF" if self.kind == "pdf" else "Image Folder"
-        count_str = ""
-        if self.kind == "image_folder" and self.image_count is not None:
-            count_str = f" ({self.image_count} images)"
-        return f"{item_type_label}: {self.path.name}{count_str} (from: {self.path.parent})"
 
 
 def setup_argparse() -> argparse.Namespace:
@@ -98,30 +80,6 @@ def setup_argparse() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def scan_input_path(path_to_scan: Path) -> List[ItemSpec]:
-    """Gather items from a file or directory path."""
-
-    logger.debug("Scanning input: %s", path_to_scan)
-    collected: List[ItemSpec] = []
-
-    if path_to_scan.is_file():
-        if _is_pdf_file(path_to_scan):
-            collected.append(_build_pdf_item(path_to_scan))
-        else:
-            logger.warning(
-                "Input path %s is not a PDF file. Skipping.",
-                path_to_scan,
-            )
-    elif path_to_scan.is_dir():
-        collected.extend(_collect_items_from_directory(path_to_scan))
-    else:
-        logger.warning(
-            "Input path %s is not a PDF file or a directory. Skipping.",
-            path_to_scan,
-        )
-
-    logger.debug("Found %s potential items from %s.", len(collected), path_to_scan)
-    return collected
 
 
 def prompt_for_item_selection(items: Sequence[ItemSpec]) -> List[ItemSpec]:
@@ -146,55 +104,6 @@ def prompt_for_item_selection(items: Sequence[ItemSpec]) -> List[ItemSpec]:
     return selected if selected is not None else []
 
 
-def _collect_items_from_directory(path_to_scan: Path) -> Iterable[ItemSpec]:
-    image_folders: dict[Path, List[Path]] = {}
-    items: List[ItemSpec] = []
-
-    for root, dirs, files in os.walk(path_to_scan):
-        current_dir = Path(root)
-
-        for file_name in files:
-            file_path = current_dir / file_name
-            if _is_pdf_file(file_path):
-                items.append(_build_pdf_item(file_path))
-
-        for file_name in files:
-            file_path = current_dir / file_name
-            if _is_supported_image(file_path):
-                image_folders.setdefault(current_dir, []).append(file_path)
-
-        dirs[:] = [name for name in dirs if (current_dir / name) not in image_folders]
-
-    items.extend(_build_image_folder_items(image_folders))
-    return items
-
-
-def _build_pdf_item(pdf_path: Path) -> ItemSpec:
-    return ItemSpec(kind="pdf", path=pdf_path)
-
-
-def _build_image_folder_items(image_folders: dict[Path, List[Path]]) -> List[ItemSpec]:
-    image_items: List[ItemSpec] = []
-    for folder_path, images in image_folders.items():
-        if not images:
-            continue
-        sorted_images = sorted(images, key=lambda target: target.name)
-        image_items.append(
-            ItemSpec(
-                kind="image_folder",
-                path=folder_path,
-                image_count=len(sorted_images),
-            )
-        )
-    return image_items
-
-
-def _is_pdf_file(path: Path) -> bool:
-    return path.suffix.lower() == ".pdf"
-
-
-def _is_supported_image(path: Path) -> bool:
-    return path.suffix.lower() in SUPPORTED_IMAGE_EXTENSIONS
 
 
 def _process_single_item(
@@ -252,9 +161,12 @@ def _process_single_item(
         return True
         
     except Exception as exc:
-        logger.exception("CRITICAL ERROR processing item: %s", item_spec.output_stem)
-        if not config.CLI_MODE:
-            print_error(f"Critical error processing '{item_spec.output_stem}'. Check logs for details.")
+        handle_critical_error(
+            exc,
+            f"processing item '{item_spec.output_stem}'",
+            exit_on_error=False,
+            show_user_message=not config.CLI_MODE,
+        )
         logger.info("--- Attempting to continue with the next item if any. ---")
         return False
         
@@ -545,10 +457,10 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         logger.info("Processing interrupted by user (Ctrl+C). Exiting.")
         exit_program("\nProcessing interrupted by user.")
-    except Exception as exc:  # pylint: disable=broad-except
-        logger.exception("An unexpected critical error occurred in the main execution flow: %s", exc)
-        print_error(f"An unexpected critical error occurred: {exc}")
-        import traceback
-
-        traceback.print_exc()
-        sys.exit(1)
+    except Exception as exc:
+        handle_critical_error(
+            exc,
+            "main execution flow",
+            exit_on_error=True,
+            show_user_message=True,
+        )

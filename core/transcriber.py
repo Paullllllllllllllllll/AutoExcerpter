@@ -2,23 +2,32 @@ import concurrent.futures
 import shutil
 import time
 from pathlib import Path
-from typing import Dict, Any, List, Tuple, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from tqdm import tqdm
 
-from modules import app_config as config
-from modules.path_utils import create_safe_directory_name, create_safe_log_filename
-from api.openai_transcribe_api import OpenAITranscriptionManager
 from api.openai_api import OpenAISummaryManager
-from processors.pdf_processor import extract_pdf_pages_to_images, \
-	get_image_paths_from_folder
-from processors.file_manager import (
-	create_docx_summary, write_transcription_to_text, initialize_log_file,
-	append_to_log, finalize_log_file
-)
+from api.openai_transcribe_api import OpenAITranscriptionManager
 from api.rate_limiter import RateLimiter
-from modules.config_loader import ConfigLoader
+from modules import app_config as config
+from modules.concurrency_helper import (
+    get_target_dpi,
+    get_transcription_concurrency,
+)
 from modules.logger import setup_logger
+from modules.path_utils import create_safe_directory_name, create_safe_log_filename
+from modules.types import SummaryResult, TranscriptionResult
+from processors.file_manager import (
+    append_to_log,
+    create_docx_summary,
+    finalize_log_file,
+    initialize_log_file,
+    write_transcription_to_text,
+)
+from processors.pdf_processor import (
+    extract_pdf_pages_to_images,
+    get_image_paths_from_folder,
+)
 
 
 logger = setup_logger(__name__)
@@ -165,13 +174,7 @@ class ItemTranscriber:
 		image_paths_with_indices = list(enumerate(image_paths))
 
 		if config.SUMMARIZE and self.openai_summary_manager:
-			try:
-				cfg_loader = ConfigLoader()
-				cfg_loader.load_configs()
-				concurrency_cfg = cfg_loader.get_concurrency_config()
-				max_workers = concurrency_cfg.get("api_requests", {}).get("transcription", {}).get("concurrency_limit", 4)
-			except Exception:
-				max_workers = config.CONCURRENT_REQUESTS
+			max_workers, _ = get_transcription_concurrency()
 			initialize_log_file(
 				self.summary_log_path, self.name, str(self.input_path),
 				"PDF" if self.input_type == "pdf" else "Image Folder",
@@ -275,14 +278,7 @@ class ItemTranscriber:
 				return error_result
 
 		# Load concurrency settings from concurrency.yaml
-		try:
-			cfg_loader = ConfigLoader()
-			cfg_loader.load_configs()
-			concurrency_cfg = cfg_loader.get_concurrency_config()
-			max_workers = concurrency_cfg.get("api_requests", {}).get("transcription", {}).get("concurrency_limit", 4)
-		except Exception:
-			max_workers = config.CONCURRENT_REQUESTS
-		
+		max_workers, _ = get_transcription_concurrency()
 		max_workers = min(max_workers, len(image_paths))
 		if max_workers <= 0:
 			max_workers = 1
@@ -609,19 +605,8 @@ class ItemTranscriber:
 		# read target_dpi from modules config for logging
 		target_dpi = None
 		if self.input_type == "pdf":
-			try:
-				cl = ConfigLoader()
-				cl.load_configs()
-				target_dpi = int(cl.get_image_processing_config().get('api_image_processing', {}).get('target_dpi', 300))
-			except Exception:
-				target_dpi = None
-		try:
-			cfg_loader = ConfigLoader()
-			cfg_loader.load_configs()
-			concurrency_cfg = cfg_loader.get_concurrency_config()
-			actual_concurrency = concurrency_cfg.get("api_requests", {}).get("transcription", {}).get("concurrency_limit", 4)
-		except Exception:
-			actual_concurrency = config.CONCURRENT_REQUESTS
+			target_dpi = get_target_dpi()
+		actual_concurrency, _ = get_transcription_concurrency()
 		initialize_log_file(
 			self.log_path, self.name, str(self.input_path), item_type_str,
 			self.total_items_to_transcribe, config.OPENAI_TRANSCRIPTION_MODEL,
