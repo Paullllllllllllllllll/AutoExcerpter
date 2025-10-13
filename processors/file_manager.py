@@ -165,6 +165,23 @@ def simplify_problematic_latex(latex_code: str) -> tuple[str, list[str]]:
         simplified = simplified.replace('\\lor', '\\vee')
         applied.append('logical operators (\\lor → \\vee)')
     
+    # Replace accent macros that cause groupChr issues
+    # These are known to produce malformed OMML with unclosed groupChrPr tags
+    accent_replacements = [
+        (r'\\bar\{([^}]+)\}', r'\\overline{\1}', '\\bar → \\overline'),
+        (r'\\tilde\{([^}]+)\}', r'\\widetilde{\1}', '\\tilde → \\widetilde'),
+        (r'\\hat\{([^}]+)\}', r'\\widehat{\1}', '\\hat → \\widehat'),
+    ]
+    
+    accent_simplified = False
+    for pattern, replacement, desc in accent_replacements:
+        if re.search(pattern, simplified):
+            simplified = re.sub(pattern, replacement, simplified)
+            accent_simplified = True
+    
+    if accent_simplified:
+        applied.append('accent macros (\\bar/\\hat/\\tilde → wide variants)')
+    
     # Replace delimiter size commands that cause groupChr issues
     delimiter_sizes = ['\\Big', '\\big', '\\bigg', '\\Bigg', '\\Bigl', '\\Bigr', 
                        '\\bigl', '\\bigr', '\\biggl', '\\biggr', '\\Biggl', '\\Biggr']
@@ -251,21 +268,50 @@ def sanitize_omml_xml(omml_markup: str) -> str:
             except ET.ParseError as parse_err:
                 logger.debug("First sanitization attempt failed: %s", parse_err)
                 
-                # Strategy 2: More aggressive - just close all unclosed groupChrPr tags
-                # before any groupChr closing tag
-                fixed_markup2 = re.sub(
-                    r'(<m:groupChrPr[^>]*>(?:(?!</m:groupChrPr>).)*?)(</m:groupChr>)',
-                    r'\1</m:groupChrPr>\2',
-                    omml_markup,
-                    flags=re.DOTALL
-                )
+                # Strategy 2: More aggressive - close all unclosed groupChrPr tags
+                # before any groupChr closing tag, handling multiple occurrences
+                fixed_markup2 = omml_markup
+                
+                # Iteratively fix each groupChr block
+                max_iterations = 10  # Prevent infinite loops
+                for _ in range(max_iterations):
+                    # Find groupChr blocks with unclosed groupChrPr
+                    match = re.search(
+                        r'<m:groupChr>\s*<m:groupChrPr[^>]*>(?:(?!</m:groupChrPr>).)*?</m:groupChr>',
+                        fixed_markup2,
+                        flags=re.DOTALL
+                    )
+                    
+                    if not match:
+                        break  # No more unclosed tags
+                    
+                    # Insert closing tag before the groupChr end
+                    block = match.group(0)
+                    fixed_block = block.replace('</m:groupChr>', '</m:groupChrPr></m:groupChr>', 1)
+                    fixed_markup2 = fixed_markup2[:match.start()] + fixed_block + fixed_markup2[match.end():]
                 
                 try:
                     ET.fromstring(fixed_markup2)
-                    logger.info("Successfully sanitized OMML with aggressive groupChr fix")
+                    logger.info("Successfully sanitized OMML with iterative groupChr fix")
                     return fixed_markup2
                 except ET.ParseError:
-                    pass
+                    logger.debug("Iterative sanitization failed, trying fallback")
+                    
+                    # Strategy 3: Nuclear option - replace all groupChr blocks with simplified structure
+                    # This removes the problematic property tags entirely
+                    fixed_markup3 = re.sub(
+                        r'<m:groupChr>\s*<m:groupChrPr[^>]*>.*?</m:groupChr>',
+                        lambda m: m.group(0).replace('<m:groupChrPr', '<!--m:groupChrPr').replace('</m:groupChrPr>', '-->'),
+                        omml_markup,
+                        flags=re.DOTALL
+                    )
+                    
+                    try:
+                        ET.fromstring(fixed_markup3)
+                        logger.info("Successfully sanitized OMML by commenting out groupChrPr")
+                        return fixed_markup3
+                    except ET.ParseError:
+                        pass
         
         # If we can't fix it, return original
         return omml_markup
