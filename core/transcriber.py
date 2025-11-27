@@ -6,9 +6,10 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from tqdm import tqdm
 
-from api.openai_api import OpenAISummaryManager
-from api.openai_transcribe_api import OpenAITranscriptionManager
+from api.transcribe_api import TranscriptionManager
+from api.summary_api import SummaryManager
 from api.rate_limiter import RateLimiter
+from modules.config_loader import get_config_loader
 from modules import app_config as config
 from modules.concurrency_helper import (
     get_target_dpi,
@@ -50,8 +51,8 @@ class ItemTranscriber:
 		input_type: Either "pdf" or "image_folder".
 		base_output_dir: Base directory where outputs and working files are written.
 		working_dir: Item-specific working directory containing images and logs.
-		openai_transcribe_manager: Manages image transcription via OpenAI API.
-		openai_summary_manager: Manages summarization via OpenAI API (if enabled).
+		transcribe_manager: Manages image transcription via LLM API.
+		summary_manager: Manages summarization via LLM API (if enabled).
 	"""
 	def __init__(self, input_path: Path, input_type: str,
 	             base_output_dir: Path):
@@ -83,20 +84,36 @@ class ItemTranscriber:
 		self.transcription_times: List[
 			float] = []  # For successful transcriptions
 
+		# Load model configuration from model.yaml
+		config_loader = get_config_loader()
+		model_cfg = config_loader.get_model_config()
+		
+		# Get transcription model configuration
+		transcription_cfg = model_cfg.get("transcription_model", {})
+		transcription_model = transcription_cfg.get("name", config.OPENAI_TRANSCRIPTION_MODEL)
+		transcription_provider = transcription_cfg.get("provider")
+		
+		# Get summary model configuration
+		summary_cfg = model_cfg.get("summary_model", {})
+		summary_model = summary_cfg.get("name", config.OPENAI_MODEL)
+		summary_provider = summary_cfg.get("provider")
+		
 		# Use specific rate limiter configurations
-		self.openai_transcribe_rate_limiter = RateLimiter(config.OPENAI_RATE_LIMITS)
-		self.openai_transcribe_manager = OpenAITranscriptionManager(
-			config.OPENAI_API_KEY,
-			config.OPENAI_TRANSCRIPTION_MODEL,
-			rate_limiter=self.openai_transcribe_rate_limiter,
+		self.transcribe_rate_limiter = RateLimiter(config.OPENAI_RATE_LIMITS)
+		self.transcribe_manager = TranscriptionManager(
+			model_name=transcription_model,
+			provider=transcription_provider,
+			rate_limiter=self.transcribe_rate_limiter,
 			timeout=config.OPENAI_API_TIMEOUT,
 		)
 
-		# Only initialize OpenAI manager if summarization is enabled
-		self.openai_summary_manager = None
+		# Only initialize summary manager if summarization is enabled
+		self.summary_manager = None
 		if config.SUMMARIZE:
-			self.openai_summary_manager = OpenAISummaryManager(
-				config.OPENAI_API_KEY, config.OPENAI_MODEL)
+			self.summary_manager = SummaryManager(
+				model_name=summary_model,
+				provider=summary_provider,
+			)
 
 		# Image preprocessing is handled within modules.image_utils inside the transcription manager.
 
@@ -173,7 +190,7 @@ class ItemTranscriber:
 
 		image_paths_with_indices = list(enumerate(image_paths))
 
-		if config.SUMMARIZE and self.openai_summary_manager:
+		if config.SUMMARIZE and self.summary_manager:
 			max_workers, _ = get_transcription_concurrency()
 			initialize_log_file(
 				self.summary_log_path, self.name, str(self.input_path),
@@ -186,14 +203,14 @@ class ItemTranscriber:
 			original_input_order_index, img_path = args_tuple
 			nonlocal processed_count
 			try:
-				transcription_result_raw = self.openai_transcribe_manager.transcribe_image(
+				transcription_result_raw = self.transcribe_manager.transcribe_image(
 					img_path)
 				transcription_result = {
 					**transcription_result_raw,
 					"original_input_order_index": original_input_order_index
 				}
 
-				if config.SUMMARIZE and self.openai_summary_manager and "error" not in transcription_result:
+				if config.SUMMARIZE and self.summary_manager and "error" not in transcription_result:
 					page_num_model = transcription_result.get("page")
 					transcription_text = transcription_result.get(
 						"transcription", "")
@@ -208,7 +225,7 @@ class ItemTranscriber:
 							["[Empty page or no transcription possible]"],
 						)
 					else:
-						summary_data = self.openai_summary_manager.generate_summary(
+						summary_data = self.summary_manager.generate_summary(
 							transcription_text,
 							page_num_to_use
 						)
@@ -223,7 +240,7 @@ class ItemTranscriber:
 					)
 					append_to_log(self.summary_log_path, summary_result)
 					summary_results.append(summary_result)
-				elif config.SUMMARIZE and self.openai_summary_manager:  # Handles transcription error case
+				elif config.SUMMARIZE and self.summary_manager:  # Handles transcription error case
 					page_num_model = transcription_result.get("page")
 					has_valid_model_page_num = isinstance(page_num_model, int)
 					page_num_to_use = page_num_model if has_valid_model_page_num else original_input_order_index + 1

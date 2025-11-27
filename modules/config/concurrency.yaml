@@ -51,7 +51,7 @@ api_requests:
   summary:
     # Maximum concurrent API requests for summarization
     # Generally lower than transcription as summaries are larger/more complex
-    concurrency_limit: 500
+    concurrency_limit: 150
     
     # Delay between starting API requests (seconds)
     delay_between_tasks: 0.05
@@ -109,7 +109,7 @@ retry:
       # Set to 0 to disable (recommended for most use cases)
       no_transcribable_text:
         enabled: true
-        max_attempts: 1
+        max_attempts: 0
         backoff_base: 0.5
         backoff_multiplier: 1.5
       

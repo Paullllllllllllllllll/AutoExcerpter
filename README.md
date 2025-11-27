@@ -1,11 +1,12 @@
 # AutoExcerpter
 
-AutoExcerpter is an intelligent document processing pipeline that automatically transcribes and summarizes PDF documents and image collections. Powered by OpenAI's advanced language models (GPT-5-mini by default), the tool converts scanned documents into searchable, structured text with optional summaries and enriched bibliographic citations. It is designed for researchers, academics, and professionals who need to digitize and analyze large volumes of documents efficiently.
+AutoExcerpter is an intelligent document processing pipeline that automatically transcribes and summarizes PDF documents and image collections. Built on LangChain for multi-provider LLM support, it converts scanned documents into searchable, structured text with optional summaries and enriched bibliographic citations. The tool supports OpenAI (GPT-5.1, GPT-5, GPT-4, o-series), Anthropic (Claude 4.5, Claude 4), Google (Gemini 3, Gemini 2.5), and OpenRouter for accessing additional models. It is designed for researchers, academics, and professionals who need to digitize and analyze large volumes of documents efficiently.
 
 ## Table of Contents
 
 - [Overview](#overview)
 - [Key Features](#key-features)
+- [Supported Models](#supported-models)
 - [How It Works](#how-it-works)
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
@@ -13,6 +14,7 @@ AutoExcerpter is an intelligent document processing pipeline that automatically 
 - [CLI Mode and Interactive Mode](#cli-mode-and-interactive-mode)
 - [Configuration](#configuration)
   - [Basic Configuration](#basic-configuration)
+  - [Provider Configuration](#provider-configuration)
   - [Model Configuration](#model-configuration)
   - [Concurrency Configuration](#concurrency-configuration)
   - [Image Processing Configuration](#image-processing-configuration)
@@ -28,7 +30,7 @@ AutoExcerpter is an intelligent document processing pipeline that automatically 
 
 ## Overview
 
-AutoExcerpter processes documents through a sophisticated two-stage pipeline that leverages OpenAI's vision-enabled models with optical character recognition (OCR) capabilities. In the first stage, each page is transcribed using the OpenAI Responses API with structured JSON schemas to ensure consistent output. In the second optional stage, transcribed text is analyzed to generate structured summaries with automatically deduplicated citations enriched with metadata from the OpenAlex academic database.
+AutoExcerpter processes documents through a sophisticated two-stage pipeline that leverages vision-enabled LLMs with optical character recognition (OCR) capabilities. Built on LangChain, the system supports multiple AI providers including OpenAI, Anthropic, Google, and OpenRouter, allowing you to choose the best model for your needs. In the first stage, each page is transcribed using structured JSON schemas to ensure consistent output. In the second optional stage, transcribed text is analyzed to generate structured summaries with automatically deduplicated citations enriched with metadata from the OpenAlex academic database.
 
 **Primary Use Cases:**
 
@@ -71,12 +73,20 @@ AutoExcerpter processes documents through a sophisticated two-stage pipeline tha
 
 - **Concurrent Processing**: Configurable parallelism for both image preprocessing and API requests
 - **Adaptive Rate Limiting**: Sliding window rate limiter prevents API quota violations
-- **Intelligent Retry Logic**: Configurable dual-layer retries combining exponential backoff with schema-aware content retries
+- **LangChain Built-in Retry**: Automatic exponential backoff with jitter handled by LangChain for API errors
+- **Schema-Specific Retries**: Optional retries based on model-returned content flags (no_transcribable_text, etc.)
 - **Daily Token Budgeting**: Built-in token tracker enforces configurable daily limits with automatic midnight resets and per-request accounting
 - **Service Tier Support**: Full support for OpenAI Flex tier to reduce processing costs by up to 50%
 - **Progress Tracking**: Real-time progress bars with estimated time of completion
 - **Comprehensive Logging**: Detailed JSON logs for debugging, quality assurance, and audit trails
 - **Automatic Cleanup**: Optional deletion of temporary working directories after successful processing
+
+**Multi-Provider Architecture:**
+
+- **LangChain Integration**: Unified interface for multiple LLM providers via LangChain
+- **Provider Flexibility**: Switch between OpenAI, Anthropic, Google, or OpenRouter with configuration changes
+- **Capability Guarding**: Automatic parameter filtering based on model capabilities (prevents unsupported parameter errors)
+- **Model Auto-Detection**: Automatic provider inference from model names (gpt-5 to OpenAI, claude to Anthropic, etc.)
 
 **Architecture Excellence:**
 
@@ -86,6 +96,41 @@ AutoExcerpter processes documents through a sophisticated two-stage pipeline tha
 - **Testable Components**: Well-defined interfaces that facilitate unit testing
 - **Type Safety**: Comprehensive type hints throughout the codebase
 - **Public API**: Clear module exports via `__all__` declarations
+
+## Supported Models
+
+AutoExcerpter supports a wide range of models from multiple providers. The system automatically detects model capabilities and filters parameters accordingly.
+
+**OpenAI Models:**
+
+| Model Family | Models | Capabilities |
+|--------------|--------|--------------|
+| GPT-5.1 (Nov 2025) | gpt-5.1, gpt-5.1-instant, gpt-5.1-thinking | Reasoning, text verbosity, multimodal |
+| GPT-5 (Aug 2025) | gpt-5, gpt-5-mini, gpt-5-nano | Reasoning, text verbosity, multimodal |
+| O-series | o4, o4-mini, o3, o3-mini, o1, o1-mini | Reasoning (no temperature control) |
+| GPT-4.1 | gpt-4.1, gpt-4.1-mini, gpt-4.1-nano | Multimodal |
+| GPT-4o | gpt-4o, gpt-4o-mini | Multimodal |
+
+**Anthropic Claude Models:**
+
+| Model Family | Models | Capabilities |
+|--------------|--------|--------------|
+| Claude 4.5 (Oct-Nov 2025) | claude-opus-4-5, claude-sonnet-4-5, claude-haiku-4-5 | Multimodal, extended thinking (opus/sonnet) |
+| Claude 4 | claude-opus-4, claude-sonnet-4 | Multimodal, extended thinking |
+| Claude 3.x | claude-3-7-sonnet, claude-3-5-sonnet, claude-3-5-haiku | Multimodal |
+
+**Google Gemini Models:**
+
+| Model Family | Models | Capabilities |
+|--------------|--------|--------------|
+| Gemini 3 (Nov 2025) | gemini-3-pro | Thinking, multimodal |
+| Gemini 2.5 (Mar 2025) | gemini-2.5-pro, gemini-2.5-flash, gemini-2.5-flash-lite | Thinking, multimodal |
+| Gemini 2.0 | gemini-2.0-flash, gemini-2.0-flash-lite | Multimodal |
+| Gemini 1.5 | gemini-1.5-pro, gemini-1.5-flash | Multimodal |
+
+**OpenRouter:**
+
+OpenRouter provides access to models from all providers through a unified API. Use the `openrouter` provider with any supported model name.
 
 ## How It Works
 
@@ -108,13 +153,14 @@ Images undergo in-memory preprocessing to optimize OCR accuracy:
 - JPEG compression optimization for API transmission
 - All processing happens in memory to prevent race conditions and improve performance
 
-**4. Transcription via OpenAI Responses API**
+**4. Transcription via LangChain**
 
-Each preprocessed image is sent to OpenAI's Responses API with:
+Each preprocessed image is sent to the configured LLM provider through LangChain with:
 - A detailed system prompt instructing the model to perform verbatim transcription
 - Structured JSON schema defining the expected output format
 - Configuration for reasoning effort and text verbosity (from model.yaml)
 - Model parameters including max_output_tokens and service tier settings
+- Automatic capability guarding to filter unsupported parameters based on model
 
 The API returns structured JSON containing:
 - Full verbatim transcription with markdown formatting
@@ -122,7 +168,8 @@ The API returns structured JSON containing:
 - Mathematical equations in LaTeX notation
 - Page numbers marked with special XML-style tags
 - Detailed descriptions of visual elements (images, diagrams, charts)
- - Built-in exponential backoff with jitter and schema-specific retries to gracefully recover from transient errors or ambiguous content flags
+
+LangChain handles API retries with exponential backoff automatically. Schema-specific retries are available for content flags.
 
 **5. Summarization (Optional)**
 
@@ -151,6 +198,86 @@ The pipeline produces multiple output files:
 **8. Cleanup**
 
 If configured, the system automatically deletes temporary working directories including extracted images and intermediate processing files, keeping only the final outputs.
+
+## Prerequisites
+
+Before installing AutoExcerpter, ensure you have:
+
+- **Python 3.10 or higher**: Required for LangChain v1.0 compatibility
+- **API Key(s)**: At least one API key from a supported provider:
+  - OpenAI API key (for GPT-5, GPT-4, o-series models)
+  - Anthropic API key (for Claude models)
+  - Google API key (for Gemini models)
+  - OpenRouter API key (for accessing multiple providers)
+
+## Installation
+
+1. **Clone the repository:**
+```bash
+git clone https://github.com/yourusername/AutoExcerpter.git
+cd AutoExcerpter
+```
+
+2. **Create and activate a virtual environment:**
+```bash
+python -m venv .venv
+
+# On Windows:
+.venv\Scripts\activate
+
+# On macOS/Linux:
+source .venv/bin/activate
+```
+
+3. **Install dependencies:**
+```bash
+pip install -r requirements.txt
+```
+
+4. **Set up API keys as environment variables:**
+
+```bash
+# OpenAI (required for default configuration)
+export OPENAI_API_KEY="your-openai-api-key"
+
+# Anthropic (optional, for Claude models)
+export ANTHROPIC_API_KEY="your-anthropic-api-key"
+
+# Google (optional, for Gemini models)
+export GOOGLE_API_KEY="your-google-api-key"
+
+# OpenRouter (optional, for multi-provider access)
+export OPENROUTER_API_KEY="your-openrouter-api-key"
+```
+
+On Windows, use `set` instead of `export`, or configure environment variables through System Properties.
+
+5. **Configure the application:**
+
+Edit `modules/config/app.yaml` to set your input/output paths and preferred model:
+```yaml
+input_folder_path: 'C:\Users\yourname\Documents\PDFs'
+output_folder_path: 'C:\Users\yourname\Documents\Output'
+
+openai:
+  model: 'gpt-5-mini'  # or any supported model
+  transcription_model: 'gpt-5-mini'
+```
+
+## Quick Start
+
+1. **Run AutoExcerpter:**
+```bash
+python main.py
+```
+
+2. **Select documents to process** from the interactive menu
+
+3. **Wait for processing** to complete (progress bars show estimated time)
+
+4. **Find outputs** in your configured output directory:
+   - `.txt` files contain full transcriptions
+   - `.docx` files contain formatted summaries (if enabled)
 
 ## CLI Mode and Interactive Mode
 
@@ -275,9 +402,60 @@ openai:
 **Key Settings Explained:**
 
 - **summarize**: Set to `false` if you only need transcription without summaries (faster and cheaper)
-- **concurrent_requests**: Higher values increase speed but may hit rate limits; adjust based on your OpenAI tier
+- **concurrent_requests**: Higher values increase speed but may hit rate limits; adjust based on your provider tier
 - **use_flex**: Flex tier offers 50% cost savings with slightly longer processing times (recommended for batch jobs)
-- **rate_limits**: Must match your OpenAI account tier limits; check your account dashboard for specific limits
+- **rate_limits**: Must match your API account tier limits; check your account dashboard for specific limits
+
+### Provider Configuration
+
+AutoExcerpter supports multiple LLM providers through LangChain. Configure your preferred provider in `modules/config/app.yaml`:
+
+**Using OpenAI (default):**
+```yaml
+openai:
+  model: 'gpt-5-mini'
+  transcription_model: 'gpt-5-mini'
+  provider: 'openai'  # Optional, auto-detected from model name
+```
+
+**Using Anthropic Claude:**
+```yaml
+openai:  # Note: uses same config section for backward compatibility
+  model: 'claude-sonnet-4-5'
+  transcription_model: 'claude-sonnet-4-5'
+  provider: 'anthropic'
+```
+
+**Using Google Gemini:**
+```yaml
+openai:
+  model: 'gemini-2.5-pro'
+  transcription_model: 'gemini-2.5-pro'
+  provider: 'google'
+```
+
+**Using OpenRouter (access to multiple providers):**
+```yaml
+openai:
+  model: 'anthropic/claude-3-opus'  # Use provider/model format
+  transcription_model: 'anthropic/claude-3-opus'
+  provider: 'openrouter'
+```
+
+**Provider Auto-Detection:**
+
+If you do not specify a provider, AutoExcerpter will infer it from the model name:
+- Models starting with `gpt-`, `o1`, `o3`, `o4` use OpenAI
+- Models starting with `claude-` use Anthropic
+- Models starting with `gemini-` use Google
+
+**API Keys:**
+
+Each provider requires its own API key set as an environment variable:
+- `OPENAI_API_KEY` for OpenAI
+- `ANTHROPIC_API_KEY` for Anthropic
+- `GOOGLE_API_KEY` for Google
+- `OPENROUTER_API_KEY` for OpenRouter
 
 ### Model Configuration
 
@@ -716,12 +894,16 @@ AutoExcerpter follows a modular architecture with clear separation of concerns:
 
 ```
 AutoExcerpter/
-├── api/                                # OpenAI API Integration Layer
+├── api/                                # LangChain Multi-Provider API Layer
 │   ├── __init__.py                     # Package initialization
-│   ├── base_openai_client.py          # Base class with shared retry/error handling logic
-│   ├── openai_api.py                   # Summary generation API client
-│   ├── openai_transcribe_api.py       # Transcription API client with vision support and model.yaml parameter loading
-│   └── rate_limiter.py                 # Sliding window rate limiter for API quotas
+│   ├── llm_client.py                   # Multi-provider LLM client with LangChain
+│   ├── base_llm_client.py              # Provider-agnostic base class with retry logic
+│   ├── transcribe_api.py               # Transcription API client (TranscriptionManager)
+│   ├── summary_api.py                  # Summary generation API client (SummaryManager)
+│   ├── rate_limiter.py                 # Sliding window rate limiter for API quotas
+│   ├── base_openai_client.py           # [Deprecated] Re-exports from base_llm_client.py
+│   ├── openai_api.py                   # [Deprecated] Re-exports from summary_api.py
+│   └── openai_transcribe_api.py        # [Deprecated] Re-exports from transcribe_api.py
 │
 ├── core/                               # Core Processing Logic
 │   ├── __init__.py                     # Package initialization
@@ -729,7 +911,7 @@ AutoExcerpter/
 │
 ├── processors/                         # File I/O and Processing Utilities
 │   ├── __init__.py                     # Package initialization
-│   ├── citation_manager.py            # Citation deduplication and enrichment
+│   ├── citation_manager.py             # Citation deduplication and enrichment
 │   ├── file_manager.py                 # Output file management (TXT, DOCX, JSON)
 │   └── pdf_processor.py                # PDF page extraction and conversion
 │
@@ -739,7 +921,7 @@ AutoExcerpter/
 │   │   ├── app.yaml                    # Main application settings
 │   │   ├── concurrency.yaml            # Concurrency and retry configuration
 │   │   ├── image_processing.yaml       # Image preprocessing parameters
-│   │   └── model.yaml                  # Model-specific parameters (GPT-5, o-series)
+│   │   └── model.yaml                  # Model-specific parameters
 │   │
 │   ├── prompts/                        # System Prompts for AI Models
 │   │   ├── transcription_system_prompt.txt  # Detailed transcription instructions
@@ -756,9 +938,6 @@ AutoExcerpter/
 │   ├── logger.py                       # Logging configuration
 │   └── prompt_utils.py                 # Prompt rendering utilities
 │
-├── tests/                              # Unit Tests
-│   └── test_prompt_utils.py           # Tests for prompt utilities
-│
 ├── main.py                             # Entry point and CLI interface
 ├── requirements.txt                    # Python dependencies
 └── README.md                           # This file
@@ -766,12 +945,14 @@ AutoExcerpter/
 
 **Module Responsibilities:**
 
-**`api/` - OpenAI API Integration**
-- Encapsulates all OpenAI API interactions with retry logic, rate limiting, and error handling
-- `base_openai_client.py`: Provides shared functionality for API clients including exponential backoff, jitter, and error recovery
-- `openai_api.py`: Handles summarization API calls with the standard OpenAI API
-- `openai_transcribe_api.py`: Manages transcription using the Responses API with vision support and model.yaml parameter loading
+**`api/` - LangChain Multi-Provider API Layer**
+- Provides a unified interface for multiple LLM providers (OpenAI, Anthropic, Google, OpenRouter)
+- `llm_client.py`: Multi-provider LLM client with model capability profiles and auto-detection
+- `base_llm_client.py`: Provider-agnostic base class with rate limiting integration and schema retries
+- `transcribe_api.py`: TranscriptionManager for image-to-text processing with structured output
+- `summary_api.py`: SummaryManager for generating structured summaries with citation extraction
 - `rate_limiter.py`: Implements sliding window rate limiting to prevent quota violations
+- LangChain handles API retries with exponential backoff automatically
 
 **`core/` - Pipeline Orchestration**
 - Contains the main `ItemTranscriber` class that orchestrates the entire processing pipeline
@@ -864,9 +1045,9 @@ Monitor your OpenAI API usage at https://platform.openai.com/usage to understand
 
 **Security and Privacy:**
 
-- Never commit your OpenAI API key to version control
+- Never commit API keys to version control (use environment variables)
 - Be mindful of sensitive information in documents
-- Review OpenAI's data usage policies for your organization
+- Review data usage policies for your chosen AI provider
 - Consider using environment variables or secret management tools
 - Keep temporary working directories secure during processing
 
@@ -874,16 +1055,25 @@ Monitor your OpenAI API usage at https://platform.openai.com/usage to understand
 
 **Common Issues and Solutions:**
 
-**Issue: "No OPENAI_API_KEY found in environment"**
-- Ensure you have set the `OPENAI_API_KEY` environment variable
+**Issue: "No API key found in environment"**
+- Ensure you have set the appropriate API key environment variable for your provider:
+  - `OPENAI_API_KEY` for OpenAI models
+  - `ANTHROPIC_API_KEY` for Claude models
+  - `GOOGLE_API_KEY` for Gemini models
+  - `OPENROUTER_API_KEY` for OpenRouter
 - Verify the key is correct and has not been revoked
 - Check that the environment variable is set in your current shell session
 
+**Issue: "Unsupported parameter" errors**
+- The model may not support certain parameters (e.g., reasoning_effort on gpt-4o)
+- AutoExcerpter should automatically filter unsupported parameters via capability guarding
+- If you see this error, ensure you are using the latest version of the application
+
 **Issue: Rate limit errors (429 responses)**
 - Reduce `concurrent_requests` in `app.yaml` (try 2 or 3)
-- Adjust `rate_limits` to match your OpenAI tier
-- Enable `use_flex: true` for less aggressive rate limiting
-- Check your OpenAI account for quota limits
+- Adjust `rate_limits` to match your provider tier limits
+- Enable `use_flex: true` for less aggressive rate limiting (OpenAI only)
+- Check your API account for quota limits
 
 **Issue: Timeout errors**
 - Increase `api_timeout` in `app.yaml` (e.g., 600 for larger images)
@@ -945,12 +1135,13 @@ Contributions to AutoExcerpter are welcome! Whether you are fixing bugs, adding 
 **Areas for Contribution:**
 
 - Support for additional output formats (Markdown, HTML, etc.)
-- Integration with other AI providers (Anthropic, Google, etc.)
+- Support for additional LLM providers (AWS Bedrock, Cohere, Mistral, etc.)
 - Enhanced image preprocessing algorithms
 - Batch API integration for cost-optimized processing
 - Additional unit and integration tests
 - Performance optimizations
 - User interface improvements
+- Extended model capability profiles for new model releases
 
 ## License
 

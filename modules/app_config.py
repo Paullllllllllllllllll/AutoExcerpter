@@ -160,13 +160,36 @@ CITATION_MAX_API_REQUESTS = _get_int(_CITATION, "max_api_requests", 50)
 # --- OpenAI Rate Limiting ---
 OPENAI_RATE_LIMITS = _as_rate_limits(_OA.get("rate_limits"))
 
-# --- OpenAI API Configuration ---
+# --- LLM Provider API Keys ---
+# API keys are loaded from environment variables
+# At least one provider's API key must be set
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
-if not OPENAI_API_KEY:
-    error_msg = "OPENAI_API_KEY environment variable is not set. Please set it before running the application."
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
+GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
+
+# Check that at least one API key is configured
+_available_providers = []
+if OPENAI_API_KEY:
+    _available_providers.append("openai")
+if ANTHROPIC_API_KEY:
+    _available_providers.append("anthropic")
+if GOOGLE_API_KEY:
+    _available_providers.append("google")
+if OPENROUTER_API_KEY:
+    _available_providers.append("openrouter")
+
+if not _available_providers:
+    error_msg = (
+        "No LLM provider API key found. Please set at least one of: "
+        "OPENAI_API_KEY, ANTHROPIC_API_KEY, GOOGLE_API_KEY, or OPENROUTER_API_KEY"
+    )
     logger.error(error_msg)
     raise EnvironmentError(error_msg)
 
+logger.info(f"Available LLM providers: {', '.join(_available_providers)}")
+
+# --- OpenAI Configuration (legacy, used as defaults) ---
 OPENAI_MODEL = _get_str(_OA, "model", DEFAULT_MODEL)
 OPENAI_TRANSCRIPTION_MODEL = _get_str(_OA, "transcription_model", DEFAULT_MODEL)
 OPENAI_API_TIMEOUT = _get_int(_OA, "api_timeout", DEFAULT_OPENAI_TIMEOUT)

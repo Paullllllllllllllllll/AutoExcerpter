@@ -1,16 +1,28 @@
-# Core runtime
-openai==2.1.0
-requests==2.32.5
+# AutoExcerpter Dependencies
+# Updated: November 2025
 
-# Imaging and PDF
-pillow==11.3.0
-PyMuPDF==1.26.4
+# ============== Core Runtime ==============
+requests==2.32.5              # HTTP requests (OpenAlex API)
 
-# Progress and docs export
-tqdm==4.67.1
-python-docx==1.2.0
-latex2mathml==3.78.1
-mathml2omml==0.0.2
+# ============== Imaging and PDF ==============
+pillow==12.0.0                # Image processing
+PyMuPDF==1.26.6               # PDF extraction
 
-# Configs
-PyYAML==6.0.3
+# ============== Progress and Document Export ==============
+tqdm==4.67.1                  # Progress bars
+python-docx==1.2.0            # DOCX generation
+latex2mathml==3.78.1          # LaTeX to MathML conversion
+mathml2omml==0.0.2            # MathML to OMML conversion
+
+# ============== Configuration ==============
+PyYAML==6.0.3                 # YAML config loading
+
+# ============== LangChain Ecosystem ==============
+# Core LangChain (multi-provider LLM support)
+langchain-core==1.1.0         # Core abstractions and interfaces
+
+# Provider Integrations
+langchain-openai==1.1.0       # OpenAI (GPT-5.1, GPT-5, GPT-4.1, o-series)
+langchain-anthropic==1.2.0    # Anthropic (Claude 4.5, Claude 4, Claude 3.x)
+langchain-google-genai==3.2.0 # Google Gemini (3 Pro, 2.5, 2.0, 1.5)
+# Note: OpenRouter uses langchain-openai with custom base_url
