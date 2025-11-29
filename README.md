@@ -366,6 +366,9 @@ AutoExcerpter uses a multi-file YAML configuration system that provides fine-gra
 This is the primary configuration file for application-level settings.
 
 ```yaml
+# Execution Mode
+cli_mode: false  # When true, run as CLI tool; when false, use interactive prompts
+
 # Feature Toggle
 summarize: true  # Enable/disable summarization; false = transcription only
 
@@ -377,13 +380,18 @@ output_folder_path: 'C:\Users\yourname\Documents\Output'
 delete_temp_working_dir: true  # Delete temporary files after processing
 
 # Performance Settings
-concurrent_requests: 250  # Maximum concurrent API requests
-api_timeout: 600  # Timeout per API request in seconds
+concurrent_requests: 500  # Maximum concurrent API requests
+api_timeout: 900  # Timeout per API request in seconds
 
 # Citation Management
 citation:
   openalex_email: 'your-email@example.com'  # Email for OpenAlex API polite pool
-  max_api_requests: 50  # Maximum metadata enrichment calls per document
+  max_api_requests: 300  # Maximum metadata enrichment calls per document
+
+# Daily Token Limit
+daily_token_limit:
+  enabled: true           # Toggle token tracking and enforcement
+  daily_tokens: 9000000   # Maximum tokens allowed per calendar day
 
 # OpenAI Configuration
 openai:
@@ -401,9 +409,11 @@ openai:
 
 **Key Settings Explained:**
 
+- **cli_mode**: Set to `true` for automation and scripting without interactive prompts
 - **summarize**: Set to `false` if you only need transcription without summaries (faster and cheaper)
-- **concurrent_requests**: Higher values increase speed but may hit rate limits; adjust based on your provider tier
+- **concurrent_requests**: Higher values increase speed but may hit rate limits; adjust based on your provider tier (default: 500)
 - **use_flex**: Flex tier offers 50% cost savings with slightly longer processing times (recommended for batch jobs)
+- **daily_token_limit**: Enforces a configurable daily token budget to stay within API allowances
 - **rate_limits**: Must match your API account tier limits; check your account dashboard for specific limits
 
 ### Provider Configuration
@@ -461,37 +471,44 @@ Each provider requires its own API key set as an environment variable:
 
 **File**: `modules/config/model.yaml`
 
-This file controls advanced model-specific parameters for GPT-5 and o-series models. These settings allow fine-tuning of model behavior for optimal transcription and summarization quality.
+This file controls advanced model-specific parameters for all supported providers (OpenAI, Anthropic, Google, OpenRouter). These settings allow fine-tuning of model behavior for optimal transcription and summarization quality.
 
 ```yaml
 # Transcription Model Configuration
 transcription_model:
   name: "gpt-5-mini"  # Model identifier
-  max_output_tokens: 28000  # Maximum tokens for model output
+  provider: "openai"  # Provider: openai, anthropic, google, openrouter
+  max_output_tokens: 8192  # Maximum tokens for model output
   reasoning:
-    effort: medium  # Options: minimal, low, medium, high
+    effort: low  # Options: minimal, low, medium, high (OpenAI GPT-5/o-series only)
   text:
-    verbosity: medium  # Options: low, medium, high
+    verbosity: medium  # Options: low, medium, high (OpenAI GPT-5 only)
+  temperature: 0.0  # Temperature for generation (0.0-2.0, null for provider default)
 
 # Summary Model Configuration
 summary_model:
   name: "gpt-5-mini"  # Model identifier
-  max_output_tokens: 12000  # Maximum tokens for model output
+  provider: "openai"  # Provider: openai, anthropic, google, openrouter
+  max_output_tokens: 8192  # Maximum tokens for model output
   reasoning:
-    effort: medium  # Options: minimal, low, medium, high
+    effort: low  # Options: minimal, low, medium, high (OpenAI GPT-5/o-series only)
   text:
     verbosity: low  # Options: low, medium, high (low for concise summaries)
+  temperature: 0.0  # Temperature for generation (0.0-2.0, null for provider default)
 ```
 
 **Parameter Details:**
 
+- **name**: Model identifier (e.g., "gpt-5-mini", "claude-sonnet-4-5", "gemini-2.5-pro")
+- **provider**: LLM provider (openai, anthropic, google, openrouter); can be auto-detected from model name
 - **max_output_tokens**: Controls the maximum length of model responses; increase for longer documents
-- **reasoning.effort**: Higher effort improves accuracy but increases processing time and cost
+- **temperature**: Controls randomness in generation (0.0 for deterministic, up to 2.0 for creative output)
+- **reasoning.effort**: Higher effort improves accuracy but increases processing time and cost (OpenAI GPT-5/o-series only)
   - `minimal`: Fastest, lowest cost, basic reasoning
-  - `low`: Balanced for simple documents
-  - `medium`: Good balance for most documents (recommended)
+  - `low`: Balanced for simple documents (recommended)
+  - `medium`: Good balance for complex documents
   - `high`: Maximum accuracy for complex technical content
-- **text.verbosity**: Controls output detail level
+- **text.verbosity**: Controls output detail level (OpenAI GPT-5 family only)
   - `low`: More concise, fewer details (good for summaries)
   - `medium`: Balanced detail level (good for transcriptions)
   - `high`: Maximum detail, comprehensive output
@@ -499,9 +516,34 @@ summary_model:
 **Usage Recommendations:**
 
 - For **technical papers** with equations: Use `medium` or `high` reasoning effort
-- For **general documents**: Use `medium` reasoning effort and verbosity
+- For **general documents**: Use `low` reasoning effort and `medium` verbosity
 - For **summaries**: Use `low` verbosity to keep them concise
 - For **transcriptions**: Use `medium` verbosity to capture all content
+- For **Anthropic/Google models**: The reasoning and text parameters are ignored; temperature and max_output_tokens apply
+
+**Example configurations for other providers:**
+
+```yaml
+# Anthropic Claude
+transcription_model:
+  name: "claude-sonnet-4-5-20250929"
+  provider: "anthropic"
+  max_output_tokens: 8192
+  temperature: 0.0
+
+# Google Gemini
+transcription_model:
+  name: "gemini-2.5-pro"
+  provider: "google"
+  max_output_tokens: 8192
+  temperature: 0.0
+
+# OpenRouter (access any model)
+transcription_model:
+  name: "anthropic/claude-3-opus"
+  provider: "openrouter"
+  max_output_tokens: 4096
+```
 
 ### Concurrency Configuration
 
@@ -545,23 +587,23 @@ retry:
       no_transcribable_text:
         enabled: true
         max_attempts: 0
-        backoff_base: 2.0
+        backoff_base: 0.5
         backoff_multiplier: 1.5
       transcription_not_possible:
         enabled: true
-        max_attempts: 0
-        backoff_base: 2.0
+        max_attempts: 3
+        backoff_base: 0.5
         backoff_multiplier: 1.5
     summary:
       contains_no_semantic_content:
         enabled: true
         max_attempts: 0
-        backoff_base: 2.0
+        backoff_base: 0.5
         backoff_multiplier: 1.5
       contains_no_page_number:
         enabled: true
         max_attempts: 0
-        backoff_base: 2.0
+        backoff_base: 0.5
         backoff_multiplier: 1.5
 ```
 
@@ -584,7 +626,7 @@ retry:
 AutoExcerpter implements two complementary retry layers:
 
 * __API errors__: Controlled by `max_attempts`, `backoff_base`, and `backoff_multipliers`. Applies to rate limits, timeouts, and server-side errors using exponential backoff with jitter, based on OpenAI cookbook guidance.
-* __Schema flags__: Configure per-flag policies under `schema_retries`. Each flag exposes `enabled`, `max_attempts`, `backoff_base`, and `backoff_multiplier`. Defaults keep these retries disabled (`max_attempts: 0`) to avoid unnecessary reprocessing, but you can increase attempts when working with noisy scans or documents that frequently trigger these flags.
+* __Schema flags__: Configure per-flag policies under `schema_retries`. Each flag exposes `enabled`, `max_attempts`, `backoff_base`, and `backoff_multiplier`. Most flags default to `max_attempts: 0` to avoid unnecessary reprocessing, except `transcription_not_possible` which defaults to 3 attempts for handling temporarily illegible images. Increase attempts when working with noisy scans or documents that frequently trigger these flags.
 
 **Supported Flags:**
 
@@ -636,7 +678,7 @@ Configure the enhanced citation system with OpenAlex integration.
 ```yaml
 citation:
   openalex_email: 'your-email@example.com'  # Email for OpenAlex API polite pool
-  max_api_requests: 50  # Maximum metadata enrichment calls per document
+  max_api_requests: 300  # Maximum metadata enrichment calls per document
 ```
 
 **Citation Features:**
@@ -652,7 +694,7 @@ The citation manager automatically:
 **Best Practices:**
 
 - Replace `your-email@example.com` with your real email for faster OpenAlex response times (polite pool)
-- Set `max_api_requests` based on expected citation count (50 handles most papers)
+- Set `max_api_requests` based on expected citation count (300 handles large documents with many references)
 - OpenAlex API is free and requires no API key
 - Citation matching uses both text similarity and DOI extraction for accuracy
 
@@ -665,7 +707,7 @@ AutoExcerpter enforces a configurable daily token budget to keep usage aligned w
 ```yaml
 daily_token_limit:
   enabled: true           # Toggle token tracking and enforcement
-  daily_tokens: 3000000   # Maximum tokens allowed per calendar day
+  daily_tokens: 9000000   # Maximum tokens allowed per calendar day (9 million)
 ```
 
 **Behavior:**
