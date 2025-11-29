@@ -33,7 +33,7 @@ import fitz  # PyMuPDF
 from PIL import Image, ImageOps
 from tqdm import tqdm
 
-from modules.config_loader import ConfigLoader
+from modules.config_loader import get_config_loader
 from modules.image_utils import SUPPORTED_IMAGE_EXTENSIONS, ImageProcessor
 from modules.logger import setup_logger
 
@@ -106,8 +106,7 @@ def extract_pdf_pages_to_images(pdf_path: Path, output_images_dir: Path) -> List
             return []
 
         # Load target DPI and JPEG quality from configuration
-        cfg_loader = ConfigLoader()
-        cfg_loader.load_configs()
+        cfg_loader = get_config_loader()
         img_cfg = cfg_loader.get_image_processing_config().get('api_image_processing', {})
         target_dpi = int(img_cfg.get('target_dpi', DEFAULT_TARGET_DPI))
         jpeg_quality = int(img_cfg.get('jpeg_quality', DEFAULT_JPEG_QUALITY))

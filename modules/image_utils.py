@@ -33,7 +33,7 @@ from typing import Dict, Any
 
 from PIL import Image, ImageOps
 
-from modules.config_loader import ConfigLoader
+from modules.config_loader import get_config_loader
 from modules.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -74,8 +74,7 @@ class ImageProcessor:
             raise ValueError(f"Unsupported image format: {image_path.suffix}")
         self.image_path = image_path
 
-        config_loader = ConfigLoader()
-        config_loader.load_configs()
+        config_loader = get_config_loader()
         # Full config dict (contains 'image_processing' and 'ocr' sections)
         self.image_config = config_loader.get_image_processing_config()
         # OpenAI API preprocessing settings

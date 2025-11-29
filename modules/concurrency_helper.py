@@ -18,19 +18,24 @@ logger = setup_logger(__name__)
 # Public API
 # ============================================================================
 __all__ = [
+    "get_api_concurrency",
     "get_transcription_concurrency",
     "get_summary_concurrency",
     "get_image_processing_concurrency",
     "get_service_tier",
+    "get_target_dpi",
 ]
 
 
 # ============================================================================
 # Concurrency Configuration Access
 # ============================================================================
-def get_transcription_concurrency() -> Tuple[int, float]:
+def get_api_concurrency(api_type: str = "transcription") -> Tuple[int, float]:
     """
-    Get concurrency settings for transcription API requests.
+    Get concurrency settings for API requests.
+    
+    Args:
+        api_type: Type of API request ('transcription' or 'summary').
     
     Returns:
         Tuple of (max_workers, delay_between_tasks).
@@ -38,36 +43,25 @@ def get_transcription_concurrency() -> Tuple[int, float]:
     try:
         cfg_loader = get_config_loader()
         concurrency_cfg = cfg_loader.get_concurrency_config()
-        trans_cfg = concurrency_cfg.get("api_requests", {}).get("transcription", {})
+        api_cfg = concurrency_cfg.get("api_requests", {}).get(api_type, {})
         
-        max_workers = trans_cfg.get("concurrency_limit", config.CONCURRENT_REQUESTS)
-        delay = trans_cfg.get("delay_between_tasks", 0.05)
+        max_workers = api_cfg.get("concurrency_limit", config.CONCURRENT_REQUESTS)
+        delay = api_cfg.get("delay_between_tasks", 0.05)
         
         return max_workers, delay
     except Exception as e:
-        logger.warning(f"Error loading transcription concurrency config: {e}")
+        logger.warning(f"Error loading {api_type} concurrency config: {e}")
         return config.CONCURRENT_REQUESTS, 0.05
+
+
+def get_transcription_concurrency() -> Tuple[int, float]:
+    """Get concurrency settings for transcription API requests."""
+    return get_api_concurrency("transcription")
 
 
 def get_summary_concurrency() -> Tuple[int, float]:
-    """
-    Get concurrency settings for summary API requests.
-    
-    Returns:
-        Tuple of (max_workers, delay_between_tasks).
-    """
-    try:
-        cfg_loader = get_config_loader()
-        concurrency_cfg = cfg_loader.get_concurrency_config()
-        summ_cfg = concurrency_cfg.get("api_requests", {}).get("summary", {})
-        
-        max_workers = summ_cfg.get("concurrency_limit", config.CONCURRENT_REQUESTS)
-        delay = summ_cfg.get("delay_between_tasks", 0.05)
-        
-        return max_workers, delay
-    except Exception as e:
-        logger.warning(f"Error loading summary concurrency config: {e}")
-        return config.CONCURRENT_REQUESTS, 0.05
+    """Get concurrency settings for summary API requests."""
+    return get_api_concurrency("summary")
 
 
 def get_image_processing_concurrency() -> Tuple[int, float]:

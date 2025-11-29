@@ -17,10 +17,6 @@ This module provides the foundational LLM client implementation with:
 5. **Configuration Loading**: Dynamically loads model parameters from YAML configuration files.
 
 6. **Statistics Tracking**: Monitors request success rates, processing times, and error patterns.
-
-NOTE: Custom error classification and backoff calculation methods are DEPRECATED.
-LangChain now handles API-level retries automatically. These methods are kept for
-backward compatibility but will be removed in a future version.
 """
 
 from __future__ import annotations
@@ -36,6 +32,7 @@ from langchain_core.messages import AIMessage
 
 from api.llm_client import LLMConfig, get_chat_model, get_model_capabilities, ProviderType
 from modules import app_config as config
+from modules.concurrency_helper import get_service_tier
 from modules.config_loader import get_config_loader
 from modules.logger import setup_logger
 
@@ -73,13 +70,6 @@ _RETRY_CONFIG = _load_retry_config()
 
 # Constants for retry logic (loaded from config with fallback defaults)
 DEFAULT_MAX_RETRIES = _RETRY_CONFIG.get("max_attempts", 5)
-BACKOFF_BASE = _RETRY_CONFIG.get("backoff_base", 1.0)
-
-_BACKOFF_MULTIPLIERS = _RETRY_CONFIG.get("backoff_multipliers", {})
-BACKOFF_MULTIPLIER_RATE_LIMIT = _BACKOFF_MULTIPLIERS.get("rate_limit", 2.0)
-BACKOFF_MULTIPLIER_TIMEOUT = _BACKOFF_MULTIPLIERS.get("timeout", 1.5)
-BACKOFF_MULTIPLIER_SERVER = _BACKOFF_MULTIPLIERS.get("server_error", 2.0)
-BACKOFF_MULTIPLIER_OTHER = _BACKOFF_MULTIPLIERS.get("other", 2.0)
 
 _JITTER = _RETRY_CONFIG.get("jitter", {})
 JITTER_MIN = _JITTER.get("min", 0.5)
@@ -211,121 +201,9 @@ class LLMClientBase:
         # Service tier is primarily an OpenAI concept
         if self.provider != "openai":
             return "auto"
-            
-        try:
-            config_loader = get_config_loader()
-            concurrency_cfg = config_loader.get_concurrency_config()
-            
-            # Get service tier from new config structure
-            service_tier = (
-                concurrency_cfg
-                .get("api_requests", {})
-                .get(api_type, {})
-                .get("service_tier")
-            )
-            
-            if service_tier:
-                return service_tier
-                
-            # Fallback to legacy OPENAI_USE_FLEX setting
-            return "flex" if config.OPENAI_USE_FLEX else "auto"
-            
-        except Exception as e:
-            logger.debug(f"Error determining service tier: {e}")
-            return "flex" if config.OPENAI_USE_FLEX else "auto"
-
-    def _classify_error(self, error_message: str) -> Tuple[bool, str]:
-        """
-        Classify an error and determine if it's retryable.
         
-        DEPRECATED: LangChain now handles API error classification and retry internally
-        via the max_retries parameter. This method is kept for backward compatibility
-        and schema-specific retry logic only.
-
-        Args:
-            error_message: The error message to classify.
-
-        Returns:
-            Tuple of (is_retryable, error_type).
-        """
-        error_lower = error_message.lower()
-
-        # Check for rate limit errors
-        if any(
-            err in error_lower
-            for err in ["rate limit", "too many", "429", "retry-after", "overloaded"]
-        ):
-            return True, "rate_limit"
-
-        # Check for server errors
-        if any(
-            err in error_lower
-            for err in [
-                "server error",
-                "500",
-                "502",
-                "503",
-                "504",
-                "service unavailable",
-                "internal error",
-            ]
-        ):
-            return True, "server"
-
-        # Check for timeout errors
-        if any(err in error_lower for err in ["timeout", "timed out", "deadline"]):
-            return True, "timeout"
-
-        # Check for network errors
-        if any(
-            err in error_lower
-            for err in ["connection", "network", "temporarily unavailable"]
-        ):
-            return True, "network"
-
-        # Check for resource unavailable
-        if "resource unavailable" in error_lower:
-            return True, "resource_unavailable"
-
-        # Check for JSON decode errors (usually caused by API glitches)
-        if any(
-            err in error_lower
-            for err in ["invalid json", "json decode", "expecting", "delimiter"]
-        ):
-            return True, "malformed_response"
-
-        return False, "other"
-
-    def _calculate_backoff_time(
-        self, retry_count: int, error_type: str, base: float = BACKOFF_BASE
-    ) -> float:
-        """
-        Calculate backoff time with jitter based on error type.
-        
-        DEPRECATED: LangChain now handles exponential backoff internally via the
-        max_retries parameter with built-in jitter. This method is kept for backward
-        compatibility and schema-specific retry logic only.
-
-        Args:
-            retry_count: Current retry attempt number.
-            error_type: Type of error encountered.
-            base: Base time for backoff calculation.
-
-        Returns:
-            Wait time in seconds.
-        """
-        jitter = random.uniform(JITTER_MIN, JITTER_MAX)
-
-        if error_type == "rate_limit":
-            multiplier = BACKOFF_MULTIPLIER_RATE_LIMIT
-        elif error_type == "timeout":
-            multiplier = BACKOFF_MULTIPLIER_TIMEOUT
-        elif error_type in ("server", "malformed_response"):
-            multiplier = BACKOFF_MULTIPLIER_SERVER
-        else:
-            multiplier = BACKOFF_MULTIPLIER_OTHER
-
-        return base * (multiplier ** retry_count) * jitter
+        # Use centralized service tier configuration
+        return get_service_tier(api_type)
 
     def _wait_for_rate_limit(self) -> None:
         """Wait for rate limiter capacity if rate limiter is configured."""

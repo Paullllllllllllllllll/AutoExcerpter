@@ -89,37 +89,6 @@ class ConcurrencyConfig:
 
 
 @dataclass(frozen=True)
-class RetryConfig:
-    """Configuration for retry behavior."""
-    max_attempts: int = 5
-    backoff_base: float = 1.0
-    rate_limit_multiplier: float = 2.0
-    timeout_multiplier: float = 1.5
-    server_error_multiplier: float = 2.0
-    other_multiplier: float = 2.0
-    jitter_min: float = 0.5
-    jitter_max: float = 1.0
-    
-    @classmethod
-    def from_dict(cls, config: Dict[str, Any]) -> RetryConfig:
-        """Create RetryConfig from configuration dictionary."""
-        retry_cfg = config.get("retry", {})
-        backoff_mult = retry_cfg.get("backoff_multipliers", {})
-        jitter = retry_cfg.get("jitter", {})
-        
-        return cls(
-            max_attempts=retry_cfg.get("max_attempts", 5),
-            backoff_base=retry_cfg.get("backoff_base", 1.0),
-            rate_limit_multiplier=backoff_mult.get("rate_limit", 2.0),
-            timeout_multiplier=backoff_mult.get("timeout", 1.5),
-            server_error_multiplier=backoff_mult.get("server_error", 2.0),
-            other_multiplier=backoff_mult.get("other", 2.0),
-            jitter_min=jitter.get("min", 0.5),
-            jitter_max=jitter.get("max", 1.0),
-        )
-
-
-@dataclass(frozen=True)
 class ModelConfig:
     """Configuration for model parameters."""
     name: str
@@ -203,7 +172,6 @@ __all__ = [
     "SummaryContent",
     "SummaryResult",
     "ConcurrencyConfig",
-    "RetryConfig",
     "ModelConfig",
     "ItemSpec",
     "ProcessingStats",

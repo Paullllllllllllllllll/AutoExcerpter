@@ -423,7 +423,3 @@ class SummaryManager(LLMClientBase):
         stats = super().get_stats()
         stats["service_tier"] = self.service_tier
         return stats
-
-
-# Backward compatibility alias
-OpenAISummaryManager = SummaryManager

@@ -31,7 +31,7 @@ from api.llm_client import ProviderType, get_model_capabilities
 from api.rate_limiter import RateLimiter
 from modules.prompt_utils import render_prompt_with_schema
 from modules.image_utils import ImageProcessor
-from modules.config_loader import ConfigLoader, PROMPTS_DIR, SCHEMAS_DIR
+from modules.config_loader import PROMPTS_DIR, SCHEMAS_DIR
 from modules.logger import setup_logger
 from modules.token_tracker import get_token_tracker
 
@@ -508,7 +508,3 @@ class TranscriptionManager(LLMClientBase):
         stats = super().get_stats()
         stats["service_tier"] = self.service_tier
         return stats
-
-
-# Backward compatibility alias
-OpenAITranscriptionManager = TranscriptionManager

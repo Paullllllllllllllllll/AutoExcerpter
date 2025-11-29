@@ -43,7 +43,6 @@ from docx.oxml import OxmlElement, parse_xml
 from docx.oxml.ns import qn
 from latex2mathml.converter import convert as latex_to_mathml
 import mathml2omml
-import re
 from xml.etree import ElementTree as ET
 
 # ============================================================================

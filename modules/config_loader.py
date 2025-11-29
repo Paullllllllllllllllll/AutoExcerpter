@@ -30,9 +30,8 @@ warnings when configuration files are not found or contain invalid YAML.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import yaml
 
