@@ -21,7 +21,7 @@ import json
 import re
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -60,9 +60,9 @@ class TranscriptionManager(LLMClientBase):
     def __init__(
         self,
         model_name: str,
-        provider: Optional[ProviderType] = None,
-        api_key: Optional[str] = None,
-        rate_limiter: Optional[RateLimiter] = None,
+        provider: ProviderType | None = None,
+        api_key: str | None = None,
+        rate_limiter: RateLimiter | None = None,
         timeout: int = config.OPENAI_API_TIMEOUT,
     ) -> None:
         """
@@ -89,7 +89,7 @@ class TranscriptionManager(LLMClientBase):
             )
 
         # Load schema and system prompt
-        self.transcription_schema: Optional[Dict[str, Any]] = None
+        self.transcription_schema: dict[str, Any] | None = None
         self.system_prompt: str = ""
 
         self._load_schema_and_prompt()
@@ -173,16 +173,8 @@ class TranscriptionManager(LLMClientBase):
         except Exception:
             return 0
 
-    def _build_text_format(self) -> Optional[Dict[str, Any]]:
-        """
-        Build the structured output format specification.
-        
-        For OpenAI: Returns json_schema format for Responses API
-        For other providers: Returns simplified JSON format instruction
-
-        Returns:
-            Format specification dictionary, or None if schema not available.
-        """
+    def _build_text_format(self) -> dict[str, Any] | None:
+        """Build the structured output format specification."""
         if not isinstance(self.transcription_schema, dict):
             return None
 
@@ -259,22 +251,8 @@ class TranscriptionManager(LLMClientBase):
         # Fallback: return original text
         return text
 
-    def _build_model_inputs(self, base64_image: str) -> Tuple[list, Dict[str, Any]]:
-        """
-        Build messages and invocation kwargs for the chat model.
-        
-        Adapts message format based on provider capabilities:
-        - OpenAI: Uses input_image type with data URL
-        - Anthropic: Uses image type with base64 and media_type
-        - Google: Uses inline_data format
-        - OpenRouter: Uses OpenAI-compatible format
-        
-        Args:
-            base64_image: Base64-encoded image string.
-            
-        Returns:
-            Tuple of (messages, invoke_kwargs).
-        """
+    def _build_model_inputs(self, base64_image: str) -> tuple[list, dict[str, Any]]:
+        """Build messages and invocation kwargs for the chat model."""
         system_msg = SystemMessage(content=self.system_prompt)
         
         # Build image content based on provider
@@ -332,23 +310,8 @@ class TranscriptionManager(LLMClientBase):
         self,
         image_path: Path,
         max_schema_retries: int = 3,
-    ) -> Dict[str, Any]:
-        """
-        Transcribe a single image using the configured LLM provider.
-        
-        API error retries (rate limits, timeouts, server errors) are handled automatically
-        by LangChain via the max_retries parameter set during client initialization.
-        
-        This method only handles schema-specific retries for content validation flags
-        like no_transcribable_text and transcription_not_possible.
-
-        Args:
-            image_path: Path to the image file.
-            max_schema_retries: Maximum schema-specific retry attempts.
-
-        Returns:
-            Dictionary containing transcription result and metadata.
-        """
+    ) -> dict[str, Any]:
+        """Transcribe a single image using the configured LLM provider."""
         start_time = time.time()
         sequence_number = self._extract_sequence_number(image_path)
 
@@ -498,13 +461,14 @@ class TranscriptionManager(LLMClientBase):
             "provider": self.provider,
         }
 
-    def get_stats(self) -> Dict[str, Any]:
-        """
-        Get statistics about API usage.
-
-        Returns:
-            Dictionary containing request statistics.
-        """
+    def get_stats(self) -> dict[str, Any]:
+        """Get statistics about API usage."""
         stats = super().get_stats()
         stats["service_tier"] = self.service_tier
         return stats
+
+
+# ============================================================================
+# Public API
+# ============================================================================
+__all__ = ["TranscriptionManager"]

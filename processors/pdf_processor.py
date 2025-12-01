@@ -27,43 +27,42 @@ from __future__ import annotations
 
 import concurrent.futures
 from pathlib import Path
-from typing import List
 
 import fitz  # PyMuPDF
-from PIL import Image, ImageOps
+from PIL import Image
 from tqdm import tqdm
 
 from modules.config_loader import get_config_loader
-from modules.image_utils import SUPPORTED_IMAGE_EXTENSIONS, ImageProcessor
+from modules.constants import (
+    SUPPORTED_IMAGE_EXTENSIONS,
+    DEFAULT_TARGET_DPI,
+    DEFAULT_JPEG_QUALITY,
+    MAX_EXTRACTION_WORKERS,
+    PDF_DPI_CONVERSION_FACTOR,
+    WHITE_BACKGROUND_COLOR,
+)
+from modules.image_utils import ImageProcessor
 from modules.logger import setup_logger
 
 logger = setup_logger(__name__)
-
-# Public API
-__all__ = [
-    "extract_pdf_pages_to_images",
-    "get_image_paths_from_folder",
-]
-
-# ============================================================================
-# Constants
-# ============================================================================
-DEFAULT_TARGET_DPI = 300
-DEFAULT_JPEG_QUALITY = 95
-MAX_EXTRACTION_WORKERS = 8
-PDF_DPI_CONVERSION_FACTOR = 72.0
 
 
 # ============================================================================
 # Helper Functions
 # ============================================================================
-def _apply_image_preprocessing(pil_img: Image.Image, img_cfg: dict) -> Image.Image:
-    """Apply preprocessing steps to an image (transparency, grayscale, resize)."""
+def _apply_image_preprocessing(pil_img: Image.Image, img_cfg: dict[str, any]) -> Image.Image:
+    """
+    Apply preprocessing steps to an image.
+    
+    Delegates to ImageProcessor static methods to avoid code duplication.
+    """
+    from PIL import ImageOps
+    
     # Handle transparency
     if img_cfg.get('handle_transparency', True):
         if pil_img.mode in ('RGBA', 'LA') or (
                 pil_img.mode == 'P' and 'transparency' in pil_img.info):
-            background = Image.new("RGB", pil_img.size, (255, 255, 255))
+            background = Image.new("RGB", pil_img.size, WHITE_BACKGROUND_COLOR)
             mask = pil_img.split()[-1] if pil_img.mode in ('RGBA', 'LA') else None
             background.paste(pil_img, mask=mask)
             pil_img = background
@@ -72,7 +71,7 @@ def _apply_image_preprocessing(pil_img: Image.Image, img_cfg: dict) -> Image.Ima
     if img_cfg.get('grayscale_conversion', True):
         pil_img = ImageOps.grayscale(pil_img)
     
-    # Resize based on detail level
+    # Resize based on detail level (delegates to ImageProcessor)
     detail = img_cfg.get('llm_detail', 'high') or 'high'
     pil_img = ImageProcessor.resize_for_detail(pil_img, detail, img_cfg)
     
@@ -82,7 +81,7 @@ def _apply_image_preprocessing(pil_img: Image.Image, img_cfg: dict) -> Image.Ima
 # ============================================================================
 # PDF Extraction Functions
 # ============================================================================
-def extract_pdf_pages_to_images(pdf_path: Path, output_images_dir: Path) -> List[Path]:
+def extract_pdf_pages_to_images(pdf_path: Path, output_images_dir: Path) -> list[Path]:
     """
     Extract pages from a PDF and save them as images.
 
@@ -94,7 +93,7 @@ def extract_pdf_pages_to_images(pdf_path: Path, output_images_dir: Path) -> List
         List of paths to extracted images, ordered by page number
     """
     logger.info(f"Extracting pages from PDF: {pdf_path.name}...")
-    extracted_image_paths: List[Path] = []
+    extracted_image_paths: list[Path] = []
     pdf_document = None
 
     try:
@@ -178,7 +177,7 @@ def extract_pdf_pages_to_images(pdf_path: Path, output_images_dir: Path) -> List
 # ============================================================================
 # Image Folder Processing Functions
 # ============================================================================
-def get_image_paths_from_folder(folder_path: Path) -> List[Path]:
+def get_image_paths_from_folder(folder_path: Path) -> list[Path]:
     """
     Get a sorted list of image paths from a folder.
 
@@ -199,3 +198,12 @@ def get_image_paths_from_folder(folder_path: Path) -> List[Path]:
     )
     logger.info(f"Found {len(image_paths)} images in folder.")
     return image_paths
+
+
+# ============================================================================
+# Public API
+# ============================================================================
+__all__ = [
+    "extract_pdf_pages_to_images",
+    "get_image_paths_from_folder",
+]

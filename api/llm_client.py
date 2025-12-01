@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Literal
+from typing import Any, Literal
 
 from langchain_core.language_models import BaseChatModel
 
@@ -34,22 +34,12 @@ from modules.logger import setup_logger
 
 logger = setup_logger(__name__)
 
-# Public API
-__all__ = [
-    "LLMConfig",
-    "get_chat_model",
-    "get_model_capabilities",
-    "SUPPORTED_PROVIDERS",
-    "MODEL_CAPABILITIES",
-    "ProviderType",
-]
-
 # Type alias for supported providers
 ProviderType = Literal["openai", "anthropic", "google", "openrouter"]
 
 # Supported providers and their LangChain package requirements
 # Updated November 2025 with latest model prefixes
-SUPPORTED_PROVIDERS: Dict[str, Dict[str, Any]] = {
+SUPPORTED_PROVIDERS: dict[str, dict[str, Any]] = {
     "openai": {
         "package": "langchain-openai",
         "class": "ChatOpenAI",
@@ -83,7 +73,7 @@ SUPPORTED_PROVIDERS: Dict[str, Dict[str, Any]] = {
 # Model capability profiles for parameter guarding
 # These define which parameters each model family supports to prevent API errors
 # Updated November 2025 with latest models from all providers
-MODEL_CAPABILITIES: Dict[str, Dict[str, bool]] = {
+MODEL_CAPABILITIES: dict[str, dict[str, bool]] = {
     # ============== OpenAI Models ==============
     # GPT-5.1 family (Nov 2025) - latest flagship with improved reasoning
     "gpt-5.1-thinking": {"reasoning": True, "text_verbosity": True, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True},
@@ -493,3 +483,16 @@ def get_available_providers() -> list[ProviderType]:
         List of available provider names
     """
     return [p for p in SUPPORTED_PROVIDERS.keys() if is_provider_available(p)]  # type: ignore
+
+
+# ============================================================================
+# Public API
+# ============================================================================
+__all__ = [
+    "LLMConfig",
+    "get_chat_model",
+    "get_model_capabilities",
+    "SUPPORTED_PROVIDERS",
+    "MODEL_CAPABILITIES",
+    "ProviderType",
+]

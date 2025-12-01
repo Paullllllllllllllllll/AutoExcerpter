@@ -37,20 +37,16 @@ from __future__ import annotations
 import threading
 import time
 from collections import deque
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
-# Public API
-__all__ = ["RateLimiter"]
-
-# ============================================================================
-# Constants
-# ============================================================================
-MIN_SLEEP_TIME = 0.05
-MAX_SLEEP_TIME = 0.50
-ERROR_MULTIPLIER_DECREASE_RATE = 0.9
-ERROR_MULTIPLIER_INCREASE_RATE_LIMIT = 1.5
-ERROR_MULTIPLIER_INCREASE_OTHER = 1.2
-CONSECUTIVE_ERRORS_THRESHOLD = 2
+from modules.constants import (
+    MIN_SLEEP_TIME,
+    MAX_SLEEP_TIME,
+    ERROR_MULTIPLIER_DECREASE_RATE,
+    ERROR_MULTIPLIER_INCREASE_RATE_LIMIT,
+    ERROR_MULTIPLIER_INCREASE_OTHER,
+    CONSECUTIVE_ERRORS_THRESHOLD,
+)
 
 
 # ============================================================================
@@ -72,7 +68,7 @@ class RateLimiter:
         error_multiplier: Dynamic multiplier for wait times based on errors
     """
 
-    def __init__(self, limits: List[Tuple[int, int]]) -> None:
+    def __init__(self, limits: list[tuple[int, int]]) -> None:
         """
         Initialize the rate limiter.
 
@@ -180,7 +176,7 @@ class RateLimiter:
                     self.error_multiplier * ERROR_MULTIPLIER_INCREASE_OTHER,
                 )
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """
         Get current rate limiter statistics.
 
@@ -210,3 +206,9 @@ class RateLimiter:
             self.request_count_since_last_update = 0
 
             return stats
+
+
+# ============================================================================
+# Public API
+# ============================================================================
+__all__ = ["RateLimiter"]

@@ -8,73 +8,35 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Dict, Iterable, List
+from collections.abc import Iterable
 
-from modules.image_utils import SUPPORTED_IMAGE_EXTENSIONS
+from modules.constants import SUPPORTED_IMAGE_EXTENSIONS
 from modules.logger import setup_logger
 from modules.types import ItemSpec
 
 logger = setup_logger(__name__)
-
-# ============================================================================
-# Public API
-# ============================================================================
-__all__ = [
-    "scan_input_path",
-    "is_pdf_file",
-    "is_supported_image",
-]
 
 
 # ============================================================================
 # File Type Detection
 # ============================================================================
 def is_pdf_file(path: Path) -> bool:
-    """
-    Check if a path points to a PDF file.
-    
-    Args:
-        path: Path to check.
-    
-    Returns:
-        True if the path is a PDF file.
-    """
+    """Check if a path points to a PDF file."""
     return path.suffix.lower() == ".pdf"
 
 
 def is_supported_image(path: Path) -> bool:
-    """
-    Check if a path points to a supported image file.
-    
-    Args:
-        path: Path to check.
-    
-    Returns:
-        True if the path is a supported image format.
-    """
+    """Check if a path points to a supported image file."""
     return path.suffix.lower() in SUPPORTED_IMAGE_EXTENSIONS
 
 
 # ============================================================================
 # Item Scanning
 # ============================================================================
-def scan_input_path(path_to_scan: Path) -> List[ItemSpec]:
-    """
-    Gather items from a file or directory path.
-    
-    This function scans the input path and identifies:
-    - Individual PDF files
-    - Directories containing images (image folders)
-    - PDFs within subdirectories
-    
-    Args:
-        path_to_scan: Path to scan for processable items.
-    
-    Returns:
-        List of ItemSpec objects representing discovered items.
-    """
+def scan_input_path(path_to_scan: Path) -> list[ItemSpec]:
+    """Gather items from a file or directory path."""
     logger.debug("Scanning input: %s", path_to_scan)
-    collected: List[ItemSpec] = []
+    collected: list[ItemSpec] = []
 
     if path_to_scan.is_file():
         if is_pdf_file(path_to_scan):
@@ -100,17 +62,9 @@ def scan_input_path(path_to_scan: Path) -> List[ItemSpec]:
 # Private Helper Functions
 # ============================================================================
 def _collect_items_from_directory(path_to_scan: Path) -> Iterable[ItemSpec]:
-    """
-    Recursively collect PDF files and image folders from a directory.
-    
-    Args:
-        path_to_scan: Directory path to scan.
-    
-    Returns:
-        Iterable of ItemSpec objects.
-    """
-    image_folders: Dict[Path, List[Path]] = {}
-    items: List[ItemSpec] = []
+    """Recursively collect PDF files and image folders from a directory."""
+    image_folders: dict[Path, list[Path]] = {}
+    items: list[ItemSpec] = []
 
     for root, dirs, files in os.walk(path_to_scan):
         current_dir = Path(root)
@@ -135,29 +89,13 @@ def _collect_items_from_directory(path_to_scan: Path) -> Iterable[ItemSpec]:
 
 
 def _build_pdf_item(pdf_path: Path) -> ItemSpec:
-    """
-    Create an ItemSpec for a PDF file.
-    
-    Args:
-        pdf_path: Path to PDF file.
-    
-    Returns:
-        ItemSpec for the PDF.
-    """
+    """Create an ItemSpec for a PDF file."""
     return ItemSpec(kind="pdf", path=pdf_path)
 
 
-def _build_image_folder_items(image_folders: Dict[Path, List[Path]]) -> List[ItemSpec]:
-    """
-    Create ItemSpec objects for image folders.
-    
-    Args:
-        image_folders: Dictionary mapping folder paths to lists of image paths.
-    
-    Returns:
-        List of ItemSpec objects for image folders.
-    """
-    image_items: List[ItemSpec] = []
+def _build_image_folder_items(image_folders: dict[Path, list[Path]]) -> list[ItemSpec]:
+    """Create ItemSpec objects for image folders."""
+    image_items: list[ItemSpec] = []
     for folder_path, images in image_folders.items():
         if not images:
             continue
@@ -170,3 +108,13 @@ def _build_image_folder_items(image_folders: Dict[Path, List[Path]]) -> List[Ite
             )
         )
     return image_items
+
+
+# ============================================================================
+# Public API
+# ============================================================================
+__all__ = [
+    "scan_input_path",
+    "is_pdf_file",
+    "is_supported_image",
+]

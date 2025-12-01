@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -56,8 +56,8 @@ class SummaryManager(LLMClientBase):
     def __init__(
         self,
         model_name: str,
-        provider: Optional[ProviderType] = None,
-        api_key: Optional[str] = None,
+        provider: ProviderType | None = None,
+        api_key: str | None = None,
     ) -> None:
         """
         Initialize the summary manager.
@@ -72,7 +72,7 @@ class SummaryManager(LLMClientBase):
         super().__init__(model_name, provider, api_key, config.OPENAI_API_TIMEOUT, rate_limiter)
 
         # Load schema and system prompt
-        self.summary_schema: Dict[str, Any] | None = None
+        self.summary_schema: dict[str, Any] | None = None
         self.summary_system_prompt_text: str = ""
 
         self._load_schema_and_prompt()
@@ -114,16 +114,8 @@ class SummaryManager(LLMClientBase):
             logger.error(f"Error loading schema/prompt: {e}")
             raise
 
-    def _build_text_format(self) -> Dict[str, Any]:
-        """
-        Build the structured output format specification.
-        
-        For OpenAI: Returns json_schema format for Responses API
-        For other providers: Returns simplified JSON format instruction
-
-        Returns:
-            Format specification dictionary.
-        """
+    def _build_text_format(self) -> dict[str, Any]:
+        """Build the structured output format specification."""
         schema_obj = self.summary_schema or {}
         name = (
             schema_obj.get("name", "article_page_summary")
@@ -150,17 +142,8 @@ class SummaryManager(LLMClientBase):
 
     def _create_placeholder_summary(
         self, page_num: int, error_message: str = ""
-    ) -> Dict[str, Any]:
-        """
-        Create a placeholder summary for pages that couldn't be processed.
-
-        Args:
-            page_num: Page number.
-            error_message: Error message to include.
-
-        Returns:
-            Placeholder summary dictionary.
-        """
+    ) -> dict[str, Any]:
+        """Create a placeholder summary for pages that couldn't be processed."""
         bullet_text = (
             f"[Error generating summary: {error_message}]"
             if error_message
@@ -185,16 +168,8 @@ class SummaryManager(LLMClientBase):
 
         return result
 
-    def _build_model_inputs(self, transcription: str) -> Tuple[list, Dict[str, Any]]:
-        """
-        Build messages and invocation kwargs for summary generation.
-        
-        Args:
-            transcription: The transcribed text to summarize.
-            
-        Returns:
-            Tuple of (messages, invoke_kwargs).
-        """
+    def _build_model_inputs(self, transcription: str) -> tuple[list, dict[str, Any]]:
+        """Build messages and invocation kwargs for summary generation."""
         # Prepare system prompt with schema
         schema_obj = (
             self.summary_schema.get("schema")
@@ -231,15 +206,9 @@ class SummaryManager(LLMClientBase):
         return [system_msg, user_msg], invoke_kwargs
 
     def _ensure_page_number_structure(
-        self, summary_json: Dict[str, Any], page_num: int
+        self, summary_json: dict[str, Any], page_num: int
     ) -> None:
-        """
-        Ensure page_number structure is correct in the summary JSON.
-        
-        Args:
-            summary_json: The summary JSON to validate/fix.
-            page_num: The page number to use as fallback.
-        """
+        """Ensure page_number structure is correct in the summary JSON."""
         if "page_number" not in summary_json:
             summary_json["page_number"] = {
                 "page_number_integer": page_num,
@@ -258,24 +227,8 @@ class SummaryManager(LLMClientBase):
 
     def generate_summary(
         self, transcription: str, page_num: int, max_schema_retries: int = 3
-    ) -> Dict[str, Any]:
-        """
-        Generate a structured summary from transcription text.
-        
-        API error retries (rate limits, timeouts, server errors) are handled automatically
-        by LangChain via the max_retries parameter set during client initialization.
-        
-        This method only handles schema-specific retries for content validation flags
-        like contains_no_semantic_content and contains_no_page_number.
-
-        Args:
-            transcription: The transcribed text to summarize.
-            page_num: Page number for context.
-            max_schema_retries: Maximum schema-specific retry attempts.
-
-        Returns:
-            Dictionary containing summary result and metadata.
-        """
+    ) -> dict[str, Any]:
+        """Generate a structured summary from transcription text."""
         start_time = time.time()
 
         schema_retry_attempts = {
@@ -413,13 +366,14 @@ class SummaryManager(LLMClientBase):
         }
         return result
 
-    def get_stats(self) -> Dict[str, Any]:
-        """
-        Get statistics about API usage.
-
-        Returns:
-            Dictionary containing request statistics.
-        """
+    def get_stats(self) -> dict[str, Any]:
+        """Get statistics about API usage."""
         stats = super().get_stats()
         stats["service_tier"] = self.service_tier
         return stats
+
+
+# ============================================================================
+# Public API
+# ============================================================================
+__all__ = ["SummaryManager"]

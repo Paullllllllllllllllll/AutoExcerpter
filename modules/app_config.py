@@ -25,22 +25,21 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 import yaml
 
+from modules.constants import (
+    DEFAULT_CONCURRENT_REQUESTS,
+    DEFAULT_API_TIMEOUT,
+    DEFAULT_OPENAI_TIMEOUT,
+    DEFAULT_MODEL,
+    DEFAULT_RATE_LIMITS,
+)
 from modules.logger import setup_logger
 
 logger = setup_logger(__name__)
 
-# ============================================================================
-# Constants and Defaults
-# ============================================================================
-DEFAULT_CONCURRENT_REQUESTS = 4
-DEFAULT_API_TIMEOUT = 320
-DEFAULT_OPENAI_TIMEOUT = 900
-DEFAULT_MODEL = "gpt-5-mini"
-DEFAULT_RATE_LIMITS: List[Tuple[int, int]] = [(120, 1), (15000, 60), (15000, 3600)]
 
 # ============================================================================
 # Configuration File Paths
@@ -52,7 +51,7 @@ _APP_CONFIG_PATH = _MODULES_DIR / "config" / "app.yaml"
 # ============================================================================
 # Configuration Loading Functions
 # ============================================================================
-def _load_yaml_app_config() -> Dict[str, Any]:
+def _load_yaml_app_config() -> dict[str, Any]:
     """
     Load the application config YAML.
 
@@ -81,7 +80,7 @@ def _load_yaml_app_config() -> Dict[str, Any]:
         return {}
 
 
-def _as_rate_limits(val: Any) -> List[Tuple[int, int]]:
+def _as_rate_limits(val: Any) -> list[tuple[int, int]]:
     """
     Normalize YAML rate_limits into a list of (int, int) tuples.
 
@@ -92,9 +91,9 @@ def _as_rate_limits(val: Any) -> List[Tuple[int, int]]:
         List of (max_requests, time_window_seconds) tuples
     """
     if not isinstance(val, list):
-        return DEFAULT_RATE_LIMITS
+        return list(DEFAULT_RATE_LIMITS)
 
-    out: List[Tuple[int, int]] = []
+    out: list[tuple[int, int]] = []
     for item in val:
         if not isinstance(item, (list, tuple)) or len(item) != 2:
             continue
@@ -103,16 +102,16 @@ def _as_rate_limits(val: Any) -> List[Tuple[int, int]]:
         except (ValueError, TypeError):
             continue  # Skip malformed entries
 
-    return out if out else DEFAULT_RATE_LIMITS
+    return out if out else list(DEFAULT_RATE_LIMITS)
 
 
-def _get_str(data: Dict[str, Any], key: str, default: str) -> str:
+def _get_str(data: dict[str, Any], key: str, default: str) -> str:
     """Safely get a string value from config dictionary."""
     value = data.get(key, default)
     return str(value) if value is not None else default
 
 
-def _get_int(data: Dict[str, Any], key: str, default: int) -> int:
+def _get_int(data: dict[str, Any], key: str, default: int) -> int:
     """Safely get an integer value from config dictionary."""
     try:
         return int(data.get(key, default))
@@ -121,7 +120,7 @@ def _get_int(data: Dict[str, Any], key: str, default: int) -> int:
         return default
 
 
-def _get_bool(data: Dict[str, Any], key: str, default: bool) -> bool:
+def _get_bool(data: dict[str, Any], key: str, default: bool) -> bool:
     """Safely get a boolean value from config dictionary."""
     value = data.get(key, default)
     return bool(value)
@@ -131,10 +130,10 @@ def _get_bool(data: Dict[str, Any], key: str, default: bool) -> bool:
 # Configuration Values (loaded at module import)
 # ============================================================================
 # Load configuration
-_APP_CFG: Dict[str, Any] = _load_yaml_app_config()
-_OA: Dict[str, Any] = _APP_CFG.get("openai", {}) if isinstance(_APP_CFG.get("openai"), dict) else {}
-_CITATION: Dict[str, Any] = _APP_CFG.get("citation", {}) if isinstance(_APP_CFG.get("citation"), dict) else {}
-_TOKEN_LIMIT: Dict[str, Any] = _APP_CFG.get("daily_token_limit", {}) if isinstance(_APP_CFG.get("daily_token_limit"), dict) else {}
+_APP_CFG: dict[str, Any] = _load_yaml_app_config()
+_OA: dict[str, Any] = _APP_CFG.get("openai", {}) if isinstance(_APP_CFG.get("openai"), dict) else {}
+_CITATION: dict[str, Any] = _APP_CFG.get("citation", {}) if isinstance(_APP_CFG.get("citation"), dict) else {}
+_TOKEN_LIMIT: dict[str, Any] = _APP_CFG.get("daily_token_limit", {}) if isinstance(_APP_CFG.get("daily_token_limit"), dict) else {}
 
 # --- Execution Mode ---
 CLI_MODE = _get_bool(_APP_CFG, "cli_mode", False)

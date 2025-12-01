@@ -14,21 +14,18 @@ Features:
 from __future__ import annotations
 
 import sys
-from typing import List, Optional, Sequence, Set, Callable, TypeVar, Any
+from typing import Callable, Optional, Sequence, TypeVar
 
-# Public API
-__all__ = [
-    "print_header",
-    "print_section",
-    "print_success",
-    "print_warning",
-    "print_error",
-    "print_info",
-    "prompt_selection",
-    "prompt_yes_no",
-    "prompt_continue",
-    "exit_program",
-]
+from modules.constants import (
+    EXIT_COMMANDS,
+    BACK_COMMANDS,
+    ALL_COMMANDS,
+    DIVIDER_CHAR,
+    DIVIDER_LENGTH,
+)
+
+T = TypeVar('T')
+
 
 # ============================================================================
 # ANSI Color Codes
@@ -44,17 +41,6 @@ class Colors:
     ENDC = '\033[0m'
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
-
-T = TypeVar('T')
-
-# ============================================================================
-# Constants
-# ============================================================================
-EXIT_COMMANDS = {'exit', 'quit', 'q'}
-BACK_COMMANDS = {'back', 'b'}
-ALL_COMMANDS = {'all', 'a'}
-DIVIDER_CHAR = '─'
-DIVIDER_LENGTH = 70
 
 
 # ============================================================================
@@ -166,7 +152,7 @@ def prompt_selection(
     allow_back: bool = False,
     allow_exit: bool = True,
     process_all_label: Optional[str] = None,
-) -> Optional[List[T]]:
+) -> Optional[list[T]]:
     """
     Prompt user to select one or more items from a list.
     
@@ -230,7 +216,7 @@ def prompt_selection(
                 return list(items)
             
             # Parse selection
-            selected_indices: Set[int] = set()
+            selected_indices: set[int] = set()
             
             # Split by semicolon or comma for multiple selections
             # Normalize separators: replace semicolons with commas
@@ -296,3 +282,20 @@ def prompt_selection(
             raise
         except Exception as e:
             print_error(f"Unexpected error: {e}")
+
+
+# ============================================================================
+# Public API
+# ============================================================================
+__all__ = [
+    "print_header",
+    "print_section",
+    "print_success",
+    "print_warning",
+    "print_error",
+    "print_info",
+    "prompt_selection",
+    "prompt_yes_no",
+    "prompt_continue",
+    "exit_program",
+]

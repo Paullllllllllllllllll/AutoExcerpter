@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, TypedDict
+from typing import Any, TypedDict
 
 
 # ============================================================================
@@ -22,8 +22,8 @@ class TranscriptionResult(TypedDict, total=False):
     processing_time: float
     retries: int
     api_retries: int
-    schema_retries: Dict[str, int]
-    error: Optional[str]
+    schema_retries: dict[str, int]
+    error: str | None
     original_input_order_index: int
 
 
@@ -36,8 +36,8 @@ class PageNumberInfo(TypedDict):
 class SummaryContent(TypedDict, total=False):
     """Type definition for summary content structure."""
     page_number: PageNumberInfo
-    bullet_points: List[str]
-    references: List[str]
+    bullet_points: list[str]
+    references: list[str]
     contains_no_semantic_content: bool
 
 
@@ -45,14 +45,14 @@ class SummaryResult(TypedDict, total=False):
     """Type definition for summary API results."""
     page: int
     summary: SummaryContent
-    model_page_number: Optional[int]
+    model_page_number: int | None
     image_filename: str
     original_input_order_index: int
     processing_time: float
     retries: int
     api_retries: int
-    schema_retries: Dict[str, int]
-    error: Optional[str]
+    schema_retries: dict[str, int]
+    error: str | None
 
 
 # ============================================================================
@@ -70,7 +70,7 @@ class ConcurrencyConfig:
     summary_service_tier: str = "flex"
     
     @classmethod
-    def from_dict(cls, config: Dict[str, Any]) -> ConcurrencyConfig:
+    def from_dict(cls, config: dict[str, Any]) -> ConcurrencyConfig:
         """Create ConcurrencyConfig from configuration dictionary."""
         img_proc = config.get("image_processing", {})
         api_req = config.get("api_requests", {})
@@ -93,11 +93,11 @@ class ModelConfig:
     """Configuration for model parameters."""
     name: str
     max_output_tokens: int
-    reasoning_effort: Optional[str] = None
-    text_verbosity: Optional[str] = None
+    reasoning_effort: str | None = None
+    text_verbosity: str | None = None
     
     @classmethod
-    def from_dict(cls, config: Dict[str, Any]) -> ModelConfig:
+    def from_dict(cls, config: dict[str, Any]) -> ModelConfig:
         """Create ModelConfig from configuration dictionary."""
         reasoning = config.get("reasoning", {})
         text = config.get("text", {})
@@ -118,7 +118,7 @@ class ItemSpec:
     """Descriptor for a PDF file or image folder to process."""
     kind: str  # "pdf" or "image_folder"
     path: Path
-    image_count: Optional[int] = None
+    image_count: int | None = None
     
     @property
     def output_stem(self) -> str:
@@ -142,7 +142,7 @@ class ProcessingStats:
     failed_items: int = 0
     total_time: float = 0.0
     average_time_per_item: float = 0.0
-    processing_times: List[float] = field(default_factory=list)
+    processing_times: list[float] = field(default_factory=list)
     
     def add_success(self, processing_time: float) -> None:
         """Record a successful processing operation."""
@@ -163,9 +163,6 @@ class ProcessingStats:
         return (self.successful_items / self.total_items) * 100.0
 
 
-# ============================================================================
-# Public API
-# ============================================================================
 __all__ = [
     "TranscriptionResult",
     "PageNumberInfo",

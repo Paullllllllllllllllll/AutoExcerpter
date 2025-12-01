@@ -6,40 +6,18 @@ files, with sensible defaults and validation.
 
 from __future__ import annotations
 
-from typing import Tuple
-
 from modules import app_config as config
 from modules.config_loader import get_config_loader
 from modules.logger import setup_logger
 
 logger = setup_logger(__name__)
 
-# ============================================================================
-# Public API
-# ============================================================================
-__all__ = [
-    "get_api_concurrency",
-    "get_transcription_concurrency",
-    "get_summary_concurrency",
-    "get_image_processing_concurrency",
-    "get_service_tier",
-    "get_target_dpi",
-]
-
 
 # ============================================================================
 # Concurrency Configuration Access
 # ============================================================================
-def get_api_concurrency(api_type: str = "transcription") -> Tuple[int, float]:
-    """
-    Get concurrency settings for API requests.
-    
-    Args:
-        api_type: Type of API request ('transcription' or 'summary').
-    
-    Returns:
-        Tuple of (max_workers, delay_between_tasks).
-    """
+def get_api_concurrency(api_type: str = "transcription") -> tuple[int, float]:
+    """Get concurrency settings for API requests."""
     try:
         cfg_loader = get_config_loader()
         concurrency_cfg = cfg_loader.get_concurrency_config()
@@ -54,23 +32,18 @@ def get_api_concurrency(api_type: str = "transcription") -> Tuple[int, float]:
         return config.CONCURRENT_REQUESTS, 0.05
 
 
-def get_transcription_concurrency() -> Tuple[int, float]:
+def get_transcription_concurrency() -> tuple[int, float]:
     """Get concurrency settings for transcription API requests."""
     return get_api_concurrency("transcription")
 
 
-def get_summary_concurrency() -> Tuple[int, float]:
+def get_summary_concurrency() -> tuple[int, float]:
     """Get concurrency settings for summary API requests."""
     return get_api_concurrency("summary")
 
 
-def get_image_processing_concurrency() -> Tuple[int, float]:
-    """
-    Get concurrency settings for local image processing.
-    
-    Returns:
-        Tuple of (max_workers, delay_between_tasks).
-    """
+def get_image_processing_concurrency() -> tuple[int, float]:
+    """Get concurrency settings for local image processing."""
     try:
         cfg_loader = get_config_loader()
         concurrency_cfg = cfg_loader.get_concurrency_config()
@@ -86,15 +59,7 @@ def get_image_processing_concurrency() -> Tuple[int, float]:
 
 
 def get_service_tier(api_type: str = "transcription") -> str:
-    """
-    Get OpenAI service tier for the specified API type.
-    
-    Args:
-        api_type: Type of API request ('transcription' or 'summary').
-    
-    Returns:
-        Service tier string ('auto', 'default', 'flex', or 'priority').
-    """
+    """Get OpenAI service tier for the specified API type."""
     try:
         cfg_loader = get_config_loader()
         concurrency_cfg = cfg_loader.get_concurrency_config()
@@ -117,12 +82,7 @@ def get_service_tier(api_type: str = "transcription") -> str:
 
 
 def get_target_dpi() -> int:
-    """
-    Get target DPI for PDF page extraction.
-    
-    Returns:
-        Target DPI value.
-    """
+    """Get target DPI for PDF page extraction."""
     try:
         cfg_loader = get_config_loader()
         img_cfg = cfg_loader.get_image_processing_config()
@@ -131,3 +91,16 @@ def get_target_dpi() -> int:
     except Exception as e:
         logger.debug(f"Error loading target DPI: {e}")
         return 300
+
+
+# ============================================================================
+# Public API
+# ============================================================================
+__all__ = [
+    "get_api_concurrency",
+    "get_transcription_concurrency",
+    "get_summary_concurrency",
+    "get_image_processing_concurrency",
+    "get_service_tier",
+    "get_target_dpi",
+]

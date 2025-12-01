@@ -29,30 +29,22 @@ from __future__ import annotations
 import base64
 import io
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any
 
 from PIL import Image, ImageOps
 
 from modules.config_loader import get_config_loader
+from modules.constants import (
+    SUPPORTED_IMAGE_EXTENSIONS,
+    DEFAULT_LOW_MAX_SIDE_PX,
+    DEFAULT_HIGH_TARGET_WIDTH,
+    DEFAULT_HIGH_TARGET_HEIGHT,
+    DEFAULT_JPEG_QUALITY,
+    WHITE_BACKGROUND_COLOR,
+)
 from modules.logger import setup_logger
 
 logger = setup_logger(__name__)
-
-# Public API
-__all__ = [
-    "ImageProcessor",
-    "SUPPORTED_IMAGE_EXTENSIONS",
-]
-
-# ============================================================================
-# Constants
-# ============================================================================
-SUPPORTED_IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.tiff', '.tif', '.bmp', '.gif', '.webp'}
-DEFAULT_LOW_MAX_SIDE_PX = 512
-DEFAULT_HIGH_TARGET_WIDTH = 768
-DEFAULT_HIGH_TARGET_HEIGHT = 1536
-DEFAULT_JPEG_QUALITY = 95
-WHITE_BACKGROUND_COLOR = (255, 255, 255)
 
 
 # ============================================================================
@@ -64,7 +56,7 @@ class ImageProcessor:
         Initialize the ImageProcessor with the given image path.
 
         Args:
-            image_path (Path): The path to the image file.
+            image_path: The path to the image file.
 
         Raises:
             ValueError: If the image format is not supported.
@@ -81,21 +73,13 @@ class ImageProcessor:
         self.img_cfg = self.image_config.get('api_image_processing', {})
 
     def convert_to_grayscale(self, image: Image.Image) -> Image.Image:
-        """
-        Convert the image to grayscale if enabled.
-
-        Args:
-            image (Image.Image): The input image.
-
-        Returns:
-            Image.Image: The grayscale image.
-        """
+        """Convert the image to grayscale if enabled."""
         if self.img_cfg.get('grayscale_conversion', True):
             return ImageOps.grayscale(image)
         return image
 
     @staticmethod
-    def resize_for_detail(image: Image.Image, detail: str, img_cfg: Dict[str, Any]) -> Image.Image:
+    def resize_for_detail(image: Image.Image, detail: str, img_cfg: dict[str, Any]) -> Image.Image:
         """
         Resize strategy based on desired LLM detail.
 
@@ -164,15 +148,7 @@ class ImageProcessor:
         return final_img
 
     def handle_transparency(self, image: Image.Image) -> Image.Image:
-        """
-        Handle transparency by pasting the image onto a white background.
-
-        Args:
-            image (Image.Image): The input image.
-
-        Returns:
-            Image.Image: The processed image.
-        """
+        """Handle transparency by pasting the image onto a white background."""
         if self.img_cfg.get('handle_transparency', True):
             if image.mode in ('RGBA', 'LA') or (
                     image.mode == 'P' and 'transparency' in image.info):
@@ -182,15 +158,7 @@ class ImageProcessor:
         return image
 
     def process_image(self, output_path: Path) -> str:
-        """
-        Process the image and save it to the given output path with compression.
-
-        Args:
-            output_path (Path): The output path for the processed image.
-
-        Returns:
-            str: A message indicating the outcome.
-        """
+        """Process the image and save it to the given output path with compression."""
         try:
             with Image.open(self.image_path) as img:
                 img = self.handle_transparency(img)
@@ -217,15 +185,7 @@ class ImageProcessor:
             return f"Failed to process {self.image_path.name}: {e}"
 
     def process_image_to_memory(self) -> Image.Image:
-        """
-        Process the image and return the PIL Image object in-memory.
-
-        Returns:
-            Image.Image: The processed PIL Image object.
-        
-        Raises:
-            Exception: If image processing fails.
-        """
+        """Process the image and return the PIL Image object in-memory."""
         with Image.open(self.image_path) as img:
             img = img.copy()  # Create a copy to work with after closing the file
             img = self.handle_transparency(img)
@@ -245,16 +205,7 @@ class ImageProcessor:
 
     @staticmethod
     def pil_image_to_base64(img: Image.Image, jpeg_quality: int = DEFAULT_JPEG_QUALITY) -> str:
-        """
-        Convert a PIL Image to base64-encoded JPEG string.
-
-        Args:
-            img (Image.Image): The PIL Image object.
-            jpeg_quality (int): JPEG quality (1-100).
-
-        Returns:
-            str: Base64-encoded JPEG image string.
-        """
+        """Convert a PIL Image to base64-encoded JPEG string."""
         buffer = io.BytesIO()
         # Ensure image is in RGB mode for JPEG
         if img.mode not in ('RGB', 'L'):
@@ -263,5 +214,11 @@ class ImageProcessor:
         buffer.seek(0)
         return base64.b64encode(buffer.read()).decode('utf-8')
 
-    # Note: Removed unused folder-level processing helpers (prepare_image_folder,
-    # process_images_multiprocessing, _process_image_task, process_and_save_images)
+
+# ============================================================================
+# Public API
+# ============================================================================
+__all__ = [
+    "ImageProcessor",
+    "SUPPORTED_IMAGE_EXTENSIONS",
+]

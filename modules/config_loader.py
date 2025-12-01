@@ -31,24 +31,13 @@ warnings when configuration files are not found or contain invalid YAML.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 import yaml
 
 from modules.logger import setup_logger
 
 logger = setup_logger(__name__)
-
-# Public API
-__all__ = [
-    "ConfigLoader",
-    "get_config_loader",
-    "PROJECT_ROOT",
-    "MODULES_DIR",
-    "CONFIG_DIR",
-    "PROMPTS_DIR",
-    "SCHEMAS_DIR",
-]
 
 # ============================================================================
 # Path Resolution
@@ -78,9 +67,9 @@ class ConfigLoader:
 
     def __init__(self) -> None:
         """Initialize the configuration loader with empty config dictionaries."""
-        self._image_processing: Dict[str, Any] = {}
-        self._concurrency: Dict[str, Any] = {}
-        self._model: Dict[str, Any] = {}
+        self._image_processing: dict[str, Any] = {}
+        self._concurrency: dict[str, Any] = {}
+        self._model: dict[str, Any] = {}
 
     def load_configs(self) -> None:
         """
@@ -97,16 +86,8 @@ class ConfigLoader:
         self._concurrency = self._load_yaml_config("concurrency.yaml")
         self._model = self._load_yaml_config("model.yaml")
 
-    def _load_yaml_config(self, filename: str) -> Dict[str, Any]:
-        """
-        Load a single YAML configuration file.
-
-        Args:
-            filename: Name of the YAML file to load from CONFIG_DIR
-
-        Returns:
-            Configuration dictionary, or empty dict if loading fails
-        """
+    def _load_yaml_config(self, filename: str) -> dict[str, Any]:
+        """Load a single YAML configuration file."""
         config_path = CONFIG_DIR / filename
         
         if not config_path.exists():
@@ -130,58 +111,31 @@ class ConfigLoader:
             logger.error(f"Error loading config {filename}: {e}")
             return {}
 
-    def get_image_processing_config(self) -> Dict[str, Any]:
-        """
-        Get the image processing configuration.
-
-        Returns:
-            Dictionary containing image processing settings
-        """
+    def get_image_processing_config(self) -> dict[str, Any]:
+        """Get the image processing configuration."""
         return dict(self._image_processing)
 
-    def get_concurrency_config(self) -> Dict[str, Any]:
-        """
-        Get the concurrency configuration.
-
-        Returns:
-            Dictionary containing concurrency and service tier settings
-        """
+    def get_concurrency_config(self) -> dict[str, Any]:
+        """Get the concurrency configuration."""
         return dict(self._concurrency)
 
-    def get_model_config(self) -> Dict[str, Any]:
-        """
-        Get the model configuration.
-
-        Returns:
-            Dictionary containing model-specific settings
-        """
+    def get_model_config(self) -> dict[str, Any]:
+        """Get the model configuration."""
         return dict(self._model)
 
     def is_loaded(self) -> bool:
-        """
-        Check if configurations have been loaded.
-
-        Returns:
-            True if at least one configuration has been loaded
-        """
+        """Check if configurations have been loaded."""
         return bool(self._image_processing or self._concurrency or self._model)
 
 
 # ============================================================================
 # Singleton Pattern for Config Loader
 # ============================================================================
-_config_loader_instance: Optional[ConfigLoader] = None
+_config_loader_instance: ConfigLoader | None = None
 
 
 def get_config_loader() -> ConfigLoader:
-    """
-    Get or create a singleton ConfigLoader instance.
-    
-    This ensures configuration is loaded once and reused throughout the application.
-    
-    Returns:
-        Singleton ConfigLoader instance with loaded configurations.
-    """
+    """Get or create a singleton ConfigLoader instance."""
     global _config_loader_instance
     
     if _config_loader_instance is None:
@@ -190,3 +144,17 @@ def get_config_loader() -> ConfigLoader:
         logger.debug("Initialized singleton ConfigLoader")
     
     return _config_loader_instance
+
+
+# ============================================================================
+# Public API
+# ============================================================================
+__all__ = [
+    "ConfigLoader",
+    "get_config_loader",
+    "PROJECT_ROOT",
+    "MODULES_DIR",
+    "CONFIG_DIR",
+    "PROMPTS_DIR",
+    "SCHEMAS_DIR",
+]

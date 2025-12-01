@@ -25,7 +25,7 @@ import json
 import random
 import time
 from collections import deque
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage
@@ -38,20 +38,9 @@ from modules.logger import setup_logger
 
 logger = setup_logger(__name__)
 
-# Public API
-__all__ = [
-    "LLMClientBase",
-    "DEFAULT_MAX_RETRIES",
-]
 
-
-def _load_retry_config() -> Dict[str, Any]:
-    """
-    Load retry and backoff configuration from concurrency.yaml.
-    
-    Returns:
-        Dictionary with retry configuration, or defaults if loading fails.
-    """
+def _load_retry_config() -> dict[str, Any]:
+    """Load retry and backoff configuration from concurrency.yaml."""
     try:
         config_loader = get_config_loader()
         retry_cfg = config_loader.get_concurrency_config().get("retry", {})
@@ -94,12 +83,12 @@ class LLMClientBase:
     def __init__(
         self,
         model_name: str,
-        provider: Optional[ProviderType] = None,
-        api_key: Optional[str] = None,
+        provider: ProviderType | None = None,
+        api_key: str | None = None,
         timeout: int = config.OPENAI_API_TIMEOUT,
-        rate_limiter: Optional[Any] = None,
+        rate_limiter: Any | None = None,
         max_retries: int = DEFAULT_MAX_RETRIES,
-        service_tier: Optional[str] = None,
+        service_tier: str | None = None,
     ) -> None:
         """
         Initialize the base LLM client.
@@ -142,27 +131,19 @@ class LLMClientBase:
         self.processing_times: deque = deque(maxlen=50)
         
         # Model configuration and service tier (loaded by subclasses)
-        self.model_config: Dict[str, Any] = {}
+        self.model_config: dict[str, Any] = {}
         self.service_tier: str = service_tier or "auto"
         
         # Schema retry configuration (loaded by subclasses)
-        self.schema_retry_config: Dict[str, Any] = {}
+        self.schema_retry_config: dict[str, Any] = {}
         
         logger.info(
             f"Initialized LLM client: provider={self.provider}, model={model_name}, "
             f"max_retries={max_retries} (handled by LangChain)"
         )
 
-    def _load_model_config(self, config_key: str) -> Dict[str, Any]:
-        """
-        Load model configuration from model.yaml.
-        
-        Args:
-            config_key: Key for model config (e.g., 'transcription_model', 'summary_model').
-            
-        Returns:
-            Model configuration dictionary.
-        """
+    def _load_model_config(self, config_key: str) -> dict[str, Any]:
+        """Load model configuration from model.yaml."""
         try:
             config_loader = get_config_loader()
             model_cfg = config_loader.get_model_config()
@@ -318,13 +299,8 @@ class LLMClientBase:
             logger.warning(f"Error extracting output text: {e}")
             return ""
 
-    def get_stats(self) -> Dict[str, Any]:
-        """
-        Get statistics about API usage.
-
-        Returns:
-            Dictionary containing request statistics.
-        """
+    def get_stats(self) -> dict[str, Any]:
+        """Get statistics about API usage."""
         import statistics
 
         avg_time = (
@@ -342,16 +318,8 @@ class LLMClientBase:
             "recent_success_rate": round(success_rate, 1),
         }
 
-    def _load_schema_retry_config(self, api_type: str) -> Dict[str, Any]:
-        """
-        Load schema-specific retry configuration from concurrency.yaml.
-        
-        Args:
-            api_type: Type of API request ('transcription' or 'summary').
-            
-        Returns:
-            Schema retry configuration dictionary.
-        """
+    def _load_schema_retry_config(self, api_type: str) -> dict[str, Any]:
+        """Load schema-specific retry configuration from concurrency.yaml."""
         try:
             config_loader = get_config_loader()
             concurrency_cfg = config_loader.get_concurrency_config()
@@ -378,18 +346,8 @@ class LLMClientBase:
         flag_name: str, 
         flag_value: Any,
         current_attempt: int
-    ) -> Tuple[bool, float, int]:
-        """
-        Check if we should retry based on a schema flag value.
-        
-        Args:
-            flag_name: Name of the schema flag (e.g., 'no_transcribable_text').
-            flag_value: Value of the flag from the API response.
-            current_attempt: Current retry attempt number for this flag.
-            
-        Returns:
-            Tuple of (should_retry, backoff_time, max_attempts).
-        """
+    ) -> tuple[bool, float, int]:
+        """Check if we should retry based on a schema flag value."""
         # Get configuration for this specific flag
         flag_config = self.schema_retry_config.get(flag_name, {})
         
@@ -417,19 +375,9 @@ class LLMClientBase:
         
         return True, backoff_time, max_attempts
 
-    def _build_invoke_kwargs(self) -> Dict[str, Any]:
-        """
-        Build provider-appropriate invocation kwargs with capability guarding.
-        
-        This method builds kwargs based on the provider and model configuration,
-        filtering out unsupported parameters based on model capabilities.
-        This prevents API errors like:
-        "Unsupported parameter: 'reasoning_effort' is not supported with this model"
-        
-        Returns:
-            Dictionary of invocation kwargs (only includes supported parameters).
-        """
-        invoke_kwargs: Dict[str, Any] = {}
+    def _build_invoke_kwargs(self) -> dict[str, Any]:
+        """Build provider-appropriate invocation kwargs with capability guarding."""
+        invoke_kwargs: dict[str, Any] = {}
         
         # Get model capabilities for parameter guarding
         capabilities = get_model_capabilities(self.model_name)
@@ -482,3 +430,12 @@ class LLMClientBase:
             )
         
         return invoke_kwargs
+
+
+# ============================================================================
+# Public API
+# ============================================================================
+__all__ = [
+    "LLMClientBase",
+    "DEFAULT_MAX_RETRIES",
+]

@@ -21,7 +21,7 @@ transcription_model:
   # Model configuration for image transcription
   name: "gpt-5-mini"  # Model identifier (use "provider:model" for explicit provider)
   provider: "openai"  # Provider: openai, anthropic, google, openrouter (optional if using prefix)
-  max_output_tokens: 128000  # Maximum output token budget
+  max_output_tokens: 8192  # Maximum output token budget
   
   # OpenAI-specific parameters (GPT-5 and o-series models)
   reasoning:
@@ -30,13 +30,13 @@ transcription_model:
     verbosity: medium  # Options: low, medium, high
   
   # Provider-agnostic parameters
-  temperature: null  # null = use provider default; 0.0-2.0 for explicit control
+  temperature: 0.0  # null = use provider default; 0.0-2.0 for explicit control
 
 summary_model:
   # Model configuration for text summarization
   name: "gpt-5-mini"  # Model identifier (use "provider:model" for explicit provider)
   provider: "openai"  # Provider: openai, anthropic, google, openrouter (optional if using prefix)
-  max_output_tokens: 128000  # Maximum output token budget
+  max_output_tokens: 8192  # Maximum output token budget
   
   # OpenAI-specific parameters (GPT-5 and o-series models)
   reasoning:
@@ -45,7 +45,7 @@ summary_model:
     verbosity: low  # Options: low, medium, high (low for more concise summaries)
   
   # Provider-agnostic parameters
-  temperature: null  # null = use provider default; 0.0-2.0 for explicit control
+  temperature: 0.0  # null = use provider default; 0.0-2.0 for explicit control
 
 # Example configurations for other providers:
 #
