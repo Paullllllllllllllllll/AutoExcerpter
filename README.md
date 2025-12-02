@@ -52,6 +52,7 @@ AutoExcerpter processes documents through a sophisticated two-stage pipeline tha
 - **Schema-Driven Output**: Uses strict JSON schemas to ensure consistent, parseable transcription results
 - **In-Memory Processing**: Optimized image preprocessing pipeline that eliminates disk I/O bottlenecks and prevents race conditions
 - **Intelligent Formatting**: Preserves markdown formatting (headings, bold, italic) and line breaks
+- **Configurable Text Cleaning**: Runs Unicode normalization, LaTeX repairs, optional hyphenation merging, whitespace cleanup, and line wrapping before summarization or export
 
 **Intelligent Summarization:**
 
@@ -672,6 +673,43 @@ api_image_processing:
 - **jpeg_quality**: Higher quality preserves text clarity
   - 85-95: Good balance of quality and file size
   - 95-100: Maximum quality for difficult documents
+
+### Text Cleaning Configuration
+
+**File**: `modules/config/image_processing.yaml` (`text_cleaning` section)
+
+Controls the post-processing pipeline that polishes transcription text prior to summarization and TXT export. All stages are individually configurable and can be disabled entirely via `enabled: false`.
+
+```yaml
+text_cleaning:
+  enabled: true
+  unicode_normalization: true
+  latex_fixing:
+    enabled: true
+    balance_dollar_signs: true
+    close_unclosed_braces: true
+    fix_common_commands: true
+  merge_hyphenation: false
+  whitespace_normalization:
+    enabled: true
+    collapse_internal_spaces: true
+    max_blank_lines: 2
+    tab_size: 4
+  line_wrapping:
+    enabled: false
+    auto_width: false
+    fixed_width: 80
+```
+
+**Capabilities:**
+
+- **Unicode normalization** removes soft hyphens, zero-width characters, BOMs, and other control characters while preserving semantic content.
+- **LaTeX fixing** balances `$`/`$$` delimiters, closes unpaired braces, and corrects common OCR spacing errors in math commands.
+- **Hyphenation merging** (disabled by default) rejoins words split across line breaks—enable for heavily hyphenated scans.
+- **Whitespace normalization** trims trailing spaces, collapses long internal gaps, expands tabs, and limits consecutive blank lines for clean TXT output.
+- **Line wrapping** optionally reflows especially long lines using indentation-aware wrapping or automatically computed widths.
+
+These cleanups run immediately after each successful transcription so both the TXT output and downstream summarization benefit from the sanitized text.
 
 ### Citation Management
 
