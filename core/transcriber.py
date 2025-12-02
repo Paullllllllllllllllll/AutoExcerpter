@@ -20,6 +20,7 @@ from modules.concurrency_helper import (
 )
 from modules.logger import setup_logger
 from modules.path_utils import create_safe_directory_name, create_safe_log_filename
+from modules.text_cleaner import clean_transcription, get_text_cleaning_config
 from modules.types import SummaryResult, TranscriptionResult
 from processors.file_manager import (
     append_to_log,
@@ -212,11 +213,15 @@ class ItemTranscriber:
 					**transcription_result_raw,
 					"original_input_order_index": original_input_order_index
 				}
+				
+				# Clean transcription text (for both TXT output and summarization)
+				if "error" not in transcription_result:
+					raw_text = transcription_result.get("transcription", "")
+					transcription_result["transcription"] = clean_transcription(raw_text)
 
 				if config.SUMMARIZE and self.summary_manager and "error" not in transcription_result:
 					page_num_model = transcription_result.get("page")
-					transcription_text = transcription_result.get(
-						"transcription", "")
+					transcription_text = transcription_result.get("transcription", "")
 
 					has_valid_model_page_num = isinstance(page_num_model, int)
 					page_num_to_use = page_num_model if has_valid_model_page_num else original_input_order_index + 1
@@ -629,7 +634,7 @@ class ItemTranscriber:
 		actual_concurrency, _ = get_transcription_concurrency()
 		initialize_log_file(
 			self.log_path, self.name, str(self.input_path), item_type_str,
-			self.total_items_to_transcribe, config.OPENAI_TRANSCRIPTION_MODEL,
+			self.total_items_to_transcribe, self.transcription_model,
 			target_dpi, concurrency_limit=actual_concurrency
 		)
 

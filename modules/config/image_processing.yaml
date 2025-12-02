@@ -24,3 +24,55 @@ api_image_processing:
   low_max_side_px: 512
   # For high detail, fit into this box (width, height) with padding as needed
   high_target_box: [768, 1536]
+
+
+# ============================================================================
+# Text Cleaning Configuration
+# ============================================================================
+# Post-processing for transcription text before summarization and output.
+# These cleanups help fix common OCR artifacts and improve text quality.
+
+text_cleaning:
+  # Master switch to enable/disable all text cleaning
+  enabled: true
+  
+  # Unicode normalization - cleans up encoding issues from OCR
+  # - NFC normalization (compose accented characters)
+  # - Remove control characters, soft hyphens, zero-width spaces, BOMs
+  # - Map rare icon glyphs to bullet characters
+  unicode_normalization: true
+  
+  # LaTeX formula fixing - repairs common OCR errors in math notation
+  latex_fixing:
+    enabled: true
+    # Fix unbalanced $ and $$ delimiters (close unclosed, remove orphans)
+    balance_dollar_signs: true
+    # Close unclosed { braces in LaTeX commands
+    close_unclosed_braces: true
+    # Fix common command typos (e.g., "\frac {" -> "\frac{")
+    fix_common_commands: true
+  
+  # Hyphenation merging - rejoin words split at line breaks
+  # Example: "politi-\nche" -> "politiche"
+  # WARNING: Can damage genuine hyphenated compounds (e.g., "Jean-Baptiste")
+  # Only enable if your documents have many line-break hyphenations
+  merge_hyphenation: false
+  
+  # Whitespace normalization
+  whitespace_normalization:
+    enabled: true
+    # Collapse runs of 3+ internal spaces to 2 spaces
+    collapse_internal_spaces: true
+    # Maximum consecutive blank lines to keep (extras removed)
+    max_blank_lines: 2
+    # Number of spaces per tab character
+    tab_size: 4
+  
+  # Line wrapping - wrap excessively long lines
+  # Generally not needed since LLMs handle variable line lengths well
+  line_wrapping:
+    enabled: true
+    # Auto-compute wrap width from average line length of text blocks
+    auto_width: true
+    # Fixed wrap width (used if auto_width is false)
+    fixed_width: 80
