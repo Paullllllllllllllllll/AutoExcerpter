@@ -112,6 +112,7 @@ SUMMARIZE = _get_bool(_APP_CFG, "summarize", True)
 # --- File Paths ---
 INPUT_FOLDER_PATH = _get_str(_APP_CFG, "input_folder_path", r"C:\Users\paulg\OneDrive\Desktop\New Literature")
 OUTPUT_FOLDER_PATH = _get_str(_APP_CFG, "output_folder_path", r"C:\Users\paulg\OneDrive\Desktop\New Literature")
+INPUT_PATHS_IS_OUTPUT_PATH = _get_bool(_APP_CFG, "input_paths_is_output_path", False)
 
 # --- Cleanup Settings ---
 DELETE_TEMP_WORKING_DIR = _get_bool(_APP_CFG, "delete_temp_working_dir", True)

@@ -258,6 +258,7 @@ Edit `modules/config/app.yaml` to set your input/output paths and preferred mode
 ```yaml
 input_folder_path: 'C:\Users\yourname\Documents\PDFs'
 output_folder_path: 'C:\Users\yourname\Documents\Output'
+input_paths_is_output_path: false  # When true, write outputs next to each input item
 
 openai:
   model: 'gpt-5-mini'  # or any supported model
@@ -278,6 +279,7 @@ python main.py
 4. **Find outputs** in your configured output directory:
    - `.txt` files contain full transcriptions
    - `.docx` files contain formatted summaries (if enabled)
+   - Enable `input_paths_is_output_path` to drop each item's outputs next to the original input when running in interactive mode
 
 ## CLI Mode and Interactive Mode
 
@@ -375,6 +377,7 @@ summarize: true  # Enable/disable summarization; false = transcription only
 # Folder Paths
 input_folder_path: 'C:\Users\yourname\Documents\PDFs'
 output_folder_path: 'C:\Users\yourname\Documents\Output'
+input_paths_is_output_path: false  # When true, write outputs next to each input item when running interactively
 
 # Cleanup Settings
 delete_temp_working_dir: true  # Delete temporary files after processing
@@ -411,6 +414,7 @@ openai:
 
 - **cli_mode**: Set to `true` for automation and scripting without interactive prompts
 - **summarize**: Set to `false` if you only need transcription without summaries (faster and cheaper)
+- **input_paths_is_output_path**: When `true`, interactive runs save each document's TXT/DOCX outputs beside the source file instead of the global `output_folder_path`
 - **concurrent_requests**: Higher values increase speed but may hit rate limits; adjust based on your provider tier (default: 500)
 - **use_flex**: Flex tier offers 50% cost savings with slightly longer processing times (recommended for batch jobs)
 - **daily_token_limit**: Enforces a configurable daily token budget to stay within API allowances

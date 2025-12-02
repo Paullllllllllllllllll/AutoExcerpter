@@ -9,6 +9,7 @@ summarize: true  # When false, only transcription will be performed
 # Folder Paths
 input_folder_path: ''
 output_folder_path: ''
+input_paths_is_output_path: false  # When true, write outputs next to each processed input item
 
 # Cleanup Settings
 delete_temp_working_dir: true  # Delete the item's temporary working directory (including all temp files/images)

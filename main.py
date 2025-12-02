@@ -414,8 +414,16 @@ def main() -> None:
                 print_warning(f"\nProcessing stopped. Completed {processed_count}/{len(selected_items)} items.")
             break
         
+        # Determine output directory for this item
+        if not config.CLI_MODE and config.INPUT_PATHS_IS_OUTPUT_PATH:
+            # Colocated output: write next to the input item
+            item_output_dir = item_spec.path.parent
+        else:
+            item_output_dir = base_output_dir
+        item_output_dir.mkdir(parents=True, exist_ok=True)
+        
         # Process this file
-        success = _process_single_item(item_spec, index, len(selected_items), base_output_dir)
+        success = _process_single_item(item_spec, index, len(selected_items), item_output_dir)
         if success:
             processed_count += 1
         
