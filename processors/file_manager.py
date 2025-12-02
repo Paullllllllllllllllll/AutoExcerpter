@@ -46,6 +46,11 @@ from docx.shared import Pt
 from latex2mathml.converter import convert as latex_to_mathml
 
 from modules import app_config as config
+from modules.concurrency_helper import (
+    get_api_concurrency,
+    get_api_timeout,
+    get_service_tier,
+)
 from modules.constants import (
     MATH_NAMESPACE,
     TITLE_HEADING_LEVEL,
@@ -78,25 +83,87 @@ def sanitize_for_xml(text: Optional[str]) -> str:
 
 
 def parse_latex_in_text(text: str) -> list[tuple[str, str]]:
-    """Parse text and split it into segments of regular text and LaTeX formulas."""
-    segments = []
-    pattern = r'\$\$(.+?)\$\$'
+    """Parse text and split it into segments of regular text and LaTeX formulas.
+    
+    Handles:
+    - Display math: $$...$$ (processed first to avoid conflicts)
+    - Inline math: $...$ (single dollar, non-greedy)
+    - Escaped dollar signs: \\$ are preserved as literal $
+    - Multi-line formulas (DOTALL mode)
+    - Nested braces within formulas
+    
+    Returns:
+        List of (content, type) tuples where type is 'text', 'latex_display', or 'latex_inline'.
+    """
+    if not text:
+        return [('', 'text')]
+    
+    # Placeholder for escaped dollar signs to protect them during parsing
+    ESCAPED_DOLLAR_PLACEHOLDER = '\x00ESCAPED_DOLLAR\x00'
+    
+    # Protect escaped dollar signs
+    protected_text = text.replace('\\$', ESCAPED_DOLLAR_PLACEHOLDER)
+    
+    segments: list[tuple[str, str]] = []
+    
+    # Pattern for display math $$...$$ (process first - greedy on delimiters, non-greedy on content)
+    # Uses negative lookbehind to avoid matching escaped $
+    display_pattern = r'\$\$(.+?)\$\$'
+    
+    # Pattern for inline math $...$ (single $, non-greedy, must not be empty)
+    # Negative lookbehind/lookahead to avoid matching $$ or empty $$
+    inline_pattern = r'(?<!\$)\$(?!\$)(.+?)(?<!\$)\$(?!\$)'
+    
+    # First pass: extract display math $$...$$
     last_end = 0
+    temp_segments: list[tuple[str, str, int, int]] = []  # (content, type, start, end)
     
-    for match in re.finditer(pattern, text):
-        # Add text before the formula
-        if match.start() > last_end:
-            segments.append((text[last_end:match.start()], 'text'))
+    for match in re.finditer(display_pattern, protected_text, re.DOTALL):
+        temp_segments.append((match.group(1), 'latex_display', match.start(), match.end()))
+    
+    # Second pass: extract inline math $...$ from non-display regions
+    # Build list of display math ranges to exclude
+    display_ranges = [(s[2], s[3]) for s in temp_segments]
+    
+    def in_display_range(pos: int) -> bool:
+        return any(start <= pos < end for start, end in display_ranges)
+    
+    for match in re.finditer(inline_pattern, protected_text, re.DOTALL):
+        # Only add if not inside a display math region
+        if not in_display_range(match.start()) and not in_display_range(match.end()):
+            temp_segments.append((match.group(1), 'latex_inline', match.start(), match.end()))
+    
+    # Sort all segments by position
+    temp_segments.sort(key=lambda x: x[2])
+    
+    # Build final segments list with text between formulas
+    last_end = 0
+    for content, seg_type, start, end in temp_segments:
+        # Add text before this formula
+        if start > last_end:
+            text_segment = protected_text[last_end:start]
+            # Restore escaped dollars in text
+            text_segment = text_segment.replace(ESCAPED_DOLLAR_PLACEHOLDER, '$')
+            if text_segment:
+                segments.append((text_segment, 'text'))
         
-        # Add the LaTeX formula (without the $$ delimiters)
-        segments.append((match.group(1), 'latex'))
-        last_end = match.end()
+        # Add the formula (restore any escaped dollars that might be in it)
+        restored_content = content.replace(ESCAPED_DOLLAR_PLACEHOLDER, '$')
+        segments.append((restored_content, seg_type))
+        last_end = end
     
-    # Add remaining text
-    if last_end < len(text):
-        segments.append((text[last_end:], 'text'))
+    # Add remaining text after last formula
+    if last_end < len(protected_text):
+        remaining = protected_text[last_end:]
+        remaining = remaining.replace(ESCAPED_DOLLAR_PLACEHOLDER, '$')
+        if remaining:
+            segments.append((remaining, 'text'))
     
-    return segments if segments else [(text, 'text')]
+    # If no segments found, return original text
+    if not segments:
+        return [(text, 'text')]
+    
+    return segments
 
 
 def simplify_problematic_latex(latex_code: str) -> tuple[str, list[str]]:
@@ -617,12 +684,16 @@ def initialize_log_file(
     concurrency_limit: Optional[int] = None,
 ) -> bool:
     """Create the per-item log file header as the start of a JSON array."""
+    # Determine if this is an OpenAI model for flex processing metadata
+    is_openai_model = model_name.startswith(("gpt-", "o1", "o3", "o4"))
+    default_concurrency, _ = get_api_concurrency()
+    service_tier = get_service_tier() if is_openai_model else "N/A"
     configuration = {
-        "concurrent_requests": concurrency_limit if concurrency_limit is not None else config.CONCURRENT_REQUESTS,
-        "api_timeout_seconds": config.API_TIMEOUT,
+        "concurrent_requests": concurrency_limit if concurrency_limit is not None else default_concurrency,
+        "api_timeout_seconds": get_api_timeout(),
         "model_name": model_name,
         "extraction_dpi": extraction_dpi if extraction_dpi is not None else "N/A",
-        "openai_flex_processing": config.OPENAI_USE_FLEX if model_name == config.OPENAI_MODEL else "N/A",
+        "service_tier": service_tier,
     }
 
     payload = {

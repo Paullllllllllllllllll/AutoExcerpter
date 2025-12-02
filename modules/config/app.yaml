@@ -13,10 +13,6 @@ output_folder_path: ''
 # Cleanup Settings
 delete_temp_working_dir: true  # Delete the item's temporary working directory (including all temp files/images)
 
-# Performance Settings
-concurrent_requests: 500
-api_timeout: 900  # Timeout for each API call in seconds
-
 # Citation Management
 citation:
   openalex_email: ''  # Email for OpenAlex API polite pool (faster response times)
@@ -26,16 +22,3 @@ citation:
 daily_token_limit:
   enabled: true  # Enable daily token limit enforcement
   daily_tokens: 9000000  # Maximum tokens per day (9 million)
-
-openai:
-  # OpenAI API Configuration
-  model: 'gpt-5-mini'               # Summary/excerpting model
-  transcription_model: 'gpt-5-mini' # Transcription model
-  api_timeout: 900                  # 15 minutes for flex processing
-  use_flex: true                    # Enable flex processing for cost savings
-  # Rate Limiting Configuration (OpenAI)
-  # Format: List of [max_requests, time_period_seconds]
-  rate_limits:
-    - [120, 1]
-    - [15000, 60]
-    - [15000, 3600]

@@ -5,8 +5,8 @@ settings as module-level constants. Configuration includes:
 - Execution mode (CLI vs interactive)
 - Feature toggles (summarization, cleanup)
 - File paths (input/output directories)
-- API settings (OpenAI credentials, rate limits, timeouts)
 - Citation management settings (OpenAlex integration)
+- Daily token limits
 
 Import as:
     from modules import app_config as config
@@ -16,9 +16,10 @@ Configuration is loaded at module import time and exposed as constants:
     - SUMMARIZE: bool
     - INPUT_FOLDER_PATH: str
     - OUTPUT_FOLDER_PATH: str
-    - OPENAI_API_KEY: str
-    - OPENAI_MODEL: str
     - etc.
+
+Note: Model configuration is centralized in model.yaml
+Note: API concurrency settings (rate_limits, api_timeout, service_tier) are in concurrency.yaml
 """
 
 from __future__ import annotations
@@ -29,13 +30,6 @@ from typing import Any
 
 import yaml
 
-from modules.constants import (
-    DEFAULT_CONCURRENT_REQUESTS,
-    DEFAULT_API_TIMEOUT,
-    DEFAULT_OPENAI_TIMEOUT,
-    DEFAULT_MODEL,
-    DEFAULT_RATE_LIMITS,
-)
 from modules.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -80,31 +74,6 @@ def _load_yaml_app_config() -> dict[str, Any]:
         return {}
 
 
-def _as_rate_limits(val: Any) -> list[tuple[int, int]]:
-    """
-    Normalize YAML rate_limits into a list of (int, int) tuples.
-
-    Args:
-        val: Value from YAML configuration
-
-    Returns:
-        List of (max_requests, time_window_seconds) tuples
-    """
-    if not isinstance(val, list):
-        return list(DEFAULT_RATE_LIMITS)
-
-    out: list[tuple[int, int]] = []
-    for item in val:
-        if not isinstance(item, (list, tuple)) or len(item) != 2:
-            continue
-        try:
-            out.append((int(item[0]), int(item[1])))
-        except (ValueError, TypeError):
-            continue  # Skip malformed entries
-
-    return out if out else list(DEFAULT_RATE_LIMITS)
-
-
 def _get_str(data: dict[str, Any], key: str, default: str) -> str:
     """Safely get a string value from config dictionary."""
     value = data.get(key, default)
@@ -131,7 +100,6 @@ def _get_bool(data: dict[str, Any], key: str, default: bool) -> bool:
 # ============================================================================
 # Load configuration
 _APP_CFG: dict[str, Any] = _load_yaml_app_config()
-_OA: dict[str, Any] = _APP_CFG.get("openai", {}) if isinstance(_APP_CFG.get("openai"), dict) else {}
 _CITATION: dict[str, Any] = _APP_CFG.get("citation", {}) if isinstance(_APP_CFG.get("citation"), dict) else {}
 _TOKEN_LIMIT: dict[str, Any] = _APP_CFG.get("daily_token_limit", {}) if isinstance(_APP_CFG.get("daily_token_limit"), dict) else {}
 
@@ -148,16 +116,9 @@ OUTPUT_FOLDER_PATH = _get_str(_APP_CFG, "output_folder_path", r"C:\Users\paulg\O
 # --- Cleanup Settings ---
 DELETE_TEMP_WORKING_DIR = _get_bool(_APP_CFG, "delete_temp_working_dir", True)
 
-# --- Performance Settings ---
-CONCURRENT_REQUESTS = _get_int(_APP_CFG, "concurrent_requests", DEFAULT_CONCURRENT_REQUESTS)
-API_TIMEOUT = _get_int(_APP_CFG, "api_timeout", DEFAULT_API_TIMEOUT)
-
 # --- Citation Management Settings ---
 CITATION_OPENALEX_EMAIL = _get_str(_CITATION, "openalex_email", "your-email@example.com")
 CITATION_MAX_API_REQUESTS = _get_int(_CITATION, "max_api_requests", 50)
-
-# --- OpenAI Rate Limiting ---
-OPENAI_RATE_LIMITS = _as_rate_limits(_OA.get("rate_limits"))
 
 # --- LLM Provider API Keys ---
 # API keys are loaded from environment variables
@@ -188,12 +149,6 @@ if not _available_providers:
 
 logger.info(f"Available LLM providers: {', '.join(_available_providers)}")
 
-# --- OpenAI Configuration (legacy, used as defaults) ---
-OPENAI_MODEL = _get_str(_OA, "model", DEFAULT_MODEL)
-OPENAI_TRANSCRIPTION_MODEL = _get_str(_OA, "transcription_model", DEFAULT_MODEL)
-OPENAI_API_TIMEOUT = _get_int(_OA, "api_timeout", DEFAULT_OPENAI_TIMEOUT)
-OPENAI_USE_FLEX = _get_bool(_OA, "use_flex", True)
-
 # --- Daily Token Limit ---
 DAILY_TOKEN_LIMIT_ENABLED = _get_bool(_TOKEN_LIMIT, "enabled", False)
 DAILY_TOKEN_LIMIT = _get_int(_TOKEN_LIMIT, "daily_tokens", 10000000)
@@ -201,6 +156,6 @@ DAILY_TOKEN_LIMIT = _get_int(_TOKEN_LIMIT, "daily_tokens", 10000000)
 # ============================================================================
 # Logging
 # ============================================================================
-logger.debug(f"Configuration loaded: CLI_MODE={CLI_MODE}, SUMMARIZE={SUMMARIZE}, CONCURRENT_REQUESTS={CONCURRENT_REQUESTS}")
-logger.debug(f"Models: transcription={OPENAI_TRANSCRIPTION_MODEL}, summary={OPENAI_MODEL}")
+logger.debug(f"Configuration loaded: CLI_MODE={CLI_MODE}, SUMMARIZE={SUMMARIZE}")
+logger.debug("Model config in model.yaml, API concurrency in concurrency.yaml")
 logger.debug(f"Daily token limit: enabled={DAILY_TOKEN_LIMIT_ENABLED}, limit={DAILY_TOKEN_LIMIT}")

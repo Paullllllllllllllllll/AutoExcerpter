@@ -11,7 +11,10 @@ from api.summary_api import SummaryManager
 from api.rate_limiter import RateLimiter
 from modules.config_loader import get_config_loader
 from modules import app_config as config
+from modules.constants import DEFAULT_MODEL
 from modules.concurrency_helper import (
+    get_api_timeout,
+    get_rate_limits,
     get_target_dpi,
     get_transcription_concurrency,
 )
@@ -88,30 +91,30 @@ class ItemTranscriber:
 		config_loader = get_config_loader()
 		model_cfg = config_loader.get_model_config()
 		
-		# Get transcription model configuration
+		# Get transcription model configuration (centralized in model.yaml)
 		transcription_cfg = model_cfg.get("transcription_model", {})
-		transcription_model = transcription_cfg.get("name", config.OPENAI_TRANSCRIPTION_MODEL)
+		self.transcription_model = transcription_cfg.get("name", DEFAULT_MODEL)
 		transcription_provider = transcription_cfg.get("provider")
 		
-		# Get summary model configuration
+		# Get summary model configuration (centralized in model.yaml)
 		summary_cfg = model_cfg.get("summary_model", {})
-		summary_model = summary_cfg.get("name", config.OPENAI_MODEL)
+		self.summary_model = summary_cfg.get("name", DEFAULT_MODEL)
 		summary_provider = summary_cfg.get("provider")
 		
-		# Use specific rate limiter configurations
-		self.transcribe_rate_limiter = RateLimiter(config.OPENAI_RATE_LIMITS)
+		# Use rate limiter with provider-agnostic configuration from concurrency.yaml
+		self.transcribe_rate_limiter = RateLimiter(get_rate_limits())
 		self.transcribe_manager = TranscriptionManager(
-			model_name=transcription_model,
+			model_name=self.transcription_model,
 			provider=transcription_provider,
 			rate_limiter=self.transcribe_rate_limiter,
-			timeout=config.OPENAI_API_TIMEOUT,
+			timeout=get_api_timeout(),
 		)
 
 		# Only initialize summary manager if summarization is enabled
 		self.summary_manager = None
 		if config.SUMMARIZE:
 			self.summary_manager = SummaryManager(
-				model_name=summary_model,
+				model_name=self.summary_model,
 				provider=summary_provider,
 			)
 
@@ -195,7 +198,7 @@ class ItemTranscriber:
 			initialize_log_file(
 				self.summary_log_path, self.name, str(self.input_path),
 				"PDF" if self.input_type == "pdf" else "Image Folder",
-				total_images, config.OPENAI_MODEL,
+				total_images, self.summary_model,
 				concurrency_limit=max_workers
 			)
 

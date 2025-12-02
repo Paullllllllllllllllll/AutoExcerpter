@@ -22,10 +22,10 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from modules import app_config as config
 from api.base_llm_client import LLMClientBase, DEFAULT_MAX_RETRIES
 from api.llm_client import ProviderType
 from api.rate_limiter import RateLimiter
+from modules.concurrency_helper import get_api_timeout, get_rate_limits
 from modules.prompt_utils import render_prompt_with_schema
 from modules.config_loader import PROMPTS_DIR, SCHEMAS_DIR
 from modules.logger import setup_logger
@@ -67,9 +67,9 @@ class SummaryManager(LLMClientBase):
             provider: Provider name (openai, anthropic, google, openrouter).
             api_key: Optional API key. If None, uses environment variable.
         """
-        # Initialize rate limiter
-        rate_limiter = RateLimiter(config.OPENAI_RATE_LIMITS)
-        super().__init__(model_name, provider, api_key, config.OPENAI_API_TIMEOUT, rate_limiter)
+        # Initialize rate limiter with provider-agnostic configuration
+        rate_limiter = RateLimiter(get_rate_limits())
+        super().__init__(model_name, provider, api_key, get_api_timeout(), rate_limiter)
 
         # Load schema and system prompt
         self.summary_schema: dict[str, Any] | None = None

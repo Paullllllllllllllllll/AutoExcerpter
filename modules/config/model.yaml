@@ -19,13 +19,13 @@
 
 transcription_model:
   # Model configuration for image transcription
-  name: "gpt-5-mini"  # Model identifier (use "provider:model" for explicit provider)
+  name: "gpt-5.1-codex-mini"  # Model identifier (use "provider:model" for explicit provider)
   provider: "openai"  # Provider: openai, anthropic, google, openrouter (optional if using prefix)
-  max_output_tokens: 8192  # Maximum output token budget
+  max_output_tokens: 32000  # Maximum output token budget
   
   # OpenAI-specific parameters (GPT-5 and o-series models)
   reasoning:
-    effort: low  # Options: minimal, low, medium, high
+    effort: medium  # Options: minimal, low, medium, high
   text:
     verbosity: medium  # Options: low, medium, high
   
@@ -36,11 +36,11 @@ summary_model:
   # Model configuration for text summarization
   name: "gpt-5-mini"  # Model identifier (use "provider:model" for explicit provider)
   provider: "openai"  # Provider: openai, anthropic, google, openrouter (optional if using prefix)
-  max_output_tokens: 8192  # Maximum output token budget
+  max_output_tokens: 32000  # Maximum output token budget
   
   # OpenAI-specific parameters (GPT-5 and o-series models)
   reasoning:
-    effort: low  # Options: minimal, low, medium, high
+    effort: medium  # Options: minimal, low, medium, high
   text:
     verbosity: low  # Options: low, medium, high (low for more concise summaries)
   

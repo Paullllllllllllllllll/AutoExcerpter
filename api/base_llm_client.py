@@ -31,8 +31,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage
 
 from api.llm_client import LLMConfig, get_chat_model, get_model_capabilities, ProviderType
-from modules import app_config as config
-from modules.concurrency_helper import get_service_tier
+from modules.concurrency_helper import get_api_timeout, get_service_tier
 from modules.config_loader import get_config_loader
 from modules.logger import setup_logger
 
@@ -85,7 +84,7 @@ class LLMClientBase:
         model_name: str,
         provider: ProviderType | None = None,
         api_key: str | None = None,
-        timeout: int = config.OPENAI_API_TIMEOUT,
+        timeout: int | None = None,
         rate_limiter: Any | None = None,
         max_retries: int = DEFAULT_MAX_RETRIES,
         service_tier: str | None = None,
@@ -105,7 +104,7 @@ class LLMClientBase:
         """
         self.model_name = model_name
         self.provider = provider
-        self.timeout = timeout
+        self.timeout = timeout if timeout is not None else get_api_timeout()
         self.rate_limiter = rate_limiter
         self.max_retries = max_retries
 

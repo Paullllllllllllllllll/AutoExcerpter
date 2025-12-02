@@ -25,10 +25,10 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from modules import app_config as config
 from api.base_llm_client import LLMClientBase, DEFAULT_MAX_RETRIES
 from api.llm_client import ProviderType, get_model_capabilities
 from api.rate_limiter import RateLimiter
+from modules.concurrency_helper import get_api_timeout
 from modules.prompt_utils import render_prompt_with_schema
 from modules.image_utils import ImageProcessor
 from modules.config_loader import PROMPTS_DIR, SCHEMAS_DIR
@@ -63,7 +63,7 @@ class TranscriptionManager(LLMClientBase):
         provider: ProviderType | None = None,
         api_key: str | None = None,
         rate_limiter: RateLimiter | None = None,
-        timeout: int = config.OPENAI_API_TIMEOUT,
+        timeout: int | None = None,
     ) -> None:
         """
         Initialize the transcription manager.

@@ -23,6 +23,21 @@ image_processing:
 # Based on OpenAI best practices for the Responses API
 api_requests:
   # ---------------------------------------------------------------------------
+  # Global API Settings
+  # ---------------------------------------------------------------------------
+  # Request timeout in seconds (applies to all API requests)
+  # Recommended: 300-900 for flex tier processing which may queue requests
+  api_timeout: 900
+  
+  # Rate limiting configuration
+  # Format: List of [max_requests, time_period_seconds]
+  # Multiple limits can be specified for different time windows
+  rate_limits:
+    - [120, 1]       # 120 requests per second
+    - [15000, 60]    # 15,000 requests per minute
+    - [15000, 3600]  # 15,000 requests per hour
+
+  # ---------------------------------------------------------------------------
   # Transcription API Settings
   # ---------------------------------------------------------------------------
   transcription:
