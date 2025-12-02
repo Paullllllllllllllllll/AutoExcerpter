@@ -166,64 +166,193 @@ def parse_latex_in_text(text: str) -> list[tuple[str, str]]:
     return segments
 
 
+def normalize_latex_whitespace(latex_code: str) -> str:
+    """Normalize whitespace in LaTeX formulas for consistent processing."""
+    # Strip leading/trailing whitespace
+    normalized = latex_code.strip()
+    # Collapse multiple spaces to single space
+    normalized = re.sub(r' +', ' ', normalized)
+    # Remove spaces around operators that don't need them
+    normalized = re.sub(r'\s*([=+\-*/^_{}])\s*', r'\1', normalized)
+    return normalized
+
+
 def simplify_problematic_latex(latex_code: str) -> tuple[str, list[str]]:
-    """Simplify LaTeX code by removing constructs known to cause mathml2omml issues."""
+    """Simplify LaTeX code by removing constructs known to cause mathml2omml issues.
+    
+    This function applies progressive simplifications to LaTeX code that is known
+    to cause issues with the latex2mathml -> mathml2omml conversion pipeline.
+    
+    Returns:
+        Tuple of (simplified_latex, list_of_applied_simplifications)
+    """
     simplified = latex_code
     applied = []
     
-    # Replace logical operators
-    if '\\land' in simplified:
-        simplified = simplified.replace('\\land', '\\wedge')
-        applied.append('logical operators (\\land → \\wedge)')
-    if '\\lor' in simplified:
-        simplified = simplified.replace('\\lor', '\\vee')
-        applied.append('logical operators (\\lor → \\vee)')
+    # 1. Normalize whitespace first
+    original_len = len(simplified)
+    simplified = normalize_latex_whitespace(simplified)
+    if len(simplified) != original_len:
+        applied.append('whitespace normalization')
     
-    # Replace accent macros that cause groupChr issues
-    # These are known to produce malformed OMML with unclosed groupChrPr tags
-    accent_replacements = [
-        (r'\\bar\{([^}]+)\}', r'\\overline{\1}', '\\bar → \\overline'),
-        (r'\\tilde\{([^}]+)\}', r'\\widetilde{\1}', '\\tilde → \\widetilde'),
-        (r'\\hat\{([^}]+)\}', r'\\widehat{\1}', '\\hat → \\widehat'),
+    # 2. Replace logical operators (not supported by latex2mathml)
+    logical_ops = [
+        ('\\land', '\\wedge'),
+        ('\\lor', '\\vee'),
+        ('\\lnot', '\\neg'),
+        ('\\iff', '\\Leftrightarrow'),
+        ('\\implies', '\\Rightarrow'),
     ]
+    for old, new in logical_ops:
+        if old in simplified:
+            simplified = simplified.replace(old, new)
+            applied.append(f'logical operator ({old} -> {new})')
     
-    accent_simplified = False
+    # 3. Replace text commands that cause issues
+    text_commands = [
+        (r'\\text\{([^}]*)\}', r'\\mathrm{\1}', 'text -> mathrm'),
+        (r'\\textrm\{([^}]*)\}', r'\\mathrm{\1}', 'textrm -> mathrm'),
+        (r'\\textit\{([^}]*)\}', r'\\mathit{\1}', 'textit -> mathit'),
+        (r'\\textbf\{([^}]*)\}', r'\\mathbf{\1}', 'textbf -> mathbf'),
+    ]
+    for pattern, replacement, desc in text_commands:
+        if re.search(pattern, simplified):
+            simplified = re.sub(pattern, replacement, simplified)
+            applied.append(desc)
+    
+    # 4. Replace accent macros that cause groupChr issues
+    accent_replacements = [
+        (r'\\bar\{([^}]+)\}', r'\\overline{\1}', 'bar -> overline'),
+        (r'\\tilde\{([^}]+)\}', r'\\widetilde{\1}', 'tilde -> widetilde'),
+        (r'\\hat\{([^}]+)\}', r'\\widehat{\1}', 'hat -> widehat'),
+        (r'\\vec\{([^}]+)\}', r'\\overrightarrow{\1}', 'vec -> overrightarrow'),
+        (r'\\dot\{([^}]+)\}', r'\1', 'dot removed'),
+        (r'\\ddot\{([^}]+)\}', r'\1', 'ddot removed'),
+    ]
     for pattern, replacement, desc in accent_replacements:
         if re.search(pattern, simplified):
             simplified = re.sub(pattern, replacement, simplified)
-            accent_simplified = True
+            applied.append(f'accent ({desc})')
     
-    if accent_simplified:
-        applied.append('accent macros (\\bar/\\hat/\\tilde → wide variants)')
-    
-    # Replace delimiter size commands that cause groupChr issues
-    delimiter_sizes = ['\\Big', '\\big', '\\bigg', '\\Bigg', '\\Bigl', '\\Bigr', 
-                       '\\bigl', '\\bigr', '\\biggl', '\\biggr', '\\Biggl', '\\Biggr']
-    delimiter_pairs = [('(', ')'), ('[', ']'), ('\\{', '\\}'), ('|', '|')]
+    # 5. Replace delimiter size commands
+    delimiter_sizes = [
+        '\\Big', '\\big', '\\bigg', '\\Bigg', 
+        '\\Bigl', '\\Bigr', '\\bigl', '\\bigr', 
+        '\\biggl', '\\biggr', '\\Biggl', '\\Biggr',
+        '\\bigm', '\\Bigm'
+    ]
+    delimiter_chars = ['(', ')', '[', ']', '|', '\\{', '\\}', '\\|', '.']
     
     delimiter_simplified = False
-    for delim_pair in delimiter_pairs:
-        for size in delimiter_sizes:
-            if f'{size}{delim_pair[0]}' in simplified or f'{size}{delim_pair[1]}' in simplified:
-                simplified = simplified.replace(f'{size}{delim_pair[0]}', delim_pair[0])
-                simplified = simplified.replace(f'{size}{delim_pair[1]}', delim_pair[1])
+    for size in delimiter_sizes:
+        for delim in delimiter_chars:
+            target = f'{size}{delim}'
+            if target in simplified:
+                # Replace sized delimiter with plain delimiter
+                plain_delim = delim if delim not in ['\\{', '\\}', '\\|'] else delim[1:]
+                simplified = simplified.replace(target, plain_delim if delim != '.' else '')
                 delimiter_simplified = True
     
     if delimiter_simplified:
-        applied.append('delimiter sizing (\\Big, \\big, etc. → plain delimiters)')
+        applied.append('delimiter sizing removed')
     
-    # Replace auto-sizing delimiters
+    # 6. Replace auto-sizing delimiters
     if '\\left' in simplified or '\\right' in simplified:
-        simplified = re.sub(r'\\left([(\[|\\{])', r'\1', simplified)
-        simplified = re.sub(r'\\right([)\]|\\}])', r'\1', simplified)
+        # Handle \left. and \right. (invisible delimiters)
+        simplified = simplified.replace('\\left.', '')
+        simplified = simplified.replace('\\right.', '')
+        # Handle normal delimiters
+        simplified = re.sub(r'\\left\s*([(\[|])', r'\1', simplified)
+        simplified = re.sub(r'\\right\s*([)\]|])', r'\1', simplified)
+        simplified = re.sub(r'\\left\s*\\([{|}])', r'\\\1', simplified)
+        simplified = re.sub(r'\\right\s*\\([{|}])', r'\\\1', simplified)
         simplified = simplified.replace('\\middle|', '|')
-        applied.append('auto-sizing delimiters (\\left/\\right → plain)')
+        simplified = simplified.replace('\\middle', '')
+        applied.append('auto-sizing delimiters (left/right) removed')
     
-    # Replace overbrace/underbrace
-    if '\\overbrace' in simplified or '\\underbrace' in simplified:
-        simplified = re.sub(r'\\overbrace\{([^}]+)\}', r'\1', simplified)
-        simplified = re.sub(r'\\underbrace\{([^}]+)\}', r'\1', simplified)
-        applied.append('braces (\\overbrace/\\underbrace removed)')
+    # 7. Replace overbrace/underbrace (complex structures)
+    brace_patterns = [
+        (r'\\overbrace\{([^}]+)\}\^?\{?[^}]*\}?', r'\1', 'overbrace'),
+        (r'\\underbrace\{([^}]+)\}_?\{?[^}]*\}?', r'\1', 'underbrace'),
+        (r'\\overleftarrow\{([^}]+)\}', r'\1', 'overleftarrow'),
+        (r'\\overrightarrow\{([^}]+)\}', r'\\vec{\1}', 'overrightarrow'),
+        (r'\\underleftarrow\{([^}]+)\}', r'\1', 'underleftarrow'),
+        (r'\\underrightarrow\{([^}]+)\}', r'\1', 'underrightarrow'),
+    ]
+    for pattern, replacement, desc in brace_patterns:
+        if re.search(pattern, simplified):
+            simplified = re.sub(pattern, replacement, simplified)
+            applied.append(f'{desc} simplified')
+    
+    # 8. Replace \phantom and \hphantom (invisible spacing)
+    phantom_patterns = [
+        (r'\\phantom\{[^}]*\}', '', 'phantom'),
+        (r'\\hphantom\{[^}]*\}', '', 'hphantom'),
+        (r'\\vphantom\{[^}]*\}', '', 'vphantom'),
+    ]
+    for pattern, replacement, desc in phantom_patterns:
+        if re.search(pattern, simplified):
+            simplified = re.sub(pattern, replacement, simplified)
+            applied.append(f'{desc} removed')
+    
+    # 9. Replace problematic spacing commands (literal strings)
+    spacing_literals = [
+        ('\\,', ' ', 'thin space'),
+        ('\\;', ' ', 'thick space'),
+        ('\\!', '', 'negative thin space'),
+        ('\\quad', ' ', 'quad'),
+        ('\\qquad', '  ', 'qquad'),
+    ]
+    for old, new, desc in spacing_literals:
+        if old in simplified:
+            simplified = simplified.replace(old, new)
+            applied.append(f'{desc} normalized')
+    
+    # Spacing commands with arguments (regex patterns)
+    spacing_patterns = [
+        (r'\\hspace\{[^}]*\}', ' ', 'hspace'),
+        (r'\\vspace\{[^}]*\}', '', 'vspace'),
+        (r'\\mspace\{[^}]*\}', ' ', 'mspace'),
+    ]
+    for pattern, replacement, desc in spacing_patterns:
+        if re.search(pattern, simplified):
+            simplified = re.sub(pattern, replacement, simplified)
+            applied.append(f'{desc} normalized')
+    
+    # 10. Handle \operatorname (convert to mathrm for compatibility)
+    if '\\operatorname' in simplified:
+        simplified = re.sub(r'\\operatorname\{([^}]+)\}', r'\\mathrm{\1}', simplified)
+        applied.append('operatorname -> mathrm')
+    
+    # 11. Handle common unsupported environments
+    env_patterns = [
+        (r'\\begin\{align\*?\}(.+?)\\end\{align\*?\}', r'\1', 'align env'),
+        (r'\\begin\{gather\*?\}(.+?)\\end\{gather\*?\}', r'\1', 'gather env'),
+        (r'\\begin\{equation\*?\}(.+?)\\end\{equation\*?\}', r'\1', 'equation env'),
+        (r'\\begin\{split\}(.+?)\\end\{split\}', r'\1', 'split env'),
+        (r'\\begin\{cases\}(.+?)\\end\{cases\}', r'\1', 'cases env'),
+    ]
+    for pattern, replacement, desc in env_patterns:
+        if re.search(pattern, simplified, re.DOTALL):
+            simplified = re.sub(pattern, replacement, simplified, flags=re.DOTALL)
+            applied.append(f'{desc} unwrapped')
+    
+    # 12. Clean up alignment markers from environments
+    if '&' in simplified or '\\\\' in simplified:
+        # Remove alignment markers
+        simplified = simplified.replace('&', ' ')
+        # Replace line breaks with spaces
+        simplified = simplified.replace('\\\\', ' ')
+        applied.append('alignment markers cleaned')
+    
+    # 13. Handle \limits and \nolimits
+    if '\\limits' in simplified or '\\nolimits' in simplified:
+        simplified = simplified.replace('\\limits', '')
+        simplified = simplified.replace('\\nolimits', '')
+        applied.append('limits modifiers removed')
+    
+    # 14. Final whitespace cleanup
+    simplified = re.sub(r'\s+', ' ', simplified).strip()
     
     return simplified, applied
 
@@ -394,11 +523,17 @@ def add_math_to_paragraph(paragraph, latex_code: str) -> None:
 
 
 def add_formatted_text_to_paragraph(paragraph, text: str) -> None:
-    """Add text to a paragraph, parsing and rendering LaTeX formulas."""
+    """Add text to a paragraph, parsing and rendering LaTeX formulas.
+    
+    Handles both display math ($$...$$) and inline math ($...$) with appropriate
+    rendering for each type.
+    """
     segments = parse_latex_in_text(text)
     
     for content, segment_type in segments:
-        if segment_type == 'latex':
+        if segment_type in ('latex', 'latex_display', 'latex_inline'):
+            # Both display and inline math are rendered the same way in Word
+            # The distinction could be used for different styling in future
             add_math_to_paragraph(paragraph, content)
         else:
             paragraph.add_run(sanitize_for_xml(content))

@@ -7,5 +7,11 @@ Instructions:
 - Only set transcription_not_possible or no_transcribable_text to true if the page is completely empty or entirely untranscribable.
 - Transcribe only what's visible on the image; do not hallucinate.
 
+Formula handling:
+- Enclose ALL mathematical formulas in $$ delimiters (e.g., $$E = mc^2$$, $$\int_a^b f(x)dx$$).
+- Use standard LaTeX commands: \frac{}{}, \sqrt{}, \sum, \int, \alpha, \beta, etc.
+- Avoid unsupported constructs: \text{}, \Big, \left/\right, \overbrace, \underbrace.
+- Instead use: \mathrm{} for text in math, plain parentheses () instead of \left(\right).
+
 The JSON schema:
 {{SCHEMA}}
