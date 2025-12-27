@@ -349,11 +349,12 @@ def _display_processing_summary(selected_items: List[ItemSpec], base_output_dir:
     Returns:
         True if user confirms, False to cancel
     """
-    from modules.config_loader import load_model_config, load_concurrency_config
+    from modules.config_loader import get_config_loader
     
     # Load configurations
-    model_config = load_model_config()
-    concurrency_config = load_concurrency_config()
+    config_loader = get_config_loader()
+    model_config = config_loader.get_model_config()
+    concurrency_config = config_loader.get_concurrency_config()
     
     print_header("PROCESSING SUMMARY")
     print_info("Review your selections before processing")
@@ -365,13 +366,14 @@ def _display_processing_summary(selected_items: List[ItemSpec], base_output_dir:
     
     # Display item summary
     if pdf_count > 0 and image_folder_count > 0:
-        item_summary = f"{pdf_count} PDF file(s) and {image_folder_count} image folder(s)"
+        item_summary = f"item(s) ({pdf_count} PDF, {image_folder_count} image folder)"
     elif pdf_count > 0:
-        item_summary = f"{pdf_count} PDF file(s)"
+        item_summary = "PDF file(s)"
     else:
-        item_summary = f"{image_folder_count} image folder(s)"
+        item_summary = "image folder(s)"
     
-    print(f"  Ready to process {Colors.BOLD}{Colors.OKCYAN}{len(selected_items)}{Colors.ENDC} {item_summary}\n")
+    print(f"  Ready to process {Colors.BOLD}{Colors.OKCYAN}{len(selected_items)}{Colors.ENDC} {item_summary}")
+    print()
     
     # === Processing Configuration ===
     print_highlight("  Processing Configuration:")
@@ -480,7 +482,7 @@ def _display_processing_summary(selected_items: List[ItemSpec], base_output_dir:
     # Retry configuration
     retry_config = concurrency_config.get("retry", {})
     max_attempts = retry_config.get("max_attempts", 5)
-    print_dim(f"    • Max retry attempts: {max_attempts}")
+    print_dim(f"      - Max retry attempts: {max_attempts}")
     
     print_separator()
     
@@ -617,7 +619,8 @@ def main() -> None:
             "PDF & Image Transcription and Summarization Tool"
         )
         print_info("Transform PDFs and images into structured transcriptions and summaries")
-        print_info("using state-of-the-art AI models.\\n")
+        print_info("using state-of-the-art AI models.")
+        print()
     
     # Create output directory
     base_output_dir.mkdir(parents=True, exist_ok=True)
