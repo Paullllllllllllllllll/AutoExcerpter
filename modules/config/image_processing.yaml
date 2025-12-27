@@ -1,4 +1,6 @@
+# ============================================================================
 # Image processing configuration
+# ============================================================================
 
 # OpenAI API image processing (preparing images to send to the OpenAI API)
 api_image_processing:
@@ -24,6 +26,17 @@ api_image_processing:
   low_max_side_px: 512
   # For high detail, fit into this box (width, height) with padding as needed
   high_target_box: [768, 1536]
+
+
+# Google Gemini image processing (provider-specific settings)
+google_image_processing:
+  # Controls the resolution of images sent to Google Gemini models.
+  # - low: Lower resolution, faster processing
+  # - medium: Balanced resolution
+  # - high: High resolution (recommended for OCR)
+  # - ultra_high: Maximum resolution
+  # - auto: Let the model decide
+  media_resolution: high
 
 
 # ============================================================================

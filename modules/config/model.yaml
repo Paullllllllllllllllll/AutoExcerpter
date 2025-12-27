@@ -1,4 +1,6 @@
 # model_config.yaml
+
+
 # Configuration for LLM models used in transcription and summarization.
 # 
 # Supported Providers:
@@ -19,44 +21,63 @@
 
 transcription_model:
   # Model configuration for image transcription
-  name: "gpt-5.1-codex-mini"  # Model identifier (use "provider:model" for explicit provider)
+  name: "gpt-5.2"  # Model identifier (use "provider:model" for explicit provider)
   provider: "openai"  # Provider: openai, anthropic, google, openrouter (optional if using prefix)
-  max_output_tokens: 32000  # Maximum output token budget
+  max_output_tokens: 16000  # Maximum output token budget
   
-  # OpenAI-specific parameters (GPT-5 and o-series models)
+  # Cross-provider reasoning controls
+  # Maps to provider-native implementations:
+  #   - OpenAI GPT-5/o-series: reasoning_effort parameter
+  #   - Anthropic Claude 4.5+: extended thinking (budget_tokens: low=1024, medium=4096, high=16384)
+  #   - Google Gemini 2.5+/3: thinking_level (low="low", medium/high="high")
   reasoning:
-    effort: medium  # Options: minimal, low, medium, high
+    effort: medium  # Options: low, medium, high
+  
+  # OpenAI-specific text verbosity (GPT-5 family only)
   text:
     verbosity: medium  # Options: low, medium, high
   
   # Provider-agnostic parameters
-  temperature: 0.0  # null = use provider default; 0.0-2.0 for explicit control
+  temperature: 1.0  # null = use provider default; 0.0-2.0 for explicit control
 
 summary_model:
   # Model configuration for text summarization
   name: "gpt-5-mini"  # Model identifier (use "provider:model" for explicit provider)
   provider: "openai"  # Provider: openai, anthropic, google, openrouter (optional if using prefix)
-  max_output_tokens: 32000  # Maximum output token budget
+  max_output_tokens: 16384  # Maximum output token budget
   
-  # OpenAI-specific parameters (GPT-5 and o-series models)
+  # Cross-provider reasoning controls (see transcription_model for details)
   reasoning:
-    effort: medium  # Options: minimal, low, medium, high
+    effort: medium  # Options: low, medium, high
+  
+  # OpenAI-specific text verbosity (GPT-5 family only)
   text:
     verbosity: low  # Options: low, medium, high (low for more concise summaries)
   
   # Provider-agnostic parameters
-  temperature: 0.0  # null = use provider default; 0.0-2.0 for explicit control
+  temperature: 1.0  # null = use provider default; 0.0-2.0 for explicit control
 
 # Example configurations for other providers:
 #
-# Anthropic Claude:
+# Anthropic Claude 4.5 (with extended thinking):
 #   transcription_model:
 #     name: "claude-sonnet-4-5-20250929"
 #     provider: "anthropic"
-#     max_output_tokens: 8192
+#     max_output_tokens: 16384
+#     reasoning:
+#       effort: medium  # Maps to budget_tokens: 4096
+#     temperature: 1.0  # Required for extended thinking
+#
+# Google Gemini 2.5 (with thinking mode):
+#   transcription_model:
+#     name: "gemini-2.5-flash"
+#     provider: "google"
+#     max_output_tokens: 32768
+#     reasoning:
+#       effort: high  # Maps to thinking_level: "high"
 #     temperature: 0.0
 #
-# Google Gemini:
+# Google Gemini 2.0 (no thinking mode):
 #   transcription_model:
 #     name: "gemini-2.0-flash"
 #     provider: "google"
@@ -65,6 +86,8 @@ summary_model:
 #
 # OpenRouter (access any model):
 #   transcription_model:
-#     name: "anthropic/claude-3-opus"
+#     name: "anthropic/claude-sonnet-4-5"
 #     provider: "openrouter"
-#     max_output_tokens: 4096
+#     max_output_tokens: 8192
+#     reasoning:
+#       effort: medium

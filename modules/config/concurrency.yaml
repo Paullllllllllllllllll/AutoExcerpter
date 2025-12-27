@@ -42,20 +42,22 @@ api_requests:
   # ---------------------------------------------------------------------------
   transcription:
     # Maximum concurrent API requests
-    # Recommended: 50-150 for Tier 4+, lower for lower tiers
-    # The Responses API handles concurrent requests well with proper rate limiting
-    concurrency_limit: 150
+    # Provider-specific recommendations:
+    # - OpenAI: 50-150 for Tier 4+, lower for lower tiers
+    # - Anthropic: 5-10 (strict connection limits)
+    # - Google: 20-50
+    concurrency_limit: 5
     
     # Delay between starting API requests (seconds)
     # Small delay helps prevent bursts that could trigger rate limits
-    delay_between_tasks: 0.05
+    delay_between_tasks: 0.1
     
     # OpenAI service tier for Responses API
     # Options: 'auto', 'default', 'flex', 'priority'
     # - 'flex': Lower cost, may queue during high demand (recommended for batch processing)
     # - 'default': Standard processing speed
     # - 'priority': Fastest processing, higher cost
-    service_tier: flex
+    service_tier: default
     
     # Number of requests per batch part file (for future Batch API support)
     batch_chunk_size: 50
@@ -66,10 +68,10 @@ api_requests:
   summary:
     # Maximum concurrent API requests for summarization
     # Generally lower than transcription as summaries are larger/more complex
-    concurrency_limit: 150
+    concurrency_limit: 5
     
     # Delay between starting API requests (seconds)
-    delay_between_tasks: 0.05
+    delay_between_tasks: 0.1
     
     # OpenAI service tier for Responses API
     service_tier: flex

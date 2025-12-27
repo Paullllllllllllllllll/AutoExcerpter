@@ -38,6 +38,55 @@ SUMMARY_SCHEMA_FILE = "summary_schema.json"
 SUMMARY_PROMPT_FILE = "summary_system_prompt.txt"
 
 
+def _transform_schema_for_anthropic(schema: dict[str, Any]) -> dict[str, Any]:
+    """Transform JSON schema to be Anthropic-compatible.
+    
+    Anthropic's SDK doesn't support union types like ["string", "null"].
+    This function converts them to simple types.
+    Also adds required 'title' and 'description' keys for LangChain compatibility.
+    """
+    import copy
+    result = copy.deepcopy(schema)
+    
+    def transform_type(obj: dict[str, Any]) -> None:
+        if not isinstance(obj, dict):
+            return
+            
+        # Handle union types like ["string", "null"]
+        if "type" in obj and isinstance(obj["type"], list):
+            # Filter out "null" and keep the first non-null type
+            non_null_types = [t for t in obj["type"] if t != "null"]
+            if non_null_types:
+                obj["type"] = non_null_types[0]
+            else:
+                obj["type"] = "string"  # fallback
+        
+        # Recursively handle properties
+        if "properties" in obj and isinstance(obj["properties"], dict):
+            for prop in obj["properties"].values():
+                transform_type(prop)
+        
+        # Handle items in arrays
+        if "items" in obj and isinstance(obj["items"], dict):
+            transform_type(obj["items"])
+        
+        # Handle anyOf/oneOf/allOf
+        for key in ("anyOf", "oneOf", "allOf"):
+            if key in obj and isinstance(obj[key], list):
+                for item in obj[key]:
+                    transform_type(item)
+    
+    transform_type(result)
+    
+    # Add required top-level keys for LangChain/Anthropic compatibility
+    if "title" not in result:
+        result["title"] = "SummarySchema"
+    if "description" not in result:
+        result["description"] = "Schema for document summary output"
+    
+    return result
+
+
 class SummaryManager(LLMClientBase):
     """
     Manages LLM API requests for generating structured summaries.
@@ -194,7 +243,7 @@ class SummaryManager(LLMClientBase):
         # Build invoke kwargs using base class method
         invoke_kwargs = self._build_invoke_kwargs()
 
-        # Add structured output format for OpenAI
+        # Add structured output format for OpenAI (native response_format)
         if self.provider == "openai":
             text_format = self._build_text_format()
             if text_format:
@@ -204,6 +253,40 @@ class SummaryManager(LLMClientBase):
                     invoke_kwargs["response_format"] = text_format
 
         return [system_msg, user_msg], invoke_kwargs
+    
+    def _get_structured_chat_model(self):
+        """Get chat model with structured output for each provider.
+        
+        Provider-specific approaches:
+        - OpenAI: Native response_format parameter (guaranteed JSON) - handled separately
+        - Anthropic/Google: Prompt-based JSON with markdown stripping fallback
+          (LangChain's with_structured_output has tool naming compatibility issues)
+        - OpenRouter: Default tool-based structured output (OpenAI-compatible)
+        
+        Returns:
+            Chat model with structured output, or base chat model.
+        """
+        # OpenAI uses native response_format - no need for with_structured_output
+        if self.provider == "openai":
+            return self.chat_model
+        
+        # Anthropic/Google: Don't use with_structured_output due to compatibility issues
+        # Anthropic: Tool names must match ^[a-zA-Z0-9_-]{1,128}$ pattern
+        # Google: Function names have strict requirements
+        # Both rely on schema in system prompt + markdown stripping fallback
+        if self.provider in ("anthropic", "google"):
+            return self.chat_model
+        
+        # OpenRouter: Use tool-based structured output (OpenAI-compatible)
+        if self.summary_schema:
+            schema = self.summary_schema.get("schema", self.summary_schema)
+            if isinstance(schema, dict) and schema:
+                return self.chat_model.with_structured_output(
+                    schema,
+                    include_raw=True,
+                )
+        
+        return self.chat_model
 
     def _ensure_page_number_structure(
         self, summary_json: dict[str, Any], page_num: int
@@ -246,8 +329,11 @@ class SummaryManager(LLMClientBase):
                 # Build messages and invocation kwargs
                 messages, invoke_kwargs = self._build_model_inputs(transcription)
 
+                # Get structured chat model (uses with_structured_output for non-OpenAI providers)
+                structured_model = self._get_structured_chat_model()
+                
                 # LangChain handles API retries with exponential backoff internally
-                response = self.chat_model.invoke(messages, **invoke_kwargs)
+                response = structured_model.invoke(messages, **invoke_kwargs)
 
                 # Success - extract and parse response
                 processing_time = time.time() - start_time
@@ -272,6 +358,16 @@ class SummaryManager(LLMClientBase):
                 summary_json_str = self._extract_output_text(response)
                 if not summary_json_str:
                     raise ValueError("LLM API returned empty content for summary.")
+
+                # Strip markdown code blocks if present
+                summary_json_str = summary_json_str.strip()
+                if summary_json_str.startswith("```json"):
+                    summary_json_str = summary_json_str[7:]  # Remove ```json
+                elif summary_json_str.startswith("```"):
+                    summary_json_str = summary_json_str[3:]  # Remove ```
+                if summary_json_str.endswith("```"):
+                    summary_json_str = summary_json_str[:-3]  # Remove ```
+                summary_json_str = summary_json_str.strip()
 
                 # Parse JSON with better error handling
                 try:
