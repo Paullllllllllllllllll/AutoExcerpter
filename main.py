@@ -34,8 +34,13 @@ from modules.user_prompts import (
     print_warning,
     print_error,
     print_info,
+    print_separator,
+    print_dim,
+    print_highlight,
     prompt_selection,
+    prompt_yes_no,
     exit_program,
+    Colors,
 )
 
 logger = setup_logger(__name__)
@@ -88,7 +93,9 @@ def prompt_for_item_selection(items: Sequence[ItemSpec]) -> List[ItemSpec]:
         print_warning("No processable PDF files or image folders found in the input.")
         return []
 
-    print_section("Available Items to Process")
+    print_section("Item Selection")
+    print_info(f"Found {len(items)} item(s) available for processing")
+    print()
     
     selected = prompt_selection(
         items=items,
@@ -133,7 +140,13 @@ def _process_single_item(
     )
     
     if not config.CLI_MODE:
-        print_info(f"Processing [{index}/{total_items}]: {item_spec.output_stem}")
+        print()
+        print_separator(char="=")
+        print_highlight(f"  Processing Item {index}/{total_items}")
+        print_separator(char="=")
+        print_info(f"    • Name: {item_spec.output_stem}")
+        print_info(f"    • Type: {item_spec.kind.replace('_', ' ').title()}")
+        print()
 
     # Check if output files already exist
     expected_outputs = [base_output_dir / f"{item_spec.output_stem}.txt"]
@@ -242,9 +255,17 @@ def _log_token_limit_reached(stats: Dict[str, Any], reset_time, hours: int, minu
     if config.CLI_MODE:
         logger.info("Type 'q' and press Enter to cancel and exit.")
     else:
-        print_warning(f"\n⚠ Daily token limit reached: {stats['tokens_used_today']:,}/{stats['daily_limit']:,} tokens used")
-        print_info(f"Waiting until {reset_time.strftime('%Y-%m-%d %H:%M:%S')} for daily reset ({hours}h {minutes}m remaining)")
-        print_info("Type 'q' and press Enter to cancel and exit.")
+        print()
+        print_separator(char="=")
+        print_warning(f"  Daily Token Limit Reached")
+        print_separator(char="=")
+        print_info(f"    • Tokens used: {stats['tokens_used_today']:,}/{stats['daily_limit']:,}")
+        print_info(f"    • Reset time: {reset_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        print_info(f"    • Time remaining: {hours}h {minutes}m")
+        print()
+        print_dim("  Waiting for token limit reset...")
+        print_dim("  Type 'q' and press Enter to cancel and exit.")
+        print()
 
 
 def _wait_for_token_reset(token_tracker, seconds_until_reset: int) -> bool:
@@ -318,6 +339,191 @@ def _select_items_for_processing(
         return prompt_for_item_selection(all_items) or []
 
 
+def _display_processing_summary(selected_items: List[ItemSpec], base_output_dir: Path) -> bool:
+    """Display detailed processing summary and ask for confirmation.
+    
+    Args:
+        selected_items: List of items selected for processing
+        base_output_dir: Output directory path
+        
+    Returns:
+        True if user confirms, False to cancel
+    """
+    from modules.config_loader import load_model_config, load_concurrency_config
+    
+    # Load configurations
+    model_config = load_model_config()
+    concurrency_config = load_concurrency_config()
+    
+    print_header("PROCESSING SUMMARY")
+    print_info("Review your selections before processing")
+    print()
+    
+    # Count PDFs and image folders
+    pdf_count = sum(1 for item in selected_items if item.kind == "pdf")
+    image_folder_count = sum(1 for item in selected_items if item.kind == "image_folder")
+    
+    # Display item summary
+    if pdf_count > 0 and image_folder_count > 0:
+        item_summary = f"{pdf_count} PDF file(s) and {image_folder_count} image folder(s)"
+    elif pdf_count > 0:
+        item_summary = f"{pdf_count} PDF file(s)"
+    else:
+        item_summary = f"{image_folder_count} image folder(s)"
+    
+    print(f"  Ready to process {Colors.BOLD}{Colors.OKCYAN}{len(selected_items)}{Colors.ENDC} {item_summary}\n")
+    
+    # === Processing Configuration ===
+    print_highlight("  Processing Configuration:")
+    print_separator()
+    
+    # Document types
+    if pdf_count > 0 and image_folder_count > 0:
+        print_info(f"    • Document types: PDFs and Image Folders")
+    elif pdf_count > 0:
+        print_info(f"    • Document type: PDFs")
+    else:
+        print_info(f"    • Document type: Image Folders")
+    
+    # Summarization
+    if config.SUMMARIZE:
+        print_info(f"    • Summarization: Enabled")
+    else:
+        print_info(f"    • Summarization: Disabled (transcription only)")
+    
+    print_separator()
+    
+    # === Model Configuration ===
+    print()
+    print_highlight("  Model Configuration:")
+    print_separator()
+    
+    # Transcription model
+    trans_model = model_config.get("transcription_model", {})
+    trans_provider = trans_model.get("provider", "openai").upper()
+    trans_model_name = trans_model.get("name", "gpt-5-mini")
+    trans_temp = trans_model.get("temperature")
+    trans_max_tokens = trans_model.get("max_output_tokens", 16000)
+    
+    print_info(f"    • Transcription Provider: {trans_provider}")
+    print_info(f"    • Transcription Model: {trans_model_name}")
+    if trans_temp is not None:
+        print_dim(f"      - Temperature: {trans_temp}")
+    print_dim(f"      - Max output tokens: {trans_max_tokens:,}")
+    
+    # Reasoning configuration
+    trans_reasoning = trans_model.get("reasoning", {})
+    if trans_reasoning:
+        effort = trans_reasoning.get("effort", "medium")
+        print_dim(f"      - Reasoning effort: {effort}")
+    
+    # Text verbosity (OpenAI GPT-5 specific)
+    trans_text = trans_model.get("text", {})
+    if trans_text:
+        verbosity = trans_text.get("verbosity", "medium")
+        print_dim(f"      - Text verbosity: {verbosity}")
+    
+    # Summary model (if enabled)
+    if config.SUMMARIZE:
+        print()
+        sum_model = model_config.get("summary_model", {})
+        sum_provider = sum_model.get("provider", "openai").upper()
+        sum_model_name = sum_model.get("name", "gpt-5-mini")
+        sum_temp = sum_model.get("temperature")
+        sum_max_tokens = sum_model.get("max_output_tokens", 16384)
+        
+        print_info(f"    • Summary Provider: {sum_provider}")
+        print_info(f"    • Summary Model: {sum_model_name}")
+        if sum_temp is not None:
+            print_dim(f"      - Temperature: {sum_temp}")
+        print_dim(f"      - Max output tokens: {sum_max_tokens:,}")
+        
+        # Reasoning configuration
+        sum_reasoning = sum_model.get("reasoning", {})
+        if sum_reasoning:
+            effort = sum_reasoning.get("effort", "medium")
+            print_dim(f"      - Reasoning effort: {effort}")
+        
+        # Text verbosity
+        sum_text = sum_model.get("text", {})
+        if sum_text:
+            verbosity = sum_text.get("verbosity", "low")
+            print_dim(f"      - Text verbosity: {verbosity}")
+    
+    print_separator()
+    
+    # === Concurrency Configuration ===
+    print()
+    print_highlight("  Concurrency Configuration:")
+    print_separator()
+    
+    # Image processing
+    img_proc = concurrency_config.get("image_processing", {})
+    img_concurrency = img_proc.get("concurrency_limit", 24)
+    print_info(f"    • Image extraction: {img_concurrency} concurrent tasks")
+    
+    # API requests
+    api_requests = concurrency_config.get("api_requests", {})
+    trans_api = api_requests.get("transcription", {})
+    trans_concurrency = trans_api.get("concurrency_limit", 5)
+    trans_service_tier = trans_api.get("service_tier", "default")
+    print_info(f"    • Transcription API: {trans_concurrency} concurrent requests")
+    print_dim(f"      - Service tier: {trans_service_tier}")
+    
+    if config.SUMMARIZE:
+        sum_api = api_requests.get("summary", {})
+        sum_concurrency = sum_api.get("concurrency_limit", 5)
+        sum_service_tier = sum_api.get("service_tier", "flex")
+        print_info(f"    • Summary API: {sum_concurrency} concurrent requests")
+        print_dim(f"      - Service tier: {sum_service_tier}")
+    
+    # Retry configuration
+    retry_config = concurrency_config.get("retry", {})
+    max_attempts = retry_config.get("max_attempts", 5)
+    print_dim(f"    • Max retry attempts: {max_attempts}")
+    
+    print_separator()
+    
+    # === Output Location ===
+    print()
+    print_highlight("  Output Location:")
+    print_separator()
+    if config.INPUT_PATHS_IS_OUTPUT_PATH:
+        print_info("    • Output: Same directory as input files")
+    else:
+        print_info(f"    • Output directory: {base_output_dir}")
+    print_separator()
+    
+    # === Token Limit ===
+    if config.DAILY_TOKEN_LIMIT_ENABLED:
+        print()
+        print_highlight("  Daily Token Limit:")
+        print_separator()
+        token_tracker = get_token_tracker()
+        stats = token_tracker.get_stats()
+        print_info(f"    • Current usage: {stats['tokens_used_today']:,}/{stats['daily_limit']:,} ({stats['usage_percentage']:.1f}%)")
+        print_info(f"    • Remaining today: {stats['tokens_remaining']:,} tokens")
+        print_separator()
+    
+    # === Selected Items ===
+    print()
+    print_highlight("  Selected Items (first 5 shown):")
+    for i, item in enumerate(selected_items[:5], 1):
+        print_dim(f"    {i}. {item.display_label()}")
+    
+    if len(selected_items) > 5:
+        print_dim(f"    ... and {len(selected_items) - 5} more")
+    
+    print()
+    
+    # Prompt for confirmation
+    return prompt_yes_no(
+        "Proceed with processing?",
+        default=True,
+        allow_exit=True
+    )
+
+
 def _user_requested_cancel() -> bool:
     """Check if the user requested cancellation by pressing 'q'."""
     try:
@@ -351,6 +557,54 @@ def _user_requested_cancel() -> bool:
         return False
 
 
+def _display_completion_summary(processed_count: int, total_count: int, output_dir: Optional[Path]) -> None:
+    """Display completion summary with statistics.
+    
+    Args:
+        processed_count: Number of successfully processed items
+        total_count: Total number of selected items
+        output_dir: Output directory (None if co-located with input)
+    """
+    print()
+    print_header("PROCESSING COMPLETE")
+    
+    if processed_count == total_count:
+        print_success(f"All {processed_count} item(s) processed successfully!")
+    else:
+        print_warning(f"Processed {processed_count} out of {total_count} item(s)")
+        print_info(f"{total_count - processed_count} item(s) failed or were skipped")
+    
+    print()
+    print_highlight("  Output Files:")
+    print_separator()
+    
+    if output_dir:
+        print_info(f"    • Location: {output_dir}")
+    else:
+        print_info(f"    • Location: Same directory as input files")
+    
+    print_info(f"    • Transcriptions: .txt files")
+    if config.SUMMARIZE:
+        print_info(f"    • Summaries: .docx files")
+    
+    print_separator()
+    
+    # Token usage statistics
+    if config.DAILY_TOKEN_LIMIT_ENABLED:
+        print()
+        print_highlight("  Token Usage:")
+        print_separator()
+        token_tracker = get_token_tracker()
+        stats = token_tracker.get_stats()
+        print_info(f"    • Total used today: {stats['tokens_used_today']:,}/{stats['daily_limit']:,} ({stats['usage_percentage']:.1f}%)")
+        print_info(f"    • Remaining today: {stats['tokens_remaining']:,} tokens")
+        print_separator()
+    
+    print()
+    print_highlight("  Thank you for using AutoExcerpter!")
+    print()
+
+
 def main() -> None:
     args = setup_argparse()
     
@@ -358,21 +612,34 @@ def main() -> None:
     input_path_arg, base_output_dir, process_all = _parse_execution_mode(args)
     
     if not config.CLI_MODE:
-        print_header("AutoExcerpter - PDF & Image Transcription Tool")
+        print_header(
+            "AUTOEXCERPTER",
+            "PDF & Image Transcription and Summarization Tool"
+        )
+        print_info("Transform PDFs and images into structured transcriptions and summaries")
+        print_info("using state-of-the-art AI models.\\n")
     
     # Create output directory
     base_output_dir.mkdir(parents=True, exist_ok=True)
 
     # Scan for items to process
+    if not config.CLI_MODE:
+        print_section("Scanning Input Directory")
+        print_info(f"Searching for PDFs and image folders in: {input_path_arg}")
+    
     all_items_to_consider = scan_input_path(input_path_arg)
+    
     if not all_items_to_consider:
         if config.CLI_MODE:
             logger.error(f"No items found to process in: {input_path_arg}")
             sys.exit(1)
         else:
-            print_info("No items found to process. Please check your input path.")
+            print_error("No items found to process. Please check your input path.")
             logger.debug("No items found in: %s", input_path_arg)
             sys.exit(0)
+    
+    if not config.CLI_MODE:
+        print_success(f"Found {len(all_items_to_consider)} item(s) available for processing")
 
     # Select items based on mode
     selected_items = _select_items_for_processing(
@@ -385,7 +652,13 @@ def main() -> None:
 
     logger.info("Selected %s item(s) for processing.", len(selected_items))
     
+    # Display processing summary and get confirmation (interactive mode only)
     if not config.CLI_MODE:
+        confirmed = _display_processing_summary(selected_items, base_output_dir)
+        if not confirmed:
+            print_info("Processing cancelled by user.")
+            sys.exit(0)
+        
         print_section(f"Processing {len(selected_items)} Item(s)")
     
     # Display initial token usage statistics if enabled
@@ -441,22 +714,9 @@ def main() -> None:
     if config.CLI_MODE:
         logger.info(f"{processed_count}/{len(selected_items)} selected item(s) have been processed.")
     else:
-        print_success(f"\n✓ {processed_count}/{len(selected_items)} selected item(s) have been processed!")
-    logger.info(f"{processed_count}/{len(selected_items)} selected items have been processed.")
+        _display_completion_summary(processed_count, len(selected_items), base_output_dir if not config.INPUT_PATHS_IS_OUTPUT_PATH else None)
     
-    # Final token usage statistics
-    if config.DAILY_TOKEN_LIMIT_ENABLED:
-        token_tracker = get_token_tracker()
-        stats = token_tracker.get_stats()
-        logger.info(
-            f"Final token usage: {stats['tokens_used_today']:,}/{stats['daily_limit']:,} "
-            f"({stats['usage_percentage']:.1f}%)"
-        )
-        if not config.CLI_MODE:
-            print_info(
-                f"\nFinal daily token usage: {stats['tokens_used_today']:,}/{stats['daily_limit']:,} "
-                f"({stats['usage_percentage']:.1f}%)"
-            )
+    logger.info(f"{processed_count}/{len(selected_items)} selected items have been processed.")
 
 
 if __name__ == "__main__":

@@ -9,12 +9,20 @@ Features:
 - Yes/No prompts with defaults
 - Exit and back navigation support
 - Consistent formatting with dividers and headers
+- Windows color support via colorama
 """
 
 from __future__ import annotations
 
 import sys
 from typing import Callable, Optional, Sequence, TypeVar
+
+# Initialize colorama for Windows color support
+try:
+    import colorama
+    colorama.just_fix_windows_console()
+except ImportError:
+    pass  # colorama not available, colors may still work on Unix-like systems
 
 from modules.constants import (
     EXIT_COMMANDS,
@@ -32,6 +40,7 @@ T = TypeVar('T')
 # ============================================================================
 class Colors:
     """ANSI color codes for terminal output formatting."""
+    # Original colors
     HEADER = '\033[95m'
     OKBLUE = '\033[94m'
     OKCYAN = '\033[96m'
@@ -41,15 +50,31 @@ class Colors:
     ENDC = '\033[0m'
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
+    
+    # Additional semantic colors (ChronoTranscriber style)
+    INFO = '\033[0;36m'        # Cyan (informational messages)
+    SUCCESS = '\033[1;32m'     # Green bold (success messages)
+    ERROR = '\033[1;31m'       # Red bold (errors)
+    PROMPT = '\033[1;37m'      # White bold (user prompts)
+    DIM = '\033[2;37m'         # Dimmed white (secondary text)
+    HIGHLIGHT = '\033[1;35m'   # Magenta bold (highlights)
+    RESET = '\033[0m'          # Reset to default
 
 
 # ============================================================================
 # Output Functions (Print Messages)
 # ============================================================================
-def print_header(message: str) -> None:
-    """Print a prominent header message."""
+def print_header(message: str, subtitle: str = "") -> None:
+    """Print a prominent header message with optional subtitle.
+    
+    Args:
+        message: Main header text
+        subtitle: Optional subtitle text
+    """
     print(f"\n{Colors.BOLD}{Colors.HEADER}{'=' * DIVIDER_LENGTH}{Colors.ENDC}")
-    print(f"{Colors.BOLD}{Colors.HEADER}{message.center(DIVIDER_LENGTH)}{Colors.ENDC}")
+    print(f"{Colors.BOLD}{Colors.HEADER}  {message}{Colors.ENDC}")
+    if subtitle:
+        print(f"{Colors.OKCYAN}  {subtitle}{Colors.ENDC}")
     print(f"{Colors.BOLD}{Colors.HEADER}{'=' * DIVIDER_LENGTH}{Colors.ENDC}\n")
 
 
@@ -78,6 +103,29 @@ def print_error(message: str) -> None:
 def print_info(message: str) -> None:
     """Print an info message."""
     print(f"{Colors.OKCYAN}ℹ {message}{Colors.ENDC}")
+
+
+def print_separator(char: str = "-", length: int = 80, color: str = "") -> None:
+    """Print a separator line.
+    
+    Args:
+        char: Character to use for separator
+        length: Length of the separator line
+        color: Optional color code (defaults to dim)
+    """
+    if not color:
+        color = Colors.DIM
+    print(f"{color}{char * length}{Colors.ENDC}")
+
+
+def print_dim(message: str) -> None:
+    """Print a dimmed/secondary message."""
+    print(f"{Colors.DIM}{message}{Colors.ENDC}")
+
+
+def print_highlight(message: str) -> None:
+    """Print a highlighted message."""
+    print(f"{Colors.BOLD}{Colors.OKCYAN}{message}{Colors.ENDC}")
 
 
 # ============================================================================
@@ -173,32 +221,37 @@ def prompt_selection(
         print_warning("No items available to select.")
         return []
     
-    # Display items
+    # Display items with improved formatting
     for index, item in enumerate(items, start=1):
-        print(f"  {Colors.BOLD}[{index}]{Colors.ENDC} {display_func(item)}")
+        description = display_func(item)
+        # Truncate very long descriptions
+        if len(description) > 75:
+            description = description[:72] + "..."
+        print(f"  {Colors.BOLD}{index}.{Colors.ENDC} {description}")
     
-    # Add "process all" option if enabled
-    if allow_all:
-        all_label = process_all_label or "Process ALL listed items"
-        print(f"  {Colors.BOLD}[{len(items) + 1}]{Colors.ENDC} {all_label}")
-        print(f"  {Colors.BOLD}[all]{Colors.ENDC} {all_label}")
-    
-    # Build hint text
-    hints = []
+    # Selection instructions
+    print(f"\n  {Colors.INFO}Selection options:{Colors.ENDC}")
     if allow_multiple:
-        hints.append("e.g., 1, 5, 6 or 3-5")
+        print(f"    {Colors.DIM}• Enter numbers separated by commas (e.g., '1,3,5'){Colors.ENDC}")
+        print(f"    {Colors.DIM}• Enter a range with a dash (e.g., '1-5'){Colors.ENDC}")
     if allow_all:
-        hints.append("'all' for all items")
-    if allow_back:
-        hints.append("'back' to go back")
-    if allow_exit:
-        hints.append("'exit' to quit")
+        print(f"    {Colors.DIM}• Enter 'all' to select everything{Colors.ENDC}")
     
-    hint_text = f" ({'; '.join(hints)})" if hints else ""
+    # Navigation hints
+    nav_hints = []
+    if allow_back:
+        nav_hints.append("'back' to go back")
+    if allow_exit:
+        nav_hints.append("'exit' to quit")
+    
+    if nav_hints:
+        print(f"\n  {Colors.DIM}{' | '.join(nav_hints)}{Colors.ENDC}")
+    
+    hint_text = ""
     
     while True:
         try:
-            choice_str = input(f"\n{prompt_message}{hint_text}: ").lower().strip()
+            choice_str = input(f"\n{Colors.PROMPT}{prompt_message}: {Colors.ENDC}").lower().strip()
             
             if not choice_str:
                 print_warning("No selection made. Please make a choice.")
@@ -294,8 +347,12 @@ __all__ = [
     "print_warning",
     "print_error",
     "print_info",
+    "print_separator",
+    "print_dim",
+    "print_highlight",
     "prompt_selection",
     "prompt_yes_no",
     "prompt_continue",
     "exit_program",
+    "Colors",
 ]
