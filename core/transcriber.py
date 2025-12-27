@@ -95,7 +95,7 @@ class ItemTranscriber:
 		# Get transcription model configuration (centralized in model.yaml)
 		transcription_cfg = model_cfg.get("transcription_model", {})
 		self.transcription_model = transcription_cfg.get("name", DEFAULT_MODEL)
-		transcription_provider = transcription_cfg.get("provider")
+		self.transcription_provider = transcription_cfg.get("provider", "openai")
 		
 		# Get summary model configuration (centralized in model.yaml)
 		summary_cfg = model_cfg.get("summary_model", {})
@@ -106,7 +106,7 @@ class ItemTranscriber:
 		self.transcribe_rate_limiter = RateLimiter(get_rate_limits())
 		self.transcribe_manager = TranscriptionManager(
 			model_name=self.transcription_model,
-			provider=transcription_provider,
+			provider=self.transcription_provider,
 			rate_limiter=self.transcribe_rate_limiter,
 			timeout=get_api_timeout(),
 		)
@@ -123,8 +123,13 @@ class ItemTranscriber:
 
 	def _get_list_of_images_to_transcribe(self) -> List[Path]:
 		if self.input_type == "pdf":
+			# Pass provider info for provider-specific image preprocessing
 			return extract_pdf_pages_to_images(
-				self.input_path, self.images_dir)
+				self.input_path,
+				self.images_dir,
+				provider=self.transcription_provider,
+				model_name=self.transcription_model,
+			)
 		elif self.input_type == "image_folder":
 			# For image folders, we process images directly from their source path.
 			return get_image_paths_from_folder(self.input_path)
