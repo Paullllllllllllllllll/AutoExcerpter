@@ -1,162 +1,115 @@
-# Concurrency and retry configuration for AutoExcerpter
-# This file controls parallel processing behavior for both local operations
-# and OpenAI API requests.
+# =============================================================================
+# Concurrency and Retry Configuration
+# =============================================================================
+# Controls parallel processing, rate limiting, and retry behavior.
+# Loaded by: modules/concurrency_helper.py, api/transcribe_api.py, api/summary_api.py
+#
+# Related config files:
+#   - app.yaml: Application settings and feature toggles
+#   - model.yaml: LLM provider and model settings
+#   - image_processing.yaml: Image preprocessing settings
 
 # =============================================================================
 # IMAGE PROCESSING CONCURRENCY
 # =============================================================================
-# Controls local I/O operations: PDF extraction and image preprocessing
-# These operations are CPU/disk-bound and don't hit external APIs
+# Local I/O operations: PDF page extraction and image preprocessing
+# CPU/disk-bound (no external API calls)
 image_processing:
-  # Maximum concurrent image extraction/processing tasks
-  # Recommended: 8-24 for modern systems with SSD storage
-  concurrency_limit: 24
-  
-  # Delay between starting tasks (seconds)
-  # Set to 0 for local operations as there's no rate limiting concern
-  delay_between_tasks: 0
+  concurrency_limit: 24  # Parallel tasks (8-24 for SSD, lower for HDD)
+  delay_between_tasks: 0  # No delay needed for local operations
 
 # =============================================================================
-# API CONCURRENCY & RETRY CONFIGURATION
+# API CONCURRENCY SETTINGS
 # =============================================================================
-# Controls OpenAI Responses API requests for transcription and summarization
-# Based on OpenAI best practices for the Responses API
+# Controls LLM API requests for transcription and summarization
+# Applies to all providers: OpenAI, Anthropic, Google, OpenRouter
 api_requests:
   # ---------------------------------------------------------------------------
-  # Global API Settings
+  # Global Settings (apply to all API calls)
   # ---------------------------------------------------------------------------
-  # Request timeout in seconds (applies to all API requests)
-  # Recommended: 300-900 for flex tier processing which may queue requests
-  api_timeout: 900
+  api_timeout: 900  # Request timeout (seconds). 900s for flex tier queuing
   
-  # Rate limiting configuration
-  # Format: List of [max_requests, time_period_seconds]
-  # Multiple limits can be specified for different time windows
+  # Rate limiting: [max_requests, window_seconds]
+  # Multiple windows prevent bursting at different time scales
   rate_limits:
-    - [120, 1]       # 120 requests per second
-    - [15000, 60]    # 15,000 requests per minute
-    - [15000, 3600]  # 15,000 requests per hour
+    - [120, 1]       # Per-second burst limit
+    - [15000, 60]    # Per-minute sustained limit
+    - [15000, 3600]  # Per-hour aggregate limit
 
   # ---------------------------------------------------------------------------
-  # Transcription API Settings
+  # Transcription Phase
   # ---------------------------------------------------------------------------
   transcription:
-    # Maximum concurrent API requests
-    # Provider-specific recommendations:
-    # - OpenAI: 50-150 for Tier 4+, lower for lower tiers
-    # - Anthropic: 5-10 (strict connection limits)
-    # - Google: 20-50
-    concurrency_limit: 5
+    concurrency_limit: 5  # Parallel API requests (OpenAI: 50-150, Anthropic: 5-10)
+    delay_between_tasks: 0.1  # Stagger requests to smooth rate limit usage
     
-    # Delay between starting API requests (seconds)
-    # Small delay helps prevent bursts that could trigger rate limits
-    delay_between_tasks: 0.1
-    
-    # OpenAI service tier for Responses API
-    # Options: 'auto', 'default', 'flex', 'priority'
-    # - 'flex': Lower cost, may queue during high demand (recommended for batch processing)
-    # - 'default': Standard processing speed
-    # - 'priority': Fastest processing, higher cost
+    # OpenAI service tier: 'default' | 'flex' | 'priority'
+    # flex = cheaper but may queue; priority = fastest but expensive
     service_tier: default
-    
-    # Number of requests per batch part file (for future Batch API support)
-    batch_chunk_size: 50
   
   # ---------------------------------------------------------------------------
-  # Summary API Settings
+  # Summary Phase
   # ---------------------------------------------------------------------------
   summary:
-    # Maximum concurrent API requests for summarization
-    # Generally lower than transcription as summaries are larger/more complex
-    concurrency_limit: 5
-    
-    # Delay between starting API requests (seconds)
+    concurrency_limit: 5  # Lower than transcription (summaries are larger)
     delay_between_tasks: 0.1
-    
-    # OpenAI service tier for Responses API
-    service_tier: flex
-    
-    # Batch configuration
-    batch_chunk_size: 50
+    service_tier: flex  # Cost optimization for batch summarization
 
 # =============================================================================
 # RETRY & BACKOFF CONFIGURATION
 # =============================================================================
-# Controls retry behavior for failed API requests following OpenAI best practices
-# Uses exponential backoff with jitter to prevent thundering herd problems
+# Exponential backoff with jitter for API errors (OpenAI Cookbook best practices)
+# Formula: wait_time = backoff_base * (multiplier ^ attempt) + random(jitter)
 retry:
   # ---------------------------------------------------------------------------
-  # General API Error Retries
+  # API Error Retries
   # ---------------------------------------------------------------------------
-  # These retries apply to all API errors (rate limits, timeouts, server errors, etc.)
+  # Handles rate limits (429), timeouts, and server errors (5xx)
+  max_attempts: 5  # Total attempts before giving up (OpenAI recommends 5-6)
+  backoff_base: 1.0  # Initial wait time in seconds
   
-  # Maximum number of retry attempts for API errors
-  # After this many failures, the request is abandoned
-  # Recommended: 3-6 attempts (OpenAI recommends 5-6 for production)
-  max_attempts: 5
-  
-  # Base backoff time (seconds) for exponential backoff
-  # Actual wait time = base * (multiplier ^ attempt) + jitter
-  # Recommended: 1.0 seconds
-  backoff_base: 1.0
-  
-  # Backoff multipliers for different error types
-  # Higher multipliers = longer waits between retries
+  # Error-specific multipliers (higher = longer waits)
   backoff_multipliers:
-    rate_limit: 2.0      # 429 errors, "too many requests"
-    timeout: 1.5          # Request timeout errors
-    server_error: 2.0     # 500-series errors
-    other: 2.0            # All other retryable errors
+    rate_limit: 2.0   # 429 Too Many Requests
+    timeout: 1.5      # Connection/read timeouts
+    server_error: 2.0 # 500-series errors
+    other: 2.0        # Other retryable errors
   
-  # Jitter range to prevent thundering herd
-  # Random value between [min, max] is added to backoff time
+  # Jitter prevents thundering herd (random delay added to backoff)
   jitter:
     min: 0.5
     max: 1.0
   
   # ---------------------------------------------------------------------------
-  # Schema-Specific Content Retries (Transcription Phase)
+  # Schema-Specific Retries
   # ---------------------------------------------------------------------------
-  # Additional retries when the model returns specific boolean flags in the
-  # transcription schema, indicating content issues rather than API errors
+  # Retry based on model output flags (not API errors)
+  # Useful when model reports content issues that may resolve on retry
   schema_retries:
+    # Transcription phase flags
     transcription:
-      # Retry if model sets no_transcribable_text=true
-      # This indicates the image contains no text to transcribe
-      # Set to 0 to disable (recommended for most use cases)
-      no_transcribable_text:
+      no_transcribable_text:  # Image contains no text
         enabled: true
-        max_attempts: 0
+        max_attempts: 0  # 0 = disabled (usually correct, no point retrying)
         backoff_base: 0.5
         backoff_multiplier: 1.5
       
-      # Retry if model sets transcription_not_possible=true
-      # This indicates transcription is impossible (e.g., illegible, corrupted image)
-      # Set to 0 to disable (recommended for most use cases)
-      transcription_not_possible:
+      transcription_not_possible:  # Illegible/corrupted image
         enabled: true
-        max_attempts: 3
+        max_attempts: 3  # Retry may help with transient model issues
         backoff_base: 0.5
         backoff_multiplier: 1.5
     
-    # ---------------------------------------------------------------------------
-    # Schema-Specific Content Retries (Summary Phase)
-    # ---------------------------------------------------------------------------
+    # Summary phase flags
     summary:
-      # Retry if model sets contains_no_semantic_content=true
-      # This indicates the page has no substantial content (e.g., blank page, TOC)
-      # Set to 0 to disable (recommended for most use cases)
-      contains_no_semantic_content:
+      contains_no_semantic_content:  # Blank page, TOC, etc.
         enabled: true
-        max_attempts: 0
+        max_attempts: 0  # Usually correct, no retry needed
         backoff_base: 0.5
         backoff_multiplier: 1.5
       
-      # Retry if model sets contains_no_page_number=true
-      # This indicates the page has no visible page number
-      # Set to 0 to disable (recommended for most use cases)
-      contains_no_page_number:
+      contains_no_page_number:  # No visible page number
         enabled: true
-        max_attempts: 0
+        max_attempts: 0  # Informational only, no retry needed
         backoff_base: 0.5
         backoff_multiplier: 1.5

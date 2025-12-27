@@ -1,91 +1,89 @@
-# ============================================================================
-# Image processing configuration
-# ============================================================================
+# =============================================================================
+# Image Processing Configuration
+# =============================================================================
+# Controls image preprocessing before LLM API calls and text post-processing.
+# Loaded by: modules/image_utils.py, modules/text_cleaner.py
+#
+# Related config files:
+#   - app.yaml: Application settings and feature toggles
+#   - model.yaml: LLM provider and model settings
+#   - concurrency.yaml: API rate limits and parallelism
 
-# OpenAI API image processing (preparing images to send to the OpenAI API)
+# =============================================================================
+# API Image Processing
+# =============================================================================
+# Preprocessing applied to images before sending to LLM APIs (OpenAI, etc.)
+# Optimizes for OCR quality while managing token usage
 api_image_processing:
-  target_dpi: 300  # DPI for rendering/extracting images before API processing.
-  grayscale_conversion: true  # Convert color images to grayscale to reduce noise.
-  handle_transparency: true  # Flatten images with alpha onto white background.
-  # Controls the fidelity of images sent to the OpenAI Responses API.
-  # - high: better fidelity OCR, potentially higher token usage
-  # - low: faster/cheaper, lower fidelity
-  # - auto: omit the parameter and let the model decide
+  # PDF rendering resolution (higher = better quality, more tokens)
+  target_dpi: 300  # 150-300 recommended for OCR
+  
+  # Preprocessing steps
+  grayscale_conversion: true  # Convert to grayscale (improves OCR, reduces noise)
+  handle_transparency: true   # Flatten alpha channel onto white background
+  
+  # Image fidelity for OpenAI Vision API
+  # high = better OCR, more tokens | low = faster, cheaper | auto = model decides
   llm_detail: high
-
-  # JPEG compression quality (1-100) when saving processed images for API use.
+  
+  # JPEG compression quality (1-100). Higher = better quality, larger files
   jpeg_quality: 100
-
-  # Resizing behavior prior to sending to the API
-  # - auto: choose a resizing strategy based on llm_detail
-  # - none: do not resize (only transparency/grayscale steps applied)
+  
+  # Resize strategy: 'high' | 'low' | 'auto' | 'none'
+  # high = fit to high_target_box | low = cap at low_max_side_px | none = no resize
   resize_profile: high
-
-  # Parameters for resizing profiles
-  # For low detail, cap the longest side to this many pixels (preserve aspect ratio)
-  low_max_side_px: 512
-  # For high detail, fit into this box (width, height) with padding as needed
-  high_target_box: [768, 1536]
+  
+  # Resize parameters
+  low_max_side_px: 512         # Max dimension for 'low' profile
+  high_target_box: [768, 1536] # [width, height] target for 'high' profile
 
 
-# Google Gemini image processing (provider-specific settings)
-google_image_processing:
-  # Controls the resolution of images sent to Google Gemini models.
-  # - low: Lower resolution, faster processing
-  # - medium: Balanced resolution
-  # - high: High resolution (recommended for OCR)
-  # - ultra_high: Maximum resolution
-  # - auto: Let the model decide
-  media_resolution: high
-
-
-# ============================================================================
+# =============================================================================
 # Text Cleaning Configuration
-# ============================================================================
+# =============================================================================
 # Post-processing for transcription text before summarization and output.
-# These cleanups help fix common OCR artifacts and improve text quality.
+# Fixes common OCR artifacts while preserving semantic content.
 
 text_cleaning:
-  # Master switch to enable/disable all text cleaning
-  enabled: true
+  enabled: true  # Master switch for all text cleaning
   
-  # Unicode normalization - cleans up encoding issues from OCR
-  # - NFC normalization (compose accented characters)
-  # - Remove control characters, soft hyphens, zero-width spaces, BOMs
-  # - Map rare icon glyphs to bullet characters
+  # ---------------------------------------------------------------------------
+  # Unicode Normalization
+  # ---------------------------------------------------------------------------
+  # NFC normalization, removes control chars, soft hyphens, zero-width spaces
   unicode_normalization: true
   
-  # LaTeX formula fixing - repairs common OCR errors in math notation
+  # ---------------------------------------------------------------------------
+  # LaTeX Formula Fixing
+  # ---------------------------------------------------------------------------
+  # Repairs common OCR errors in mathematical notation
   latex_fixing:
     enabled: true
-    # Fix unbalanced $ and $$ delimiters (close unclosed, remove orphans)
-    balance_dollar_signs: true
-    # Close unclosed { braces in LaTeX commands
-    close_unclosed_braces: true
-    # Fix common command typos (e.g., "\frac {" -> "\frac{")
-    fix_common_commands: true
+    balance_dollar_signs: true   # Fix unbalanced $ and $$ delimiters
+    close_unclosed_braces: true  # Close orphan { in LaTeX commands
+    fix_common_commands: true    # Fix typos like "\frac {" -> "\frac{"
   
-  # Hyphenation merging - rejoin words split at line breaks
-  # Example: "politi-\nche" -> "politiche"
-  # WARNING: Can damage genuine hyphenated compounds (e.g., "Jean-Baptiste")
-  # Only enable if your documents have many line-break hyphenations
-  merge_hyphenation: false
+  # ---------------------------------------------------------------------------
+  # Hyphenation Merging
+  # ---------------------------------------------------------------------------
+  # Rejoins words split at line breaks: "politi-\nche" -> "politiche"
+  # WARNING: Can damage genuine compounds like "Jean-Baptiste"
+  merge_hyphenation: false  # Disabled by default - enable for scanned books
   
-  # Whitespace normalization
+  # ---------------------------------------------------------------------------
+  # Whitespace Normalization
+  # ---------------------------------------------------------------------------
   whitespace_normalization:
     enabled: true
-    # Collapse runs of 3+ internal spaces to 2 spaces
-    collapse_internal_spaces: true
-    # Maximum consecutive blank lines to keep (extras removed)
-    max_blank_lines: 2
-    # Number of spaces per tab character
-    tab_size: 4
+    collapse_internal_spaces: true  # 3+ spaces -> 2 spaces
+    max_blank_lines: 2              # Remove excess blank lines
+    tab_size: 4                     # Spaces per tab when expanding
   
-  # Line wrapping - wrap excessively long lines
-  # Generally not needed since LLMs handle variable line lengths well
+  # ---------------------------------------------------------------------------
+  # Line Wrapping
+  # ---------------------------------------------------------------------------
+  # Wrap excessively long lines (usually not needed for LLM output)
   line_wrapping:
     enabled: true
-    # Auto-compute wrap width from average line length of text blocks
-    auto_width: true
-    # Fixed wrap width (used if auto_width is false)
-    fixed_width: 80
+    auto_width: true   # Compute width from text statistics
+    fixed_width: 80    # Used if auto_width is false

@@ -18,6 +18,7 @@ AutoExcerpter is an intelligent document processing pipeline that automatically 
   - [Model Configuration](#model-configuration)
   - [Concurrency Configuration](#concurrency-configuration)
   - [Image Processing Configuration](#image-processing-configuration)
+  - [Text Cleaning Configuration](#text-cleaning-configuration)
   - [Citation Management](#citation-management)
   - [Daily Token Limit Tracking](#daily-token-limit-tracking)
 - [Usage](#usage)
@@ -255,15 +256,22 @@ On Windows, use `set` instead of `export`, or configure environment variables th
 
 5. **Configure the application:**
 
-Edit `modules/config/app.yaml` to set your input/output paths and preferred model:
+Edit `modules/config/app.yaml` to set your input/output paths:
 ```yaml
 input_folder_path: 'C:\Users\yourname\Documents\PDFs'
 output_folder_path: 'C:\Users\yourname\Documents\Output'
-input_paths_is_output_path: false  # When true, write outputs next to each input item
+input_paths_is_output_path: true  # Write outputs next to each input file
+```
 
-openai:
-  model: 'gpt-5-mini'  # or any supported model
-  transcription_model: 'gpt-5-mini'
+Edit `modules/config/model.yaml` to set your preferred models:
+```yaml
+transcription_model:
+  name: "gpt-5-mini"  # or any supported model
+  provider: "openai"
+
+summary_model:
+  name: "gpt-5-mini"
+  provider: "openai"
 ```
 
 ## Quick Start
@@ -360,101 +368,97 @@ Additional CLI guidance, including scripting patterns and CI/CD samples, is avai
 
 ## Configuration
 
-AutoExcerpter uses a multi-file YAML configuration system that provides fine-grained control over every aspect of processing. All configuration files are located in `modules/config/`.
+AutoExcerpter uses a multi-file YAML configuration system that provides fine-grained control over every aspect of processing. All configuration files are located in `modules/config/` and include cross-references to related files for easy navigation.
+
+| File | Purpose |
+|------|---------|
+| `app.yaml` | Application settings, file paths, feature toggles, daily limits |
+| `model.yaml` | LLM provider and model settings (transcription and summary) |
+| `concurrency.yaml` | API rate limits, retries, and parallelism settings |
+| `image_processing.yaml` | Image preprocessing and text cleaning options |
 
 ### Basic Configuration
 
 **File**: `modules/config/app.yaml`
 
-This is the primary configuration file for application-level settings.
+This is the primary configuration file for application-level settings. Model configuration is in `model.yaml`, and API concurrency/rate limits are in `concurrency.yaml`.
 
 ```yaml
 # Execution Mode
-cli_mode: false  # When true, run as CLI tool; when false, use interactive prompts
+cli_mode: false  # true = CLI with arguments, false = interactive prompts
 
-# Feature Toggle
-summarize: true  # Enable/disable summarization; false = transcription only
+# Feature Toggles
+summarize: true  # false = transcription only (no summarization phase)
 
-# Folder Paths
+# File Paths
 input_folder_path: 'C:\Users\yourname\Documents\PDFs'
-output_folder_path: 'C:\Users\yourname\Documents\Output'
-input_paths_is_output_path: false  # When true, write outputs next to each input item when running interactively
+output_folder_path: ''  # Empty = use input_folder_path as output location
+input_paths_is_output_path: true  # true = write outputs next to each input file
 
 # Cleanup Settings
-delete_temp_working_dir: true  # Delete temporary files after processing
+delete_temp_working_dir: true  # Delete extracted images and temp files after completion
 
-# Performance Settings
-concurrent_requests: 500  # Maximum concurrent API requests
-api_timeout: 900  # Timeout per API request in seconds
-
-# Citation Management
+# Citation Management (OpenAlex API integration)
 citation:
-  openalex_email: 'your-email@example.com'  # Email for OpenAlex API polite pool
-  max_api_requests: 300  # Maximum metadata enrichment calls per document
+  openalex_email: 'your-email@example.com'  # Required for polite pool (faster responses)
+  max_api_requests: 300  # Cap API calls per document to avoid rate limits
 
-# Daily Token Limit
+# Daily Token Limit (budget control)
 daily_token_limit:
-  enabled: true           # Toggle token tracking and enforcement
-  daily_tokens: 9000000   # Maximum tokens allowed per calendar day
-
-# OpenAI Configuration
-openai:
-  model: 'gpt-5-mini'  # Model for summarization
-  transcription_model: 'gpt-5-mini'  # Model for transcription
-  api_timeout: 900  # Extended timeout for Flex processing (seconds)
-  use_flex: true  # Enable Flex tier for cost savings
-  
-  # Rate Limiting (adjust based on your OpenAI tier)
-  rate_limits:
-    - [120, 1]      # Max 120 requests per second
-    - [15000, 60]   # Max 15,000 requests per minute
-    - [15000, 3600] # Max 15,000 requests per hour
+  enabled: true  # Enforce the daily token budget
+  daily_tokens: 9000000  # Max tokens per day (resets at midnight)
 ```
 
 **Key Settings Explained:**
 
 - **cli_mode**: Set to `true` for automation and scripting without interactive prompts
 - **summarize**: Set to `false` if you only need transcription without summaries (faster and cheaper)
-- **input_paths_is_output_path**: When `true`, interactive runs save each document's TXT/DOCX outputs beside the source file instead of the global `output_folder_path`
-- **concurrent_requests**: Higher values increase speed but may hit rate limits; adjust based on your provider tier (default: 500)
-- **use_flex**: Flex tier offers 50% cost savings with slightly longer processing times (recommended for batch jobs)
+- **input_paths_is_output_path**: When `true`, outputs are saved beside the source file instead of the global `output_folder_path`
+- **delete_temp_working_dir**: Automatically cleans up extracted images and temporary files after processing
 - **daily_token_limit**: Enforces a configurable daily token budget to stay within API allowances
-- **rate_limits**: Must match your API account tier limits; check your account dashboard for specific limits
 
 ### Provider Configuration
 
-AutoExcerpter supports multiple LLM providers through LangChain. Configure your preferred provider in `modules/config/app.yaml`:
+AutoExcerpter supports multiple LLM providers through LangChain. Configure your preferred provider in `modules/config/model.yaml`:
 
 **Using OpenAI (default):**
 ```yaml
-openai:
-  model: 'gpt-5-mini'
-  transcription_model: 'gpt-5-mini'
-  provider: 'openai'  # Optional, auto-detected from model name
+transcription_model:
+  name: "gpt-5-mini"
+  provider: "openai"  # Optional, auto-detected from model name
+  max_output_tokens: 12000
+
+summary_model:
+  name: "gpt-5-mini"
+  provider: "openai"
+  max_output_tokens: 16384
 ```
 
 **Using Anthropic Claude:**
 ```yaml
-openai:  # Note: uses same config section for backward compatibility
-  model: 'claude-sonnet-4-5'
-  transcription_model: 'claude-sonnet-4-5'
-  provider: 'anthropic'
+transcription_model:
+  name: "claude-sonnet-4-5-20250929"
+  provider: "anthropic"
+  max_output_tokens: 16384
+  temperature: 1.0  # Required for extended thinking
 ```
 
 **Using Google Gemini:**
 ```yaml
-openai:
-  model: 'gemini-2.5-pro'
-  transcription_model: 'gemini-2.5-pro'
-  provider: 'google'
+transcription_model:
+  name: "gemini-2.5-pro"
+  provider: "google"
+  max_output_tokens: 32768
+  reasoning:
+    effort: high  # Maps to thinking_level: "high"
 ```
 
 **Using OpenRouter (access to multiple providers):**
 ```yaml
-openai:
-  model: 'anthropic/claude-3-opus'  # Use provider/model format
-  transcription_model: 'anthropic/claude-3-opus'
-  provider: 'openrouter'
+transcription_model:
+  name: "anthropic/claude-sonnet-4-5"  # Use provider/model format
+  provider: "openrouter"
+  max_output_tokens: 8192
 ```
 
 **Provider Auto-Detection:**
@@ -476,30 +480,39 @@ Each provider requires its own API key set as an environment variable:
 
 **File**: `modules/config/model.yaml`
 
-This file controls advanced model-specific parameters for all supported providers (OpenAI, Anthropic, Google, OpenRouter). These settings allow fine-tuning of model behavior for optimal transcription and summarization quality.
+LLM settings for transcription and summarization phases. Loaded by `api/llm_client.py`, `api/transcribe_api.py`, and `api/summary_api.py`. The file includes cross-references to related configuration files.
 
 ```yaml
-# Transcription Model Configuration
+# Transcription Model (OCR/image-to-text conversion)
 transcription_model:
-  name: "gpt-5-mini"  # Model identifier
-  provider: "openai"  # Provider: openai, anthropic, google, openrouter
-  max_output_tokens: 8192  # Maximum tokens for model output
+  name: "gpt-5.2"      # Model identifier
+  provider: "openai"   # Optional if model prefix is unambiguous
+  max_output_tokens: 12000
+  
+  # Cross-provider reasoning (maps to native implementations):
+  # OpenAI: reasoning_effort | Anthropic: extended_thinking | Google: thinking_level
   reasoning:
-    effort: low  # Options: minimal, low, medium, high (OpenAI GPT-5/o-series only)
+    effort: medium  # low | medium | high
+  
+  # OpenAI GPT-5 only: controls output verbosity
   text:
-    verbosity: medium  # Options: low, medium, high (OpenAI GPT-5 only)
-  temperature: 0.0  # Temperature for generation (0.0-2.0, null for provider default)
+    verbosity: medium  # low | medium | high
+  
+  temperature: 1.0  # 0.0-2.0 (null = provider default)
 
-# Summary Model Configuration
+# Summary Model (structured summaries from transcriptions)
 summary_model:
-  name: "gpt-5-mini"  # Model identifier
-  provider: "openai"  # Provider: openai, anthropic, google, openrouter
-  max_output_tokens: 8192  # Maximum tokens for model output
+  name: "gpt-5-mini"
+  provider: "openai"
+  max_output_tokens: 16384
+  
   reasoning:
-    effort: low  # Options: minimal, low, medium, high (OpenAI GPT-5/o-series only)
+    effort: medium
+  
   text:
-    verbosity: low  # Options: low, medium, high (low for concise summaries)
-  temperature: 0.0  # Temperature for generation (0.0-2.0, null for provider default)
+    verbosity: low  # Lower verbosity for concise summaries
+  
+  temperature: 1.0
 ```
 
 **Parameter Details:**
@@ -554,53 +567,62 @@ transcription_model:
 
 **File**: `modules/config/concurrency.yaml`
 
-Controls parallel processing behavior for both local operations and API requests.
+Controls parallel processing behavior for both local operations and API requests. Each config file includes cross-references to related configuration files for easy navigation.
 
 ```yaml
 # Local Image Processing (CPU/Disk bound)
 image_processing:
-  concurrency_limit: 24
-  delay_between_tasks: 0
+  concurrency_limit: 24  # Parallel tasks (8-24 for SSD, lower for HDD)
+  delay_between_tasks: 0  # No delay needed for local operations
 
 # API Request Concurrency
 api_requests:
+  api_timeout: 900  # Request timeout (seconds). 900s for flex tier queuing
+  
+  # Rate limiting: [max_requests, window_seconds]
+  rate_limits:
+    - [120, 1]       # Per-second burst limit
+    - [15000, 60]    # Per-minute sustained limit
+    - [15000, 3600]  # Per-hour aggregate limit
+  
   transcription:
-    concurrency_limit: 150
-    delay_between_tasks: 0.05
-    service_tier: flex
-    batch_chunk_size: 50
+    concurrency_limit: 5  # Parallel API requests (OpenAI: 50-150, Anthropic: 5-10)
+    delay_between_tasks: 0.1
+    service_tier: default  # 'default' | 'flex' | 'priority'
+  
   summary:
-    concurrency_limit: 150
-    delay_between_tasks: 0.05
-    service_tier: flex
-    batch_chunk_size: 50
+    concurrency_limit: 5
+    delay_between_tasks: 0.1
+    service_tier: flex  # Cost optimization for batch summarization
 
-# Retry Configuration
+# Retry Configuration (exponential backoff with jitter)
 retry:
-  max_attempts: 5
-  backoff_base: 1.0
+  max_attempts: 5  # Total attempts before giving up
+  backoff_base: 1.0  # Initial wait time in seconds
   backoff_multipliers:
-    rate_limit: 2.0
-    timeout: 1.5
-    server_error: 2.0
+    rate_limit: 2.0   # 429 Too Many Requests
+    timeout: 1.5      # Connection/read timeouts
+    server_error: 2.0 # 500-series errors
     other: 2.0
   jitter:
     min: 0.5
     max: 1.0
+  
+  # Schema-specific retries (based on model output flags)
   schema_retries:
     transcription:
-      no_transcribable_text:
+      no_transcribable_text:  # Image contains no text
         enabled: true
-        max_attempts: 0
+        max_attempts: 0  # 0 = disabled
         backoff_base: 0.5
         backoff_multiplier: 1.5
-      transcription_not_possible:
+      transcription_not_possible:  # Illegible/corrupted image
         enabled: true
         max_attempts: 3
         backoff_base: 0.5
         backoff_multiplier: 1.5
     summary:
-      contains_no_semantic_content:
+      contains_no_semantic_content:  # Blank page, TOC, etc.
         enabled: true
         max_attempts: 0
         backoff_base: 0.5
@@ -644,29 +666,39 @@ When a flag is enabled and the model returns `true`, AutoExcerpter automatically
 
 **File**: `modules/config/image_processing.yaml`
 
-Controls image preprocessing and optimization for API submission.
+Controls image preprocessing before LLM API calls. The file includes cross-references to related configuration files and is loaded by `modules/image_utils.py`.
 
 ```yaml
 api_image_processing:
-  target_dpi: 300  # DPI for PDF page extraction
-  grayscale_conversion: true  # Convert to grayscale to reduce noise
-  handle_transparency: true  # Flatten alpha channels onto white
-  llm_detail: high  # Options: low, high, auto
-  jpeg_quality: 100  # JPEG compression quality (1-100)
-  resize_profile: high  # Options: auto, none, low, high
+  # PDF rendering resolution (higher = better quality, more tokens)
+  target_dpi: 300  # 150-300 recommended for OCR
   
-  # Resize Parameters
-  low_max_side_px: 512  # Max dimension for low detail
-  high_target_box: [768, 1536]  # Target dimensions for high detail
+  # Preprocessing steps
+  grayscale_conversion: true  # Convert to grayscale (improves OCR, reduces noise)
+  handle_transparency: true   # Flatten alpha channel onto white background
+  
+  # Image fidelity for OpenAI Vision API
+  # high = better OCR, more tokens | low = faster, cheaper | auto = model decides
+  llm_detail: high
+  
+  # JPEG compression quality (1-100). Higher = better quality, larger files
+  jpeg_quality: 100
+  
+  # Resize strategy: 'high' | 'low' | 'auto' | 'none'
+  resize_profile: high
+  
+  # Resize parameters
+  low_max_side_px: 512         # Max dimension for 'low' profile
+  high_target_box: [768, 1536] # [width, height] target for 'high' profile
 ```
 
 **Parameter Effects:**
 
 - **target_dpi**: Higher DPI improves OCR accuracy but increases file size and processing time
-  - 200-250: Basic documents, low quality scans
+  - 150-250: Basic documents, low quality scans
   - 300: Standard (recommended for most documents)
   - 400-600: High quality, small text, or complex layouts
-- **llm_detail**: Controls OpenAI's processing fidelity
+- **llm_detail**: Controls OpenAI Vision API processing fidelity
   - `low`: Faster, cheaper, suitable for clean text
   - `high`: Better accuracy for complex layouts (recommended)
   - `auto`: Let the model decide based on image characteristics
@@ -678,34 +710,44 @@ api_image_processing:
 
 **File**: `modules/config/image_processing.yaml` (`text_cleaning` section)
 
-Controls the post-processing pipeline that polishes transcription text prior to summarization and TXT export. All stages are individually configurable and can be disabled entirely via `enabled: false`.
+Post-processing pipeline that polishes transcription text before summarization and TXT export. All stages are individually configurable. Loaded by `modules/text_cleaner.py`.
 
 ```yaml
 text_cleaning:
-  enabled: true
+  enabled: true  # Master switch for all text cleaning
+  
+  # NFC normalization, removes control chars, soft hyphens, zero-width spaces
   unicode_normalization: true
+  
+  # Repairs common OCR errors in mathematical notation
   latex_fixing:
     enabled: true
-    balance_dollar_signs: true
-    close_unclosed_braces: true
-    fix_common_commands: true
+    balance_dollar_signs: true   # Fix unbalanced $ and $$ delimiters
+    close_unclosed_braces: true  # Close orphan { in LaTeX commands
+    fix_common_commands: true    # Fix typos like "\frac {" -> "\frac{"
+  
+  # Rejoins words split at line breaks (disabled by default)
+  # WARNING: Can damage genuine compounds like "Jean-Baptiste"
   merge_hyphenation: false
+  
   whitespace_normalization:
     enabled: true
-    collapse_internal_spaces: true
-    max_blank_lines: 2
-    tab_size: 4
+    collapse_internal_spaces: true  # 3+ spaces -> 2 spaces
+    max_blank_lines: 2              # Remove excess blank lines
+    tab_size: 4                     # Spaces per tab when expanding
+  
+  # Wrap excessively long lines (usually not needed for LLM output)
   line_wrapping:
-    enabled: false
-    auto_width: false
-    fixed_width: 80
+    enabled: true
+    auto_width: true   # Compute width from text statistics
+    fixed_width: 80    # Used if auto_width is false
 ```
 
 **Capabilities:**
 
 - **Unicode normalization** removes soft hyphens, zero-width characters, BOMs, and other control characters while preserving semantic content.
 - **LaTeX fixing** balances `$`/`$$` delimiters, closes unpaired braces, and corrects common OCR spacing errors in math commands.
-- **Hyphenation merging** (disabled by default) rejoins words split across line breaks—enable for heavily hyphenated scans.
+- **Hyphenation merging** (disabled by default) rejoins words split across line breaks. Enable only for heavily hyphenated scans, as it can damage genuine hyphenated compounds.
 - **Whitespace normalization** trims trailing spaces, collapses long internal gaps, expands tabs, and limits consecutive blank lines for clean TXT output.
 - **Line wrapping** optionally reflows especially long lines using indentation-aware wrapping or automatically computed widths.
 
@@ -772,20 +814,22 @@ python main.py
 
 The application will scan the configured input directory and present an interactive menu.
 
-### Command-Line Options
+### Command-Line Arguments (CLI Mode)
 
-**Process Specific File or Directory:**
+When `cli_mode: true` is set in `app.yaml`, use positional arguments:
 
 ```bash
 # Process a single PDF file
-python main.py --input "C:\Users\yourname\Documents\paper.pdf"
+python main.py "./documents/paper.pdf" "./output"
 
 # Process a specific folder of images
-python main.py --input "C:\Users\yourname\Documents\ScannedBook"
+python main.py "./ScannedBook" "./output"
 
 # Process all items in a directory
-python main.py --input "C:\Users\yourname\Documents\Research"
+python main.py "./documents" "./output" --all
 ```
+
+See the [CLI Mode and Interactive Mode](#cli-mode-and-interactive-mode) section for detailed usage.
 
 ### Interactive Selection
 
@@ -979,48 +1023,45 @@ AutoExcerpter follows a modular architecture with clear separation of concerns:
 ```
 AutoExcerpter/
 ├── api/                                # LangChain Multi-Provider API Layer
-│   ├── __init__.py                     # Package initialization
-│   ├── llm_client.py                   # Multi-provider LLM client with LangChain
+│   ├── providers/                      # Provider-specific implementations
+│   │   ├── base.py                     # BaseProvider abstract class
+│   │   ├── openai_provider.py          # OpenAI GPT-5/4/o-series
+│   │   ├── anthropic_provider.py       # Anthropic Claude models
+│   │   ├── google_provider.py          # Google Gemini models
+│   │   └── openrouter_provider.py      # OpenRouter multi-provider proxy
+│   ├── llm_client.py                   # Multi-provider LLM client with capability guarding
 │   ├── base_llm_client.py              # Provider-agnostic base class with retry logic
-│   ├── transcribe_api.py               # Transcription API client (TranscriptionManager)
-│   ├── summary_api.py                  # Summary generation API client (SummaryManager)
-│   ├── rate_limiter.py                 # Sliding window rate limiter for API quotas
-│   ├── base_openai_client.py           # [Deprecated] Re-exports from base_llm_client.py
-│   ├── openai_api.py                   # [Deprecated] Re-exports from summary_api.py
-│   └── openai_transcribe_api.py        # [Deprecated] Re-exports from transcribe_api.py
+│   ├── transcribe_api.py               # TranscriptionManager for image-to-text
+│   ├── summary_api.py                  # SummaryManager for structured summaries
+│   └── rate_limiter.py                 # Sliding window rate limiter for API quotas
 │
 ├── core/                               # Core Processing Logic
-│   ├── __init__.py                     # Package initialization
 │   └── transcriber.py                  # Main ItemTranscriber orchestration class
 │
 ├── processors/                         # File I/O and Processing Utilities
-│   ├── __init__.py                     # Package initialization
-│   ├── citation_manager.py             # Citation deduplication and enrichment
+│   ├── citation_manager.py             # Citation deduplication and OpenAlex enrichment
 │   ├── file_manager.py                 # Output file management (TXT, DOCX, JSON)
-│   └── pdf_processor.py                # PDF page extraction and conversion
+│   └── pdf_processor.py                # PDF page extraction and preprocessing
 │
 ├── modules/                            # Configuration and Utilities
-│   ├── config/                         # Configuration Files
-│   │   ├── __init__.py                 # Package initialization
-│   │   ├── app.yaml                    # Main application settings
-│   │   ├── concurrency.yaml            # Concurrency and retry configuration
-│   │   ├── image_processing.yaml       # Image preprocessing parameters
-│   │   └── model.yaml                  # Model-specific parameters
-│   │
+│   ├── config/                         # YAML Configuration Files
+│   │   ├── app.yaml                    # Application settings and paths
+│   │   ├── model.yaml                  # LLM provider and model settings
+│   │   ├── concurrency.yaml            # API concurrency, rate limits, retries
+│   │   └── image_processing.yaml       # Image preprocessing and text cleaning
 │   ├── prompts/                        # System Prompts for AI Models
-│   │   ├── transcription_system_prompt.txt  # Detailed transcription instructions
-│   │   └── summary_system_prompt.txt        # Summarization and citation extraction
-│   │
+│   │   ├── transcription_system_prompt.txt
+│   │   └── summary_system_prompt.txt
 │   ├── schemas/                        # JSON Schemas for Structured Outputs
-│   │   ├── transcription_schema.json   # Schema for transcription API responses
-│   │   └── summary_schema.json         # Schema for summarization API responses
-│   │
-│   ├── __init__.py                     # Package initialization
+│   │   ├── transcription_schema.json
+│   │   └── summary_schema.json
 │   ├── app_config.py                   # Configuration loader with validation
-│   ├── config_loader.py                # YAML parsing utilities
-│   ├── image_utils.py                  # Image preprocessing and format handling
-│   ├── logger.py                       # Logging configuration
-│   └── prompt_utils.py                 # Prompt rendering utilities
+│   ├── config_loader.py                # YAML/JSON parsing utilities
+│   ├── concurrency_helper.py           # Concurrency settings access
+│   ├── image_utils.py                  # In-memory image preprocessing
+│   ├── text_cleaner.py                 # Post-transcription text cleaning
+│   ├── token_tracker.py                # Daily token budget tracking
+│   └── logger.py                       # Logging configuration
 │
 ├── main.py                             # Entry point and CLI interface
 ├── requirements.txt                    # Python dependencies
@@ -1031,12 +1072,12 @@ AutoExcerpter/
 
 **`api/` - LangChain Multi-Provider API Layer**
 - Provides a unified interface for multiple LLM providers (OpenAI, Anthropic, Google, OpenRouter)
+- `providers/`: Provider-specific implementations with capability detection
 - `llm_client.py`: Multi-provider LLM client with model capability profiles and auto-detection
 - `base_llm_client.py`: Provider-agnostic base class with rate limiting integration and schema retries
 - `transcribe_api.py`: TranscriptionManager for image-to-text processing with structured output
 - `summary_api.py`: SummaryManager for generating structured summaries with citation extraction
 - `rate_limiter.py`: Implements sliding window rate limiting to prevent quota violations
-- LangChain handles API retries with exponential backoff automatically
 
 **`core/` - Pipeline Orchestration**
 - Contains the main `ItemTranscriber` class that orchestrates the entire processing pipeline
@@ -1057,8 +1098,9 @@ AutoExcerpter/
 - `schemas/`: JSON schemas that enforce structured output from API responses
 - `app_config.py`: Loads and validates configuration with sensible defaults
 - `image_utils.py`: In-memory image preprocessing to eliminate disk I/O bottlenecks
-- `logger.py`: Centralized logging configuration for debugging and audit trails
-- `prompt_utils.py`: Utilities for loading and formatting prompts
+- `text_cleaner.py`: Post-transcription text cleaning (Unicode, LaTeX, whitespace)
+- `token_tracker.py`: Daily token budget tracking with midnight reset
+- `concurrency_helper.py`: Concurrency and rate limit settings access
 
 **`main.py` - Application Entry Point**
 - CLI interface with input scanning and user selection
@@ -1073,7 +1115,7 @@ AutoExcerpter/
 **Maximizing Throughput:**
 
 To achieve optimal processing speed:
-1. Set `concurrent_requests` based on your OpenAI tier (50-200 for Tier 4+)
+1. Set `concurrency_limit` in `concurrency.yaml` based on your provider tier (OpenAI: 50-150, Anthropic: 5-10)
 2. Use `service_tier: flex` for batch processing (slower but 50% cheaper)
 3. Increase `image_processing.concurrency_limit` to 24-48 on SSD systems
 4. Use `llm_detail: auto` or `low` for straightforward documents
@@ -1084,7 +1126,7 @@ To achieve optimal processing speed:
 For large batch processing:
 - Enable `delete_temp_working_dir: true` to clean up temporary files
 - Process documents in batches rather than all at once
-- Reduce `concurrent_requests` if experiencing memory pressure
+- Reduce `concurrency_limit` in `concurrency.yaml` if experiencing memory pressure
 - Monitor system resources during processing
 
 ### Cost Management
@@ -1154,13 +1196,13 @@ Monitor your OpenAI API usage at https://platform.openai.com/usage to understand
 - If you see this error, ensure you are using the latest version of the application
 
 **Issue: Rate limit errors (429 responses)**
-- Reduce `concurrent_requests` in `app.yaml` (try 2 or 3)
-- Adjust `rate_limits` to match your provider tier limits
-- Enable `use_flex: true` for less aggressive rate limiting (OpenAI only)
+- Reduce `concurrency_limit` in `concurrency.yaml` (try 2 or 3)
+- Adjust `rate_limits` in `concurrency.yaml` to match your provider tier limits
+- Set `service_tier: flex` for less aggressive rate limiting (OpenAI only)
 - Check your API account for quota limits
 
 **Issue: Timeout errors**
-- Increase `api_timeout` in `app.yaml` (e.g., 600 for larger images)
+- Increase `api_timeout` in `concurrency.yaml` (e.g., 600 for larger images)
 - Reduce `target_dpi` in `image_processing.yaml` to decrease image size
 - Use `llm_detail: low` for faster processing
 
@@ -1171,8 +1213,8 @@ Monitor your OpenAI API usage at https://platform.openai.com/usage to understand
 - Check that the correct language and formatting are used in source documents
 
 **Issue: Memory errors during processing**
-- Reduce `concurrent_requests` to limit parallel processing
-- Reduce `concurrency_limit` for transcription tasks
+- Reduce `concurrency_limit` in `concurrency.yaml` for both transcription and summary tasks
+- Reduce `image_processing.concurrency_limit` to limit parallel image processing
 - Process documents in smaller batches
 
 **Issue: "Permission denied" errors when deleting working files**

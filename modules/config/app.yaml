@@ -1,25 +1,54 @@
-# Application-level configuration migrated from config.py
+# =============================================================================
+# Application Configuration
+# =============================================================================
+# Controls runtime behavior, file paths, and feature toggles.
+# Loaded by: modules/app_config.py
+#
+# Related config files:
+#   - model.yaml: LLM provider and model settings
+#   - concurrency.yaml: API rate limits, retries, and parallelism
+#   - image_processing.yaml: Image preprocessing and text cleaning
 
+# =============================================================================
 # Execution Mode
-cli_mode: false  # When true, run as CLI tool with arguments; when false, use interactive prompts
+# =============================================================================
+# Controls how the application receives input
+cli_mode: false  # true = CLI with arguments, false = interactive prompts
 
-# Feature toggle
-summarize: true  # When false, only transcription will be performed
+# =============================================================================
+# Feature Toggles
+# =============================================================================
+# Enable/disable major processing stages
+summarize: true  # false = transcription only (no summarization phase)
 
-# Folder Paths
+# =============================================================================
+# File Paths
+# =============================================================================
+# Input: Directory containing PDFs/images to process
+# Output: Where to write transcription/summary files
 input_folder_path: ''
-output_folder_path: ''
-input_paths_is_output_path: false  # When true, write outputs next to each processed input item
+output_folder_path: ''  # Empty = use input_folder_path as output location
+input_paths_is_output_path: true  # true = write outputs next to each input file
 
+# =============================================================================
 # Cleanup Settings
-delete_temp_working_dir: true  # Delete the item's temporary working directory (including all temp files/images)
+# =============================================================================
+# Controls temporary file retention after processing
+delete_temp_working_dir: true  # Delete extracted images and temp files after completion
 
+# =============================================================================
 # Citation Management
+# =============================================================================
+# OpenAlex API integration for enriching extracted citations with metadata
+# (DOI, publication year, authors, venue, hyperlinks in DOCX output)
 citation:
-  openalex_email: ''  # Email for OpenAlex API polite pool (faster response times)
-  max_api_requests: 300  # Maximum number of API calls for metadata enrichment per document
+  openalex_email: ''  # Required for polite pool (faster responses)
+  max_api_requests: 300  # Cap API calls per document to avoid rate limits
 
+# =============================================================================
 # Daily Token Limit
+# =============================================================================
+# Budget control to prevent runaway API costs
 daily_token_limit:
-  enabled: true  # Enable daily token limit enforcement
-  daily_tokens: 9000000  # Maximum tokens per day (9 million)
+  enabled: true  # Enforce the daily token budget
+  daily_tokens: 7000000  # Max tokens per day (resets at midnight)
