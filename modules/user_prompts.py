@@ -191,6 +191,41 @@ def prompt_continue(message: str = "Press Enter to continue", allow_exit: bool =
         exit_program()
 
 
+def _match_items_by_name(
+    search_term: str,
+    items: Sequence[T],
+    display_func: Callable[[T], str],
+) -> set[int]:
+    """
+    Match items by filename/name search.
+    
+    Args:
+        search_term: The search string to match against item names
+        items: List of items to search through
+        display_func: Function to convert item to display string
+        
+    Returns:
+        Set of indices of matching items (0-based)
+    """
+    search_lower = search_term.lower().strip()
+    matched_indices: set[int] = set()
+    
+    for idx, item in enumerate(items):
+        display_text = display_func(item).lower()
+        # Also try to get just the filename if item has a path attribute
+        item_name = ""
+        if hasattr(item, 'path'):
+            item_name = item.path.name.lower()
+        elif hasattr(item, 'name'):
+            item_name = item.name.lower()
+        
+        # Match against display text or item name
+        if search_lower in display_text or search_lower in item_name:
+            matched_indices.add(idx)
+    
+    return matched_indices
+
+
 def prompt_selection(
     items: Sequence[T],
     display_func: Callable[[T], str],
@@ -234,6 +269,7 @@ def prompt_selection(
     if allow_multiple:
         print(f"    {Colors.DIM}• Enter numbers separated by commas (e.g., '1,3,5'){Colors.ENDC}")
         print(f"    {Colors.DIM}• Enter a range with a dash (e.g., '1-5'){Colors.ENDC}")
+    print(f"    {Colors.DIM}• Enter a filename or part of it to search{Colors.ENDC}")
     if allow_all:
         print(f"    {Colors.DIM}• Enter 'all' to select everything{Colors.ENDC}")
     
@@ -271,47 +307,66 @@ def prompt_selection(
             # Parse selection
             selected_indices: set[int] = set()
             
-            # Split by semicolon or comma for multiple selections
-            # Normalize separators: replace semicolons with commas
-            normalized_input = choice_str.replace(";", ",").replace(" ", "")
-            parts = normalized_input.split(",") if allow_multiple else [choice_str]
+            # First, try to interpret as filename search (if not purely numeric/range pattern)
+            # This allows filenames with spaces, commas, etc. to be matched
+            stripped_input = choice_str.strip()
             
-            for part in parts:
-                if not part:
-                    continue
-                
-                # Handle ranges (e.g., "1-3")
-                if "-" in part and allow_multiple:
-                    try:
-                        start_str, end_str = part.split("-", 1)
-                        start = int(start_str)
-                        end = int(end_str)
-                        
-                        if not (1 <= start <= end <= len(items)):
-                            raise ValueError(
-                                f"Range {part} is invalid. Must be between 1 and {len(items)}."
-                            )
-                        
-                        selected_indices.update(range(start - 1, end))
-                    except ValueError as e:
-                        print_error(f"Invalid range '{part}': {e}")
-                        raise
-                
-                # Handle single numbers
-                elif part.isdigit():
-                    index = int(part) - 1
-                    if not (0 <= index < len(items)):
-                        raise ValueError(
-                            f"Selection {part} is out of range. Must be between 1 and {len(items)}."
-                        )
-                    selected_indices.add(index)
-                    if not allow_multiple:
-                        break
-                
+            # Check if input looks like a numeric selection (numbers, ranges, commas)
+            numeric_pattern = stripped_input.replace(" ", "").replace(";", ",")
+            is_numeric_selection = all(
+                c.isdigit() or c in ",-" for c in numeric_pattern
+            ) and any(c.isdigit() for c in numeric_pattern)
+            
+            if not is_numeric_selection:
+                # Try filename matching first for non-numeric input
+                matched = _match_items_by_name(stripped_input, items, display_func)
+                if matched:
+                    selected_indices.update(matched)
                 else:
                     raise ValueError(
-                        f"Invalid input: '{part}'. Use numbers, ranges (e.g., 1-3), or 'all'."
+                        f"No items found matching '{stripped_input}'. Use numbers, ranges (e.g., 1-3), 'all', or a filename."
                     )
+            else:
+                # Numeric selection: split by semicolon or comma
+                normalized_input = numeric_pattern
+                parts = normalized_input.split(",") if allow_multiple else [stripped_input]
+                
+                for part in parts:
+                    if not part:
+                        continue
+                    
+                    # Handle ranges (e.g., "1-3")
+                    if "-" in part and allow_multiple:
+                        try:
+                            start_str, end_str = part.split("-", 1)
+                            start = int(start_str)
+                            end = int(end_str)
+                            
+                            if not (1 <= start <= end <= len(items)):
+                                raise ValueError(
+                                    f"Range {part} is invalid. Must be between 1 and {len(items)}."
+                                )
+                            
+                            selected_indices.update(range(start - 1, end))
+                        except ValueError as e:
+                            print_error(f"Invalid range '{part}': {e}")
+                            raise
+                    
+                    # Handle single numbers
+                    elif part.isdigit():
+                        index = int(part) - 1
+                        if not (0 <= index < len(items)):
+                            raise ValueError(
+                                f"Selection {part} is out of range. Must be between 1 and {len(items)}."
+                            )
+                        selected_indices.add(index)
+                        if not allow_multiple:
+                            break
+                    
+                    else:
+                        raise ValueError(
+                            f"Invalid input: '{part}'. Use numbers, ranges (e.g., 1-3), 'all', or a filename."
+                        )
             
             if not selected_indices:
                 print_warning("No valid items selected. Please try again.")

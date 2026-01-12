@@ -315,9 +315,20 @@ python main.py
 - Guided item selection for PDFs and image folders discovered under the input path
 - Exit options available at every prompt (`exit`, `quit`, or `q`)
 - Daily token-limit wait screen can be cancelled instantly by typing `q` and pressing Enter
-- Flexible selection syntax supporting single indices (`1`), multiple selections (`1;3;5`), ranges (`1-5`), or `all`
+- Flexible selection syntax supporting single indices (`1`), multiple selections (`1;3;5`), ranges (`1-5`), `all`, or filename search
+- **Filename search**: Enter a filename or partial text to find matching items (case-insensitive)
 - Immediate confirmation and error feedback for each action
 - Inline progress updates for every document processed
+
+**Selection Examples:**
+```
+Select items to process: 42                    # Select item #42
+Select items to process: 1,5,10               # Select items #1, #5, and #10
+Select items to process: 1-10                 # Select items #1 through #10
+Select items to process: all                  # Select all items
+Select items to process: Mennell              # Find items containing "Mennell"
+Select items to process: food history         # Find items containing "food history"
+```
 
 The full interactive interface is documented in `docs/USER_PROMPTS_AND_LOGGING.md`.
 
@@ -332,13 +343,20 @@ cli_mode: true
 
 **Command syntax:**
 ```bash
-python main.py <input> <output> [--all]
+python main.py <input> <output> [--all] [--select PATTERN]
 ```
 
 **Arguments:**
 - `input` (required): Path to a PDF file, an image folder, or a directory containing multiple items
 - `output` (required): Destination directory for generated transcriptions and summaries
-- `--all` (optional): Process every item discovered under the input directory. When omitted, only the first item is processed if multiple items exist.
+- `--all` (optional): Process every item discovered under the input directory
+- `--select PATTERN` (optional): Select items by number, range, or filename pattern. Supports:
+  - Single numbers: `--select 5`
+  - Comma-separated: `--select "1,3,5"`
+  - Ranges: `--select "1-10"`
+  - Filename search: `--select "Mennell"` (case-insensitive partial match)
+
+When neither `--all` nor `--select` is specified, only the first item is processed if multiple items exist.
 
 **Usage examples:**
 
@@ -348,6 +366,18 @@ python main.py "./documents/paper.pdf" "./output"
 
 # Process every item found in a directory
 python main.py "./documents" "./output" --all
+
+# Process specific items by number
+python main.py "./documents" "./output" --select "1,5,10"
+
+# Process a range of items
+python main.py "./documents" "./output" --select "1-20"
+
+# Process items matching a filename pattern
+python main.py "./documents" "./output" --select "Mennell"
+
+# Process items containing specific text (case-insensitive)
+python main.py "./documents" "./output" --select "food history"
 
 # Process with absolute paths on Windows
 python main.py "C:\\Documents\\paper.pdf" "C:\\Output"

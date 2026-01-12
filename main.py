@@ -73,6 +73,12 @@ def setup_argparse() -> argparse.Namespace:
             action="store_true",
             help="Process all items found in input directory without prompting.",
         )
+        parser.add_argument(
+            "--select",
+            type=str,
+            default=None,
+            help="Select items by number (e.g., '1,3,5'), range (e.g., '1-5'), or filename pattern (e.g., 'Mennell').",
+        )
     else:
         # Interactive mode: optional input argument with default from config
         parser.add_argument(
@@ -297,13 +303,14 @@ def _wait_for_token_reset(token_tracker, seconds_until_reset: int) -> bool:
     return True
 
 
-def _parse_execution_mode(args: argparse.Namespace) -> Tuple[Path, Path, bool]:
-    """Parse execution mode and return input path, output path, and process_all flag."""
+def _parse_execution_mode(args: argparse.Namespace) -> Tuple[Path, Path, bool, Optional[str]]:
+    """Parse execution mode and return input path, output path, process_all flag, and select pattern."""
     if config.CLI_MODE:
         # CLI mode: use command line arguments
         input_path_arg = Path(args.input)
         base_output_dir = Path(args.output)
         process_all = args.all
+        select_pattern = args.select
         
         # Resolve relative paths to absolute
         if not input_path_arg.is_absolute():
@@ -317,26 +324,87 @@ def _parse_execution_mode(args: argparse.Namespace) -> Tuple[Path, Path, bool]:
         input_path_arg = Path(args.input)
         base_output_dir = Path(config.OUTPUT_FOLDER_PATH)
         process_all = False
+        select_pattern = None
     
-    return input_path_arg, base_output_dir, process_all
+    return input_path_arg, base_output_dir, process_all, select_pattern
 
 
 def _select_items_for_processing(
-    all_items: List[ItemSpec], process_all: bool
+    all_items: List[ItemSpec], process_all: bool, select_pattern: Optional[str] = None
 ) -> List[ItemSpec]:
     """Select items for processing based on mode and user input."""
     if config.CLI_MODE:
-        # CLI mode: process all items or just the single item
-        if process_all or len(all_items) == 1:
-            logger.info(f"Processing {len(all_items)} item(s) in CLI mode")
+        # CLI mode: process all items, use select pattern, or just the single item
+        if process_all:
+            logger.info(f"Processing all {len(all_items)} item(s) in CLI mode")
+            return list(all_items)
+        elif select_pattern:
+            # Use select pattern to filter items
+            selected = _parse_cli_selection(all_items, select_pattern)
+            if selected:
+                logger.info(f"Processing {len(selected)} item(s) matching '{select_pattern}'")
+                return selected
+            else:
+                logger.error(f"No items found matching '{select_pattern}'")
+                return []
+        elif len(all_items) == 1:
+            logger.info(f"Processing single item in CLI mode")
             return list(all_items)
         else:
-            # If multiple items found but --all not specified, process only the first
-            logger.info(f"Processing first item (use --all to process all {len(all_items)} items)")
+            # If multiple items found but --all/--select not specified, process only the first
+            logger.info(f"Processing first item (use --all or --select to process specific items)")
             return [all_items[0]]
     else:
         # Interactive mode: prompt user for selection
         return prompt_for_item_selection(all_items) or []
+
+
+def _parse_cli_selection(items: List[ItemSpec], pattern: str) -> List[ItemSpec]:
+    """
+    Parse CLI selection pattern and return matching items.
+    
+    Args:
+        items: List of available items
+        pattern: Selection pattern (numbers, ranges, or filename search)
+        
+    Returns:
+        List of selected items
+    """
+    selected_indices: set[int] = set()
+    pattern = pattern.strip()
+    
+    # Check if pattern looks like numeric selection
+    numeric_pattern = pattern.replace(" ", "").replace(";", ",")
+    is_numeric = all(c.isdigit() or c in ",-" for c in numeric_pattern) and any(c.isdigit() for c in numeric_pattern)
+    
+    if not is_numeric:
+        # Filename search
+        search_lower = pattern.lower()
+        for idx, item in enumerate(items):
+            item_name = item.path.name.lower()
+            if search_lower in item_name:
+                selected_indices.add(idx)
+    else:
+        # Numeric selection
+        parts = numeric_pattern.split(",")
+        for part in parts:
+            if not part:
+                continue
+            if "-" in part:
+                try:
+                    start_str, end_str = part.split("-", 1)
+                    start = int(start_str)
+                    end = int(end_str)
+                    if 1 <= start <= end <= len(items):
+                        selected_indices.update(range(start - 1, end))
+                except ValueError:
+                    pass
+            elif part.isdigit():
+                idx = int(part) - 1
+                if 0 <= idx < len(items):
+                    selected_indices.add(idx)
+    
+    return [items[i] for i in sorted(selected_indices)]
 
 
 def _display_processing_summary(selected_items: List[ItemSpec], base_output_dir: Path) -> bool:
@@ -611,7 +679,7 @@ def main() -> None:
     args = setup_argparse()
     
     # Determine input and output paths based on mode
-    input_path_arg, base_output_dir, process_all = _parse_execution_mode(args)
+    input_path_arg, base_output_dir, process_all, select_pattern = _parse_execution_mode(args)
     
     if not config.CLI_MODE:
         print_header(
@@ -646,7 +714,7 @@ def main() -> None:
 
     # Select items based on mode
     selected_items = _select_items_for_processing(
-        all_items_to_consider, process_all
+        all_items_to_consider, process_all, select_pattern
     )
     if not selected_items:
         if not config.CLI_MODE:
