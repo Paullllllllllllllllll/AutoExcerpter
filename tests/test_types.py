@@ -61,20 +61,20 @@ class TestPageNumberInfo:
         """PageNumberInfo holds page number metadata."""
         info: PageNumberInfo = {
             "page_number_integer": 5,
-            "contains_no_page_number": False,
+            "page_number_type": "arabic",
         }
         
         assert info["page_number_integer"] == 5
-        assert info["contains_no_page_number"] is False
+        assert info["page_number_type"] == "arabic"
 
     def test_unnumbered_page(self):
         """PageNumberInfo can represent unnumbered pages."""
         info: PageNumberInfo = {
-            "page_number_integer": 0,
-            "contains_no_page_number": True,
+            "page_number_integer": None,
+            "page_number_type": "none",
         }
         
-        assert info["contains_no_page_number"] is True
+        assert info["page_number_type"] == "none"
 
 
 class TestSummaryContent:
@@ -85,7 +85,7 @@ class TestSummaryContent:
         content: SummaryContent = {
             "page_number": {
                 "page_number_integer": 1,
-                "contains_no_page_number": False,
+                "page_number_type": "arabic",
             },
             "bullet_points": ["Point 1", "Point 2"],
             "references": ["Ref 1"],
@@ -99,8 +99,8 @@ class TestSummaryContent:
         """SummaryContent can represent empty pages."""
         content: SummaryContent = {
             "page_number": {
-                "page_number_integer": 0,
-                "contains_no_page_number": True,
+                "page_number_integer": None,
+                "page_number_type": "none",
             },
             "bullet_points": [],
             "references": [],
@@ -120,7 +120,7 @@ class TestSummaryResult:
             "summary": {
                 "page_number": {
                     "page_number_integer": 1,
-                    "contains_no_page_number": False,
+                    "page_number_type": "arabic",
                 },
                 "bullet_points": ["Point"],
                 "references": [],

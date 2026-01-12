@@ -243,6 +243,43 @@ class TranscriptionManager(LLMClientBase):
             "strict": strict,
         }
 
+    @staticmethod
+    def _format_image_name(image_name: str) -> str:
+        """Format image name for display in failure messages.
+        
+        Args:
+            image_name: Image filename (e.g., 'page_001.png', 'image_42.jpg').
+            
+        Returns:
+            Formatted image name string (keeps original filename).
+        """
+        if not image_name:
+            return "unknown_image"
+        return image_name
+    
+    @staticmethod
+    def _truncate_analysis(text: str, max_chars: int = 100) -> str:
+        """Truncate image analysis text to a reasonable length.
+        
+        Args:
+            text: Full image analysis text.
+            max_chars: Maximum characters to include.
+            
+        Returns:
+            Truncated text with ellipsis if needed.
+        """
+        if not text:
+            return "no details available"
+        text = text.strip()
+        if len(text) <= max_chars:
+            return text
+        # Truncate at word boundary if possible
+        truncated = text[:max_chars]
+        last_space = truncated.rfind(" ")
+        if last_space > max_chars * 0.7:  # Only use word boundary if not too short
+            truncated = truncated[:last_space]
+        return truncated.rstrip(".,;:") + "..."
+
     def _parse_transcription_from_text(self, text: str, image_name: str = "") -> str:
         """
         Parse transcription from JSON response, handling special flags.
@@ -293,14 +330,28 @@ class TranscriptionManager(LLMClientBase):
 
         # Handle special flags in parsed JSON
         if isinstance(obj, dict):
-            # Check for "contains_no_text" flag
+            img_name = self._format_image_name(image_name)
+            
+            # Check for "no_transcribable_text" flag (current schema)
+            if obj.get("no_transcribable_text") is True:
+                image_analysis = obj.get("image_analysis", "")
+                brief_reason = self._truncate_analysis(image_analysis)
+                return f"[{img_name}: no transcribable text — {brief_reason}]"
+            
+            # Check for "transcription_not_possible" flag (current schema)
+            if obj.get("transcription_not_possible") is True:
+                image_analysis = obj.get("image_analysis", "")
+                brief_reason = self._truncate_analysis(image_analysis)
+                return f"[{img_name}: transcription not possible — {brief_reason}]"
+            
+            # Check for legacy "contains_no_text" flag
             if obj.get("contains_no_text") is True:
-                return "[NO TEXT ON PAGE]"
+                return f"[{img_name}: no text on page]"
 
-            # Check for "cannot_transcribe" flag
+            # Check for legacy "cannot_transcribe" flag
             if obj.get("cannot_transcribe") is True:
                 reason = obj.get("reason", "unknown reason")
-                return f"[CANNOT TRANSCRIBE: {reason}]"
+                return f"[{img_name}: cannot transcribe — {reason}]"
 
             # Extract transcription text
             transcription = obj.get("transcription")

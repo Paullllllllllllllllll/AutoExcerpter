@@ -70,6 +70,35 @@ logger = setup_logger(__name__)
 
 
 # ============================================================================
+# Roman Numeral Conversion
+# ============================================================================
+ROMAN_NUMERAL_VALUES = [
+    (1000, 'm'), (900, 'cm'), (500, 'd'), (400, 'cd'),
+    (100, 'c'), (90, 'xc'), (50, 'l'), (40, 'xl'),
+    (10, 'x'), (9, 'ix'), (5, 'v'), (4, 'iv'), (1, 'i')
+]
+
+
+def int_to_roman(num: int) -> str:
+    """Convert integer to lowercase Roman numeral string.
+    
+    Args:
+        num: Positive integer to convert.
+        
+    Returns:
+        Lowercase Roman numeral string.
+    """
+    if num <= 0:
+        return ""
+    result = []
+    for value, numeral in ROMAN_NUMERAL_VALUES:
+        while num >= value:
+            result.append(numeral)
+            num -= value
+    return "".join(result)
+
+
+# ============================================================================
 # Text Sanitization Functions
 # ============================================================================
 def sanitize_for_xml(text: Optional[str]) -> str:
@@ -582,41 +611,61 @@ def _extract_summary_payload(result: dict[str, Any]) -> dict[str, Any]:
 
 
 def _page_number_and_flags(summary_data: dict[str, Any]) -> dict[str, Any]:
-    """Normalize page number information from summary payload."""
+    """Normalize page number information from summary payload.
+    
+    Returns dict with:
+        - page_number_integer: The numeric page number (or "?" if null/missing)
+        - page_number_type: 'roman', 'arabic', or 'none'
+        - is_unnumbered: Boolean flag derived from page_number_type == 'none' or null integer
+    """
     page_number = summary_data.get("page_number", {})
     
-    # Handle dict format (preferred)
-    if isinstance(page_number, dict):
+    # Handle dict format (preferred) - must be non-empty dict
+    if isinstance(page_number, dict) and page_number:
+        page_int = page_number.get("page_number_integer")
+        page_type = page_number.get("page_number_type", "arabic")
+        
+        # Derive unnumbered status from page_number_type or null page_number_integer
+        is_unnumbered = (page_type == "none" or page_int is None)
+        if is_unnumbered:
+            page_type = "none"
+            page_int = "?"
+        
         return {
-            "page_number_integer": page_number.get("page_number_integer", "?"),
-            "contains_no_page_number": bool(page_number.get("contains_no_page_number", False)),
+            "page_number_integer": page_int,
+            "page_number_type": page_type,
+            "is_unnumbered": is_unnumbered,
         }
     
     # Handle int format (legacy)
     if isinstance(page_number, int):
+        is_unnumbered = (page_number == 0)
         return {
             "page_number_integer": page_number,
-            "contains_no_page_number": page_number == 0,
+            "page_number_type": "none" if is_unnumbered else "arabic",
+            "is_unnumbered": is_unnumbered,
         }
     
     # Fallback to page field
+    page_val = summary_data.get("page", "?")
     return {
-        "page_number_integer": summary_data.get("page", "?"),
-        "contains_no_page_number": False,
+        "page_number_integer": page_val,
+        "page_number_type": "arabic",
+        "is_unnumbered": False,
     }
 
 
 def _is_meaningful_summary(summary_data: dict[str, Any]) -> bool:
     """Check if a summary is meaningful (not empty, error, or unnumbered)."""
-    # Check for unnumbered pages (page 0)
+    # Check for unnumbered pages
     page_info = _page_number_and_flags(summary_data)
-    if page_info["contains_no_page_number"]:
+    if page_info["is_unnumbered"]:
         page_int = page_info["page_number_integer"]
-        if isinstance(page_int, int) and page_int == 0:
+        if page_int == "?" or (isinstance(page_int, int) and page_int == 0):
             return False
 
-    # Check for empty or error bullet points
-    bullet_points = summary_data.get("bullet_points", [])
+    # Check for empty/null or error bullet points
+    bullet_points = summary_data.get("bullet_points") or []
     if not bullet_points:
         return False
 
@@ -672,15 +721,24 @@ def create_docx_summary(
         summary_payload = _extract_summary_payload(result)
         page_info = _page_number_and_flags(summary_payload)
         page_number = page_info["page_number_integer"]
-        bullet_points = summary_payload.get("bullet_points", [])
-        references = summary_payload.get("references", [])
+        page_type = page_info["page_number_type"]
+        bullet_points = summary_payload.get("bullet_points") or []
+        references = summary_payload.get("references") or []
 
         # Collect citations for consolidated section
         if references:
             citation_manager.add_citations(references, page_number)
 
-        # Page heading
-        page_heading = document.add_heading(f"Page {page_number}", PAGE_HEADING_LEVEL)
+        # Page heading - differentiate preface (Roman numeral) pages
+        if page_type == "roman" and isinstance(page_number, int):
+            roman_str = int_to_roman(page_number)
+            heading_text = f"Pre-face page {roman_str}"
+        elif page_type == "none" or page_info["is_unnumbered"]:
+            heading_text = "[Unnumbered page]"
+        else:
+            heading_text = f"Page {page_number}"
+        
+        page_heading = document.add_heading(heading_text, PAGE_HEADING_LEVEL)
         page_heading.paragraph_format.space_before = Pt(PAGE_HEADING_SPACE_BEFORE_PT)
         page_heading.paragraph_format.space_after = Pt(PAGE_HEADING_SPACE_AFTER_PT)
 
@@ -791,7 +849,7 @@ def write_transcription_to_text(
             file_handle.write(f"# Successfully transcribed: {successes}\n")
             file_handle.write(f"# Failed items: {failures}\n")
             file_handle.write(
-                f"# Total processing time for this item: {elapsed_str}\n\n---\n\n"
+                f"# Total processing time for this item: {elapsed_str}\n\n"
             )
 
             for index, result in enumerate(transcription_results):
@@ -799,7 +857,7 @@ def write_transcription_to_text(
                     result.get("transcription", "[ERROR] Transcription data missing")
                 )
                 if index < len(transcription_results) - 1:
-                    file_handle.write("\n\n---\n\n")
+                    file_handle.write("\n")
 
         logger.info("Transcription text file saved: %s", output_path)
         return True

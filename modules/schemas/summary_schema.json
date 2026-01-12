@@ -8,20 +8,21 @@
     "properties": {
       "page_number": {
         "type": "object",
-        "description": "Page number information, specifically, the page number (integer) and a boolean indicating whether the page contains no visible or assigned page number.",
+        "description": "Page number information: the page number as an integer (or null if not visible) and the type of numbering system used.",
         "properties": {
           "page_number_integer": {
-            "type": "integer",
-            "description": "Page number of the text being summarized. Page numbers normally appear in headers or footers and may be flanked by the article, chapter, or monograph title or author names."
+            "type": ["integer", "null"],
+            "description": "Page number converted to an integer, or null if no page number is visible. For Roman numerals (i, ii, xii), convert to the equivalent Arabic integer (1, 2, 12). Set to null if the page contains no visible page number. Page numbers normally appear in headers or footers and may be flanked by the article, chapter, or monograph title or author names."
           },
-          "contains_no_page_number": {
-            "type": "boolean",
-            "description": "Set to true **if and only if** the page contains no page number; otherwise, false."
+          "page_number_type": {
+            "type": "string",
+            "enum": ["roman", "arabic", "none"],
+            "description": "Type of page numbering system used on the page: 'roman' for Roman numerals (i, ii, iii, xii), 'arabic' for standard numerals (1, 2, 3), 'none' if no page number is visible on the page."
           }
         },
         "required": [
           "page_number_integer",
-          "contains_no_page_number"
+          "page_number_type"
         ],
         "additionalProperties": false
       },
@@ -30,15 +31,15 @@
         "description": "Set to true **if and only if** the page contains no substantial semantic content, but only lists of references, sources, title or introductory pages, tables of contents, etc."
       },
       "bullet_points": {
-        "type": "array",
-        "description": "2-5 concise bullet-point statements that capture the most essential ideas or findings on the page. Include mathematical formulas in LaTeX format enclosed in $$ ... $$ delimiters (e.g., $$E = mc^2$$). Return an empty array if contains_no_semantic_content is true.",
+        "type": ["array", "null"],
+        "description": "2-5 concise bullet-point statements that capture the most essential ideas or findings on the page. Include mathematical formulas in LaTeX format enclosed in $$ ... $$ delimiters (e.g., $$E = mc^2$$). Set to null if contains_no_semantic_content is true or if no meaningful content can be extracted.",
         "items": {
           "type": "string"
         }
       },
       "references": {
-        "type": "array",
-        "description": "Full bibliographic citations appearing on the page, formatted in American Psychological Association (APA) style.",
+        "type": ["array", "null"],
+        "description": "Full bibliographic citations appearing on the page, formatted in American Psychological Association (APA) style. Set to null if no citations are present on the page.",
         "items": {
           "type": "string"
         }

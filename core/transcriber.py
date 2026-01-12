@@ -46,6 +46,32 @@ ETA_BLEND_WEIGHT_RECENT = 0.3
 # Constants for page number adjustment
 MIN_SEQUENCE_LENGTH_FOR_ANCHOR = 2
 
+# Roman numeral constants
+ROMAN_NUMERAL_VALUES = [
+	(1000, 'm'), (900, 'cm'), (500, 'd'), (400, 'cd'),
+	(100, 'c'), (90, 'xc'), (50, 'l'), (40, 'xl'),
+	(10, 'x'), (9, 'ix'), (5, 'v'), (4, 'iv'), (1, 'i')
+]
+
+
+def int_to_roman(num: int) -> str:
+	"""Convert integer to lowercase Roman numeral string.
+	
+	Args:
+		num: Positive integer to convert.
+		
+	Returns:
+		Lowercase Roman numeral string.
+	"""
+	if num <= 0:
+		return ""
+	result = []
+	for value, numeral in ROMAN_NUMERAL_VALUES:
+		while num >= value:
+			result.append(numeral)
+			num -= value
+	return "".join(result)
+
 
 class ItemTranscriber:
 	"""Process a single input item (PDF or image folder).
@@ -163,19 +189,19 @@ class ItemTranscriber:
 
 	def _create_placeholder_summary(
 		self,
-		page_number: int,
-		contains_no_page_number: bool,
+		page_number: Optional[int],
+		page_number_type: str,
 		bullet_points: List[str],
 		references: Optional[List[str]] = None,
 		contains_no_semantic_content: bool = True,
 		error_message: Optional[str] = None,
 	) -> Dict[str, Any]:
 		payload = {
-			"page": page_number,
+			"page": page_number if page_number is not None else 0,
 			"summary": {
 				"page_number": {
 					"page_number_integer": page_number,
-					"contains_no_page_number": contains_no_page_number
+					"page_number_type": page_number_type
 				},
 				"bullet_points": bullet_points,
 				"references": references or [],
@@ -233,8 +259,8 @@ class ItemTranscriber:
 
 					if "[empty page]" in transcription_text or "[no transcription possible]" in transcription_text:
 						summary_data = self._create_placeholder_summary(
-							page_num_to_use,
-							not has_valid_model_page_num,
+							page_num_to_use if has_valid_model_page_num else None,
+							"arabic" if has_valid_model_page_num else "none",
 							["[Empty page or no transcription possible]"],
 						)
 					else:
@@ -260,8 +286,8 @@ class ItemTranscriber:
 					error_msg = transcription_result.get("error",
 					                                     "Unknown error")
 					summary_data = self._create_placeholder_summary(
-						page_num_to_use,
-						not has_valid_model_page_num,
+						page_num_to_use if has_valid_model_page_num else None,
+						"arabic" if has_valid_model_page_num else "none",
 						[f"[Transcription failed: {error_msg}]"],
 						error_message=error_msg,
 					)
@@ -370,7 +396,7 @@ class ItemTranscriber:
 
 	def _parse_page_number_from_summary(
 		self, summary_result: Dict[str, Any]
-	) -> Tuple[Optional[int], bool]:
+	) -> Tuple[Optional[int], str, bool]:
 		"""
 		Extract page number information from a summary result.
 		
@@ -378,7 +404,8 @@ class ItemTranscriber:
 			summary_result: Summary result dictionary.
 			
 		Returns:
-			Tuple of (model_page_number, is_genuinely_unnumbered).
+			Tuple of (model_page_number, page_number_type, is_genuinely_unnumbered).
+			page_number_type is one of: 'roman', 'arabic', 'none'.
 		"""
 		summary_container = summary_result.get("summary", {})
 		inner_summary = summary_container.get("summary") if isinstance(
@@ -391,29 +418,36 @@ class ItemTranscriber:
 			page_number_obj = summary_container.get('page_number', {})
 		
 		model_page_num = None
-		is_genuinely_unnumbered = False
+		page_number_type = "none"
+		is_genuinely_unnumbered = True
 		
 		if isinstance(page_number_obj, dict):
 			# New schema format with nested page_number object
 			model_page_num = page_number_obj.get('page_number_integer')
-			is_genuinely_unnumbered = page_number_obj.get('contains_no_page_number', False)
+			page_number_type = page_number_obj.get('page_number_type', 'none')
+			
+			# Derive unnumbered status from page_number_type or null page_number_integer
+			is_genuinely_unnumbered = (
+				page_number_type == "none" or model_page_num is None
+			)
+			if is_genuinely_unnumbered:
+				page_number_type = "none"
 		else:
 			# Fallback for old format or direct model_page_number value
 			model_page_str = summary_result.get("model_page_number", "")
 			try:
 				if isinstance(model_page_str, (int, float)):
 					model_page_num = int(model_page_str)
+					page_number_type = "arabic"
+					is_genuinely_unnumbered = False
 				elif isinstance(model_page_str, str) and model_page_str.isdigit():
 					model_page_num = int(model_page_str)
+					page_number_type = "arabic"
+					is_genuinely_unnumbered = False
 			except ValueError:
-				pass  # model_page_num remains None
-			
-			# Check old schema for unnumbered flag on the container if present
-			is_genuinely_unnumbered = bool(
-				summary_container.get('contains_no_page_number', False)
-			)
+				pass  # model_page_num remains None, is_genuinely_unnumbered stays True
 		
-		return model_page_num, is_genuinely_unnumbered
+		return model_page_num, page_number_type, is_genuinely_unnumbered
 
 	def _find_longest_consecutive_sequence(
 		self, summaries_with_pages: List[Dict[str, Any]]
@@ -483,6 +517,9 @@ class ItemTranscriber:
 		"""
 		Adjust page numbers based on model-detected sequences and sort results.
 		
+		Handles both Roman numeral (preface) and Arabic (main text) page numbering
+		systems separately, preserving the original document order.
+		
 		Args:
 			summary_results: List of summary results with page information.
 			
@@ -497,73 +534,88 @@ class ItemTranscriber:
 		# Parse page numbers from all summaries
 		parsed_summaries = []
 		for r in summary_results:
-			model_page_num, is_unnumbered = self._parse_page_number_from_summary(r)
+			model_page_num, page_type, is_unnumbered = self._parse_page_number_from_summary(r)
 			parsed_summaries.append({
 				"original_input_order_index": r["original_input_order_index"],
 				"model_page_number_int": model_page_num,
+				"page_number_type": page_type,
 				"data": r,
 				"is_genuinely_unnumbered": is_unnumbered
 			})
 
-		# Filter to valid model pages for anchor calculation
-		summaries_with_model_pages = [
+		# Separate Roman and Arabic numbered pages
+		roman_pages = [
 			s for s in parsed_summaries
-			if s["model_page_number_int"] is not None and not s["is_genuinely_unnumbered"]
+			if s["model_page_number_int"] is not None 
+			and s["page_number_type"] == "roman"
+			and not s["is_genuinely_unnumbered"]
+		]
+		arabic_pages = [
+			s for s in parsed_summaries
+			if s["model_page_number_int"] is not None 
+			and s["page_number_type"] == "arabic"
+			and not s["is_genuinely_unnumbered"]
 		]
 		
 		logger.info(
-			f"Found {len(summaries_with_model_pages)} pages with valid "
-			"model-detected page numbers"
+			f"Found {len(roman_pages)} Roman numeral pages, "
+			f"{len(arabic_pages)} Arabic numeral pages"
 		)
 		
-		# Determine anchor point for page number adjustment
-		anchor_model_page = 1
-		anchor_original_index = 0
-
-		if summaries_with_model_pages:
-			# Sort by original document order
-			summaries_with_model_pages.sort(key=lambda x: x["original_input_order_index"])
+		# Determine anchor points for each numbering system
+		roman_anchor_page = 1
+		roman_anchor_index = 0
+		arabic_anchor_page = 1
+		arabic_anchor_index = 0
+		
+		# Process Roman numeral sequence
+		if roman_pages:
+			roman_pages.sort(key=lambda x: x["original_input_order_index"])
+			detected_roman = [s["model_page_number_int"] for s in roman_pages]
+			detected_roman_pos = [s["original_input_order_index"] for s in roman_pages]
+			logger.info(f"Roman page numbers (in document order): {detected_roman}")
+			logger.info(f"At document positions: {detected_roman_pos}")
 			
-			# Log detected page numbers for debugging
-			detected_page_nums = [s["model_page_number_int"] for s in summaries_with_model_pages]
-			detected_positions = [s["original_input_order_index"] for s in summaries_with_model_pages]
-			logger.info(f"Model-detected page numbers (in document order): {detected_page_nums}")
-			logger.info(f"At document positions: {detected_positions}")
+			longest_roman_seq = self._find_longest_consecutive_sequence(roman_pages)
+			if longest_roman_seq and len(longest_roman_seq) > MIN_SEQUENCE_LENGTH_FOR_ANCHOR:
+				anchor_item = longest_roman_seq[0]
+				roman_anchor_page = anchor_item["model_page_number_int"]
+				roman_anchor_index = anchor_item["original_input_order_index"]
+				logger.info(f"Roman anchor: page {roman_anchor_page} at index {roman_anchor_index}")
+			elif roman_pages:
+				anchor_item = roman_pages[0]
+				roman_anchor_page = anchor_item["model_page_number_int"]
+				roman_anchor_index = anchor_item["original_input_order_index"]
+				logger.info(f"Roman fallback anchor: page {roman_anchor_page} at index {roman_anchor_index}")
+		
+		# Process Arabic numeral sequence
+		if arabic_pages:
+			arabic_pages.sort(key=lambda x: x["original_input_order_index"])
+			detected_arabic = [s["model_page_number_int"] for s in arabic_pages]
+			detected_arabic_pos = [s["original_input_order_index"] for s in arabic_pages]
+			logger.info(f"Arabic page numbers (in document order): {detected_arabic}")
+			logger.info(f"At document positions: {detected_arabic_pos}")
 			
-			# Find longest consecutive sequence
-			longest_sequence = self._find_longest_consecutive_sequence(summaries_with_model_pages)
-			
-			if longest_sequence and len(longest_sequence) > MIN_SEQUENCE_LENGTH_FOR_ANCHOR:
-				# Use first item of longest sequence as anchor
-				anchor_item = longest_sequence[0]
-				anchor_model_page = anchor_item["model_page_number_int"]
-				anchor_original_index = anchor_item["original_input_order_index"]
-				
-				# Log the found sequence
-				sequence_page_nums = [s["model_page_number_int"] for s in longest_sequence]
-				sequence_indexes = [s["original_input_order_index"] for s in longest_sequence]
-				logger.info(f"Longest consecutive sequence (page numbers): {sequence_page_nums}")
-				logger.info(f"At document positions: {sequence_indexes}")
-				logger.info(
-					f"Using anchor: model page {anchor_model_page} "
-					f"at image index {anchor_original_index}"
-				)
-			elif summaries_with_model_pages:
-				# Fallback to first page with a number if no sequence > threshold
-				anchor_item = summaries_with_model_pages[0]
-				anchor_model_page = anchor_item["model_page_number_int"]
-				anchor_original_index = anchor_item["original_input_order_index"]
-				logger.info(
-					f"No consecutive sequence found. Using first detected page "
-					f"{anchor_model_page} at image index {anchor_original_index} as anchor"
-				)
-		else:
+			longest_arabic_seq = self._find_longest_consecutive_sequence(arabic_pages)
+			if longest_arabic_seq and len(longest_arabic_seq) > MIN_SEQUENCE_LENGTH_FOR_ANCHOR:
+				anchor_item = longest_arabic_seq[0]
+				arabic_anchor_page = anchor_item["model_page_number_int"]
+				arabic_anchor_index = anchor_item["original_input_order_index"]
+				logger.info(f"Arabic anchor: page {arabic_anchor_page} at index {arabic_anchor_index}")
+			elif arabic_pages:
+				anchor_item = arabic_pages[0]
+				arabic_anchor_page = anchor_item["model_page_number_int"]
+				arabic_anchor_index = anchor_item["original_input_order_index"]
+				logger.info(f"Arabic fallback anchor: page {arabic_anchor_page} at index {arabic_anchor_index}")
+		
+		if not roman_pages and not arabic_pages:
 			logger.info("No valid model page numbers detected. Using default numbering starting from 1.")
 
 		# Apply page number adjustment to all summaries
 		final_ordered_summaries = []
 		for s_wrapper in parsed_summaries:
 			original_index = s_wrapper["original_input_order_index"]
+			page_type = s_wrapper["page_number_type"]
 
 			# Ensure the 'summary' key exists and is a dictionary in the data part
 			if "summary" not in s_wrapper["data"] or not isinstance(
@@ -573,28 +625,41 @@ class ItemTranscriber:
 			# Identify the target dict that actually holds page_number (nested summary JSON preferred)
 			target_summary_json = summary_data_dict.get("summary") if isinstance(summary_data_dict.get("summary"), dict) else summary_data_dict
 
-			# Ensure page_number object structure exists
+			# Ensure page_number object structure exists with page_number_type
 			if "page_number" not in target_summary_json or not isinstance(
 					target_summary_json["page_number"], dict):
 				target_summary_json["page_number"] = {
-					"page_number_integer": 0,
-					"contains_no_page_number": False
+					"page_number_integer": None,
+					"page_number_type": "none"
 				}
 
 			if s_wrapper["is_genuinely_unnumbered"]:
-				target_summary_json["page_number"][
-					"page_number_integer"] = 0  # Mark as unnumbered
-				target_summary_json["page_number"][
-					"contains_no_page_number"] = True
-			else:
-				# Default to original_input_order_index + 1 if no reliable anchor logic could be applied
-				adjusted_page = original_index + 1
-				if summaries_with_model_pages:  # Only use anchor logic if valid anchors were derived
-					adjusted_page = self._calculate_adjusted_page_number(
-						original_index, anchor_model_page, anchor_original_index)
-				adjusted_page = max(1, adjusted_page)  # Ensure numbered pages start at 1
+				target_summary_json["page_number"]["page_number_integer"] = None
+				target_summary_json["page_number"]["page_number_type"] = "none"
+			elif page_type == "roman" and roman_pages:
+				# Use Roman anchor for adjustment
+				adjusted_page = self._calculate_adjusted_page_number(
+					original_index, roman_anchor_page, roman_anchor_index)
+				adjusted_page = max(1, adjusted_page)
 				target_summary_json["page_number"]["page_number_integer"] = adjusted_page
-				target_summary_json["page_number"]["contains_no_page_number"] = False
+				target_summary_json["page_number"]["page_number_type"] = "roman"
+			elif page_type == "arabic" and arabic_pages:
+				# Use Arabic anchor for adjustment
+				adjusted_page = self._calculate_adjusted_page_number(
+					original_index, arabic_anchor_page, arabic_anchor_index)
+				adjusted_page = max(1, adjusted_page)
+				target_summary_json["page_number"]["page_number_integer"] = adjusted_page
+				target_summary_json["page_number"]["page_number_type"] = "arabic"
+			else:
+				# No valid page type or no anchors - default to Arabic with index-based numbering
+				adjusted_page = original_index + 1
+				# Try to use Arabic anchor if available
+				if arabic_pages:
+					adjusted_page = self._calculate_adjusted_page_number(
+						original_index, arabic_anchor_page, arabic_anchor_index)
+				adjusted_page = max(1, adjusted_page)
+				target_summary_json["page_number"]["page_number_integer"] = adjusted_page
+				target_summary_json["page_number"]["page_number_type"] = page_type if page_type != "none" else "arabic"
 
 			final_ordered_summaries.append(s_wrapper["data"])
 
@@ -675,7 +740,7 @@ class ItemTranscriber:
 
 			# Save summaries to DOCX file if summarization is enabled
 			if config.SUMMARIZE and summary_results:
-				# Step 1: Adjust page numbers and sort (handles 'contains_no_page_number')
+				# Step 1: Adjust page numbers and sort (uses page_number_type for unnumbered detection)
 				adjusted_summary_results = self._adjust_and_sort_summary_page_numbers(
 					summary_results)
 

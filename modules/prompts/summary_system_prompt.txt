@@ -13,9 +13,10 @@ The text generally uses these formatting conventions:
 Instructions:
 - Use the same language as the input text for your summary.
 - Stick to the input text for your summary; do not hallucinate.
-- If the page contains no substantial content (e.g., reference lists, title pages, table of contents), set contains_no_semantic_content to true and leave bullet_points empty.
+- If the page contains no substantial content (e.g., reference lists, title pages, table of contents), set contains_no_semantic_content to true and set bullet_points to null.
+- Set references to null if no bibliographic citations are present on the page.
 - Extract full bibliographic citations when present and format them in APA style.
-- Ensure the page_number object is accurate.
+- Ensure the page_number object is accurate. Set page_number_integer to null and page_number_type to "none" if no page number is visible.
 - Always enclose mathematical formulas in $$ ... $$ delimiters using LaTeX notation (e.g., $$E = mc^2$$, $$\int_a^b f(x)dx$$).
 
 The JSON schema:

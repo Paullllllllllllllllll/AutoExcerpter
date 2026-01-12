@@ -212,7 +212,7 @@ def mock_summary_response() -> Dict[str, Any]:
     return {
         "page_number": {
             "page_number_integer": 1,
-            "contains_no_page_number": False,
+            "page_number_type": "arabic",
         },
         "bullet_points": [
             "First key point from the page",
@@ -322,7 +322,7 @@ def sample_summary_results() -> list[Dict[str, Any]]:
             "summary": {
                 "page_number": {
                     "page_number_integer": 1,
-                    "contains_no_page_number": False,
+                    "page_number_type": "arabic",
                 },
                 "bullet_points": [
                     "Introduction to the document topic",
@@ -342,7 +342,7 @@ def sample_summary_results() -> list[Dict[str, Any]]:
             "summary": {
                 "page_number": {
                     "page_number_integer": 2,
-                    "contains_no_page_number": False,
+                    "page_number_type": "arabic",
                 },
                 "bullet_points": [
                     "Methodology section begins",

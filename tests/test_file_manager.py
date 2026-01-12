@@ -18,6 +18,7 @@ from processors.file_manager import (
     _extract_summary_payload,
     _page_number_and_flags,
     _is_meaningful_summary,
+    int_to_roman,
 )
 
 
@@ -265,14 +266,14 @@ class TestPageNumberAndFlags:
         summary = {
             "page_number": {
                 "page_number_integer": 5,
-                "contains_no_page_number": False,
+                "page_number_type": "arabic",
             }
         }
         
         result = _page_number_and_flags(summary)
         
         assert result["page_number_integer"] == 5
-        assert result["contains_no_page_number"] is False
+        assert result["is_unnumbered"] is False
 
     def test_int_format(self):
         """Handles integer format page number."""
@@ -288,7 +289,7 @@ class TestPageNumberAndFlags:
         
         result = _page_number_and_flags(summary)
         
-        assert result["contains_no_page_number"] is True
+        assert result["is_unnumbered"] is True
 
     def test_fallback_to_page_field(self):
         """Falls back to 'page' field if page_number missing."""
@@ -308,7 +309,7 @@ class TestIsMeaningfulSummary:
         summary = {
             "page_number": {
                 "page_number_integer": 1,
-                "contains_no_page_number": False,
+                "page_number_type": "arabic",
             },
             "bullet_points": ["Key point 1", "Key point 2"],
             "contains_no_semantic_content": False,
@@ -319,7 +320,7 @@ class TestIsMeaningfulSummary:
     def test_empty_bullet_points(self):
         """Returns False for empty bullet points."""
         summary = {
-            "page_number": {"page_number_integer": 1, "contains_no_page_number": False},
+            "page_number": {"page_number_integer": 1, "page_number_type": "arabic"},
             "bullet_points": [],
             "contains_no_semantic_content": False,
         }
@@ -329,7 +330,7 @@ class TestIsMeaningfulSummary:
     def test_error_marker_in_bullet(self):
         """Returns False when bullet contains error marker."""
         summary = {
-            "page_number": {"page_number_integer": 1, "contains_no_page_number": False},
+            "page_number": {"page_number_integer": 1, "page_number_type": "arabic"},
             "bullet_points": ["[empty page]"],
             "contains_no_semantic_content": False,
         }
@@ -339,7 +340,7 @@ class TestIsMeaningfulSummary:
     def test_no_semantic_content_flag(self):
         """Returns False when contains_no_semantic_content is True."""
         summary = {
-            "page_number": {"page_number_integer": 1, "contains_no_page_number": False},
+            "page_number": {"page_number_integer": 1, "page_number_type": "arabic"},
             "bullet_points": ["Some point"],
             "contains_no_semantic_content": True,
         }
@@ -347,14 +348,172 @@ class TestIsMeaningfulSummary:
         assert _is_meaningful_summary(summary) is False
 
     def test_unnumbered_page_zero(self):
-        """Returns False for unnumbered page 0."""
+        """Returns False for unnumbered page with type 'none'."""
         summary = {
-            "page_number": {"page_number_integer": 0, "contains_no_page_number": True},
+            "page_number": {"page_number_integer": None, "page_number_type": "none"},
             "bullet_points": ["Some point"],
             "contains_no_semantic_content": False,
         }
         
         assert _is_meaningful_summary(summary) is False
+
+    def test_null_bullet_points(self):
+        """Returns False for null bullet_points."""
+        summary = {
+            "page_number": {"page_number_integer": 1, "page_number_type": "arabic"},
+            "bullet_points": None,
+            "contains_no_semantic_content": False,
+        }
+        
+        assert _is_meaningful_summary(summary) is False
+
+    def test_null_references_still_meaningful(self):
+        """Returns True for meaningful summary with null references."""
+        summary = {
+            "page_number": {"page_number_integer": 1, "page_number_type": "arabic"},
+            "bullet_points": ["Key point 1", "Key point 2"],
+            "references": None,
+            "contains_no_semantic_content": False,
+        }
+        
+        assert _is_meaningful_summary(summary) is True
+
+
+class TestIntToRoman:
+    """Tests for int_to_roman function."""
+
+    def test_single_digits(self):
+        """Single digit numbers convert correctly."""
+        assert int_to_roman(1) == "i"
+        assert int_to_roman(2) == "ii"
+        assert int_to_roman(3) == "iii"
+        assert int_to_roman(4) == "iv"
+        assert int_to_roman(5) == "v"
+        assert int_to_roman(6) == "vi"
+        assert int_to_roman(7) == "vii"
+        assert int_to_roman(8) == "viii"
+        assert int_to_roman(9) == "ix"
+
+    def test_double_digits(self):
+        """Double digit numbers convert correctly."""
+        assert int_to_roman(10) == "x"
+        assert int_to_roman(12) == "xii"
+        assert int_to_roman(14) == "xiv"
+        assert int_to_roman(19) == "xix"
+        assert int_to_roman(20) == "xx"
+        assert int_to_roman(50) == "l"
+
+    def test_larger_numbers(self):
+        """Larger numbers convert correctly."""
+        assert int_to_roman(100) == "c"
+        assert int_to_roman(500) == "d"
+        assert int_to_roman(1000) == "m"
+        assert int_to_roman(99) == "xcix"
+        assert int_to_roman(444) == "cdxliv"
+
+    def test_zero_returns_empty(self):
+        """Zero returns empty string."""
+        assert int_to_roman(0) == ""
+
+    def test_negative_returns_empty(self):
+        """Negative numbers return empty string."""
+        assert int_to_roman(-1) == ""
+        assert int_to_roman(-100) == ""
+
+
+class TestPageNumberAndFlagsWithType:
+    """Tests for _page_number_and_flags with page_number_type field."""
+
+    def test_dict_format_with_type(self):
+        """Handles dict format with page_number_type."""
+        summary = {
+            "page_number": {
+                "page_number_integer": 5,
+                "page_number_type": "arabic",
+            }
+        }
+        
+        result = _page_number_and_flags(summary)
+        
+        assert result["page_number_integer"] == 5
+        assert result["page_number_type"] == "arabic"
+        assert result["is_unnumbered"] is False
+
+    def test_roman_page_type(self):
+        """Handles Roman numeral page type."""
+        summary = {
+            "page_number": {
+                "page_number_integer": 12,
+                "page_number_type": "roman",
+            }
+        }
+        
+        result = _page_number_and_flags(summary)
+        
+        assert result["page_number_integer"] == 12
+        assert result["page_number_type"] == "roman"
+        assert result["is_unnumbered"] is False
+
+    def test_none_page_type(self):
+        """Handles 'none' page type for unnumbered pages."""
+        summary = {
+            "page_number": {
+                "page_number_integer": None,
+                "page_number_type": "none",
+            }
+        }
+        
+        result = _page_number_and_flags(summary)
+        
+        assert result["page_number_type"] == "none"
+        assert result["is_unnumbered"] is True
+
+    def test_missing_type_defaults_to_arabic(self):
+        """Missing page_number_type defaults to 'arabic'."""
+        summary = {
+            "page_number": {
+                "page_number_integer": 5,
+            }
+        }
+        
+        result = _page_number_and_flags(summary)
+        
+        assert result["page_number_type"] == "arabic"
+        assert result["is_unnumbered"] is False
+
+    def test_int_format_defaults_to_arabic(self):
+        """Integer format defaults to 'arabic' type."""
+        summary = {"page_number": 10}
+        
+        result = _page_number_and_flags(summary)
+        
+        assert result["page_number_integer"] == 10
+        assert result["page_number_type"] == "arabic"
+
+    def test_fallback_with_page_field(self):
+        """Fallback case uses page field value."""
+        summary = {"page": 3}
+        
+        result = _page_number_and_flags(summary)
+        
+        # Fallback case returns the page value but marks as arabic type
+        assert result["page_number_integer"] == 3
+        assert result["page_number_type"] == "arabic"
+
+    def test_null_page_number_integer(self):
+        """Null page_number_integer is handled as unnumbered."""
+        summary = {
+            "page_number": {
+                "page_number_integer": None,
+                "page_number_type": "arabic",
+            }
+        }
+        
+        result = _page_number_and_flags(summary)
+        
+        assert result["page_number_integer"] == "?"
+        assert result["page_number_type"] == "none"
+        assert result["is_unnumbered"] is True
 
 
 class TestFileManagerIntegration:
