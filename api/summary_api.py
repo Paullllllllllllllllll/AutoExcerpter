@@ -107,6 +107,7 @@ class SummaryManager(LLMClientBase):
         model_name: str,
         provider: ProviderType | None = None,
         api_key: str | None = None,
+        summary_context: str | None = None,
     ) -> None:
         """
         Initialize the summary manager.
@@ -115,6 +116,7 @@ class SummaryManager(LLMClientBase):
             model_name: Model to use (e.g., 'gpt-5-mini', 'claude-sonnet-4-5-20250929').
             provider: Provider name (openai, anthropic, google, openrouter).
             api_key: Optional API key. If None, uses environment variable.
+            summary_context: Optional context string for guiding summarization focus.
         """
         # Initialize rate limiter with provider-agnostic configuration
         rate_limiter = RateLimiter(get_rate_limits())
@@ -125,6 +127,9 @@ class SummaryManager(LLMClientBase):
         self.summary_system_prompt_text: str = ""
 
         self._load_schema_and_prompt()
+        
+        # Store summary context for prompt injection
+        self.summary_context = summary_context
         
         # Load model configuration and determine service tier
         self.model_config = self._load_model_config("summary_model")
@@ -226,7 +231,7 @@ class SummaryManager(LLMClientBase):
             else self.summary_schema
         ) or {}
         system_text = render_prompt_with_schema(
-            self.summary_system_prompt_text, schema_obj
+            self.summary_system_prompt_text, schema_obj, context=self.summary_context
         )
 
         system_msg = SystemMessage(content=system_text)

@@ -21,6 +21,7 @@ from modules.concurrency_helper import (
 from modules.logger import setup_logger
 from modules.path_utils import create_safe_directory_name, create_safe_log_filename
 from modules.text_cleaner import clean_transcription, get_text_cleaning_config
+from modules.context_resolver import resolve_summary_context, format_context_for_prompt
 from modules.types import SummaryResult, TranscriptionResult
 from processors.file_manager import (
     append_to_log,
@@ -84,9 +85,10 @@ class ItemTranscriber:
 		working_dir: Item-specific working directory containing images and logs.
 		transcribe_manager: Manages image transcription via LLM API.
 		summary_manager: Manages summarization via LLM API (if enabled).
+		summary_context: Optional context string for guiding summarization focus.
 	"""
 	def __init__(self, input_path: Path, input_type: str,
-	             base_output_dir: Path):
+	             base_output_dir: Path, summary_context: Optional[str] = None):
 		self.input_path = input_path
 		self.input_type = input_type  # "pdf" or "image_folder"
 		self.name = self.input_path.stem
@@ -141,10 +143,24 @@ class ItemTranscriber:
 
 		# Only initialize summary manager if summarization is enabled
 		self.summary_manager = None
+		self.summary_context = None
 		if config.SUMMARIZE:
+			# Resolve summary context: CLI/interactive context takes precedence,
+			# then file-specific, folder-specific, or general context
+			if summary_context:
+				self.summary_context = summary_context
+				logger.info(f"Using user-provided summary context: {summary_context[:50]}..." if len(summary_context) > 50 else f"Using user-provided summary context: {summary_context}")
+			else:
+				# Try hierarchical context resolution
+				resolved_context, context_path = resolve_summary_context(input_file=input_path)
+				if resolved_context:
+					self.summary_context = format_context_for_prompt(resolved_context)
+					logger.info(f"Resolved summary context from: {context_path}")
+			
 			self.summary_manager = SummaryManager(
 				model_name=self.summary_model,
 				provider=summary_provider,
+				summary_context=self.summary_context,
 			)
 
 		# Image preprocessing is handled within modules.image_utils inside the transcription manager.

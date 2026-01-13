@@ -19,6 +19,7 @@ AutoExcerpter is an intelligent document processing pipeline that automatically 
     -   [Concurrency Configuration](#concurrency-configuration)
     -   [Image Processing Configuration](#image-processing-configuration)
     -   [Text Cleaning Configuration](#text-cleaning-configuration)
+    -   [Summary Context Configuration](#summary-context-configuration)
     -   [Citation Management](#citation-management)
     -   [Daily Token Limit Tracking](#daily-token-limit-tracking)
 -   [Usage](#usage)
@@ -62,6 +63,7 @@ AutoExcerpter processes documents through a sophisticated two-stage pipeline tha
 -   **Page Tracking**: Accurately tracks page numbers from document headers and footers
 -   **Dual Output Formats**: Exports summaries as both formatted DOCX documents and Markdown files for maximum flexibility
 -   **Markdown Output**: Version-control friendly `.md` files compatible with Writage and other markdown-to-Word tools
+-   **Focused Summarization**: Hierarchical context system allows file-specific, folder-specific, or general context to guide the model to pay special attention to specific topics during summarization
 
 **Enhanced Citation Management:**
 
@@ -432,7 +434,7 @@ cli_mode: true
 **Command syntax:**
 
 ```bash
-python main.py <input> <output> [--all] [--select PATTERN]
+python main.py <input> <output> [--all] [--select PATTERN] [--context TOPICS]
 ```
 
 **Arguments:**
@@ -445,6 +447,7 @@ python main.py <input> <output> [--all] [--select PATTERN]
     -   Comma-separated: `--select "1,3,5"`
     -   Ranges: `--select "1-10"`
     -   Filename search: `--select "Mennell"` (case-insensitive partial match)
+-   `--context TOPICS` (optional): Specify topics for focused summarization. The model will pay special attention to content related to these topics and summarize them in greater detail. Example: `--context "Food History, Wages, Early Modern"`
 
 When neither `--all` nor `--select` is specified, only the first item is processed if multiple items exist.
 
@@ -468,6 +471,9 @@ python main.py "./documents" "./output" --select "Mennell"
 
 # Process items containing specific text (case-insensitive)
 python main.py "./documents" "./output" --select "food history"
+
+# Process with focused summarization on specific topics
+python main.py "./documents" "./output" --all --context "Food History, Wages, Early Modern"
 
 # Process with absolute paths on Windows
 python main.py "C:Documentspaper.pdf" "C:Output"
@@ -899,6 +905,58 @@ text_cleaning:
 -   **Line wrapping** optionally reflows especially long lines using indentation-aware wrapping or automatically computed widths.
 
 These cleanups run immediately after each successful transcription so both the TXT output and downstream summarization benefit from the sanitized text.
+
+### Summary Context Configuration
+
+AutoExcerpter supports a hierarchical context system that allows you to guide the summarization model to pay special attention to specific topics. This is useful when you want more detailed summaries for content related to particular subjects.
+
+**Context Resolution Hierarchy (highest to lowest priority):**
+
+1. **CLI/Interactive Context**: Provided via `--context` flag or interactive prompt
+2. **File-Specific Context**: `<filename>_summary_context.txt` next to the input file
+3. **Folder-Specific Context**: `<foldername>_summary_context.txt` in the parent directory
+4. **General Context**: `context/summary/general.txt` in the project root
+
+**Creating Context Files:**
+
+Create a plain text file with topics or keywords that you want the model to focus on during summarization:
+
+```text
+Food History
+Wages and Labor Economics
+Early Modern History
+Agricultural Trade
+```
+
+**File Naming Examples:**
+
+```
+# For a single PDF: my_document.pdf
+my_document_summary_context.txt
+
+# For all files in a folder named "research_papers"
+research_papers_summary_context.txt
+
+# For all documents (global fallback)
+context/summary/general.txt
+```
+
+**Usage:**
+
+```bash
+# CLI mode: specify context directly
+python main.py "./documents" "./output" --all --context "Food History, Wages, Early Modern"
+
+# Interactive mode: prompted after item selection (if summarization enabled)
+# Or use context files for automatic resolution
+```
+
+**How It Works:**
+
+When context is provided (via any method), the summarization prompt includes an instruction like:
+> "Pay special attention to the following topics during summarization. Content related to these topics should be summarized in greater detail: Food History, Wages, Early Modern History."
+
+If no context is found through any of these methods, summarization proceeds normally without topic-specific focus.
 
 ### Citation Management
 

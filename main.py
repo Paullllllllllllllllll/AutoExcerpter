@@ -79,6 +79,12 @@ def setup_argparse() -> argparse.Namespace:
             default=None,
             help="Select items by number (e.g., '1,3,5'), range (e.g., '1-5'), or filename pattern (e.g., 'Mennell').",
         )
+        parser.add_argument(
+            "--context",
+            type=str,
+            default=None,
+            help="Summary context: topics to focus on during summarization (e.g., 'Food History, Wages, Early Modern').",
+        )
     else:
         # Interactive mode: optional input argument with default from config
         parser.add_argument(
@@ -124,6 +130,7 @@ def _process_single_item(
     index: int,
     total_items: int,
     base_output_dir: Path,
+    summary_context: Optional[str] = None,
 ) -> bool:
     """
     Process a single PDF or image folder item.
@@ -133,6 +140,7 @@ def _process_single_item(
         index: Current item index (1-based).
         total_items: Total number of items to process.
         base_output_dir: Base directory for outputs.
+        summary_context: Optional context for guiding summarization focus.
         
     Returns:
         True if processing succeeded, False otherwise.
@@ -170,7 +178,9 @@ def _process_single_item(
     # Process the item
     transcriber_instance: Optional[ItemTranscriber] = None
     try:
-        transcriber_instance = ItemTranscriber(item_spec.path, item_spec.kind, base_output_dir)
+        transcriber_instance = ItemTranscriber(
+            item_spec.path, item_spec.kind, base_output_dir, summary_context=summary_context
+        )
         transcriber_instance.process_item()
         
         if config.CLI_MODE:
@@ -303,14 +313,15 @@ def _wait_for_token_reset(token_tracker, seconds_until_reset: int) -> bool:
     return True
 
 
-def _parse_execution_mode(args: argparse.Namespace) -> Tuple[Path, Path, bool, Optional[str]]:
-    """Parse execution mode and return input path, output path, process_all flag, and select pattern."""
+def _parse_execution_mode(args: argparse.Namespace) -> Tuple[Path, Path, bool, Optional[str], Optional[str]]:
+    """Parse execution mode and return input path, output path, process_all flag, select pattern, and context."""
     if config.CLI_MODE:
         # CLI mode: use command line arguments
         input_path_arg = Path(args.input)
         base_output_dir = Path(args.output)
         process_all = args.all
         select_pattern = args.select
+        summary_context = args.context
         
         # Resolve relative paths to absolute
         if not input_path_arg.is_absolute():
@@ -319,14 +330,17 @@ def _parse_execution_mode(args: argparse.Namespace) -> Tuple[Path, Path, bool, O
             base_output_dir = Path.cwd() / base_output_dir
         
         logger.info(f"CLI Mode: Input={input_path_arg}, Output={base_output_dir}")
+        if summary_context:
+            logger.info(f"CLI Mode: Summary context={summary_context}")
     else:
         # Interactive mode: use config defaults and prompts
         input_path_arg = Path(args.input)
         base_output_dir = Path(config.OUTPUT_FOLDER_PATH)
         process_all = False
         select_pattern = None
+        summary_context = None
     
-    return input_path_arg, base_output_dir, process_all, select_pattern
+    return input_path_arg, base_output_dir, process_all, select_pattern, summary_context
 
 
 def _select_items_for_processing(
@@ -407,12 +421,17 @@ def _parse_cli_selection(items: List[ItemSpec], pattern: str) -> List[ItemSpec]:
     return [items[i] for i in sorted(selected_indices)]
 
 
-def _display_processing_summary(selected_items: List[ItemSpec], base_output_dir: Path) -> bool:
+def _display_processing_summary(
+    selected_items: List[ItemSpec],
+    base_output_dir: Path,
+    summary_context: Optional[str] = None,
+) -> bool:
     """Display detailed processing summary and ask for confirmation.
     
     Args:
         selected_items: List of items selected for processing
         base_output_dir: Output directory path
+        summary_context: Optional summary context for focused summarization
         
     Returns:
         True if user confirms, False to cancel
@@ -458,6 +477,12 @@ def _display_processing_summary(selected_items: List[ItemSpec], base_output_dir:
     # Summarization
     if config.SUMMARIZE:
         print_info(f"    • Summarization: Enabled")
+        if summary_context:
+            # Truncate long context for display
+            display_context = summary_context if len(summary_context) <= 60 else summary_context[:57] + "..."
+            print_dim(f"      - Focus topics: {display_context}")
+        else:
+            print_dim(f"      - Focus topics: Auto-resolved from context files")
     else:
         print_info(f"    • Summarization: Disabled (transcription only)")
     
@@ -675,11 +700,38 @@ def _display_completion_summary(processed_count: int, total_count: int, output_d
     print()
 
 
+def _prompt_for_summary_context() -> Optional[str]:
+    """Prompt user for optional summary context in interactive mode.
+    
+    Returns:
+        Summary context string or None if skipped.
+    """
+    if not config.SUMMARIZE:
+        return None
+    
+    print()
+    print_info("You can optionally provide topics to focus on during summarization.")
+    print_dim("  Example: 'Food History, Wages, Early Modern History'")
+    print_dim("  Press Enter to skip and use automatic context resolution.")
+    print()
+    
+    try:
+        context_input = input(f"{Colors.PROMPT}Summary context (or Enter to skip): {Colors.ENDC}").strip()
+        if context_input:
+            print_success(f"Using summary context: {context_input}")
+            return context_input
+        else:
+            print_dim("  No context provided. Will use file/folder/general context if available.")
+            return None
+    except (KeyboardInterrupt, EOFError):
+        return None
+
+
 def main() -> None:
     args = setup_argparse()
     
     # Determine input and output paths based on mode
-    input_path_arg, base_output_dir, process_all, select_pattern = _parse_execution_mode(args)
+    input_path_arg, base_output_dir, process_all, select_pattern, summary_context = _parse_execution_mode(args)
     
     if not config.CLI_MODE:
         print_header(
@@ -723,9 +775,13 @@ def main() -> None:
 
     logger.info("Selected %s item(s) for processing.", len(selected_items))
     
+    # Prompt for summary context in interactive mode (if summarization enabled and not already set)
+    if not config.CLI_MODE and config.SUMMARIZE and not summary_context:
+        summary_context = _prompt_for_summary_context()
+    
     # Display processing summary and get confirmation (interactive mode only)
     if not config.CLI_MODE:
-        confirmed = _display_processing_summary(selected_items, base_output_dir)
+        confirmed = _display_processing_summary(selected_items, base_output_dir, summary_context)
         if not confirmed:
             print_info("Processing cancelled by user.")
             sys.exit(0)
@@ -767,7 +823,7 @@ def main() -> None:
         item_output_dir.mkdir(parents=True, exist_ok=True)
         
         # Process this file
-        success = _process_single_item(item_spec, index, len(selected_items), item_output_dir)
+        success = _process_single_item(item_spec, index, len(selected_items), item_output_dir, summary_context)
         if success:
             processed_count += 1
         

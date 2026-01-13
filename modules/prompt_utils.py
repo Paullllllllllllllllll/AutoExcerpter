@@ -28,7 +28,8 @@ while maintaining flexibility in template design.
 from __future__ import annotations
 
 import json
-from typing import Any, Dict
+import re
+from typing import Any, Dict, Optional
 
 from modules.logger import setup_logger
 
@@ -49,22 +50,31 @@ DEFAULT_INDENT = 2
 # ============================================================================
 # Prompt Rendering Functions
 # ============================================================================
-def render_prompt_with_schema(prompt_text: str, schema_obj: Dict[str, Any]) -> str:
+def render_prompt_with_schema(
+    prompt_text: str,
+    schema_obj: Dict[str, Any],
+    context: Optional[str] = None,
+) -> str:
     """
-    Inject a JSON schema into a prompt using one of four strategies.
+    Inject a JSON schema and optional context into a prompt.
 
-    This function supports four ways to inject a schema:
+    This function supports multiple injection strategies:
     1. Token replacement: If "{{SCHEMA}}" exists, replace it
     2. Legacy token replacement: If "{{TRANSCRIPTION_SCHEMA}}" exists, replace it
     3. Marker replacement: If "The JSON schema:" exists, replace JSON after it
     4. Append: If none exist, append schema at the end
+    
+    For context injection:
+    - If "{{CONTEXT}}" placeholder exists and context is provided, it's replaced
+    - If context is None or empty, the entire context line is removed
 
     Args:
         prompt_text: The prompt template text
         schema_obj: The JSON schema object to inject
+        context: Optional context string to inject (topics to focus on)
 
     Returns:
-        Prompt text with schema injected
+        Prompt text with schema and context injected
 
     Raises:
         ValueError: If prompt_text is empty or schema_obj is invalid
@@ -82,6 +92,9 @@ def render_prompt_with_schema(prompt_text: str, schema_obj: Dict[str, Any]) -> s
     if not isinstance(schema_obj, dict):
         logger.warning(f"Invalid schema_obj type: {type(schema_obj)}. Expected dict.")
         raise ValueError("schema_obj must be a dictionary")
+
+    # Handle context placeholder
+    prompt_text = _inject_context(prompt_text, context)
 
     # Convert schema to pretty-printed JSON
     try:
@@ -143,3 +156,32 @@ def _replace_schema_at_marker(prompt_text: str, schema_str: str) -> str:
         + schema_str
         + prompt_text[end_brace + 1:]
     )
+
+
+def _inject_context(prompt_text: str, context: Optional[str]) -> str:
+    """
+    Inject context into a prompt or remove the context placeholder.
+
+    If context is provided and non-empty, replaces {{CONTEXT}} with the context.
+    If context is None or empty, removes the entire line containing {{CONTEXT}}.
+
+    Args:
+        prompt_text: The prompt text potentially containing {{CONTEXT}}
+        context: Optional context string to inject
+
+    Returns:
+        Updated prompt text with context injected or placeholder removed
+    """
+    context_placeholder = "{{CONTEXT}}"
+    
+    if context_placeholder not in prompt_text:
+        return prompt_text
+    
+    if context and context.strip():
+        # Replace placeholder with actual context
+        return prompt_text.replace(context_placeholder, context.strip())
+    else:
+        # Remove entire line containing the placeholder to save tokens
+        # Pattern matches lines containing {{CONTEXT}} including the line break
+        prompt_text = re.sub(r"^.*\{\{CONTEXT\}\}.*\n?", "", prompt_text, flags=re.MULTILINE)
+        return prompt_text
