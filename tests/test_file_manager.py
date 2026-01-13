@@ -16,12 +16,16 @@ from processors.file_manager import (
     normalize_latex_whitespace,
     simplify_problematic_latex,
     _extract_summary_payload,
-    _page_number_and_flags,
+    _page_information,
     _is_meaningful_summary,
+    _should_render_bullets,
+    _get_structure_types,
     _format_page_heading_md,
     int_to_roman,
     create_markdown_summary,
     filter_empty_pages,
+    PAGE_TYPES_WITH_BULLETS,
+    STRUCTURE_PAGE_TYPE_ORDER,
 )
 
 
@@ -262,43 +266,46 @@ class TestExtractSummaryPayload:
 
 
 class TestPageNumberAndFlags:
-    """Tests for _page_number_and_flags function."""
+    """Tests for _page_information function."""
 
     def test_dict_format(self):
         """Handles dict format page number."""
         summary = {
-            "page_number": {
+            "page_information": {
                 "page_number_integer": 5,
                 "page_number_type": "arabic",
             }
         }
         
-        result = _page_number_and_flags(summary)
+        result = _page_information(summary)
         
         assert result["page_number_integer"] == 5
         assert result["is_unnumbered"] is False
 
-    def test_int_format(self):
-        """Handles integer format page number."""
-        summary = {"page_number": 10}
+    def test_fallback_to_page_field_only(self):
+        """Falls back to page field when page_information is missing."""
+        summary = {"page": 10}
         
-        result = _page_number_and_flags(summary)
+        result = _page_information(summary)
         
         assert result["page_number_integer"] == 10
+        assert result["page_types"] == ["content"]
 
-    def test_zero_page_number(self):
-        """Zero page number indicates no page number."""
-        summary = {"page_number": 0}
+    def test_empty_page_information(self):
+        """Empty page_information dict falls back to page field."""
+        summary = {"page_information": {}, "page": 5}
         
-        result = _page_number_and_flags(summary)
+        result = _page_information(summary)
         
-        assert result["is_unnumbered"] is True
+        # Empty dict is falsy, so falls back to page field
+        assert result["page_number_integer"] == 5
+        assert result["is_unnumbered"] is False
 
     def test_fallback_to_page_field(self):
         """Falls back to 'page' field if page_number missing."""
         summary = {"page": 3}
         
-        result = _page_number_and_flags(summary)
+        result = _page_information(summary)
         
         # The function may return '?' for missing page_number or the page value
         assert result["page_number_integer"] in (3, "?")
@@ -310,12 +317,12 @@ class TestIsMeaningfulSummary:
     def test_meaningful_summary(self):
         """Returns True for meaningful summary."""
         summary = {
-            "page_number": {
+            "page_information": {
                 "page_number_integer": 1,
                 "page_number_type": "arabic",
             },
             "bullet_points": ["Key point 1", "Key point 2"],
-            "contains_no_semantic_content": False,
+            "page_type": "content",
         }
         
         assert _is_meaningful_summary(summary) is True
@@ -323,9 +330,9 @@ class TestIsMeaningfulSummary:
     def test_empty_bullet_points(self):
         """Returns False for empty bullet points."""
         summary = {
-            "page_number": {"page_number_integer": 1, "page_number_type": "arabic"},
+            "page_information": {"page_number_integer": 1, "page_number_type": "arabic"},
             "bullet_points": [],
-            "contains_no_semantic_content": False,
+            "page_type": "content",
         }
         
         assert _is_meaningful_summary(summary) is False
@@ -333,39 +340,42 @@ class TestIsMeaningfulSummary:
     def test_error_marker_in_bullet(self):
         """Returns False when bullet contains error marker."""
         summary = {
-            "page_number": {"page_number_integer": 1, "page_number_type": "arabic"},
+            "page_information": {"page_number_integer": 1, "page_number_type": "arabic"},
             "bullet_points": ["[empty page]"],
-            "contains_no_semantic_content": False,
+            "page_type": "content",
         }
         
         assert _is_meaningful_summary(summary) is False
 
-    def test_no_semantic_content_flag(self):
-        """Returns False when contains_no_semantic_content is True."""
+    def test_blank_page_type(self):
+        """Returns False when page_type is 'blank'."""
         summary = {
-            "page_number": {"page_number_integer": 1, "page_number_type": "arabic"},
-            "bullet_points": ["Some point"],
-            "contains_no_semantic_content": True,
+            "page_information": {"page_number_integer": 1, "page_number_type": "arabic", "page_type": "blank"},
+            "bullet_points": None,
         }
         
         assert _is_meaningful_summary(summary) is False
 
-    def test_unnumbered_page_zero(self):
-        """Returns False for unnumbered page with type 'none'."""
+    def test_unnumbered_page_with_content_type(self):
+        """Content pages with bullet points are meaningful even if unnumbered."""
         summary = {
-            "page_number": {"page_number_integer": None, "page_number_type": "none"},
+            "page_information": {
+                "page_number_integer": None,
+                "page_number_type": "none",
+                "page_type": "content",
+            },
             "bullet_points": ["Some point"],
-            "contains_no_semantic_content": False,
         }
         
-        assert _is_meaningful_summary(summary) is False
+        # Content pages with bullet points are meaningful
+        assert _is_meaningful_summary(summary) is True
 
     def test_null_bullet_points(self):
         """Returns False for null bullet_points."""
         summary = {
-            "page_number": {"page_number_integer": 1, "page_number_type": "arabic"},
+            "page_information": {"page_number_integer": 1, "page_number_type": "arabic"},
             "bullet_points": None,
-            "contains_no_semantic_content": False,
+            "page_type": "content",
         }
         
         assert _is_meaningful_summary(summary) is False
@@ -373,10 +383,10 @@ class TestIsMeaningfulSummary:
     def test_null_references_still_meaningful(self):
         """Returns True for meaningful summary with null references."""
         summary = {
-            "page_number": {"page_number_integer": 1, "page_number_type": "arabic"},
+            "page_information": {"page_number_integer": 1, "page_number_type": "arabic"},
             "bullet_points": ["Key point 1", "Key point 2"],
             "references": None,
-            "contains_no_semantic_content": False,
+            "page_type": "content",
         }
         
         assert _is_meaningful_summary(summary) is True
@@ -425,18 +435,18 @@ class TestIntToRoman:
 
 
 class TestPageNumberAndFlagsWithType:
-    """Tests for _page_number_and_flags with page_number_type field."""
+    """Tests for _page_information with page_number_type field."""
 
     def test_dict_format_with_type(self):
         """Handles dict format with page_number_type."""
         summary = {
-            "page_number": {
+            "page_information": {
                 "page_number_integer": 5,
                 "page_number_type": "arabic",
             }
         }
         
-        result = _page_number_and_flags(summary)
+        result = _page_information(summary)
         
         assert result["page_number_integer"] == 5
         assert result["page_number_type"] == "arabic"
@@ -445,13 +455,13 @@ class TestPageNumberAndFlagsWithType:
     def test_roman_page_type(self):
         """Handles Roman numeral page type."""
         summary = {
-            "page_number": {
+            "page_information": {
                 "page_number_integer": 12,
                 "page_number_type": "roman",
             }
         }
         
-        result = _page_number_and_flags(summary)
+        result = _page_information(summary)
         
         assert result["page_number_integer"] == 12
         assert result["page_number_type"] == "roman"
@@ -460,13 +470,13 @@ class TestPageNumberAndFlagsWithType:
     def test_none_page_type(self):
         """Handles 'none' page type for unnumbered pages."""
         summary = {
-            "page_number": {
+            "page_information": {
                 "page_number_integer": None,
                 "page_number_type": "none",
             }
         }
         
-        result = _page_number_and_flags(summary)
+        result = _page_information(summary)
         
         assert result["page_number_type"] == "none"
         assert result["is_unnumbered"] is True
@@ -474,21 +484,21 @@ class TestPageNumberAndFlagsWithType:
     def test_missing_type_defaults_to_arabic(self):
         """Missing page_number_type defaults to 'arabic'."""
         summary = {
-            "page_number": {
+            "page_information": {
                 "page_number_integer": 5,
             }
         }
         
-        result = _page_number_and_flags(summary)
+        result = _page_information(summary)
         
         assert result["page_number_type"] == "arabic"
         assert result["is_unnumbered"] is False
 
-    def test_int_format_defaults_to_arabic(self):
-        """Integer format defaults to 'arabic' type."""
-        summary = {"page_number": 10}
+    def test_page_field_fallback_defaults_to_arabic(self):
+        """Fallback to page field uses arabic type."""
+        summary = {"page": 10}
         
-        result = _page_number_and_flags(summary)
+        result = _page_information(summary)
         
         assert result["page_number_integer"] == 10
         assert result["page_number_type"] == "arabic"
@@ -497,7 +507,7 @@ class TestPageNumberAndFlagsWithType:
         """Fallback case uses page field value."""
         summary = {"page": 3}
         
-        result = _page_number_and_flags(summary)
+        result = _page_information(summary)
         
         # Fallback case returns the page value but marks as arabic type
         assert result["page_number_integer"] == 3
@@ -506,13 +516,13 @@ class TestPageNumberAndFlagsWithType:
     def test_null_page_number_integer(self):
         """Null page_number_integer is handled as unnumbered."""
         summary = {
-            "page_number": {
+            "page_information": {
                 "page_number_integer": None,
                 "page_number_type": "arabic",
             }
         }
         
-        result = _page_number_and_flags(summary)
+        result = _page_information(summary)
         
         assert result["page_number_integer"] == "?"
         assert result["page_number_type"] == "none"
@@ -547,28 +557,38 @@ class TestFormatPageHeadingMd:
 
     def test_arabic_page_number(self):
         """Arabic page numbers format correctly."""
-        result = _format_page_heading_md(5, "arabic", False)
+        result = _format_page_heading_md(5, "arabic", "content", False)
         assert result == "## Page 5"
 
     def test_roman_page_number(self):
-        """Roman numeral pages format with Pre-face prefix."""
-        result = _format_page_heading_md(3, "roman", False)
-        assert result == "## Pre-face page iii"
+        """Roman numeral pages format with Page prefix and roman numeral."""
+        result = _format_page_heading_md(3, "roman", "content", False)
+        assert result == "## Page iii"
 
     def test_unnumbered_page_via_type(self):
-        """Unnumbered pages via page_type='none' format correctly."""
-        result = _format_page_heading_md("?", "none", False)
+        """Unnumbered pages via page_number_type='none' format correctly."""
+        result = _format_page_heading_md("?", "none", "content", False)
         assert result == "## [Unnumbered page]"
 
     def test_unnumbered_page_via_flag(self):
         """Unnumbered pages via is_unnumbered flag format correctly."""
-        result = _format_page_heading_md("?", "arabic", True)
+        result = _format_page_heading_md("?", "arabic", "content", True)
         assert result == "## [Unnumbered page]"
 
     def test_string_page_number(self):
         """String page numbers are handled."""
-        result = _format_page_heading_md("42", "arabic", False)
+        result = _format_page_heading_md("42", "arabic", "content", False)
         assert result == "## Page 42"
+
+    def test_preface_page_type(self):
+        """Preface page type adds prefix."""
+        result = _format_page_heading_md(1, "roman", "preface", False)
+        assert result == "## [Preface] Page i"
+
+    def test_appendix_page_type(self):
+        """Appendix page type adds prefix."""
+        result = _format_page_heading_md(100, "arabic", "appendix", False)
+        assert result == "## [Appendix] Page 100"
 
 
 class TestCreateMarkdownSummary:
@@ -580,10 +600,10 @@ class TestCreateMarkdownSummary:
         summary_results = [
             {
                 "summary": {
-                    "page_number": {"page_number_integer": 1, "page_number_type": "arabic"},
+                    "page_information": {"page_number_integer": 1, "page_number_type": "arabic"},
                     "bullet_points": ["Point 1", "Point 2"],
                     "references": [],
-                    "contains_no_semantic_content": False,
+                    "page_type": "content",
                 }
             }
         ]
@@ -598,10 +618,10 @@ class TestCreateMarkdownSummary:
         summary_results = [
             {
                 "summary": {
-                    "page_number": {"page_number_integer": 1, "page_number_type": "arabic"},
+                    "page_information": {"page_number_integer": 1, "page_number_type": "arabic"},
                     "bullet_points": ["Point 1"],
                     "references": [],
-                    "contains_no_semantic_content": False,
+                    "page_type": "content",
                 }
             }
         ]
@@ -617,10 +637,10 @@ class TestCreateMarkdownSummary:
         summary_results = [
             {
                 "summary": {
-                    "page_number": {"page_number_integer": 1, "page_number_type": "arabic"},
+                    "page_information": {"page_number_integer": 1, "page_number_type": "arabic"},
                     "bullet_points": ["Point 1"],
                     "references": [],
-                    "contains_no_semantic_content": False,
+                    "page_type": "content",
                 }
             }
         ]
@@ -629,7 +649,7 @@ class TestCreateMarkdownSummary:
         
         content = output_path.read_text(encoding="utf-8")
         assert "*Processed:" in content
-        assert "Pages: 1*" in content
+        assert "Total pages: 1*" in content
 
     def test_contains_page_headings(self, tmp_path):
         """Output contains page headings."""
@@ -637,10 +657,10 @@ class TestCreateMarkdownSummary:
         summary_results = [
             {
                 "summary": {
-                    "page_number": {"page_number_integer": 5, "page_number_type": "arabic"},
+                    "page_information": {"page_number_integer": 5, "page_number_type": "arabic"},
                     "bullet_points": ["Point 1"],
                     "references": [],
-                    "contains_no_semantic_content": False,
+                    "page_type": "content",
                 }
             }
         ]
@@ -656,10 +676,10 @@ class TestCreateMarkdownSummary:
         summary_results = [
             {
                 "summary": {
-                    "page_number": {"page_number_integer": 1, "page_number_type": "arabic"},
+                    "page_information": {"page_number_integer": 1, "page_number_type": "arabic"},
                     "bullet_points": ["First point", "Second point"],
                     "references": [],
-                    "contains_no_semantic_content": False,
+                    "page_type": "content",
                 }
             }
         ]
@@ -676,10 +696,10 @@ class TestCreateMarkdownSummary:
         summary_results = [
             {
                 "summary": {
-                    "page_number": {"page_number_integer": 3, "page_number_type": "roman"},
+                    "page_information": {"page_number_integer": 3, "page_number_type": "roman"},
                     "bullet_points": ["Preface content"],
                     "references": [],
-                    "contains_no_semantic_content": False,
+                    "page_type": "content",
                 }
             }
         ]
@@ -687,7 +707,7 @@ class TestCreateMarkdownSummary:
         create_markdown_summary(summary_results, output_path, "Test")
         
         content = output_path.read_text(encoding="utf-8")
-        assert "## Pre-face page iii" in content
+        assert "## Page iii" in content
 
     def test_filters_empty_pages(self, tmp_path):
         """Empty pages are filtered out."""
@@ -695,18 +715,18 @@ class TestCreateMarkdownSummary:
         summary_results = [
             {
                 "summary": {
-                    "page_number": {"page_number_integer": 1, "page_number_type": "arabic"},
+                    "page_information": {"page_number_integer": 1, "page_number_type": "arabic"},
                     "bullet_points": ["Valid content"],
                     "references": [],
-                    "contains_no_semantic_content": False,
+                    "page_type": "content",
                 }
             },
             {
                 "summary": {
-                    "page_number": {"page_number_integer": 2, "page_number_type": "arabic"},
+                    "page_information": {"page_number_integer": 2, "page_number_type": "arabic"},
                     "bullet_points": [],
                     "references": [],
-                    "contains_no_semantic_content": False,
+                    "page_type": "content",
                 }
             },
         ]
@@ -723,10 +743,10 @@ class TestCreateMarkdownSummary:
         summary_results = [
             {
                 "summary": {
-                    "page_number": {"page_number_integer": 1, "page_number_type": "arabic"},
+                    "page_information": {"page_number_integer": 1, "page_number_type": "arabic"},
                     "bullet_points": ["The formula $x + y = z$ is important"],
                     "references": [],
-                    "contains_no_semantic_content": False,
+                    "page_type": "content",
                 }
             }
         ]
@@ -742,18 +762,18 @@ class TestCreateMarkdownSummary:
         summary_results = [
             {
                 "summary": {
-                    "page_number": {"page_number_integer": 1, "page_number_type": "arabic"},
+                    "page_information": {"page_number_integer": 1, "page_number_type": "arabic"},
                     "bullet_points": ["Page 1 content"],
                     "references": [],
-                    "contains_no_semantic_content": False,
+                    "page_type": "content",
                 }
             },
             {
                 "summary": {
-                    "page_number": {"page_number_integer": 2, "page_number_type": "arabic"},
+                    "page_information": {"page_number_integer": 2, "page_number_type": "arabic"},
                     "bullet_points": ["Page 2 content"],
                     "references": [],
-                    "contains_no_semantic_content": False,
+                    "page_type": "content",
                 }
             },
         ]
@@ -775,7 +795,7 @@ class TestCreateMarkdownSummary:
         assert output_path.exists()
         content = output_path.read_text(encoding="utf-8")
         assert "# Summary of Empty Doc" in content
-        assert "Pages: 0" in content
+        assert "Total pages: 0*" in content
 
     @patch("processors.file_manager.CitationManager")
     def test_references_section_with_citations(self, mock_citation_manager_class, tmp_path):
@@ -797,10 +817,10 @@ class TestCreateMarkdownSummary:
         summary_results = [
             {
                 "summary": {
-                    "page_number": {"page_number_integer": 1, "page_number_type": "arabic"},
+                    "page_information": {"page_number_integer": 1, "page_number_type": "arabic"},
                     "bullet_points": ["Content"],
                     "references": ["Author (2020). Title."],
-                    "contains_no_semantic_content": False,
+                    "page_type": "content",
                 }
             }
         ]
@@ -817,10 +837,10 @@ class TestCreateMarkdownSummary:
         summary_results = [
             {
                 "summary": {
-                    "page_number": {"page_number_integer": None, "page_number_type": "none"},
+                    "page_information": {"page_number_integer": None, "page_number_type": "none"},
                     "bullet_points": ["Unnumbered content"],
                     "references": [],
-                    "contains_no_semantic_content": False,
+                    "page_type": "content",
                 }
             }
         ]
@@ -828,10 +848,10 @@ class TestCreateMarkdownSummary:
         # Note: This page will be filtered as unnumbered, so let's add a valid page too
         summary_results.append({
             "summary": {
-                "page_number": {"page_number_integer": 1, "page_number_type": "arabic"},
+                "page_information": {"page_number_integer": 1, "page_number_type": "arabic"},
                 "bullet_points": ["Valid content"],
                 "references": [],
-                "contains_no_semantic_content": False,
+                "page_type": "content",
             }
         })
         

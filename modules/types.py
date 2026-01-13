@@ -27,18 +27,18 @@ class TranscriptionResult(TypedDict, total=False):
     original_input_order_index: int
 
 
-class PageNumberInfo(TypedDict):
-    """Type definition for page number metadata."""
-    page_number_integer: int
-    contains_no_page_number: bool
+class PageInformation(TypedDict, total=False):
+    """Type definition for page information metadata."""
+    page_number_integer: int | None
+    page_number_type: str  # "roman", "arabic", "none"
+    page_types: list[str]  # 1-3 classifications: content, bibliography, abstract, etc.
 
 
 class SummaryContent(TypedDict, total=False):
     """Type definition for summary content structure."""
-    page_number: PageNumberInfo
-    bullet_points: list[str]
-    references: list[str]
-    contains_no_semantic_content: bool
+    page_information: PageInformation
+    bullet_points: list[str] | None
+    references: list[str] | None
 
 
 class SummaryResult(TypedDict, total=False):
@@ -165,7 +165,7 @@ class ProcessingStats:
 
 __all__ = [
     "TranscriptionResult",
-    "PageNumberInfo",
+    "PageInformation",
     "SummaryContent",
     "SummaryResult",
     "ConcurrencyConfig",

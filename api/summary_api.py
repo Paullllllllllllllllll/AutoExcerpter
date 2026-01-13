@@ -190,7 +190,7 @@ class SummaryManager(LLMClientBase):
         }
 
     def _create_placeholder_summary(
-        self, page_num: int, error_message: str = ""
+        self, page_num: int, error_message: str = "", page_type: str = "other"
     ) -> dict[str, Any]:
         """Create a placeholder summary for pages that couldn't be processed."""
         bullet_text = (
@@ -202,13 +202,13 @@ class SummaryManager(LLMClientBase):
         result = {
             "page": page_num,
             "summary": {
-                "page_number": {
+                "page_information": {
                     "page_number_integer": page_num,
-                    "contains_no_page_number": False,
+                    "page_number_type": "arabic",
+                    "page_type": page_type,
                 },
                 "bullet_points": [bullet_text],
-                "references": [],
-                "contains_no_semantic_content": True,
+                "references": None,
             },
         }
 
@@ -288,25 +288,37 @@ class SummaryManager(LLMClientBase):
         
         return self.chat_model
 
-    def _ensure_page_number_structure(
+    def _ensure_page_information_structure(
         self, summary_json: dict[str, Any], page_num: int
     ) -> None:
-        """Ensure page_number structure is correct in the summary JSON."""
-        if "page_number" not in summary_json:
-            summary_json["page_number"] = {
+        """Ensure page_information structure is correct in the summary JSON."""
+        if "page_information" not in summary_json:
+            summary_json["page_information"] = {
                 "page_number_integer": page_num,
-                "contains_no_page_number": False,
+                "page_number_type": "arabic",
+                "page_types": ["content"],
             }
-        elif not isinstance(summary_json["page_number"], dict):
-            contains_no_page_number = summary_json.get(
-                "contains_no_page_number", False
-            )
-            summary_json["page_number"] = {
+        elif not isinstance(summary_json["page_information"], dict):
+            summary_json["page_information"] = {
                 "page_number_integer": page_num,
-                "contains_no_page_number": contains_no_page_number,
+                "page_number_type": "arabic",
+                "page_types": ["content"],
             }
-            if "contains_no_page_number" in summary_json:
-                del summary_json["contains_no_page_number"]
+        else:
+            # Ensure all required fields exist
+            page_info = summary_json["page_information"]
+            if "page_number_integer" not in page_info:
+                page_info["page_number_integer"] = page_num
+            if "page_number_type" not in page_info:
+                page_info["page_number_type"] = "arabic" if page_info.get("page_number_integer") else "none"
+            # Handle both page_types (array) and legacy page_type (string)
+            if "page_types" not in page_info:
+                if "page_type" in page_info:
+                    # Convert legacy page_type to page_types array
+                    legacy_type = page_info.pop("page_type")
+                    page_info["page_types"] = [legacy_type] if legacy_type else ["content"]
+                else:
+                    page_info["page_types"] = ["content"]
 
     def generate_summary(
         self, transcription: str, page_num: int, max_schema_retries: int = 3
@@ -315,8 +327,7 @@ class SummaryManager(LLMClientBase):
         start_time = time.time()
 
         schema_retry_attempts = {
-            "contains_no_semantic_content": 0,
-            "contains_no_page_number": 0,
+            "page_type_null_bullets": 0,
         }
         
         summary_json = None
@@ -379,46 +390,8 @@ class SummaryManager(LLMClientBase):
                     )
                     raise ValueError(f"Invalid JSON in API response: {json_err}")
 
-                # Ensure page_number structure is correct
-                self._ensure_page_number_structure(summary_json, page_num)
-
-                # Check for schema-specific retry conditions
-                if summary_json.get("contains_no_semantic_content") is True:
-                    should_retry, backoff_time, max_attempts = self._should_retry_for_schema_flag(
-                        "contains_no_semantic_content",
-                        True,
-                        schema_retry_attempts["contains_no_semantic_content"]
-                    )
-                    
-                    if should_retry:
-                        schema_retry_attempts["contains_no_semantic_content"] += 1
-                        logger.warning(
-                            f"Schema flag 'contains_no_semantic_content' detected for page {page_num}. "
-                            f"Retrying ({schema_retry_attempts['contains_no_semantic_content']}/{max_attempts}) "
-                            f"in {backoff_time:.2f}s..."
-                        )
-                        time.sleep(backoff_time)
-                        continue
-                
-                # Check contains_no_page_number flag
-                page_number_obj = summary_json.get("page_number", {})
-                if isinstance(page_number_obj, dict):
-                    if page_number_obj.get("contains_no_page_number") is True:
-                        should_retry, backoff_time, max_attempts = self._should_retry_for_schema_flag(
-                            "contains_no_page_number",
-                            True,
-                            schema_retry_attempts["contains_no_page_number"]
-                        )
-                        
-                        if should_retry:
-                            schema_retry_attempts["contains_no_page_number"] += 1
-                            logger.warning(
-                                f"Schema flag 'contains_no_page_number' detected for page {page_num}. "
-                                f"Retrying ({schema_retry_attempts['contains_no_page_number']}/{max_attempts}) "
-                                f"in {backoff_time:.2f}s..."
-                            )
-                            time.sleep(backoff_time)
-                            continue
+                # Ensure page_information structure is correct
+                self._ensure_page_information_structure(summary_json, page_num)
 
                 result = {
                     "page": page_num,

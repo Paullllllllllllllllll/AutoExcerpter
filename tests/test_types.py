@@ -8,7 +8,7 @@ import pytest
 
 from modules.types import (
     TranscriptionResult,
-    PageNumberInfo,
+    PageInformation,
     SummaryContent,
     SummaryResult,
     ConcurrencyConfig,
@@ -54,27 +54,31 @@ class TestTranscriptionResult:
         assert result["error"] == "API timeout"
 
 
-class TestPageNumberInfo:
-    """Tests for PageNumberInfo TypedDict."""
+class TestPageInformation:
+    """Tests for PageInformation TypedDict."""
 
     def test_basic_structure(self):
-        """PageNumberInfo holds page number metadata."""
-        info: PageNumberInfo = {
+        """PageInformation holds page metadata including page_type."""
+        info: PageInformation = {
             "page_number_integer": 5,
             "page_number_type": "arabic",
+            "page_type": "content",
         }
         
         assert info["page_number_integer"] == 5
         assert info["page_number_type"] == "arabic"
+        assert info["page_type"] == "content"
 
     def test_unnumbered_page(self):
-        """PageNumberInfo can represent unnumbered pages."""
-        info: PageNumberInfo = {
+        """PageInformation can represent unnumbered pages."""
+        info: PageInformation = {
             "page_number_integer": None,
             "page_number_type": "none",
+            "page_type": "blank",
         }
         
         assert info["page_number_type"] == "none"
+        assert info["page_type"] == "blank"
 
 
 class TestSummaryContent:
@@ -83,31 +87,31 @@ class TestSummaryContent:
     def test_full_structure(self):
         """SummaryContent holds all summary fields."""
         content: SummaryContent = {
-            "page_number": {
+            "page_information": {
                 "page_number_integer": 1,
                 "page_number_type": "arabic",
+                "page_type": "content",
             },
             "bullet_points": ["Point 1", "Point 2"],
             "references": ["Ref 1"],
-            "contains_no_semantic_content": False,
         }
         
         assert len(content["bullet_points"]) == 2
         assert len(content["references"]) == 1
 
     def test_empty_content(self):
-        """SummaryContent can represent empty pages."""
+        """SummaryContent can represent blank pages."""
         content: SummaryContent = {
-            "page_number": {
+            "page_information": {
                 "page_number_integer": None,
                 "page_number_type": "none",
+                "page_type": "blank",
             },
-            "bullet_points": [],
-            "references": [],
-            "contains_no_semantic_content": True,
+            "bullet_points": None,
+            "references": None,
         }
         
-        assert content["contains_no_semantic_content"] is True
+        assert content["page_information"]["page_type"] == "blank"
 
 
 class TestSummaryResult:
@@ -118,13 +122,13 @@ class TestSummaryResult:
         result: SummaryResult = {
             "page": 1,
             "summary": {
-                "page_number": {
+                "page_information": {
                     "page_number_integer": 1,
                     "page_number_type": "arabic",
+                    "page_type": "content",
                 },
                 "bullet_points": ["Point"],
                 "references": [],
-                "contains_no_semantic_content": False,
             },
             "model_page_number": 1,
             "image_filename": "page_0001.jpg",

@@ -2,52 +2,71 @@
   "name": "article_page_summary",
   "strict": true,
   "schema": {
-    "$schema": "Summary_1_1_0",
+    "$schema": "Summary_2_1_0",
     "title": "Article Page Summary",
     "type": "object",
     "properties": {
-      "page_number": {
+      "page_information": {
         "type": "object",
-        "description": "Page number information: the page number as an integer (or null if not visible) and the type of numbering system used.",
+        "description": "Comprehensive page metadata including page number and content classification.",
         "properties": {
           "page_number_integer": {
             "type": ["integer", "null"],
-            "description": "Page number converted to an integer, or null if no page number is visible. For Roman numerals (i, ii, xii), convert to the equivalent Arabic integer (1, 2, 12). Set to null if the page contains no visible page number. Page numbers normally appear in headers or footers and may be flanked by the article, chapter, or monograph title or author names."
+            "description": "Page number converted to an integer, or null if not present. Convert Roman numerals (i, ii, xii) to Arabic (1, 2, 12). Page numbers typically appear in headers or footers."
           },
           "page_number_type": {
             "type": "string",
             "enum": ["roman", "arabic", "none"],
-            "description": "Type of page numbering system used on the page: 'roman' for Roman numerals (i, ii, iii, xii), 'arabic' for standard numerals (1, 2, 3), 'none' if no page number is visible on the page."
+            "description": "Numbering system: 'roman' for Roman numerals, 'arabic' for standard numerals, 'none' if no page number is visible."
+          },
+          "page_types": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "content",
+                "table_of_contents",
+                "bibliography",
+                "title_page",
+                "index",
+                "blank",
+                "preface",
+                "appendix",
+                "figures_tables_sources",
+                "abstract",
+                "copyright",
+                "other"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 3,
+            "description": "1-3 page classifications. Select ALL that apply: 'content' for main body text with summarizable prose; 'abstract' for abstracts (will be summarized); 'preface' for forewords/dedications; 'appendix' for supplementary material; 'figures_tables_sources' for lists of figures/tables; 'table_of_contents' for TOC; 'bibliography' for reference lists; 'title_page' for title/cover pages; 'index' for back-of-book indices; 'blank' for empty pages; 'copyright' for imprint pages; 'other' if none apply. Common combinations: ['content'], ['content', 'bibliography'], ['abstract'], ['content', 'abstract']."
           }
         },
         "required": [
           "page_number_integer",
-          "page_number_type"
+          "page_number_type",
+          "page_types"
         ],
         "additionalProperties": false
       },
-      "contains_no_semantic_content": {
-        "type": "boolean",
-        "description": "Set to true **if and only if** the page contains no substantial semantic content, but only lists of references, sources, title or introductory pages, tables of contents, etc."
-      },
       "bullet_points": {
         "type": ["array", "null"],
-        "description": "2-5 concise bullet-point statements that capture the most essential ideas or findings on the page. Include mathematical formulas in LaTeX format enclosed in $$ ... $$ delimiters (e.g., $$E = mc^2$$). Set to null if contains_no_semantic_content is true or if no meaningful content can be extracted.",
+        "description": "2-5 concise bullet points capturing essential ideas. Include LaTeX formulas in $$ delimiters. Provide bullet points for pages with summarizable prose: content, abstract, preface, appendix, figures_tables_sources. Set to null ONLY for pages without summarizable semantic content: table_of_contents, bibliography, title_page, index, blank, copyright, other.",
         "items": {
           "type": "string"
         }
       },
       "references": {
         "type": ["array", "null"],
-        "description": "Full bibliographic citations appearing on the page, formatted in American Psychological Association (APA) style. Set to null if no citations are present on the page.",
+        "description": "Bibliographic citations in APA style. Extract from ALL page types. Set to null only if no citations present.",
         "items": {
           "type": "string"
         }
       }
     },
     "required": [
-      "page_number",
-      "contains_no_semantic_content",
+      "page_information",
       "bullet_points",
       "references"
     ],

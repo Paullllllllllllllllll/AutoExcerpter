@@ -193,21 +193,23 @@ class ItemTranscriber:
 		self,
 		page_number: Optional[int],
 		page_number_type: str,
-		bullet_points: List[str],
+		bullet_points: Optional[List[str]],
 		references: Optional[List[str]] = None,
-		contains_no_semantic_content: bool = True,
+		page_types: Optional[List[str]] = None,
 		error_message: Optional[str] = None,
 	) -> Dict[str, Any]:
+		if page_types is None:
+			page_types = ["other"]
 		payload = {
 			"page": page_number if page_number is not None else 0,
 			"summary": {
-				"page_number": {
+				"page_information": {
 					"page_number_integer": page_number,
-					"page_number_type": page_number_type
+					"page_number_type": page_number_type,
+					"page_types": page_types,
 				},
 				"bullet_points": bullet_points,
-				"references": references or [],
-				"contains_no_semantic_content": contains_no_semantic_content
+				"references": references,
 			}
 		}
 		if error_message:
@@ -263,7 +265,9 @@ class ItemTranscriber:
 						summary_data = self._create_placeholder_summary(
 							page_num_to_use if has_valid_model_page_num else None,
 							"arabic" if has_valid_model_page_num else "none",
-							["[Empty page or no transcription possible]"],
+							None,  # null bullet_points for blank pages
+							references=None,
+							page_types=["blank"],
 						)
 					else:
 						summary_data = self.summary_manager.generate_summary(
@@ -291,6 +295,8 @@ class ItemTranscriber:
 						page_num_to_use if has_valid_model_page_num else None,
 						"arabic" if has_valid_model_page_num else "none",
 						[f"[Transcription failed: {error_msg}]"],
+						references=None,
+						page_types=["other"],
 						error_message=error_msg,
 					)
 					summary_result = self._build_summary_result(
@@ -396,18 +402,19 @@ class ItemTranscriber:
 		return (ETA_BLEND_WEIGHT_OVERALL * overall_rate + 
 		        ETA_BLEND_WEIGHT_RECENT * recent_rate)
 
-	def _parse_page_number_from_summary(
+	def _parse_page_information_from_summary(
 		self, summary_result: Dict[str, Any]
-	) -> Tuple[Optional[int], str, bool]:
+	) -> Tuple[Optional[int], str, List[str], bool]:
 		"""
-		Extract page number information from a summary result.
+		Extract page information from a summary result.
 		
 		Args:
 			summary_result: Summary result dictionary.
 			
 		Returns:
-			Tuple of (model_page_number, page_number_type, is_genuinely_unnumbered).
+			Tuple of (model_page_number, page_number_type, page_types, is_genuinely_unnumbered).
 			page_number_type is one of: 'roman', 'arabic', 'none'.
+			page_types is a list of page type classifications.
 		"""
 		summary_container = summary_result.get("summary", {})
 		inner_summary = summary_container.get("summary") if isinstance(
@@ -415,18 +422,32 @@ class ItemTranscriber:
 		) else None
 		
 		if isinstance(inner_summary, dict):
-			page_number_obj = inner_summary.get('page_number', {})
+			page_info_obj = inner_summary.get('page_information', {})
 		else:
-			page_number_obj = summary_container.get('page_number', {})
+			page_info_obj = summary_container.get('page_information', {})
 		
 		model_page_num = None
 		page_number_type = "none"
+		page_types = ["content"]
 		is_genuinely_unnumbered = True
 		
-		if isinstance(page_number_obj, dict):
-			# New schema format with nested page_number object
-			model_page_num = page_number_obj.get('page_number_integer')
-			page_number_type = page_number_obj.get('page_number_type', 'none')
+		if isinstance(page_info_obj, dict):
+			# New schema format with page_information object
+			model_page_num = page_info_obj.get('page_number_integer')
+			page_number_type = page_info_obj.get('page_number_type', 'none')
+			
+			# Handle both page_types (array) and legacy page_type (string)
+			raw_page_types = page_info_obj.get('page_types')
+			if raw_page_types is None:
+				# Fallback to legacy page_type field
+				legacy_type = page_info_obj.get('page_type', 'content')
+				page_types = [legacy_type] if legacy_type else ["content"]
+			elif isinstance(raw_page_types, str):
+				page_types = [raw_page_types]
+			elif isinstance(raw_page_types, list) and raw_page_types:
+				page_types = raw_page_types
+			else:
+				page_types = ["content"]
 			
 			# Derive unnumbered status from page_number_type or null page_number_integer
 			is_genuinely_unnumbered = (
@@ -449,7 +470,7 @@ class ItemTranscriber:
 			except ValueError:
 				pass  # model_page_num remains None, is_genuinely_unnumbered stays True
 		
-		return model_page_num, page_number_type, is_genuinely_unnumbered
+		return model_page_num, page_number_type, page_types, is_genuinely_unnumbered
 
 	def _find_longest_consecutive_sequence(
 		self, summaries_with_pages: List[Dict[str, Any]]
@@ -533,14 +554,15 @@ class ItemTranscriber:
 		
 		logger.info("Adjusting page numbers based on model-detected page sequences...")
 		
-		# Parse page numbers from all summaries
+		# Parse page information from all summaries
 		parsed_summaries = []
 		for r in summary_results:
-			model_page_num, page_type, is_unnumbered = self._parse_page_number_from_summary(r)
+			model_page_num, page_num_type, page_types, is_unnumbered = self._parse_page_information_from_summary(r)
 			parsed_summaries.append({
 				"original_input_order_index": r["original_input_order_index"],
 				"model_page_number_int": model_page_num,
-				"page_number_type": page_type,
+				"page_number_type": page_num_type,
+				"page_types": page_types,
 				"data": r,
 				"is_genuinely_unnumbered": is_unnumbered
 			})
@@ -617,41 +639,43 @@ class ItemTranscriber:
 		final_ordered_summaries = []
 		for s_wrapper in parsed_summaries:
 			original_index = s_wrapper["original_input_order_index"]
-			page_type = s_wrapper["page_number_type"]
+			page_num_type = s_wrapper["page_number_type"]
+			content_page_types = s_wrapper["page_types"]
 
 			# Ensure the 'summary' key exists and is a dictionary in the data part
 			if "summary" not in s_wrapper["data"] or not isinstance(
 					s_wrapper["data"]["summary"], dict):
 				s_wrapper["data"]["summary"] = {}
 			summary_data_dict = s_wrapper["data"]["summary"]
-			# Identify the target dict that actually holds page_number (nested summary JSON preferred)
+			# Identify the target dict that actually holds page_information (nested summary JSON preferred)
 			target_summary_json = summary_data_dict.get("summary") if isinstance(summary_data_dict.get("summary"), dict) else summary_data_dict
 
-			# Ensure page_number object structure exists with page_number_type
-			if "page_number" not in target_summary_json or not isinstance(
-					target_summary_json["page_number"], dict):
-				target_summary_json["page_number"] = {
+			# Ensure page_information object structure exists
+			if "page_information" not in target_summary_json or not isinstance(
+					target_summary_json["page_information"], dict):
+				target_summary_json["page_information"] = {
 					"page_number_integer": None,
-					"page_number_type": "none"
+					"page_number_type": "none",
+					"page_types": content_page_types,
 				}
 
 			if s_wrapper["is_genuinely_unnumbered"]:
-				target_summary_json["page_number"]["page_number_integer"] = None
-				target_summary_json["page_number"]["page_number_type"] = "none"
-			elif page_type == "roman" and roman_pages:
+				target_summary_json["page_information"]["page_number_integer"] = None
+				target_summary_json["page_information"]["page_number_type"] = "none"
+			elif page_num_type == "roman" and roman_pages:
 				# Use Roman anchor for adjustment
 				adjusted_page = self._calculate_adjusted_page_number(
 					original_index, roman_anchor_page, roman_anchor_index)
 				adjusted_page = max(1, adjusted_page)
-				target_summary_json["page_number"]["page_number_integer"] = adjusted_page
-				target_summary_json["page_number"]["page_number_type"] = "roman"
-			elif page_type == "arabic" and arabic_pages:
+				target_summary_json["page_information"]["page_number_integer"] = adjusted_page
+				target_summary_json["page_information"]["page_number_type"] = "roman"
+			elif page_num_type == "arabic" and arabic_pages:
 				# Use Arabic anchor for adjustment
 				adjusted_page = self._calculate_adjusted_page_number(
 					original_index, arabic_anchor_page, arabic_anchor_index)
 				adjusted_page = max(1, adjusted_page)
-				target_summary_json["page_number"]["page_number_integer"] = adjusted_page
-				target_summary_json["page_number"]["page_number_type"] = "arabic"
+				target_summary_json["page_information"]["page_number_integer"] = adjusted_page
+				target_summary_json["page_information"]["page_number_type"] = "arabic"
 			else:
 				# No valid page type or no anchors - default to Arabic with index-based numbering
 				adjusted_page = original_index + 1
@@ -660,8 +684,11 @@ class ItemTranscriber:
 					adjusted_page = self._calculate_adjusted_page_number(
 						original_index, arabic_anchor_page, arabic_anchor_index)
 				adjusted_page = max(1, adjusted_page)
-				target_summary_json["page_number"]["page_number_integer"] = adjusted_page
-				target_summary_json["page_number"]["page_number_type"] = page_type if page_type != "none" else "arabic"
+				target_summary_json["page_information"]["page_number_integer"] = adjusted_page
+				target_summary_json["page_information"]["page_number_type"] = page_num_type if page_num_type != "none" else "arabic"
+			
+			# Preserve page_types from the model
+			target_summary_json["page_information"]["page_types"] = content_page_types
 
 			final_ordered_summaries.append(s_wrapper["data"])
 

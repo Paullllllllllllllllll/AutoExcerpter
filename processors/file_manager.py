@@ -610,39 +610,43 @@ def _extract_summary_payload(result: dict[str, Any]) -> dict[str, Any]:
     return summary
 
 
-def _page_number_and_flags(summary_data: dict[str, Any]) -> dict[str, Any]:
-    """Normalize page number information from summary payload.
+def _page_information(summary_data: dict[str, Any]) -> dict[str, Any]:
+    """Extract normalized page information from summary payload.
     
     Returns dict with:
         - page_number_integer: The numeric page number (or "?" if null/missing)
         - page_number_type: 'roman', 'arabic', or 'none'
+        - page_types: List of content classifications (content, bibliography, etc.)
         - is_unnumbered: Boolean flag derived from page_number_type == 'none' or null integer
     """
-    page_number = summary_data.get("page_number", {})
+    page_info = summary_data.get("page_information", {})
     
     # Handle dict format (preferred) - must be non-empty dict
-    if isinstance(page_number, dict) and page_number:
-        page_int = page_number.get("page_number_integer")
-        page_type = page_number.get("page_number_type", "arabic")
+    if isinstance(page_info, dict) and page_info:
+        page_int = page_info.get("page_number_integer")
+        page_num_type = page_info.get("page_number_type", "arabic")
+        
+        # Handle both page_types (array) and legacy page_type (string)
+        page_types = page_info.get("page_types")
+        if page_types is None:
+            # Fallback to legacy page_type field
+            legacy_type = page_info.get("page_type", "content")
+            page_types = [legacy_type] if legacy_type else ["content"]
+        elif isinstance(page_types, str):
+            page_types = [page_types]
+        elif not isinstance(page_types, list) or not page_types:
+            page_types = ["content"]
         
         # Derive unnumbered status from page_number_type or null page_number_integer
-        is_unnumbered = (page_type == "none" or page_int is None)
+        is_unnumbered = (page_num_type == "none" or page_int is None)
         if is_unnumbered:
-            page_type = "none"
+            page_num_type = "none"
             page_int = "?"
         
         return {
             "page_number_integer": page_int,
-            "page_number_type": page_type,
-            "is_unnumbered": is_unnumbered,
-        }
-    
-    # Handle int format (legacy)
-    if isinstance(page_number, int):
-        is_unnumbered = (page_number == 0)
-        return {
-            "page_number_integer": page_number,
-            "page_number_type": "none" if is_unnumbered else "arabic",
+            "page_number_type": page_num_type,
+            "page_types": page_types,
             "is_unnumbered": is_unnumbered,
         }
     
@@ -651,40 +655,164 @@ def _page_number_and_flags(summary_data: dict[str, Any]) -> dict[str, Any]:
     return {
         "page_number_integer": page_val,
         "page_number_type": "arabic",
+        "page_types": ["content"],
         "is_unnumbered": False,
     }
 
 
+# Page types that should have bullet points extracted (summarizable prose)
+PAGE_TYPES_WITH_BULLETS = {"content", "abstract", "preface", "appendix", "figures_tables_sources"}
+
+# Page types shown in Document Structure section (ordered by typical document position)
+STRUCTURE_PAGE_TYPE_ORDER = [
+    "title_page",           # Front matter
+    "copyright",
+    "abstract",             # Often first content page
+    "table_of_contents",
+    "preface",
+    "figures_tables_sources",
+    "appendix",             # Back matter
+    "bibliography",
+    "index",
+    "other",
+    # "blank" excluded - never shown in structure
+]
+
+# Human-readable labels for page types
+PAGE_TYPE_LABELS = {
+    "content": "Content",
+    "preface": "Preface",
+    "appendix": "Appendix",
+    "figures_tables_sources": "Figures, Tables & Sources",
+    "table_of_contents": "Table of Contents",
+    "bibliography": "Bibliography",
+    "title_page": "Title Page",
+    "index": "Index",
+    "blank": "Blank Pages",
+    "abstract": "Abstract",
+    "copyright": "Copyright",
+    "other": "Other",
+}
+
+
+def _should_render_bullets(page_types: list[str]) -> bool:
+    """Check if page should have bullet points rendered based on its types."""
+    return bool(set(page_types) & PAGE_TYPES_WITH_BULLETS)
+
+
+def _get_structure_types(page_types: list[str]) -> list[str]:
+    """Return page types that should appear in Document Structure section."""
+    return [pt for pt in page_types if pt in STRUCTURE_PAGE_TYPE_ORDER]
+
+
 def _is_meaningful_summary(summary_data: dict[str, Any]) -> bool:
-    """Check if a summary is meaningful (not empty, error, or unnumbered)."""
-    # Check for unnumbered pages
-    page_info = _page_number_and_flags(summary_data)
-    if page_info["is_unnumbered"]:
-        page_int = page_info["page_number_integer"]
-        if page_int == "?" or (isinstance(page_int, int) and page_int == 0):
-            return False
-
-    # Check for empty/null or error bullet points
-    bullet_points = summary_data.get("bullet_points") or []
-    if not bullet_points:
+    """Check if a summary is meaningful based on page_types and content.
+    
+    Pages with bullet-point types (content, abstract, preface, appendix, figures_tables_sources)
+    are meaningful if they have non-error bullet points.
+    
+    Pages with structure types (bibliography, TOC, etc.) are meaningful for 
+    page range display in Document Structure section.
+    """
+    page_info = _page_information(summary_data)
+    page_types = page_info.get("page_types", ["content"])
+    
+    # Blank pages are never meaningful (only if blank is the sole type)
+    if page_types == ["blank"]:
         return False
+    
+    # Check if page has bullet-point types
+    has_bullet_types = _should_render_bullets(page_types)
+    
+    if has_bullet_types:
+        bullet_points = summary_data.get("bullet_points") or []
+        if bullet_points:
+            # Check for error markers
+            if len(bullet_points) == 1:
+                marker_text = bullet_points[0].strip().lower()
+                if any(marker in marker_text for marker in ERROR_MARKERS):
+                    # Has bullet types but error content - still meaningful for structure
+                    return bool(_get_structure_types(page_types))
+            return True
+        # No bullets but has structure types - still meaningful for structure section
+        return bool(_get_structure_types(page_types))
+    
+    # No bullet types - meaningful if has structure types for page range display
+    return bool(_get_structure_types(page_types))
 
-    if len(bullet_points) == 1:
-        marker_text = bullet_points[0].strip().lower()
-        if any(marker in marker_text for marker in ERROR_MARKERS):
-            return False
 
-    # Check semantic content flag
-    if summary_data.get("contains_no_semantic_content", False):
-        return False
+def _format_page_range(pages: list[int]) -> str:
+    """Format a list of page numbers as a compact range string.
+    
+    Examples:
+        [1, 2, 3, 5, 7, 8, 9] -> "pp. 1-3, 5, 7-9"
+        [5] -> "p. 5"
+    """
+    if not pages:
+        return ""
+    
+    pages = sorted(set(pages))
+    if len(pages) == 1:
+        return f"p. {pages[0]}"
+    
+    ranges = []
+    start = pages[0]
+    end = pages[0]
+    
+    for page in pages[1:]:
+        if page == end + 1:
+            end = page
+        else:
+            if start == end:
+                ranges.append(str(start))
+            else:
+                ranges.append(f"{start}-{end}")
+            start = end = page
+    
+    # Add last range
+    if start == end:
+        ranges.append(str(start))
+    else:
+        ranges.append(f"{start}-{end}")
+    
+    return f"pp. {', '.join(ranges)}"
 
-    return True
+
+def _format_page_heading_docx(
+    page_number: Any, page_number_type: str, page_types: list[str], is_unnumbered: bool
+) -> str:
+    """Format page heading for DOCX output based on page_types and numbering."""
+    # Add page type prefix for non-content pages with bullets
+    type_prefix = ""
+    if "abstract" in page_types and "content" not in page_types:
+        type_prefix = "[Abstract] "
+    elif "preface" in page_types:
+        type_prefix = "[Preface] "
+    elif "appendix" in page_types:
+        type_prefix = "[Appendix] "
+    elif "figures_tables_sources" in page_types:
+        type_prefix = "[Figures/Tables] "
+    
+    if page_number_type == "roman" and isinstance(page_number, int):
+        roman_str = int_to_roman(page_number)
+        return f"{type_prefix}Page {roman_str}"
+    elif page_number_type == "none" or is_unnumbered:
+        return f"{type_prefix}[Unnumbered page]"
+    else:
+        return f"{type_prefix}Page {page_number}"
 
 
 def create_docx_summary(
     summary_results: list[dict[str, Any]], output_path: Path, document_name: str
 ) -> None:
-    """Create a compact DOCX summary document from structured summary results."""
+    """Create a DOCX summary document from structured summary results.
+    
+    Output order:
+    1. Title + Metadata
+    2. Document Structure (page type overview)
+    3. Content Summaries (in document order)
+    4. Consolidated References
+    """
     filtered_results = filter_empty_pages(summary_results)
     if len(filtered_results) < len(summary_results):
         logger.info(
@@ -695,6 +823,27 @@ def create_docx_summary(
     # Initialize citation manager for the document
     citation_manager = CitationManager(polite_pool_email=config.CITATION_OPENALEX_EMAIL)
     
+    # Collect page numbers by page_type for Document Structure section
+    # Use ordered dict based on STRUCTURE_PAGE_TYPE_ORDER
+    page_type_pages: dict[str, list[int]] = {pt: [] for pt in STRUCTURE_PAGE_TYPE_ORDER}
+    
+    # First pass: collect structure info and citations from all pages
+    for result in filtered_results:
+        summary_payload = _extract_summary_payload(result)
+        page_info = _page_information(summary_payload)
+        page_number = page_info["page_number_integer"]
+        page_types = page_info["page_types"]
+        references = summary_payload.get("references") or []
+        
+        # Collect citations from ALL page types
+        if references and isinstance(page_number, int):
+            citation_manager.add_citations(references, page_number)
+        
+        # Collect page numbers for structure section (all applicable types)
+        if isinstance(page_number, int):
+            for pt in _get_structure_types(page_types):
+                page_type_pages[pt].append(page_number)
+    
     document = Document()
 
     # Configure default Normal style for compact spacing
@@ -702,59 +851,69 @@ def create_docx_summary(
     normal_style.paragraph_format.space_before = Pt(0)
     normal_style.paragraph_format.space_after = Pt(BULLET_SPACE_AFTER_PT)
 
-    # Title section
+    # === SECTION 1: Title ===
     title = document.add_heading(f"Summary of {sanitize_for_xml(document_name)}", TITLE_HEADING_LEVEL)
     title.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
     title.paragraph_format.space_after = Pt(TITLE_SPACE_AFTER_PT)
 
     # Metadata line
-    metadata = "Processed: %s | Pages: %s" % (
+    content_pages = sum(
+        1 for r in filtered_results 
+        if _should_render_bullets(_page_information(_extract_summary_payload(r)).get("page_types", ["content"]))
+    )
+    metadata = "Processed: %s | Content pages: %s | Total pages: %s" % (
         datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        content_pages,
         len(filtered_results),
     )
     meta_paragraph = document.add_paragraph(metadata)
     meta_paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
     meta_paragraph.paragraph_format.space_after = Pt(TITLE_SPACE_AFTER_PT)
 
-    # Process each page
+    # === SECTION 2: Document Structure (at the beginning) ===
+    has_structure_info = any(pages for pages in page_type_pages.values())
+    if has_structure_info:
+        struct_heading = document.add_heading("Document Structure", PAGE_HEADING_LEVEL)
+        struct_heading.paragraph_format.space_before = Pt(PAGE_HEADING_SPACE_BEFORE_PT)
+        struct_heading.paragraph_format.space_after = Pt(PAGE_HEADING_SPACE_AFTER_PT)
+        
+        # Add page ranges in STRUCTURE_PAGE_TYPE_ORDER
+        for pt in STRUCTURE_PAGE_TYPE_ORDER:
+            pages = page_type_pages.get(pt, [])
+            if pages:
+                label = PAGE_TYPE_LABELS.get(pt, pt.replace("_", " ").title())
+                page_range = _format_page_range(pages)
+                struct_para = document.add_paragraph()
+                struct_para.paragraph_format.space_before = Pt(0)
+                struct_para.paragraph_format.space_after = Pt(BULLET_SPACE_AFTER_PT)
+                label_run = struct_para.add_run(f"{label}: ")
+                label_run.bold = True
+                struct_para.add_run(page_range)
+
+    # === SECTION 3: Content Summaries (in document order) ===
     for result in filtered_results:
         summary_payload = _extract_summary_payload(result)
-        page_info = _page_number_and_flags(summary_payload)
+        page_info = _page_information(summary_payload)
         page_number = page_info["page_number_integer"]
-        page_type = page_info["page_number_type"]
+        page_number_type = page_info["page_number_type"]
+        page_types = page_info["page_types"]
         bullet_points = summary_payload.get("bullet_points") or []
-        references = summary_payload.get("references") or []
 
-        # Collect citations for consolidated section
-        if references:
-            citation_manager.add_citations(references, page_number)
+        # Render summary for pages with bullet-point types AND actual bullets
+        if _should_render_bullets(page_types) and bullet_points:
+            heading_text = _format_page_heading_docx(
+                page_number, page_number_type, page_types, page_info["is_unnumbered"]
+            )
+            page_heading = document.add_heading(heading_text, PAGE_HEADING_LEVEL)
+            page_heading.paragraph_format.space_before = Pt(PAGE_HEADING_SPACE_BEFORE_PT)
+            page_heading.paragraph_format.space_after = Pt(PAGE_HEADING_SPACE_AFTER_PT)
 
-        # Page heading - differentiate preface (Roman numeral) pages
-        if page_type == "roman" and isinstance(page_number, int):
-            roman_str = int_to_roman(page_number)
-            heading_text = f"Pre-face page {roman_str}"
-        elif page_type == "none" or page_info["is_unnumbered"]:
-            heading_text = "[Unnumbered page]"
-        else:
-            heading_text = f"Page {page_number}"
-        
-        page_heading = document.add_heading(heading_text, PAGE_HEADING_LEVEL)
-        page_heading.paragraph_format.space_before = Pt(PAGE_HEADING_SPACE_BEFORE_PT)
-        page_heading.paragraph_format.space_after = Pt(PAGE_HEADING_SPACE_AFTER_PT)
-
-        # Bullet points - use Word's native bullet list style
-        if bullet_points:
+            # Bullet points - use Word's native bullet list style
             for point in bullet_points:
                 paragraph = document.add_paragraph(style='List Bullet')
                 paragraph.paragraph_format.space_before = Pt(0)
                 paragraph.paragraph_format.space_after = Pt(BULLET_SPACE_AFTER_PT)
-                # Add text with LaTeX formula support
                 add_formatted_text_to_paragraph(paragraph, point)
-        else:
-            no_points = document.add_paragraph("No bullet points available for this page.")
-            no_points.paragraph_format.left_indent = Pt(BULLET_INDENT_PT)
-
-        # NOTE: Per-page references section removed - citations now consolidated at end
 
     # Add consolidated references section at the end of the document
     if citation_manager.citations:
@@ -820,20 +979,33 @@ def create_docx_summary(
                     meta_run.font.size = Pt(9)
                     meta_run.italic = True
 
+    # === SECTION 4: Save document ===
     document.save(output_path)
     logger.info("Summary document saved to %s", output_path)
 
 
 def _format_page_heading_md(
-    page_number: Any, page_type: str, is_unnumbered: bool
+    page_number: Any, page_number_type: str, page_types: list[str], is_unnumbered: bool
 ) -> str:
-    """Format page heading for markdown output."""
-    if page_type == "roman" and isinstance(page_number, int):
-        return f"## Pre-face page {int_to_roman(page_number)}"
-    elif page_type == "none" or is_unnumbered:
-        return "## [Unnumbered page]"
+    """Format page heading for markdown output based on page_types and numbering."""
+    # Add page type prefix for non-content pages with bullets
+    type_prefix = ""
+    if "abstract" in page_types and "content" not in page_types:
+        type_prefix = "[Abstract] "
+    elif "preface" in page_types:
+        type_prefix = "[Preface] "
+    elif "appendix" in page_types:
+        type_prefix = "[Appendix] "
+    elif "figures_tables_sources" in page_types:
+        type_prefix = "[Figures/Tables] "
+    
+    if page_number_type == "roman" and isinstance(page_number, int):
+        roman_str = int_to_roman(page_number)
+        return f"## {type_prefix}Page {roman_str}"
+    elif page_number_type == "none" or is_unnumbered:
+        return f"## {type_prefix}[Unnumbered page]"
     else:
-        return f"## Page {page_number}"
+        return f"## {type_prefix}Page {page_number}"
 
 
 def create_markdown_summary(
@@ -841,9 +1013,11 @@ def create_markdown_summary(
 ) -> None:
     """Create a Markdown summary document from structured summary results.
     
-    This function creates a markdown file with the same content structure as 
-    create_docx_summary(), suitable for version control, markdown viewers,
-    and tools like Writage that can paste markdown into Word.
+    Output order:
+    1. Title + Metadata
+    2. Document Structure (page type overview)
+    3. Content Summaries (in document order)
+    4. Consolidated References
     
     Args:
         summary_results: List of summary result dictionaries from the API.
@@ -857,48 +1031,86 @@ def create_markdown_summary(
             len(summary_results) - len(filtered_results),
         )
     
-    # Initialize citation manager for the document (reuse existing deduplication logic)
+    # Initialize citation manager for the document
     citation_manager = CitationManager(polite_pool_email=config.CITATION_OPENALEX_EMAIL)
+    
+    # Collect page numbers by page_type for Document Structure section
+    page_type_pages: dict[str, list[int]] = {pt: [] for pt in STRUCTURE_PAGE_TYPE_ORDER}
+    
+    # First pass: collect structure info and citations from all pages
+    for result in filtered_results:
+        summary_payload = _extract_summary_payload(result)
+        page_info = _page_information(summary_payload)
+        page_number = page_info["page_number_integer"]
+        page_types = page_info["page_types"]
+        references = summary_payload.get("references") or []
+        
+        # Collect citations from ALL page types
+        if references and isinstance(page_number, int):
+            citation_manager.add_citations(references, page_number)
+        
+        # Collect page numbers for structure section (all applicable types)
+        if isinstance(page_number, int):
+            for pt in _get_structure_types(page_types):
+                page_type_pages[pt].append(page_number)
     
     lines: list[str] = []
     
-    # Title
+    # === SECTION 1: Title ===
     lines.append(f"# Summary of {sanitize_for_xml(document_name)}")
     lines.append("")
     
     # Metadata
+    content_pages = sum(
+        1 for r in filtered_results 
+        if _should_render_bullets(_page_information(_extract_summary_payload(r)).get("page_types", ["content"]))
+    )
     lines.append(
         f"*Processed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | "
-        f"Pages: {len(filtered_results)}*"
+        f"Content pages: {content_pages} | Total pages: {len(filtered_results)}*"
     )
     lines.append("")
     
-    # Process each page
-    for result in filtered_results:
-        summary_payload = _extract_summary_payload(result)
-        page_info = _page_number_and_flags(summary_payload)
-        page_number = page_info["page_number_integer"]
-        page_type = page_info["page_number_type"]
-        bullet_points = summary_payload.get("bullet_points") or []
-        references = summary_payload.get("references") or []
-        
-        # Collect citations for consolidated section
-        if references:
-            citation_manager.add_citations(references, page_number)
-        
-        # Page heading
-        lines.append(_format_page_heading_md(page_number, page_type, page_info["is_unnumbered"]))
+    # === SECTION 2: Document Structure (at the beginning) ===
+    has_structure_info = any(pages for pages in page_type_pages.values())
+    if has_structure_info:
+        lines.append("## Document Structure")
         lines.append("")
         
-        # Bullet points (LaTeX formulas preserved as-is for markdown compatibility)
-        if bullet_points:
+        # Add page ranges in STRUCTURE_PAGE_TYPE_ORDER
+        for pt in STRUCTURE_PAGE_TYPE_ORDER:
+            pages = page_type_pages.get(pt, [])
+            if pages:
+                label = PAGE_TYPE_LABELS.get(pt, pt.replace("_", " ").title())
+                page_range = _format_page_range(pages)
+                lines.append(f"- **{label}**: {page_range}")
+        
+        lines.append("")
+        lines.append("---")
+        lines.append("")
+    
+    # === SECTION 3: Content Summaries (in document order) ===
+    for result in filtered_results:
+        summary_payload = _extract_summary_payload(result)
+        page_info = _page_information(summary_payload)
+        page_number = page_info["page_number_integer"]
+        page_number_type = page_info["page_number_type"]
+        page_types = page_info["page_types"]
+        bullet_points = summary_payload.get("bullet_points") or []
+        
+        # Render summary for pages with bullet-point types AND actual bullets
+        if _should_render_bullets(page_types) and bullet_points:
+            lines.append(_format_page_heading_md(
+                page_number, page_number_type, page_types, page_info["is_unnumbered"]
+            ))
+            lines.append("")
+            
+            # Bullet points (LaTeX formulas preserved as-is for markdown compatibility)
             for point in bullet_points:
                 sanitized_point = sanitize_for_xml(point)
                 lines.append(f"- {sanitized_point}")
-        else:
-            lines.append("*No bullet points available for this page.*")
-        
-        lines.append("")
+            
+            lines.append("")
     
     # Add consolidated references section at the end
     if citation_manager.citations:
@@ -949,7 +1161,7 @@ def create_markdown_summary(
             
             lines.append(line)
     
-    # Write file
+    # === SECTION 4: Write file ===
     output_path.write_text("\n".join(lines), encoding="utf-8")
     logger.info("Markdown summary saved to %s", output_path)
 
