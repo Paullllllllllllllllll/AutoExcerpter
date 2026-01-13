@@ -165,7 +165,10 @@ def _process_single_item(
     # Check if output files already exist
     expected_outputs = [base_output_dir / f"{item_spec.output_stem}.txt"]
     if config.SUMMARIZE:
-        expected_outputs.append(base_output_dir / f"{item_spec.output_stem}_summary.docx")
+        if config.OUTPUT_DOCX:
+            expected_outputs.append(base_output_dir / f"{item_spec.output_stem}.docx")
+        if config.OUTPUT_MARKDOWN:
+            expected_outputs.append(base_output_dir / f"{item_spec.output_stem}.md")
 
     if all(path.exists() for path in expected_outputs):
         if config.CLI_MODE:

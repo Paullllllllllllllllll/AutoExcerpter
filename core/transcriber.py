@@ -95,8 +95,8 @@ class ItemTranscriber:
 
 		self.base_output_dir = base_output_dir
 		self.output_txt_path = self.base_output_dir / f"{self.name}.txt"
-		self.output_summary_docx_path = self.base_output_dir / f"{self.name}_summary.docx"
-		self.output_summary_md_path = self.base_output_dir / f"{self.name}_summary.md"
+		self.output_summary_docx_path = self.base_output_dir / f"{self.name}.docx"
+		self.output_summary_md_path = self.base_output_dir / f"{self.name}.md"
 
 		# Item-specific working directory for logs and temporary images
 		# Use safe directory name to avoid Windows MAX_PATH (260 char) limitations
