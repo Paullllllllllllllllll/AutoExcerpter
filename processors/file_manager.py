@@ -824,6 +824,136 @@ def create_docx_summary(
     logger.info("Summary document saved to %s", output_path)
 
 
+def _format_page_heading_md(
+    page_number: Any, page_type: str, is_unnumbered: bool
+) -> str:
+    """Format page heading for markdown output."""
+    if page_type == "roman" and isinstance(page_number, int):
+        return f"## Pre-face page {int_to_roman(page_number)}"
+    elif page_type == "none" or is_unnumbered:
+        return "## [Unnumbered page]"
+    else:
+        return f"## Page {page_number}"
+
+
+def create_markdown_summary(
+    summary_results: list[dict[str, Any]], output_path: Path, document_name: str
+) -> None:
+    """Create a Markdown summary document from structured summary results.
+    
+    This function creates a markdown file with the same content structure as 
+    create_docx_summary(), suitable for version control, markdown viewers,
+    and tools like Writage that can paste markdown into Word.
+    
+    Args:
+        summary_results: List of summary result dictionaries from the API.
+        output_path: Path where the markdown file will be written.
+        document_name: Name of the source document for the title.
+    """
+    filtered_results = filter_empty_pages(summary_results)
+    if len(filtered_results) < len(summary_results):
+        logger.info(
+            "Filtered out %s pages with no useful content",
+            len(summary_results) - len(filtered_results),
+        )
+    
+    # Initialize citation manager for the document (reuse existing deduplication logic)
+    citation_manager = CitationManager(polite_pool_email=config.CITATION_OPENALEX_EMAIL)
+    
+    lines: list[str] = []
+    
+    # Title
+    lines.append(f"# Summary of {sanitize_for_xml(document_name)}")
+    lines.append("")
+    
+    # Metadata
+    lines.append(
+        f"*Processed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | "
+        f"Pages: {len(filtered_results)}*"
+    )
+    lines.append("")
+    
+    # Process each page
+    for result in filtered_results:
+        summary_payload = _extract_summary_payload(result)
+        page_info = _page_number_and_flags(summary_payload)
+        page_number = page_info["page_number_integer"]
+        page_type = page_info["page_number_type"]
+        bullet_points = summary_payload.get("bullet_points") or []
+        references = summary_payload.get("references") or []
+        
+        # Collect citations for consolidated section
+        if references:
+            citation_manager.add_citations(references, page_number)
+        
+        # Page heading
+        lines.append(_format_page_heading_md(page_number, page_type, page_info["is_unnumbered"]))
+        lines.append("")
+        
+        # Bullet points (LaTeX formulas preserved as-is for markdown compatibility)
+        if bullet_points:
+            for point in bullet_points:
+                sanitized_point = sanitize_for_xml(point)
+                lines.append(f"- {sanitized_point}")
+        else:
+            lines.append("*No bullet points available for this page.*")
+        
+        lines.append("")
+    
+    # Add consolidated references section at the end
+    if citation_manager.citations:
+        logger.info(
+            "Processing %d unique citations for consolidated references section",
+            len(citation_manager.citations),
+        )
+        
+        # Enrich citations with metadata from OpenAlex API
+        citation_manager.enrich_with_metadata(max_requests=config.CITATION_MAX_API_REQUESTS)
+        
+        lines.append("---")
+        lines.append("")
+        lines.append("## Consolidated References")
+        lines.append("")
+        lines.append(
+            "*The following references were extracted from the document and consolidated. "
+            "Duplicate citations have been merged, showing all pages where each citation appears. "
+            "Where available, hyperlinks provide access to extended metadata via OpenAlex.*"
+        )
+        lines.append("")
+        
+        # Get sorted citations with page information
+        citations_with_pages = citation_manager.get_citations_with_pages()
+        
+        for idx, (citation, page_range_str) in enumerate(citations_with_pages, start=1):
+            citation_text = sanitize_for_xml(citation.raw_text)
+            
+            # Build citation line with optional hyperlink
+            if citation.url:
+                line = f"{idx}. [{citation_text}]({citation.url})"
+            else:
+                line = f"{idx}. {citation_text}"
+            
+            # Add page range
+            if page_range_str:
+                line += f" *({page_range_str})*"
+            
+            # Add metadata if available
+            if citation.metadata:
+                meta_parts = []
+                if citation.doi:
+                    meta_parts.append(f"DOI: {citation.doi}")
+                if citation.metadata.get("publication_year"):
+                    meta_parts.append(f"Year: {citation.metadata['publication_year']}")
+                if meta_parts:
+                    line += f" *[{', '.join(meta_parts)}]*"
+            
+            lines.append(line)
+    
+    # Write file
+    output_path.write_text("\n".join(lines), encoding="utf-8")
+    logger.info("Markdown summary saved to %s", output_path)
+
+
 def write_transcription_to_text(
     transcription_results: list[dict[str, Any]],
     output_path: Path,
@@ -946,6 +1076,7 @@ def filter_empty_pages(summary_results: list[dict[str, Any]]) -> list[dict[str, 
 # ============================================================================
 __all__ = [
     "create_docx_summary",
+    "create_markdown_summary",
     "write_transcription_to_text",
     "initialize_log_file",
     "append_to_log",

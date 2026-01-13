@@ -13,6 +13,7 @@ from processors.pdf_processor import (
 )
 from processors.file_manager import (
     create_docx_summary,
+    create_markdown_summary,
     write_transcription_to_text,
     initialize_log_file,
     append_to_log,
@@ -28,6 +29,7 @@ __all__ = [
     "get_image_paths_from_folder",
     # File Management
     "create_docx_summary",
+    "create_markdown_summary",
     "write_transcription_to_text",
     "initialize_log_file",
     "append_to_log",

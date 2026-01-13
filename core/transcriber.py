@@ -25,6 +25,7 @@ from modules.types import SummaryResult, TranscriptionResult
 from processors.file_manager import (
     append_to_log,
     create_docx_summary,
+    create_markdown_summary,
     finalize_log_file,
     initialize_log_file,
     write_transcription_to_text,
@@ -93,6 +94,7 @@ class ItemTranscriber:
 		self.base_output_dir = base_output_dir
 		self.output_txt_path = self.base_output_dir / f"{self.name}.txt"
 		self.output_summary_docx_path = self.base_output_dir / f"{self.name}_summary.docx"
+		self.output_summary_md_path = self.base_output_dir / f"{self.name}_summary.md"
 
 		# Item-specific working directory for logs and temporary images
 		# Use safe directory name to avoid Windows MAX_PATH (260 char) limitations
@@ -738,16 +740,22 @@ class ItemTranscriber:
 				item_type_str, total_elapsed_time, self.input_path
 			)
 
-			# Save summaries to DOCX file if summarization is enabled
+			# Save summaries to output files if summarization is enabled
 			if config.SUMMARIZE and summary_results:
 				# Step 1: Adjust page numbers and sort (uses page_number_type for unnumbered detection)
 				adjusted_summary_results = self._adjust_and_sort_summary_page_numbers(
 					summary_results)
 
 				try:
-					# Use the adjusted list for creating summary files
-					create_docx_summary(adjusted_summary_results,
-					                    self.output_summary_docx_path, self.name)
+					# Generate DOCX if enabled
+					if config.OUTPUT_DOCX:
+						create_docx_summary(adjusted_summary_results,
+						                    self.output_summary_docx_path, self.name)
+					
+					# Generate Markdown if enabled
+					if config.OUTPUT_MARKDOWN:
+						create_markdown_summary(adjusted_summary_results,
+						                        self.output_summary_md_path, self.name)
 
 				except Exception as e:
 					logger.error(f"Error creating summary files: {e}")
@@ -769,8 +777,13 @@ class ItemTranscriber:
 			logger.info(
 				f"  Final transcription output: {self.output_txt_path}")
 			if config.SUMMARIZE:
-				logger.info(
-					f"  Final summary outputs: {self.output_summary_docx_path}")
+				summary_outputs = []
+				if config.OUTPUT_DOCX:
+					summary_outputs.append(str(self.output_summary_docx_path))
+				if config.OUTPUT_MARKDOWN:
+					summary_outputs.append(str(self.output_summary_md_path))
+				if summary_outputs:
+					logger.info(f"  Final summary outputs: {', '.join(summary_outputs)}")
 			logger.info(
 				f"  Detailed logs: {self.log_path}{' and ' + str(self.summary_log_path) if config.SUMMARIZE else ''}")
 
@@ -779,9 +792,11 @@ class ItemTranscriber:
 			if self.output_txt_path.exists():
 				# We have a transcription output
 				should_cleanup = True
-			if config.SUMMARIZE and self.output_summary_docx_path.exists():
-				# We have a summary output
-				should_cleanup = True
+			if config.SUMMARIZE:
+				# Check if any summary output exists
+				if (config.OUTPUT_DOCX and self.output_summary_docx_path.exists()) or \
+				   (config.OUTPUT_MARKDOWN and self.output_summary_md_path.exists()):
+					should_cleanup = True
 		
 		finally:
 			# Always finalize log files by closing JSON arrays, even if errors occurred

@@ -21,6 +21,11 @@ cli_mode: false  # true = CLI with arguments, false = interactive prompts
 # Enable/disable major processing stages
 summarize: true  # false = transcription only (no summarization phase)
 
+# Summary output formats (only applies when summarize=true)
+summary_output:
+  docx: true      # Generate .docx summary with formatted Word document
+  markdown: true  # Generate .md summary for version control and markdown viewers
+
 # =============================================================================
 # File Paths
 # =============================================================================

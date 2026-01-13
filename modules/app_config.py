@@ -102,12 +102,17 @@ def _get_bool(data: dict[str, Any], key: str, default: bool) -> bool:
 _APP_CFG: dict[str, Any] = _load_yaml_app_config()
 _CITATION: dict[str, Any] = _APP_CFG.get("citation", {}) if isinstance(_APP_CFG.get("citation"), dict) else {}
 _TOKEN_LIMIT: dict[str, Any] = _APP_CFG.get("daily_token_limit", {}) if isinstance(_APP_CFG.get("daily_token_limit"), dict) else {}
+_SUMMARY_OUTPUT: dict[str, Any] = _APP_CFG.get("summary_output", {}) if isinstance(_APP_CFG.get("summary_output"), dict) else {}
 
 # --- Execution Mode ---
 CLI_MODE = _get_bool(_APP_CFG, "cli_mode", False)
 
 # --- Feature Toggles ---
 SUMMARIZE = _get_bool(_APP_CFG, "summarize", True)
+
+# --- Summary Output Formats ---
+OUTPUT_DOCX = _get_bool(_SUMMARY_OUTPUT, "docx", True)
+OUTPUT_MARKDOWN = _get_bool(_SUMMARY_OUTPUT, "markdown", True)
 
 # --- File Paths ---
 INPUT_FOLDER_PATH = _get_str(_APP_CFG, "input_folder_path", r"C:\Users\paulg\OneDrive\Desktop\New Literature")

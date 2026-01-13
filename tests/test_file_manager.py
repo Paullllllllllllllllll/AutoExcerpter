@@ -18,7 +18,10 @@ from processors.file_manager import (
     _extract_summary_payload,
     _page_number_and_flags,
     _is_meaningful_summary,
+    _format_page_heading_md,
     int_to_roman,
+    create_markdown_summary,
+    filter_empty_pages,
 )
 
 
@@ -537,3 +540,303 @@ class TestFileManagerIntegration:
         # Test basic conversion
         mathml = latex_to_mathml("x")
         assert mathml is not None
+
+
+class TestFormatPageHeadingMd:
+    """Tests for _format_page_heading_md function."""
+
+    def test_arabic_page_number(self):
+        """Arabic page numbers format correctly."""
+        result = _format_page_heading_md(5, "arabic", False)
+        assert result == "## Page 5"
+
+    def test_roman_page_number(self):
+        """Roman numeral pages format with Pre-face prefix."""
+        result = _format_page_heading_md(3, "roman", False)
+        assert result == "## Pre-face page iii"
+
+    def test_unnumbered_page_via_type(self):
+        """Unnumbered pages via page_type='none' format correctly."""
+        result = _format_page_heading_md("?", "none", False)
+        assert result == "## [Unnumbered page]"
+
+    def test_unnumbered_page_via_flag(self):
+        """Unnumbered pages via is_unnumbered flag format correctly."""
+        result = _format_page_heading_md("?", "arabic", True)
+        assert result == "## [Unnumbered page]"
+
+    def test_string_page_number(self):
+        """String page numbers are handled."""
+        result = _format_page_heading_md("42", "arabic", False)
+        assert result == "## Page 42"
+
+
+class TestCreateMarkdownSummary:
+    """Tests for create_markdown_summary function."""
+
+    def test_creates_file(self, tmp_path):
+        """Creates a markdown file at the specified path."""
+        output_path = tmp_path / "test_summary.md"
+        summary_results = [
+            {
+                "summary": {
+                    "page_number": {"page_number_integer": 1, "page_number_type": "arabic"},
+                    "bullet_points": ["Point 1", "Point 2"],
+                    "references": [],
+                    "contains_no_semantic_content": False,
+                }
+            }
+        ]
+        
+        create_markdown_summary(summary_results, output_path, "Test Document")
+        
+        assert output_path.exists()
+
+    def test_contains_title(self, tmp_path):
+        """Output contains document title."""
+        output_path = tmp_path / "test_summary.md"
+        summary_results = [
+            {
+                "summary": {
+                    "page_number": {"page_number_integer": 1, "page_number_type": "arabic"},
+                    "bullet_points": ["Point 1"],
+                    "references": [],
+                    "contains_no_semantic_content": False,
+                }
+            }
+        ]
+        
+        create_markdown_summary(summary_results, output_path, "My Test Doc")
+        
+        content = output_path.read_text(encoding="utf-8")
+        assert "# Summary of My Test Doc" in content
+
+    def test_contains_metadata(self, tmp_path):
+        """Output contains processing metadata."""
+        output_path = tmp_path / "test_summary.md"
+        summary_results = [
+            {
+                "summary": {
+                    "page_number": {"page_number_integer": 1, "page_number_type": "arabic"},
+                    "bullet_points": ["Point 1"],
+                    "references": [],
+                    "contains_no_semantic_content": False,
+                }
+            }
+        ]
+        
+        create_markdown_summary(summary_results, output_path, "Test")
+        
+        content = output_path.read_text(encoding="utf-8")
+        assert "*Processed:" in content
+        assert "Pages: 1*" in content
+
+    def test_contains_page_headings(self, tmp_path):
+        """Output contains page headings."""
+        output_path = tmp_path / "test_summary.md"
+        summary_results = [
+            {
+                "summary": {
+                    "page_number": {"page_number_integer": 5, "page_number_type": "arabic"},
+                    "bullet_points": ["Point 1"],
+                    "references": [],
+                    "contains_no_semantic_content": False,
+                }
+            }
+        ]
+        
+        create_markdown_summary(summary_results, output_path, "Test")
+        
+        content = output_path.read_text(encoding="utf-8")
+        assert "## Page 5" in content
+
+    def test_contains_bullet_points(self, tmp_path):
+        """Output contains bullet points."""
+        output_path = tmp_path / "test_summary.md"
+        summary_results = [
+            {
+                "summary": {
+                    "page_number": {"page_number_integer": 1, "page_number_type": "arabic"},
+                    "bullet_points": ["First point", "Second point"],
+                    "references": [],
+                    "contains_no_semantic_content": False,
+                }
+            }
+        ]
+        
+        create_markdown_summary(summary_results, output_path, "Test")
+        
+        content = output_path.read_text(encoding="utf-8")
+        assert "- First point" in content
+        assert "- Second point" in content
+
+    def test_roman_numeral_pages(self, tmp_path):
+        """Roman numeral pages show Pre-face heading."""
+        output_path = tmp_path / "test_summary.md"
+        summary_results = [
+            {
+                "summary": {
+                    "page_number": {"page_number_integer": 3, "page_number_type": "roman"},
+                    "bullet_points": ["Preface content"],
+                    "references": [],
+                    "contains_no_semantic_content": False,
+                }
+            }
+        ]
+        
+        create_markdown_summary(summary_results, output_path, "Test")
+        
+        content = output_path.read_text(encoding="utf-8")
+        assert "## Pre-face page iii" in content
+
+    def test_filters_empty_pages(self, tmp_path):
+        """Empty pages are filtered out."""
+        output_path = tmp_path / "test_summary.md"
+        summary_results = [
+            {
+                "summary": {
+                    "page_number": {"page_number_integer": 1, "page_number_type": "arabic"},
+                    "bullet_points": ["Valid content"],
+                    "references": [],
+                    "contains_no_semantic_content": False,
+                }
+            },
+            {
+                "summary": {
+                    "page_number": {"page_number_integer": 2, "page_number_type": "arabic"},
+                    "bullet_points": [],
+                    "references": [],
+                    "contains_no_semantic_content": False,
+                }
+            },
+        ]
+        
+        create_markdown_summary(summary_results, output_path, "Test")
+        
+        content = output_path.read_text(encoding="utf-8")
+        assert "## Page 1" in content
+        assert "## Page 2" not in content
+
+    def test_preserves_latex_formulas(self, tmp_path):
+        """LaTeX formulas are preserved in markdown."""
+        output_path = tmp_path / "test_summary.md"
+        summary_results = [
+            {
+                "summary": {
+                    "page_number": {"page_number_integer": 1, "page_number_type": "arabic"},
+                    "bullet_points": ["The formula $x + y = z$ is important"],
+                    "references": [],
+                    "contains_no_semantic_content": False,
+                }
+            }
+        ]
+        
+        create_markdown_summary(summary_results, output_path, "Test")
+        
+        content = output_path.read_text(encoding="utf-8")
+        assert "$x + y = z$" in content
+
+    def test_multiple_pages(self, tmp_path):
+        """Multiple pages are included in order."""
+        output_path = tmp_path / "test_summary.md"
+        summary_results = [
+            {
+                "summary": {
+                    "page_number": {"page_number_integer": 1, "page_number_type": "arabic"},
+                    "bullet_points": ["Page 1 content"],
+                    "references": [],
+                    "contains_no_semantic_content": False,
+                }
+            },
+            {
+                "summary": {
+                    "page_number": {"page_number_integer": 2, "page_number_type": "arabic"},
+                    "bullet_points": ["Page 2 content"],
+                    "references": [],
+                    "contains_no_semantic_content": False,
+                }
+            },
+        ]
+        
+        create_markdown_summary(summary_results, output_path, "Test")
+        
+        content = output_path.read_text(encoding="utf-8")
+        assert "## Page 1" in content
+        assert "## Page 2" in content
+        # Page 1 should come before Page 2
+        assert content.index("## Page 1") < content.index("## Page 2")
+
+    def test_empty_results(self, tmp_path):
+        """Empty results create minimal file."""
+        output_path = tmp_path / "test_summary.md"
+        
+        create_markdown_summary([], output_path, "Empty Doc")
+        
+        assert output_path.exists()
+        content = output_path.read_text(encoding="utf-8")
+        assert "# Summary of Empty Doc" in content
+        assert "Pages: 0" in content
+
+    @patch("processors.file_manager.CitationManager")
+    def test_references_section_with_citations(self, mock_citation_manager_class, tmp_path):
+        """References section is added when citations exist."""
+        output_path = tmp_path / "test_summary.md"
+        
+        # Setup mock citation manager
+        mock_citation = MagicMock()
+        mock_citation.raw_text = "Author (2020). Title."
+        mock_citation.url = "https://example.com"
+        mock_citation.doi = "10.1234/example"
+        mock_citation.metadata = {"publication_year": 2020}
+        
+        mock_manager = MagicMock()
+        mock_manager.citations = {"key": mock_citation}
+        mock_manager.get_citations_with_pages.return_value = [(mock_citation, "p. 1")]
+        mock_citation_manager_class.return_value = mock_manager
+        
+        summary_results = [
+            {
+                "summary": {
+                    "page_number": {"page_number_integer": 1, "page_number_type": "arabic"},
+                    "bullet_points": ["Content"],
+                    "references": ["Author (2020). Title."],
+                    "contains_no_semantic_content": False,
+                }
+            }
+        ]
+        
+        create_markdown_summary(summary_results, output_path, "Test")
+        
+        content = output_path.read_text(encoding="utf-8")
+        assert "## Consolidated References" in content
+        assert "[Author (2020). Title.](https://example.com)" in content
+
+    def test_unnumbered_pages(self, tmp_path):
+        """Unnumbered pages show appropriate heading."""
+        output_path = tmp_path / "test_summary.md"
+        summary_results = [
+            {
+                "summary": {
+                    "page_number": {"page_number_integer": None, "page_number_type": "none"},
+                    "bullet_points": ["Unnumbered content"],
+                    "references": [],
+                    "contains_no_semantic_content": False,
+                }
+            }
+        ]
+        
+        # Note: This page will be filtered as unnumbered, so let's add a valid page too
+        summary_results.append({
+            "summary": {
+                "page_number": {"page_number_integer": 1, "page_number_type": "arabic"},
+                "bullet_points": ["Valid content"],
+                "references": [],
+                "contains_no_semantic_content": False,
+            }
+        })
+        
+        create_markdown_summary(summary_results, output_path, "Test")
+        
+        content = output_path.read_text(encoding="utf-8")
+        # Unnumbered page should be filtered out
+        assert "## Page 1" in content
