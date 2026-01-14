@@ -46,8 +46,8 @@ class TestInferUnnumberedPageNumbers:
         result = processor.infer_unnumbered_page_numbers([])
         assert result == 0
 
-    def test_basic_inference_roman_to_arabic(self, processor):
-        """Unnumbered page between Roman xii and Arabic 2 should become Arabic 1."""
+    def test_no_inference_at_type_boundary(self, processor):
+        """Unnumbered page between Roman and Arabic should NOT be inferred (boundary)."""
         parsed_summaries = [
             {
                 "original_input_order_index": 0,
@@ -77,12 +77,9 @@ class TestInferUnnumberedPageNumbers:
         
         result = processor.infer_unnumbered_page_numbers(parsed_summaries)
         
-        assert result == 1
-        # Check the unnumbered page was updated
-        inferred_page = parsed_summaries[1]
-        assert inferred_page["model_page_number_int"] == 1
-        assert inferred_page["page_number_type"] == "arabic"
-        assert inferred_page["is_genuinely_unnumbered"] is False
+        # No inference at type boundaries - page stays unnumbered
+        assert result == 0
+        assert parsed_summaries[1]["is_genuinely_unnumbered"] is True
 
     def test_no_inference_when_page_would_be_zero(self, processor):
         """Should not infer page 0 (invalid page number)."""
@@ -172,8 +169,8 @@ class TestInferUnnumberedPageNumbers:
         assert result == 0
         assert parsed_summaries[0]["is_genuinely_unnumbered"] is True
 
-    def test_inference_from_roman_now_supported(self, processor):
-        """Should now infer from Roman-numbered pages as well as Arabic."""
+    def test_no_inference_at_sequence_start(self, processor):
+        """Should NOT infer for unnumbered page at start of sequence (boundary)."""
         parsed_summaries = [
             {
                 "original_input_order_index": 0,
@@ -195,13 +192,12 @@ class TestInferUnnumberedPageNumbers:
         
         result = processor.infer_unnumbered_page_numbers(parsed_summaries)
         
-        # Now we DO infer from Roman pages
-        assert result == 1
-        assert parsed_summaries[0]["model_page_number_int"] == 4
-        assert parsed_summaries[0]["page_number_type"] == "roman"
+        # No inference at start of sequence - stays unnumbered
+        assert result == 0
+        assert parsed_summaries[0]["is_genuinely_unnumbered"] is True
 
-    def test_multiple_unnumbered_pages_only_first_inferred(self, processor):
-        """When multiple unnumbered pages exist, only one before Arabic can be inferred."""
+    def test_no_inference_without_surrounding_numbered_pages(self, processor):
+        """Unnumbered pages without numbered pages on BOTH sides should not be inferred."""
         parsed_summaries = [
             {
                 "original_input_order_index": 0,
@@ -231,14 +227,13 @@ class TestInferUnnumberedPageNumbers:
         
         result = processor.infer_unnumbered_page_numbers(parsed_summaries)
         
-        # Only the page at index 1 (immediately before Arabic 2) should be inferred as 1
-        assert result == 1
+        # No inference - pages need numbered pages on BOTH sides
+        assert result == 0
         assert parsed_summaries[0]["is_genuinely_unnumbered"] is True
-        assert parsed_summaries[1]["model_page_number_int"] == 1
-        assert parsed_summaries[1]["is_genuinely_unnumbered"] is False
+        assert parsed_summaries[1]["is_genuinely_unnumbered"] is True
 
-    def test_inference_with_unordered_input(self, processor):
-        """Inference should work correctly even if input is not sorted by index."""
+    def test_no_inference_at_type_boundary_unordered(self, processor):
+        """No inference at type boundaries even with unordered input."""
         parsed_summaries = [
             {
                 "original_input_order_index": 2,
@@ -268,12 +263,10 @@ class TestInferUnnumberedPageNumbers:
         
         result = processor.infer_unnumbered_page_numbers(parsed_summaries)
         
-        assert result == 1
-        # Find the unnumbered page (index 1) and verify it was updated
+        # No inference - boundary between Roman and Arabic
+        assert result == 0
         unnumbered = next(s for s in parsed_summaries if s["original_input_order_index"] == 1)
-        assert unnumbered["model_page_number_int"] == 1
-        assert unnumbered["page_number_type"] == "arabic"
-        assert unnumbered["is_genuinely_unnumbered"] is False
+        assert unnumbered["is_genuinely_unnumbered"] is True
 
     def test_no_inference_when_next_is_also_unnumbered(self, processor):
         """Should not infer if the next page is also unnumbered."""
@@ -300,8 +293,8 @@ class TestInferUnnumberedPageNumbers:
         
         assert result == 0
 
-    def test_inference_higher_page_number(self, processor):
-        """Should correctly infer page 4 when followed by page 5."""
+    def test_no_inference_at_sequence_start_high_index(self, processor):
+        """Should NOT infer at start of sequence even with high page numbers."""
         parsed_summaries = [
             {
                 "original_input_order_index": 10,
@@ -323,12 +316,12 @@ class TestInferUnnumberedPageNumbers:
         
         result = processor.infer_unnumbered_page_numbers(parsed_summaries)
         
-        assert result == 1
-        assert parsed_summaries[0]["model_page_number_int"] == 4
-        assert parsed_summaries[0]["page_number_type"] == "arabic"
+        # No inference - needs numbered pages on BOTH sides
+        assert result == 0
+        assert parsed_summaries[0]["is_genuinely_unnumbered"] is True
 
-    def test_backward_inference_from_preceding_arabic(self, processor):
-        """Should infer page 6 when preceded by Arabic page 5."""
+    def test_no_inference_at_sequence_end(self, processor):
+        """Should NOT infer at end of sequence (needs pages on BOTH sides)."""
         parsed_summaries = [
             {
                 "original_input_order_index": 0,
@@ -350,13 +343,12 @@ class TestInferUnnumberedPageNumbers:
         
         result = processor.infer_unnumbered_page_numbers(parsed_summaries)
         
-        assert result == 1
-        assert parsed_summaries[1]["model_page_number_int"] == 6
-        assert parsed_summaries[1]["page_number_type"] == "arabic"
-        assert parsed_summaries[1]["is_genuinely_unnumbered"] is False
+        # No inference - needs numbered pages on BOTH sides
+        assert result == 0
+        assert parsed_summaries[1]["is_genuinely_unnumbered"] is True
 
-    def test_forward_inference_from_following_roman(self, processor):
-        """Should infer Roman page 4 when followed by Roman page 5."""
+    def test_no_inference_for_roman_at_start(self, processor):
+        """Should NOT infer for Roman page at start of sequence."""
         parsed_summaries = [
             {
                 "original_input_order_index": 0,
@@ -378,13 +370,12 @@ class TestInferUnnumberedPageNumbers:
         
         result = processor.infer_unnumbered_page_numbers(parsed_summaries)
         
-        assert result == 1
-        assert parsed_summaries[0]["model_page_number_int"] == 4
-        assert parsed_summaries[0]["page_number_type"] == "roman"
-        assert parsed_summaries[0]["is_genuinely_unnumbered"] is False
+        # No inference at start - needs numbered pages on BOTH sides
+        assert result == 0
+        assert parsed_summaries[0]["is_genuinely_unnumbered"] is True
 
-    def test_backward_inference_from_preceding_roman(self, processor):
-        """Should infer Roman page 10 when preceded by Roman page 9."""
+    def test_no_inference_for_roman_at_end(self, processor):
+        """Should NOT infer at end of Roman sequence (needs pages on BOTH sides)."""
         parsed_summaries = [
             {
                 "original_input_order_index": 0,
@@ -406,13 +397,12 @@ class TestInferUnnumberedPageNumbers:
         
         result = processor.infer_unnumbered_page_numbers(parsed_summaries)
         
-        assert result == 1
-        assert parsed_summaries[1]["model_page_number_int"] == 10
-        assert parsed_summaries[1]["page_number_type"] == "roman"
-        assert parsed_summaries[1]["is_genuinely_unnumbered"] is False
+        # No inference at end of sequence
+        assert result == 0
+        assert parsed_summaries[1]["is_genuinely_unnumbered"] is True
 
-    def test_arabic_priority_over_roman(self, processor):
-        """Arabic inference should run before Roman, claiming the page first."""
+    def test_no_inference_at_arabic_start(self, processor):
+        """Should NOT infer at start of Arabic sequence (needs pages on BOTH sides)."""
         parsed_summaries = [
             {
                 "original_input_order_index": 0,
@@ -434,10 +424,9 @@ class TestInferUnnumberedPageNumbers:
         
         result = processor.infer_unnumbered_page_numbers(parsed_summaries)
         
-        # Should be inferred as Arabic 1, not Roman
-        assert result == 1
-        assert parsed_summaries[0]["model_page_number_int"] == 1
-        assert parsed_summaries[0]["page_number_type"] == "arabic"
+        # No inference at start of sequence
+        assert result == 0
+        assert parsed_summaries[0]["is_genuinely_unnumbered"] is True
 
     def test_gap_filling_arabic(self, processor):
         """Should infer page 6 when between pages 5 and 7."""
@@ -543,3 +532,282 @@ class TestInferUnnumberedPageNumbers:
         # Page 6 is already claimed, so no inference should happen
         assert result == 0
         assert parsed_summaries[1]["is_genuinely_unnumbered"] is True
+
+
+class TestAdjustAndSortPageNumbers:
+    """Tests for the adjust_and_sort_page_numbers method."""
+
+    @pytest.fixture
+    def processor(self):
+        """Create a PageNumberProcessor instance."""
+        return PageNumberProcessor()
+
+    def _create_summary_result(
+        self, 
+        original_index: int, 
+        page_number: int | None, 
+        page_type: str = "arabic",
+        page_types: list[str] | None = None
+    ) -> dict:
+        """Helper to create a summary result dict in the expected format."""
+        if page_types is None:
+            page_types = ["content"]
+        
+        is_unnumbered = page_number is None or page_type == "none"
+        
+        return {
+            "original_input_order_index": original_index,
+            "summary": {
+                "summary": {
+                    "page_information": {
+                        "page_number_integer": page_number,
+                        "page_number_type": page_type if not is_unnumbered else "none",
+                        "page_types": page_types,
+                    },
+                    "bullet_points": ["Test bullet point"],
+                }
+            }
+        }
+
+    def test_empty_list_returns_empty(self, processor):
+        """Empty input should return empty output."""
+        result = processor.adjust_and_sort_page_numbers([])
+        assert result == []
+
+    def test_consecutive_arabic_sequence_preserved(self, processor):
+        """A consecutive sequence of Arabic pages should be preserved correctly."""
+        summary_results = [
+            self._create_summary_result(0, 1, "arabic"),
+            self._create_summary_result(1, 2, "arabic"),
+            self._create_summary_result(2, 3, "arabic"),
+            self._create_summary_result(3, 4, "arabic"),
+        ]
+        
+        result = processor.adjust_and_sort_page_numbers(summary_results)
+        
+        # Pages should retain their consecutive numbering
+        for i, r in enumerate(result):
+            page_info = r["summary"]["summary"]["page_information"]
+            assert page_info["page_number_integer"] == i + 1
+            assert page_info["page_number_type"] == "arabic"
+
+    def test_anchor_based_adjustment(self, processor):
+        """Pages should be adjusted based on the longest consecutive sequence."""
+        # Simulate a document where model detected:
+        # - Page 0: detected as page 5 (wrong)
+        # - Pages 1-4: detected as pages 1-4 (correct consecutive sequence)
+        # - Page 5: detected as page 10 (wrong)
+        summary_results = [
+            self._create_summary_result(0, 5, "arabic"),  # Wrong
+            self._create_summary_result(1, 1, "arabic"),  # Start of correct sequence
+            self._create_summary_result(2, 2, "arabic"),
+            self._create_summary_result(3, 3, "arabic"),
+            self._create_summary_result(4, 4, "arabic"),  # End of correct sequence
+            self._create_summary_result(5, 10, "arabic"),  # Wrong
+        ]
+        
+        result = processor.adjust_and_sort_page_numbers(summary_results)
+        
+        # Anchor should be page 1 at index 1
+        # All pages should be adjusted relative to this anchor
+        expected_pages = [0, 1, 2, 3, 4, 5]  # 1 + (index - 1) for each
+        for i, r in enumerate(result):
+            page_info = r["summary"]["summary"]["page_information"]
+            # Page numbers should be at least 1
+            expected = max(1, expected_pages[i])
+            assert page_info["page_number_integer"] == expected, f"Page {i} expected {expected}, got {page_info['page_number_integer']}"
+
+    def test_roman_and_arabic_separate_anchors(self, processor):
+        """Roman and Arabic pages should use separate anchor points."""
+        summary_results = [
+            self._create_summary_result(0, 10, "roman", ["preface"]),  # Roman x
+            self._create_summary_result(1, 11, "roman", ["preface"]),  # Roman xi
+            self._create_summary_result(2, 12, "roman", ["preface"]),  # Roman xii
+            self._create_summary_result(3, 1, "arabic", ["content"]),  # Arabic 1
+            self._create_summary_result(4, 2, "arabic", ["content"]),  # Arabic 2
+            self._create_summary_result(5, 3, "arabic", ["content"]),  # Arabic 3
+        ]
+        
+        result = processor.adjust_and_sort_page_numbers(summary_results)
+        
+        # Roman pages should be adjusted with Roman anchor
+        for i in range(3):
+            page_info = result[i]["summary"]["summary"]["page_information"]
+            assert page_info["page_number_type"] == "roman"
+            assert page_info["page_number_integer"] == 10 + i
+        
+        # Arabic pages should be adjusted with Arabic anchor
+        for i in range(3, 6):
+            page_info = result[i]["summary"]["summary"]["page_information"]
+            assert page_info["page_number_type"] == "arabic"
+            assert page_info["page_number_integer"] == i - 2  # 1, 2, 3
+
+    def test_unnumbered_pages_stay_unnumbered(self, processor):
+        """Pages with no detected page number should remain unnumbered."""
+        summary_results = [
+            self._create_summary_result(0, None, "none", ["figures_tables_sources"]),
+            self._create_summary_result(1, 1, "arabic", ["content"]),
+            self._create_summary_result(2, 2, "arabic", ["content"]),
+        ]
+        
+        result = processor.adjust_and_sort_page_numbers(summary_results)
+        
+        # First page should be unnumbered
+        page_info = result[0]["summary"]["summary"]["page_information"]
+        assert page_info["page_number_integer"] is None
+        assert page_info["page_number_type"] == "none"
+        
+        # Other pages should be numbered
+        assert result[1]["summary"]["summary"]["page_information"]["page_number_integer"] == 1
+        assert result[2]["summary"]["summary"]["page_information"]["page_number_integer"] == 2
+
+    def test_no_inference_at_type_boundary_in_adjustment(self, processor):
+        """Unnumbered pages at type boundaries should stay unnumbered."""
+        # Page at index 1 is unnumbered between Roman and Arabic - should stay unnumbered
+        summary_results = [
+            self._create_summary_result(0, 10, "roman", ["preface"]),
+            self._create_summary_result(1, None, "none", ["content"]),  # Stays unnumbered
+            self._create_summary_result(2, 2, "arabic", ["content"]),
+            self._create_summary_result(3, 3, "arabic", ["content"]),
+        ]
+        
+        result = processor.adjust_and_sort_page_numbers(summary_results)
+        
+        # Page at index 1 should remain unnumbered (boundary between Roman and Arabic)
+        page_info = result[1]["summary"]["summary"]["page_information"]
+        assert page_info["page_number_integer"] is None
+        assert page_info["page_number_type"] == "none"
+
+    def test_all_pages_detected_as_same_number(self, processor):
+        """When model detects all pages as the same number, use index-based fallback."""
+        # Simulate model incorrectly detecting all pages as page 1
+        summary_results = [
+            self._create_summary_result(0, 1, "arabic"),
+            self._create_summary_result(1, 1, "arabic"),
+            self._create_summary_result(2, 1, "arabic"),
+            self._create_summary_result(3, 1, "arabic"),
+        ]
+        
+        result = processor.adjust_and_sort_page_numbers(summary_results)
+        
+        # No consecutive sequence found, so fallback anchor is first page (page 1 at index 0)
+        # All pages should be adjusted relative to this: page = 1 + (index - 0)
+        for i, r in enumerate(result):
+            page_info = r["summary"]["summary"]["page_information"]
+            expected = 1 + i  # 1, 2, 3, 4
+            assert page_info["page_number_integer"] == expected, f"Page {i} expected {expected}, got {page_info['page_number_integer']}"
+
+    def test_preserves_document_order(self, processor):
+        """Output should be sorted by original_input_order_index."""
+        # Input in random order
+        summary_results = [
+            self._create_summary_result(3, 4, "arabic"),
+            self._create_summary_result(0, 1, "arabic"),
+            self._create_summary_result(2, 3, "arabic"),
+            self._create_summary_result(1, 2, "arabic"),
+        ]
+        
+        result = processor.adjust_and_sort_page_numbers(summary_results)
+        
+        # Output should be sorted by original index
+        for i, r in enumerate(result):
+            assert r["original_input_order_index"] == i
+
+    def _create_api_style_result(
+        self,
+        original_index: int,
+        page_number: int | None,
+        page_type: str = "arabic",
+        page_types: list[str] | None = None
+    ) -> dict:
+        """Create a result in the format returned by the actual summary API (no nested summary)."""
+        if page_types is None:
+            page_types = ["content"]
+        
+        is_unnumbered = page_number is None or page_type == "none"
+        
+        # API structure: result["summary"]["page_information"] (not nested)
+        return {
+            "original_input_order_index": original_index,
+            "summary": {
+                "page_information": {
+                    "page_number_integer": page_number,
+                    "page_number_type": page_type if not is_unnumbered else "none",
+                    "page_types": page_types,
+                },
+                "bullet_points": ["Test bullet point"],
+            }
+        }
+
+    def test_api_style_response_consecutive_sequence(self, processor):
+        """Test with API-style responses (no nested summary)."""
+        summary_results = [
+            self._create_api_style_result(0, 1, "arabic"),
+            self._create_api_style_result(1, 2, "arabic"),
+            self._create_api_style_result(2, 3, "arabic"),
+            self._create_api_style_result(3, 4, "arabic"),
+        ]
+        
+        result = processor.adjust_and_sort_page_numbers(summary_results)
+        
+        # Pages should retain their consecutive numbering
+        for i, r in enumerate(result):
+            # API style: page_information is directly in summary
+            page_info = r["summary"]["page_information"]
+            assert page_info["page_number_integer"] == i + 1, f"Page {i} expected {i+1}, got {page_info['page_number_integer']}"
+            assert page_info["page_number_type"] == "arabic"
+
+    def test_api_style_anchor_adjustment(self, processor):
+        """Test anchor-based adjustment with API-style responses."""
+        summary_results = [
+            self._create_api_style_result(0, 5, "arabic"),  # Wrong detection
+            self._create_api_style_result(1, 1, "arabic"),  # Start of correct sequence
+            self._create_api_style_result(2, 2, "arabic"),
+            self._create_api_style_result(3, 3, "arabic"),
+            self._create_api_style_result(4, 4, "arabic"),  # End of correct sequence
+            self._create_api_style_result(5, 10, "arabic"),  # Wrong detection
+        ]
+        
+        result = processor.adjust_and_sort_page_numbers(summary_results)
+        
+        # Anchor should be page 1 at index 1
+        # All pages adjusted: page = 1 + (index - 1)
+        expected_pages = [1, 1, 2, 3, 4, 5]  # max(1, 0), 1, 2, 3, 4, 5
+        for i, r in enumerate(result):
+            page_info = r["summary"]["page_information"]
+            assert page_info["page_number_integer"] == expected_pages[i], \
+                f"Page {i} expected {expected_pages[i]}, got {page_info['page_number_integer']}"
+
+    def test_api_style_with_preface_and_content(self, processor):
+        """Test mixed Roman (preface) and Arabic (content) pages with API-style."""
+        summary_results = [
+            self._create_api_style_result(0, None, "none", ["figures_tables_sources"]),
+            self._create_api_style_result(1, None, "none", ["figures_tables_sources"]),
+            self._create_api_style_result(2, None, "none", ["preface"]),
+            self._create_api_style_result(3, 10, "roman", ["preface"]),
+            self._create_api_style_result(4, 11, "roman", ["preface"]),
+            self._create_api_style_result(5, 12, "roman", ["preface"]),
+            self._create_api_style_result(6, 1, "arabic", ["content"]),
+            self._create_api_style_result(7, 2, "arabic", ["content"]),
+            self._create_api_style_result(8, 3, "arabic", ["content"]),
+        ]
+        
+        result = processor.adjust_and_sort_page_numbers(summary_results)
+        
+        # First 3 pages should be unnumbered
+        for i in range(3):
+            page_info = result[i]["summary"]["page_information"]
+            assert page_info["page_number_integer"] is None
+            assert page_info["page_number_type"] == "none"
+        
+        # Pages 3-5 should be Roman x, xi, xii
+        for i in range(3, 6):
+            page_info = result[i]["summary"]["page_information"]
+            assert page_info["page_number_type"] == "roman"
+            assert page_info["page_number_integer"] == 10 + (i - 3)
+        
+        # Pages 6-8 should be Arabic 1, 2, 3
+        for i in range(6, 9):
+            page_info = result[i]["summary"]["page_information"]
+            assert page_info["page_number_type"] == "arabic"
+            assert page_info["page_number_integer"] == i - 5

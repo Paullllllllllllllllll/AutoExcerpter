@@ -162,10 +162,15 @@ class PageNumberProcessor:
 		claimed_pages: set
 	) -> int:
 		"""
-		Infer page numbers from following numbered pages.
+		Infer page numbers for gaps between numbered pages.
 		
-		If an unnumbered page is immediately followed by page N of the given type,
-		infer it as page N-1.
+		Only infers if:
+		- Current page is unnumbered
+		- Previous page is numbered with the same type (creating a gap to fill)
+		- Next page is numbered with the same type
+		- The gap is exactly one page (prev+1 == next-1)
+		
+		This conservative approach only fills gaps in sequences, not boundaries.
 		
 		Args:
 			sorted_summaries: Summaries sorted by document order.
@@ -181,28 +186,40 @@ class PageNumberProcessor:
 			if not current["is_genuinely_unnumbered"]:
 				continue
 			
-			if i + 1 < len(sorted_summaries):
-				next_page = sorted_summaries[i + 1]
+			# Need both previous and next pages to exist
+			if i == 0 or i + 1 >= len(sorted_summaries):
+				continue
+			
+			prev_page = sorted_summaries[i - 1]
+			next_page = sorted_summaries[i + 1]
+			
+			# Both surrounding pages must be numbered with the same type
+			if (
+				prev_page["page_number_type"] == page_type
+				and prev_page["model_page_number_int"] is not None
+				and not prev_page["is_genuinely_unnumbered"]
+				and next_page["page_number_type"] == page_type
+				and next_page["model_page_number_int"] is not None
+				and not next_page["is_genuinely_unnumbered"]
+				# Document positions must be consecutive
+				and prev_page["original_input_order_index"] == current["original_input_order_index"] - 1
+				and next_page["original_input_order_index"] == current["original_input_order_index"] + 1
+				# Page numbers must indicate a single-page gap
+				and next_page["model_page_number_int"] == prev_page["model_page_number_int"] + 2
+			):
+				inferred_page = prev_page["model_page_number_int"] + 1
 				
-				if (
-					next_page["page_number_type"] == page_type
-					and next_page["model_page_number_int"] is not None
-					and not next_page["is_genuinely_unnumbered"]
-					and next_page["original_input_order_index"] == current["original_input_order_index"] + 1
-				):
-					inferred_page = next_page["model_page_number_int"] - 1
-					
-					if inferred_page >= 1 and inferred_page not in claimed_pages:
-						current["model_page_number_int"] = inferred_page
-						current["page_number_type"] = page_type
-						current["is_genuinely_unnumbered"] = False
-						claimed_pages.add(inferred_page)
-						inferred_count += 1
-						logger.info(
-							f"Inferred {page_type} page {inferred_page} for unnumbered page at "
-							f"document position {current['original_input_order_index']} "
-							f"(before {page_type} page {next_page['model_page_number_int']})"
-						)
+				if inferred_page >= 1 and inferred_page not in claimed_pages:
+					current["model_page_number_int"] = inferred_page
+					current["page_number_type"] = page_type
+					current["is_genuinely_unnumbered"] = False
+					claimed_pages.add(inferred_page)
+					inferred_count += 1
+					logger.info(
+						f"Inferred {page_type} page {inferred_page} for unnumbered page at "
+						f"document position {current['original_input_order_index']} "
+						f"(gap between pages {prev_page['model_page_number_int']} and {next_page['model_page_number_int']})"
+					)
 		
 		return inferred_count
 
@@ -213,10 +230,10 @@ class PageNumberProcessor:
 		claimed_pages: set
 	) -> int:
 		"""
-		Infer page numbers from preceding numbered pages.
+		Infer page numbers for gaps (handled by _infer_from_following_page).
 		
-		If an unnumbered page immediately follows page N of the given type,
-		infer it as page N+1.
+		This method is now a no-op since gap filling is handled by the forward pass.
+		Kept for API compatibility.
 		
 		Args:
 			sorted_summaries: Summaries sorted by document order.
@@ -224,38 +241,13 @@ class PageNumberProcessor:
 			claimed_pages: Set of already-claimed page numbers (modified in-place).
 			
 		Returns:
-			Number of pages inferred.
+			Number of pages inferred (always 0, kept for compatibility).
 		"""
-		inferred_count = 0
-		
-		for i, current in enumerate(sorted_summaries):
-			if not current["is_genuinely_unnumbered"]:
-				continue
-			
-			if i > 0:
-				prev_page = sorted_summaries[i - 1]
-				
-				if (
-					prev_page["page_number_type"] == page_type
-					and prev_page["model_page_number_int"] is not None
-					and not prev_page["is_genuinely_unnumbered"]
-					and prev_page["original_input_order_index"] == current["original_input_order_index"] - 1
-				):
-					inferred_page = prev_page["model_page_number_int"] + 1
-					
-					if inferred_page not in claimed_pages:
-						current["model_page_number_int"] = inferred_page
-						current["page_number_type"] = page_type
-						current["is_genuinely_unnumbered"] = False
-						claimed_pages.add(inferred_page)
-						inferred_count += 1
-						logger.info(
-							f"Inferred {page_type} page {inferred_page} for unnumbered page at "
-							f"document position {current['original_input_order_index']} "
-							f"(after {page_type} page {prev_page['model_page_number_int']})"
-						)
-		
-		return inferred_count
+		# Gap filling is now handled entirely by _infer_from_following_page
+		# which requires both preceding and following pages to be numbered.
+		# This conservative approach prevents converting genuinely unnumbered
+		# pages at sequence boundaries.
+		return 0
 
 	def infer_unnumbered_page_numbers(
 		self, parsed_summaries: List[Dict[str, Any]]
