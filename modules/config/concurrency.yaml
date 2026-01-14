@@ -45,7 +45,7 @@ api_requests:
     
     # OpenAI service tier: 'default' | 'flex' | 'priority'
     # flex = cheaper but may queue; priority = fastest but expensive
-    service_tier: default
+    service_tier: flex
   
   # ---------------------------------------------------------------------------
   # Summary Phase
@@ -53,7 +53,7 @@ api_requests:
   summary:
     concurrency_limit: 1500  # Lower than transcription (summaries are larger)
     delay_between_tasks: 0.1
-    service_tier: default  # Cost optimization for batch summarization
+    service_tier: flex  # Cost optimization for batch summarization
 
 # =============================================================================
 # RETRY & BACKOFF CONFIGURATION

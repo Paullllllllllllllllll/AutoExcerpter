@@ -901,8 +901,11 @@ def create_docx_summary(
         logger.info("Processing %d unique citations for consolidated references section", 
                    len(citation_manager.citations))
         
-        # Enrich citations with metadata from OpenAlex API
-        citation_manager.enrich_with_metadata(max_requests=config.CITATION_MAX_API_REQUESTS)
+        # Enrich citations with metadata from OpenAlex API (if enabled)
+        if config.CITATION_ENABLE_OPENALEX:
+            citation_manager.enrich_with_metadata(max_requests=config.CITATION_MAX_API_REQUESTS)
+        else:
+            logger.info("OpenAlex enrichment disabled - skipping metadata lookup")
         
         # Add references heading
         document.add_page_break()
@@ -1100,8 +1103,11 @@ def create_markdown_summary(
             len(citation_manager.citations),
         )
         
-        # Enrich citations with metadata from OpenAlex API
-        citation_manager.enrich_with_metadata(max_requests=config.CITATION_MAX_API_REQUESTS)
+        # Enrich citations with metadata from OpenAlex API (if enabled)
+        if config.CITATION_ENABLE_OPENALEX:
+            citation_manager.enrich_with_metadata(max_requests=config.CITATION_MAX_API_REQUESTS)
+        else:
+            logger.info("OpenAlex enrichment disabled - skipping metadata lookup")
         
         lines.append("---")
         lines.append("")

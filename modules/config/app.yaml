@@ -49,6 +49,7 @@ delete_temp_working_dir: true  # Delete extracted images and temp files after co
 citation:
   openalex_email: ''  # Required for polite pool (faster responses)
   max_api_requests: 300  # Cap API calls per document to avoid rate limits
+  enable_openalex_enrichment: true  # Set to false to disable API calls (faster summary generation)
 
 # =============================================================================
 # Daily Token Limit
@@ -56,4 +57,4 @@ citation:
 # Budget control to prevent runaway API costs
 daily_token_limit:
   enabled: true  # Enforce the daily token budget
-  daily_tokens: 7000000  # Max tokens per day (resets at midnight)
+  daily_tokens: 1000000  # Max tokens per day (resets at midnight)

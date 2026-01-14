@@ -125,6 +125,7 @@ DELETE_TEMP_WORKING_DIR = _get_bool(_APP_CFG, "delete_temp_working_dir", True)
 # --- Citation Management Settings ---
 CITATION_OPENALEX_EMAIL = _get_str(_CITATION, "openalex_email", "your-email@example.com")
 CITATION_MAX_API_REQUESTS = _get_int(_CITATION, "max_api_requests", 50)
+CITATION_ENABLE_OPENALEX = _get_bool(_CITATION, "enable_openalex_enrichment", True)
 
 # --- LLM Provider API Keys ---
 # API keys are loaded from environment variables

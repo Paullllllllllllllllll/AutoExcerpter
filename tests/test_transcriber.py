@@ -610,9 +610,12 @@ class TestAdjustAndSortPageNumbers:
         expected_pages = [0, 1, 2, 3, 4, 5]  # 1 + (index - 1) for each
         for i, r in enumerate(result):
             page_info = r["page_information"]
-            # Page numbers should be at least 1
-            expected = max(1, expected_pages[i])
-            assert page_info["page_number_integer"] == expected, f"Page {i} expected {expected}, got {page_info['page_number_integer']}"
+            expected = expected_pages[i]
+            if expected < 1:
+                assert page_info["page_number_integer"] is None
+                assert page_info["page_number_type"] == "none"
+            else:
+                assert page_info["page_number_integer"] == expected, f"Page {i} expected {expected}, got {page_info['page_number_integer']}"
 
     def test_roman_and_arabic_separate_anchors(self, processor):
         """Roman and Arabic pages should use separate anchor points."""
@@ -756,11 +759,16 @@ class TestAdjustAndSortPageNumbers:
         
         # Anchor should be page 1 at index 1
         # All pages adjusted: page = 1 + (index - 1)
-        expected_pages = [1, 1, 2, 3, 4, 5]  # max(1, 0), 1, 2, 3, 4, 5
+        expected_pages = [0, 1, 2, 3, 4, 5]  # 1 + (index - 1)
         for i, r in enumerate(result):
             page_info = r["page_information"]
-            assert page_info["page_number_integer"] == expected_pages[i], \
-                f"Page {i} expected {expected_pages[i]}, got {page_info['page_number_integer']}"
+            expected = expected_pages[i]
+            if expected < 1:
+                assert page_info["page_number_integer"] is None
+                assert page_info["page_number_type"] == "none"
+            else:
+                assert page_info["page_number_integer"] == expected, \
+                    f"Page {i} expected {expected}, got {page_info['page_number_integer']}"
 
     def test_api_style_with_preface_and_content(self, processor):
         """Test mixed Roman (preface) and Arabic (content) pages with flat structure."""

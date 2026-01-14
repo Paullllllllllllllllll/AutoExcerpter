@@ -2,6 +2,12 @@
 
 This module handles page number extraction, inference, and adjustment for
 documents with mixed Roman numeral (preface) and Arabic (main text) numbering.
+
+The key algorithm is per-section anchor-based adjustment:
+1. Group pages by section type (content, preface, abstract, appendix, etc.)
+2. For each section, find the longest consecutive sequence of model-detected page numbers
+3. Use that sequence as the anchor and adjust all pages in that section accordingly
+4. Conservatively infer page numbers for isolated unnumbered pages between numbered pages
 """
 
 from typing import Any, Dict, List, Optional, Tuple
@@ -14,6 +20,9 @@ logger = setup_logger(__name__)
 
 # Constants for page number adjustment
 MIN_SEQUENCE_LENGTH_FOR_ANCHOR = 2
+
+# Section types that get full bullet-point summaries (and need per-section anchoring)
+SUMMARY_SECTION_TYPES = {"content", "preface", "abstract", "appendix", "figures_tables_sources"}
 
 
 class PageNumberProcessor:
@@ -148,7 +157,7 @@ class PageNumberProcessor:
 		"""
 		offset = original_index - anchor_original_index
 		adjusted_page = anchor_model_page + offset
-		return max(1, adjusted_page)  # Ensure page number is at least 1
+		return adjusted_page
 
 	def _infer_from_following_page(
 		self,
@@ -315,14 +324,81 @@ class PageNumberProcessor:
 		
 		return inferred_count
 
+	def _get_primary_section_type(self, page_types: List[str]) -> str:
+		"""
+		Get the primary section type for a page.
+		
+		Any page containing "content" in its page_types is treated as a content page
+		for page numbering and section ordering purposes. This ensures content pages
+		share the same anchor even if they have multiple type classifications.
+		
+		Priority order: content > preface > abstract > appendix > figures_tables_sources
+		
+		Args:
+			page_types: List of page type classifications.
+			
+		Returns:
+			Primary section type string.
+		"""
+		# Content takes absolute priority - any page with "content" is a content page
+		if "content" in page_types:
+			return "content"
+		
+		# For non-content pages, use priority order
+		priority_order = ["preface", "abstract", "appendix", "figures_tables_sources"]
+		for section in priority_order:
+			if section in page_types:
+				return section
+		return page_types[0] if page_types else "content"
+
+	def _find_section_anchor(
+		self, 
+		section_pages: List[Dict[str, Any]]
+	) -> Tuple[Optional[int], Optional[int]]:
+		"""
+		Find the anchor point for a section based on longest consecutive sequence.
+		
+		Args:
+			section_pages: List of parsed summaries for this section (sorted by doc order).
+			
+		Returns:
+			Tuple of (anchor_page_number, anchor_document_index) or (None, None) if no anchor.
+		"""
+		if not section_pages:
+			return None, None
+		
+		# Get only pages with valid page numbers (not unnumbered)
+		numbered_pages = [
+			p for p in section_pages
+			if p["model_page_number_int"] is not None
+			and not p["is_genuinely_unnumbered"]
+		]
+		
+		if not numbered_pages:
+			return None, None
+		
+		# Find longest consecutive sequence
+		longest_seq = self.find_longest_consecutive_sequence(numbered_pages)
+		
+		if longest_seq and len(longest_seq) >= MIN_SEQUENCE_LENGTH_FOR_ANCHOR:
+			anchor_item = longest_seq[0]
+			return anchor_item["model_page_number_int"], anchor_item["original_input_order_index"]
+		elif numbered_pages:
+			# Fallback to first numbered page
+			anchor_item = numbered_pages[0]
+			return anchor_item["model_page_number_int"], anchor_item["original_input_order_index"]
+		
+		return None, None
+
 	def adjust_and_sort_page_numbers(
 		self, summary_results: List[Dict[str, Any]]
 	) -> List[Dict[str, Any]]:
 		"""
-		Adjust page numbers based on model-detected sequences and sort results.
+		Adjust page numbers based on per-section anchor logic.
 		
-		Handles both Roman numeral (preface) and Arabic (main text) page numbering
-		systems separately, preserving the original document order.
+		For each section type (content, preface, abstract, appendix, figures_tables_sources),
+		finds the longest consecutive sequence of model-detected page numbers and uses that
+		as the anchor for adjusting all pages in that section.
 		
 		Args:
 			summary_results: List of summary results with page information.
@@ -333,138 +409,94 @@ class PageNumberProcessor:
 		if not summary_results:
 			return []
 		
-		logger.info("Adjusting page numbers based on model-detected page sequences...")
+		logger.info("Adjusting page numbers using per-section anchor logic...")
 		
 		# Parse page information from all summaries
 		parsed_summaries = []
 		for r in summary_results:
 			model_page_num, page_num_type, page_types, is_unnumbered = self.parse_page_information(r)
+			primary_section = self._get_primary_section_type(page_types)
 			parsed_summaries.append({
 				"original_input_order_index": r["original_input_order_index"],
 				"model_page_number_int": model_page_num,
 				"page_number_type": page_num_type,
 				"page_types": page_types,
+				"primary_section": primary_section,
 				"data": r,
 				"is_genuinely_unnumbered": is_unnumbered
 			})
 
-		# Infer page numbers for unnumbered pages based on surrounding context
-		# This must happen before separating pages by type, as it may convert
-		# unnumbered pages to Arabic-numbered pages
+		# Sort by document order for sequential processing
+		parsed_summaries.sort(key=lambda x: x["original_input_order_index"])
+
+		# Group pages by section type
+		section_groups: Dict[str, List[Dict[str, Any]]] = {}
+		for p in parsed_summaries:
+			section = p["primary_section"]
+			if section not in section_groups:
+				section_groups[section] = []
+			section_groups[section].append(p)
+		
+		logger.info(f"Section distribution: {', '.join(f'{k}: {len(v)} pages' for k, v in section_groups.items())}")
+
+		# Find anchor for each section
+		section_anchors: Dict[str, Tuple[Optional[int], Optional[int]]] = {}
+		for section, pages in section_groups.items():
+			# Sort section pages by document order
+			pages.sort(key=lambda x: x["original_input_order_index"])
+			anchor_page, anchor_index = self._find_section_anchor(pages)
+			section_anchors[section] = (anchor_page, anchor_index)
+			if anchor_page is not None:
+				logger.info(f"Section '{section}' anchor: page {anchor_page} at document index {anchor_index}")
+			else:
+				logger.info(f"Section '{section}': no valid anchor found")
+
+		# Infer page numbers for isolated unnumbered pages between numbered pages
+		# Do this AFTER we have section anchors, but BEFORE final adjustment
 		inferred_count = self.infer_unnumbered_page_numbers(parsed_summaries)
 		if inferred_count > 0:
-			logger.info(f"Inferred page numbers for {inferred_count} previously unnumbered page(s)")
+			logger.info(f"Inferred page numbers for {inferred_count} isolated unnumbered page(s)")
 
-		# Separate Roman and Arabic numbered pages
-		roman_pages = [
-			s for s in parsed_summaries
-			if s["model_page_number_int"] is not None 
-			and s["page_number_type"] == "roman"
-			and not s["is_genuinely_unnumbered"]
-		]
-		arabic_pages = [
-			s for s in parsed_summaries
-			if s["model_page_number_int"] is not None 
-			and s["page_number_type"] == "arabic"
-			and not s["is_genuinely_unnumbered"]
-		]
-		
-		logger.info(
-			f"Found {len(roman_pages)} Roman numeral pages, "
-			f"{len(arabic_pages)} Arabic numeral pages"
-		)
-		
-		# Determine anchor points for each numbering system
-		roman_anchor_page = 1
-		roman_anchor_index = 0
-		arabic_anchor_page = 1
-		arabic_anchor_index = 0
-		
-		# Process Roman numeral sequence
-		if roman_pages:
-			roman_pages.sort(key=lambda x: x["original_input_order_index"])
-			detected_roman = [s["model_page_number_int"] for s in roman_pages]
-			detected_roman_pos = [s["original_input_order_index"] for s in roman_pages]
-			logger.info(f"Roman page numbers (in document order): {detected_roman}")
-			logger.info(f"At document positions: {detected_roman_pos}")
-			
-			longest_roman_seq = self.find_longest_consecutive_sequence(roman_pages)
-			if longest_roman_seq and len(longest_roman_seq) > MIN_SEQUENCE_LENGTH_FOR_ANCHOR:
-				anchor_item = longest_roman_seq[0]
-				roman_anchor_page = anchor_item["model_page_number_int"]
-				roman_anchor_index = anchor_item["original_input_order_index"]
-				logger.info(f"Roman anchor: page {roman_anchor_page} at index {roman_anchor_index}")
-			elif roman_pages:
-				anchor_item = roman_pages[0]
-				roman_anchor_page = anchor_item["model_page_number_int"]
-				roman_anchor_index = anchor_item["original_input_order_index"]
-				logger.info(f"Roman fallback anchor: page {roman_anchor_page} at index {roman_anchor_index}")
-		
-		# Process Arabic numeral sequence
-		if arabic_pages:
-			arabic_pages.sort(key=lambda x: x["original_input_order_index"])
-			detected_arabic = [s["model_page_number_int"] for s in arabic_pages]
-			detected_arabic_pos = [s["original_input_order_index"] for s in arabic_pages]
-			logger.info(f"Arabic page numbers (in document order): {detected_arabic}")
-			logger.info(f"At document positions: {detected_arabic_pos}")
-			
-			longest_arabic_seq = self.find_longest_consecutive_sequence(arabic_pages)
-			if longest_arabic_seq and len(longest_arabic_seq) > MIN_SEQUENCE_LENGTH_FOR_ANCHOR:
-				anchor_item = longest_arabic_seq[0]
-				arabic_anchor_page = anchor_item["model_page_number_int"]
-				arabic_anchor_index = anchor_item["original_input_order_index"]
-				logger.info(f"Arabic anchor: page {arabic_anchor_page} at index {arabic_anchor_index}")
-			elif arabic_pages:
-				anchor_item = arabic_pages[0]
-				arabic_anchor_page = anchor_item["model_page_number_int"]
-				arabic_anchor_index = anchor_item["original_input_order_index"]
-				logger.info(f"Arabic fallback anchor: page {arabic_anchor_page} at index {arabic_anchor_index}")
-		
-		if not roman_pages and not arabic_pages:
-			logger.info("No valid model page numbers detected. Using default numbering starting from 1.")
-
-		# Apply page number adjustment to all summaries
+		# Apply per-section page number adjustment
 		final_ordered_summaries = []
-		for s_wrapper in parsed_summaries:
-			original_index = s_wrapper["original_input_order_index"]
-			page_num_type = s_wrapper["page_number_type"]
-			content_page_types = s_wrapper["page_types"]
-			data = s_wrapper["data"]
+		for p in parsed_summaries:
+			original_index = p["original_input_order_index"]
+			page_num_type = p["page_number_type"]
+			content_page_types = p["page_types"]
+			primary_section = p["primary_section"]
+			data = p["data"]
 
 			# Ensure page_information exists at top level (flat structure)
-			if "page_information" not in data or not isinstance(
-					data["page_information"], dict):
+			if "page_information" not in data or not isinstance(data["page_information"], dict):
 				data["page_information"] = {
 					"page_number_integer": None,
 					"page_number_type": "none",
 					"page_types": content_page_types,
 				}
 
-			if s_wrapper["is_genuinely_unnumbered"]:
+			# Get section anchor
+			anchor_page, anchor_index = section_anchors.get(primary_section, (None, None))
+
+			if p["is_genuinely_unnumbered"]:
+				# Genuinely unnumbered page - keep as unnumbered
 				data["page_information"]["page_number_integer"] = None
 				data["page_information"]["page_number_type"] = "none"
-			elif page_num_type == "roman" and roman_pages:
-				# Use Roman anchor for adjustment
+			elif anchor_page is not None and anchor_index is not None:
+				# Calculate adjusted page number using section anchor
 				adjusted_page = self.calculate_adjusted_page_number(
-					original_index, roman_anchor_page, roman_anchor_index)
-				adjusted_page = max(1, adjusted_page)
-				data["page_information"]["page_number_integer"] = adjusted_page
-				data["page_information"]["page_number_type"] = "roman"
-			elif page_num_type == "arabic" and arabic_pages:
-				# Use Arabic anchor for adjustment
-				adjusted_page = self.calculate_adjusted_page_number(
-					original_index, arabic_anchor_page, arabic_anchor_index)
-				adjusted_page = max(1, adjusted_page)
-				data["page_information"]["page_number_integer"] = adjusted_page
-				data["page_information"]["page_number_type"] = "arabic"
+					original_index, anchor_page, anchor_index
+				)
+				if adjusted_page < 1:
+					# Invalid page number - mark as unnumbered
+					data["page_information"]["page_number_integer"] = None
+					data["page_information"]["page_number_type"] = "none"
+				else:
+					data["page_information"]["page_number_integer"] = adjusted_page
+					# Preserve original number type (roman/arabic) from model
+					data["page_information"]["page_number_type"] = page_num_type if page_num_type != "none" else "arabic"
 			else:
-				# No valid page type or no anchors - default to Arabic with index-based numbering
+				# No anchor available - use index-based fallback (1-indexed)
 				adjusted_page = original_index + 1
-				# Try to use Arabic anchor if available
-				if arabic_pages:
-					adjusted_page = self.calculate_adjusted_page_number(
-						original_index, arabic_anchor_page, arabic_anchor_index)
-				adjusted_page = max(1, adjusted_page)
 				data["page_information"]["page_number_integer"] = adjusted_page
 				data["page_information"]["page_number_type"] = page_num_type if page_num_type != "none" else "arabic"
 			
@@ -473,8 +505,16 @@ class PageNumberProcessor:
 
 			final_ordered_summaries.append(data)
 
-		# Sort by original input order to preserve document sequence, regardless of page_number
+		# Sort by original input order to preserve document sequence
 		final_ordered_summaries.sort(
 			key=lambda x: x.get("original_input_order_index", float('inf'))
 		)
+		
+		# Log final page number distribution for debugging
+		page_nums = [
+			f.get("page_information", {}).get("page_number_integer") 
+			for f in final_ordered_summaries
+		]
+		logger.info(f"Final page numbers: {page_nums}")
+		
 		return final_ordered_summaries
