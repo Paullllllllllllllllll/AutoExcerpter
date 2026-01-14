@@ -571,7 +571,16 @@ def add_hyperlink(paragraph, url: str, text: str) -> None:
 
 
 def _extract_summary_payload(result: dict[str, Any]) -> dict[str, Any]:
-    """Return the innermost summary payload dict, handling nested formats."""
+    """Return the summary payload dict, handling both flat and nested formats.
+    
+    Flat structure (preferred): page_information, bullet_points, references at top level.
+    Legacy nested: summary.summary containing those fields.
+    """
+    # Check for flat structure first (page_information at top level)
+    if "page_information" in result and isinstance(result.get("page_information"), dict):
+        return result
+    
+    # Fall back to legacy nested structure
     summary = result.get("summary", {})
     if not isinstance(summary, dict):
         return {}

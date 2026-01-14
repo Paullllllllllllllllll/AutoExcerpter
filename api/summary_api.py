@@ -195,9 +195,15 @@ class SummaryManager(LLMClientBase):
         }
 
     def _create_placeholder_summary(
-        self, page_num: int, error_message: str = "", page_type: str = "other"
+        self, page_num: int, error_message: str = "", page_types: list[str] | None = None
     ) -> dict[str, Any]:
-        """Create a placeholder summary for pages that couldn't be processed."""
+        """Create a placeholder summary for pages that couldn't be processed.
+        
+        Returns a flat structure with all fields at top level.
+        """
+        if page_types is None:
+            page_types = ["other"]
+        
         bullet_text = (
             f"[Error generating summary: {error_message}]"
             if error_message
@@ -206,15 +212,13 @@ class SummaryManager(LLMClientBase):
 
         result = {
             "page": page_num,
-            "summary": {
-                "page_information": {
-                    "page_number_integer": page_num,
-                    "page_number_type": "arabic",
-                    "page_type": page_type,
-                },
-                "bullet_points": [bullet_text],
-                "references": None,
+            "page_information": {
+                "page_number_integer": page_num,
+                "page_number_type": "arabic",
+                "page_types": page_types,
             },
+            "bullet_points": [bullet_text],
+            "references": None,
         }
 
         if error_message:
@@ -398,9 +402,12 @@ class SummaryManager(LLMClientBase):
                 # Ensure page_information structure is correct
                 self._ensure_page_information_structure(summary_json, page_num)
 
+                # Build flat result structure - LLM content fields at top level
                 result = {
                     "page": page_num,
-                    "summary": summary_json,
+                    "page_information": summary_json.get("page_information"),
+                    "bullet_points": summary_json.get("bullet_points"),
+                    "references": summary_json.get("references"),
                     "processing_time": round(processing_time, 2),
                     "provider": self.provider,
                 }
@@ -431,9 +438,12 @@ class SummaryManager(LLMClientBase):
                 return placeholder
 
         # Fallback if schema retry loop exits (all schema retries exhausted)
+        # Build flat structure from summary_json
         result = {
             "page": page_num,
-            "summary": summary_json,
+            "page_information": summary_json.get("page_information") if summary_json else None,
+            "bullet_points": summary_json.get("bullet_points") if summary_json else None,
+            "references": summary_json.get("references") if summary_json else None,
             "processing_time": round(time.time() - start_time, 2),
             "schema_retries": schema_retry_attempts.copy(),
             "provider": self.provider,

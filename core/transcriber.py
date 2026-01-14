@@ -163,21 +163,42 @@ class ItemTranscriber:
 		model_page_number: Optional[int],
 		error_message: Optional[str] = None,
 	) -> Dict[str, Any]:
-		"""Create a consistent summary result structure for downstream consumers."""
-		if isinstance(summary_payload, dict) and page_number is not None:
-			summary_payload.setdefault("page", page_number)
+		"""Create a consistent flat summary result structure for downstream consumers.
+		
+		Merges API result fields with metadata at the same level (no nesting).
+		"""
+		# Start with metadata fields
 		result = {
 			"original_input_order_index": original_index,
-			"model_page_number": model_page_number,
-			"summary": summary_payload,
 			"image_filename": image_name,
 		}
+		
+		# Add page number (prefer explicit, then from payload)
 		if page_number is not None:
 			result["page"] = page_number
 		elif isinstance(summary_payload, dict) and "page" in summary_payload:
 			result["page"] = summary_payload.get("page")
+		
+		# Merge content fields from summary_payload at top level
+		if isinstance(summary_payload, dict):
+			# Core content fields from API
+			result["page_information"] = summary_payload.get("page_information")
+			result["bullet_points"] = summary_payload.get("bullet_points")
+			result["references"] = summary_payload.get("references")
+			
+			# Metadata fields from API
+			if "processing_time" in summary_payload:
+				result["processing_time"] = summary_payload["processing_time"]
+			if "provider" in summary_payload:
+				result["provider"] = summary_payload["provider"]
+			if "api_response" in summary_payload:
+				result["api_response"] = summary_payload["api_response"]
+			if "schema_retries" in summary_payload:
+				result["schema_retries"] = summary_payload["schema_retries"]
+		
 		if error_message:
 			result["error"] = error_message
+		
 		return result
 
 	def _create_placeholder_summary(
@@ -189,19 +210,20 @@ class ItemTranscriber:
 		page_types: Optional[List[str]] = None,
 		error_message: Optional[str] = None,
 	) -> Dict[str, Any]:
+		"""Create a flat placeholder summary structure."""
 		if page_types is None:
 			page_types = ["other"]
+		
+		# Flat structure - all fields at top level
 		payload = {
 			"page": page_number if page_number is not None else 0,
-			"summary": {
-				"page_information": {
-					"page_number_integer": page_number,
-					"page_number_type": page_number_type,
-					"page_types": page_types,
-				},
-				"bullet_points": bullet_points,
-				"references": references,
-			}
+			"page_information": {
+				"page_number_integer": page_number,
+				"page_number_type": page_number_type,
+				"page_types": page_types,
+			},
+			"bullet_points": bullet_points,
+			"references": references,
 		}
 		if error_message:
 			payload["error"] = error_message

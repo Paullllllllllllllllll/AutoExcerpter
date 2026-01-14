@@ -221,8 +221,21 @@ class TestSimplifyProblematicLatex:
 class TestExtractSummaryPayload:
     """Tests for _extract_summary_payload function."""
 
-    def test_direct_summary(self):
-        """Extracts summary from result directly."""
+    def test_flat_structure(self):
+        """Extracts from flat structure (preferred)."""
+        result = {
+            "page_information": {"page_number_integer": 1, "page_number_type": "arabic"},
+            "bullet_points": ["Point 1"],
+            "references": [],
+        }
+        
+        payload = _extract_summary_payload(result)
+        
+        assert "bullet_points" in payload
+        assert payload["bullet_points"] == ["Point 1"]
+
+    def test_legacy_direct_summary(self):
+        """Handles legacy direct summary structure."""
         result = {
             "summary": {
                 "bullet_points": ["Point 1"],
@@ -234,8 +247,8 @@ class TestExtractSummaryPayload:
         
         assert "bullet_points" in payload
 
-    def test_nested_summary(self):
-        """Handles nested summary structure."""
+    def test_legacy_nested_summary(self):
+        """Handles legacy nested summary structure."""
         result = {
             "summary": {
                 "summary": {
@@ -599,12 +612,9 @@ class TestCreateMarkdownSummary:
         output_path = tmp_path / "test_summary.md"
         summary_results = [
             {
-                "summary": {
-                    "page_information": {"page_number_integer": 1, "page_number_type": "arabic"},
-                    "bullet_points": ["Point 1", "Point 2"],
-                    "references": [],
-                    "page_type": "content",
-                }
+                "page_information": {"page_number_integer": 1, "page_number_type": "arabic", "page_types": ["content"]},
+                "bullet_points": ["Point 1", "Point 2"],
+                "references": [],
             }
         ]
         
@@ -617,12 +627,9 @@ class TestCreateMarkdownSummary:
         output_path = tmp_path / "test_summary.md"
         summary_results = [
             {
-                "summary": {
-                    "page_information": {"page_number_integer": 1, "page_number_type": "arabic"},
-                    "bullet_points": ["Point 1"],
-                    "references": [],
-                    "page_type": "content",
-                }
+                "page_information": {"page_number_integer": 1, "page_number_type": "arabic", "page_types": ["content"]},
+                "bullet_points": ["Point 1"],
+                "references": [],
             }
         ]
         
@@ -636,12 +643,9 @@ class TestCreateMarkdownSummary:
         output_path = tmp_path / "test_summary.md"
         summary_results = [
             {
-                "summary": {
-                    "page_information": {"page_number_integer": 1, "page_number_type": "arabic"},
-                    "bullet_points": ["Point 1"],
-                    "references": [],
-                    "page_type": "content",
-                }
+                "page_information": {"page_number_integer": 1, "page_number_type": "arabic", "page_types": ["content"]},
+                "bullet_points": ["Point 1"],
+                "references": [],
             }
         ]
         
@@ -656,12 +660,9 @@ class TestCreateMarkdownSummary:
         output_path = tmp_path / "test_summary.md"
         summary_results = [
             {
-                "summary": {
-                    "page_information": {"page_number_integer": 5, "page_number_type": "arabic"},
-                    "bullet_points": ["Point 1"],
-                    "references": [],
-                    "page_type": "content",
-                }
+                "page_information": {"page_number_integer": 5, "page_number_type": "arabic", "page_types": ["content"]},
+                "bullet_points": ["Point 1"],
+                "references": [],
             }
         ]
         
@@ -675,12 +676,9 @@ class TestCreateMarkdownSummary:
         output_path = tmp_path / "test_summary.md"
         summary_results = [
             {
-                "summary": {
-                    "page_information": {"page_number_integer": 1, "page_number_type": "arabic"},
-                    "bullet_points": ["First point", "Second point"],
-                    "references": [],
-                    "page_type": "content",
-                }
+                "page_information": {"page_number_integer": 1, "page_number_type": "arabic", "page_types": ["content"]},
+                "bullet_points": ["First point", "Second point"],
+                "references": [],
             }
         ]
         
@@ -695,12 +693,9 @@ class TestCreateMarkdownSummary:
         output_path = tmp_path / "test_summary.md"
         summary_results = [
             {
-                "summary": {
-                    "page_information": {"page_number_integer": 3, "page_number_type": "roman"},
-                    "bullet_points": ["Preface content"],
-                    "references": [],
-                    "page_type": "content",
-                }
+                "page_information": {"page_number_integer": 3, "page_number_type": "roman", "page_types": ["content"]},
+                "bullet_points": ["Preface content"],
+                "references": [],
             }
         ]
         
@@ -714,20 +709,14 @@ class TestCreateMarkdownSummary:
         output_path = tmp_path / "test_summary.md"
         summary_results = [
             {
-                "summary": {
-                    "page_information": {"page_number_integer": 1, "page_number_type": "arabic"},
-                    "bullet_points": ["Valid content"],
-                    "references": [],
-                    "page_type": "content",
-                }
+                "page_information": {"page_number_integer": 1, "page_number_type": "arabic", "page_types": ["content"]},
+                "bullet_points": ["Valid content"],
+                "references": [],
             },
             {
-                "summary": {
-                    "page_information": {"page_number_integer": 2, "page_number_type": "arabic"},
-                    "bullet_points": [],
-                    "references": [],
-                    "page_type": "content",
-                }
+                "page_information": {"page_number_integer": 2, "page_number_type": "arabic", "page_types": ["content"]},
+                "bullet_points": [],
+                "references": [],
             },
         ]
         
@@ -742,12 +731,9 @@ class TestCreateMarkdownSummary:
         output_path = tmp_path / "test_summary.md"
         summary_results = [
             {
-                "summary": {
-                    "page_information": {"page_number_integer": 1, "page_number_type": "arabic"},
-                    "bullet_points": ["The formula $x + y = z$ is important"],
-                    "references": [],
-                    "page_type": "content",
-                }
+                "page_information": {"page_number_integer": 1, "page_number_type": "arabic", "page_types": ["content"]},
+                "bullet_points": ["The formula $x + y = z$ is important"],
+                "references": [],
             }
         ]
         
@@ -761,20 +747,14 @@ class TestCreateMarkdownSummary:
         output_path = tmp_path / "test_summary.md"
         summary_results = [
             {
-                "summary": {
-                    "page_information": {"page_number_integer": 1, "page_number_type": "arabic"},
-                    "bullet_points": ["Page 1 content"],
-                    "references": [],
-                    "page_type": "content",
-                }
+                "page_information": {"page_number_integer": 1, "page_number_type": "arabic", "page_types": ["content"]},
+                "bullet_points": ["Page 1 content"],
+                "references": [],
             },
             {
-                "summary": {
-                    "page_information": {"page_number_integer": 2, "page_number_type": "arabic"},
-                    "bullet_points": ["Page 2 content"],
-                    "references": [],
-                    "page_type": "content",
-                }
+                "page_information": {"page_number_integer": 2, "page_number_type": "arabic", "page_types": ["content"]},
+                "bullet_points": ["Page 2 content"],
+                "references": [],
             },
         ]
         
@@ -816,12 +796,9 @@ class TestCreateMarkdownSummary:
         
         summary_results = [
             {
-                "summary": {
-                    "page_information": {"page_number_integer": 1, "page_number_type": "arabic"},
-                    "bullet_points": ["Content"],
-                    "references": ["Author (2020). Title."],
-                    "page_type": "content",
-                }
+                "page_information": {"page_number_integer": 1, "page_number_type": "arabic", "page_types": ["content"]},
+                "bullet_points": ["Content"],
+                "references": ["Author (2020). Title."],
             }
         ]
         
@@ -836,23 +813,17 @@ class TestCreateMarkdownSummary:
         output_path = tmp_path / "test_summary.md"
         summary_results = [
             {
-                "summary": {
-                    "page_information": {"page_number_integer": None, "page_number_type": "none"},
-                    "bullet_points": ["Unnumbered content"],
-                    "references": [],
-                    "page_type": "content",
-                }
+                "page_information": {"page_number_integer": None, "page_number_type": "none", "page_types": ["content"]},
+                "bullet_points": ["Unnumbered content"],
+                "references": [],
             }
         ]
         
         # Note: This page will be filtered as unnumbered, so let's add a valid page too
         summary_results.append({
-            "summary": {
-                "page_information": {"page_number_integer": 1, "page_number_type": "arabic"},
-                "bullet_points": ["Valid content"],
-                "references": [],
-                "page_type": "content",
-            }
+            "page_information": {"page_number_integer": 1, "page_number_type": "arabic", "page_types": ["content"]},
+            "bullet_points": ["Valid content"],
+            "references": [],
         })
         
         create_markdown_summary(summary_results, output_path, "Test")

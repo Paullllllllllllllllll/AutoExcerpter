@@ -42,15 +42,24 @@ class SummaryContent(TypedDict, total=False):
 
 
 class SummaryResult(TypedDict, total=False):
-    """Type definition for summary API results."""
+    """Type definition for summary API results.
+    
+    Uses flat structure with all fields at top level (no nested "summary" key).
+    """
+    # Metadata fields
     page: int
-    summary: SummaryContent
-    model_page_number: int | None
-    image_filename: str
     original_input_order_index: int
+    image_filename: str
+    
+    # Content fields (from LLM output, merged at top level)
+    page_information: PageInformation
+    bullet_points: list[str] | None
+    references: list[str] | None
+    
+    # Processing metadata
     processing_time: float
-    retries: int
-    api_retries: int
+    provider: str
+    api_response: dict[str, Any]
     schema_retries: dict[str, int]
     error: str | None
 

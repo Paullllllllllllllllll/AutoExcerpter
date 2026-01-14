@@ -29,6 +29,8 @@ class PageNumberProcessor:
 		"""
 		Extract page information from a summary result.
 		
+		Supports both flat structure (preferred) and legacy nested structure.
+		
 		Args:
 			summary_result: Summary result dictionary.
 			
@@ -37,22 +39,29 @@ class PageNumberProcessor:
 			page_number_type is one of: 'roman', 'arabic', 'none'.
 			page_types is a list of page type classifications.
 		"""
-		summary_container = summary_result.get("summary", {})
-		inner_summary = summary_container.get("summary") if isinstance(
-			summary_container, dict
-		) else None
+		# Try flat structure first (page_information at top level)
+		page_info_obj = summary_result.get('page_information')
 		
-		if isinstance(inner_summary, dict):
-			page_info_obj = inner_summary.get('page_information', {})
-		else:
-			page_info_obj = summary_container.get('page_information', {})
+		# Fall back to legacy nested structure if needed
+		if not isinstance(page_info_obj, dict) or not page_info_obj:
+			summary_container = summary_result.get("summary", {})
+			inner_summary = summary_container.get("summary") if isinstance(
+				summary_container, dict
+			) else None
+			
+			if isinstance(inner_summary, dict):
+				page_info_obj = inner_summary.get('page_information', {})
+			elif isinstance(summary_container, dict):
+				page_info_obj = summary_container.get('page_information', {})
+			else:
+				page_info_obj = {}
 		
 		model_page_num = None
 		page_number_type = "none"
 		page_types = ["content"]
 		is_genuinely_unnumbered = True
 		
-		if isinstance(page_info_obj, dict):
+		if isinstance(page_info_obj, dict) and page_info_obj:
 			# New schema format with page_information object
 			model_page_num = page_info_obj.get('page_number_integer')
 			page_number_type = page_info_obj.get('page_number_type', 'none')
@@ -76,20 +85,6 @@ class PageNumberProcessor:
 			)
 			if is_genuinely_unnumbered:
 				page_number_type = "none"
-		else:
-			# Fallback for old format or direct model_page_number value
-			model_page_str = summary_result.get("model_page_number", "")
-			try:
-				if isinstance(model_page_str, (int, float)):
-					model_page_num = int(model_page_str)
-					page_number_type = "arabic"
-					is_genuinely_unnumbered = False
-				elif isinstance(model_page_str, str) and model_page_str.isdigit():
-					model_page_num = int(model_page_str)
-					page_number_type = "arabic"
-					is_genuinely_unnumbered = False
-			except ValueError:
-				pass  # model_page_num remains None, is_genuinely_unnumbered stays True
 		
 		return model_page_num, page_number_type, page_types, is_genuinely_unnumbered
 
@@ -434,41 +429,34 @@ class PageNumberProcessor:
 			original_index = s_wrapper["original_input_order_index"]
 			page_num_type = s_wrapper["page_number_type"]
 			content_page_types = s_wrapper["page_types"]
+			data = s_wrapper["data"]
 
-			# Ensure the 'summary' key exists and is a dictionary in the data part
-			if "summary" not in s_wrapper["data"] or not isinstance(
-					s_wrapper["data"]["summary"], dict):
-				s_wrapper["data"]["summary"] = {}
-			summary_data_dict = s_wrapper["data"]["summary"]
-			# Identify the target dict that actually holds page_information (nested summary JSON preferred)
-			target_summary_json = summary_data_dict.get("summary") if isinstance(summary_data_dict.get("summary"), dict) else summary_data_dict
-
-			# Ensure page_information object structure exists
-			if "page_information" not in target_summary_json or not isinstance(
-					target_summary_json["page_information"], dict):
-				target_summary_json["page_information"] = {
+			# Ensure page_information exists at top level (flat structure)
+			if "page_information" not in data or not isinstance(
+					data["page_information"], dict):
+				data["page_information"] = {
 					"page_number_integer": None,
 					"page_number_type": "none",
 					"page_types": content_page_types,
 				}
 
 			if s_wrapper["is_genuinely_unnumbered"]:
-				target_summary_json["page_information"]["page_number_integer"] = None
-				target_summary_json["page_information"]["page_number_type"] = "none"
+				data["page_information"]["page_number_integer"] = None
+				data["page_information"]["page_number_type"] = "none"
 			elif page_num_type == "roman" and roman_pages:
 				# Use Roman anchor for adjustment
 				adjusted_page = self.calculate_adjusted_page_number(
 					original_index, roman_anchor_page, roman_anchor_index)
 				adjusted_page = max(1, adjusted_page)
-				target_summary_json["page_information"]["page_number_integer"] = adjusted_page
-				target_summary_json["page_information"]["page_number_type"] = "roman"
+				data["page_information"]["page_number_integer"] = adjusted_page
+				data["page_information"]["page_number_type"] = "roman"
 			elif page_num_type == "arabic" and arabic_pages:
 				# Use Arabic anchor for adjustment
 				adjusted_page = self.calculate_adjusted_page_number(
 					original_index, arabic_anchor_page, arabic_anchor_index)
 				adjusted_page = max(1, adjusted_page)
-				target_summary_json["page_information"]["page_number_integer"] = adjusted_page
-				target_summary_json["page_information"]["page_number_type"] = "arabic"
+				data["page_information"]["page_number_integer"] = adjusted_page
+				data["page_information"]["page_number_type"] = "arabic"
 			else:
 				# No valid page type or no anchors - default to Arabic with index-based numbering
 				adjusted_page = original_index + 1
@@ -477,13 +465,13 @@ class PageNumberProcessor:
 					adjusted_page = self.calculate_adjusted_page_number(
 						original_index, arabic_anchor_page, arabic_anchor_index)
 				adjusted_page = max(1, adjusted_page)
-				target_summary_json["page_information"]["page_number_integer"] = adjusted_page
-				target_summary_json["page_information"]["page_number_type"] = page_num_type if page_num_type != "none" else "arabic"
+				data["page_information"]["page_number_integer"] = adjusted_page
+				data["page_information"]["page_number_type"] = page_num_type if page_num_type != "none" else "arabic"
 			
 			# Preserve page_types from the model
-			target_summary_json["page_information"]["page_types"] = content_page_types
+			data["page_information"]["page_types"] = content_page_types
 
-			final_ordered_summaries.append(s_wrapper["data"])
+			final_ordered_summaries.append(data)
 
 		# Sort by original input order to preserve document sequence, regardless of page_number
 		final_ordered_summaries.sort(
