@@ -8,8 +8,8 @@ This module provides the foundational LLM client implementation with:
 2. **LangChain Built-in Retry**: API error retries (rate limits, timeouts, server errors)
    are handled by LangChain's built-in exponential backoff via `max_retries` parameter.
    
-3. **Schema-Specific Retries**: Optional retries based on model-returned boolean flags
-   in responses (e.g., no_transcribable_text, contains_no_semantic_content).
+3. **Schema-Specific Retries**: Optional retries based on model-returned flags
+   in responses (e.g., no_transcribable_text, page_type_null_bullets).
 
 4. **Rate Limiting Integration**: Works with RateLimiter to throttle requests and prevent
    API quota exhaustion (complementary to LangChain's retry).

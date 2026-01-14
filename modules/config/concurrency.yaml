@@ -40,7 +40,7 @@ api_requests:
   # Transcription Phase
   # ---------------------------------------------------------------------------
   transcription:
-    concurrency_limit: 5  # Parallel API requests (OpenAI: 50-150, Anthropic: 5-10)
+    concurrency_limit: 1500  # Parallel API requests (OpenAI: 50-150, Anthropic: 5-10)
     delay_between_tasks: 0.1  # Stagger requests to smooth rate limit usage
     
     # OpenAI service tier: 'default' | 'flex' | 'priority'
@@ -51,9 +51,9 @@ api_requests:
   # Summary Phase
   # ---------------------------------------------------------------------------
   summary:
-    concurrency_limit: 5  # Lower than transcription (summaries are larger)
+    concurrency_limit: 1500  # Lower than transcription (summaries are larger)
     delay_between_tasks: 0.1
-    service_tier: flex  # Cost optimization for batch summarization
+    service_tier: default  # Cost optimization for batch summarization
 
 # =============================================================================
 # RETRY & BACKOFF CONFIGURATION
@@ -65,8 +65,8 @@ retry:
   # API Error Retries
   # ---------------------------------------------------------------------------
   # Handles rate limits (429), timeouts, and server errors (5xx)
-  max_attempts: 5  # Total attempts before giving up (OpenAI recommends 5-6)
-  backoff_base: 1.0  # Initial wait time in seconds
+  max_attempts: 15  # Total attempts before giving up (OpenAI recommends 5-6)
+  backoff_base: 0.5  # Initial wait time in seconds
   
   # Error-specific multipliers (higher = longer waits)
   backoff_multipliers:
@@ -89,27 +89,25 @@ retry:
     # Transcription phase flags
     transcription:
       no_transcribable_text:  # Image contains no text
-        enabled: true
+        enabled: false
         max_attempts: 0  # 0 = disabled (usually correct, no point retrying)
-        backoff_base: 0.5
+        backoff_base: 0.1
         backoff_multiplier: 1.5
       
       transcription_not_possible:  # Illegible/corrupted image
         enabled: true
-        max_attempts: 3  # Retry may help with transient model issues
-        backoff_base: 0.5
+        max_attempts: 3  # Retry may help with transient model issues or refusal
+        backoff_base: 0.1
         backoff_multiplier: 1.5
     
-    # Summary phase flags
+    # Summary phase flags (aligned with summary_schema.json v2.1.0)
+    # The schema now uses structured page_information instead of boolean flags:
+    #   - page_number_type: "roman" | "arabic" | "none"
+    #   - page_types: array of ["content", "blank", "table_of_contents", ...]
+    #   - bullet_points: null for non-content pages
     summary:
-      contains_no_semantic_content:  # Blank page, TOC, etc.
-        enabled: true
+      page_type_null_bullets:  # Non-content page with null bullet_points
+        enabled: false
         max_attempts: 0  # Usually correct, no retry needed
-        backoff_base: 0.5
-        backoff_multiplier: 1.5
-      
-      contains_no_page_number:  # No visible page number
-        enabled: true
-        max_attempts: 0  # Informational only, no retry needed
         backoff_base: 0.5
         backoff_multiplier: 1.5
