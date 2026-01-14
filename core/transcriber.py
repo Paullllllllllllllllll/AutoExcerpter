@@ -550,6 +550,179 @@ class ItemTranscriber:
 		adjusted_page = anchor_model_page + offset
 		return max(1, adjusted_page)  # Ensure page number is at least 1
 
+	def _infer_from_following_page(
+		self,
+		sorted_summaries: List[Dict[str, Any]],
+		page_type: str,
+		claimed_pages: set
+	) -> int:
+		"""
+		Infer page numbers from following numbered pages.
+		
+		If an unnumbered page is immediately followed by page N of the given type,
+		infer it as page N-1.
+		
+		Args:
+			sorted_summaries: Summaries sorted by document order.
+			page_type: 'arabic' or 'roman'.
+			claimed_pages: Set of already-claimed page numbers (modified in-place).
+			
+		Returns:
+			Number of pages inferred.
+		"""
+		inferred_count = 0
+		
+		for i, current in enumerate(sorted_summaries):
+			if not current["is_genuinely_unnumbered"]:
+				continue
+			
+			if i + 1 < len(sorted_summaries):
+				next_page = sorted_summaries[i + 1]
+				
+				if (
+					next_page["page_number_type"] == page_type
+					and next_page["model_page_number_int"] is not None
+					and not next_page["is_genuinely_unnumbered"]
+					and next_page["original_input_order_index"] == current["original_input_order_index"] + 1
+				):
+					inferred_page = next_page["model_page_number_int"] - 1
+					
+					if inferred_page >= 1 and inferred_page not in claimed_pages:
+						current["model_page_number_int"] = inferred_page
+						current["page_number_type"] = page_type
+						current["is_genuinely_unnumbered"] = False
+						claimed_pages.add(inferred_page)
+						inferred_count += 1
+						logger.info(
+							f"Inferred {page_type} page {inferred_page} for unnumbered page at "
+							f"document position {current['original_input_order_index']} "
+							f"(before {page_type} page {next_page['model_page_number_int']})"
+						)
+		
+		return inferred_count
+
+	def _infer_from_preceding_page(
+		self,
+		sorted_summaries: List[Dict[str, Any]],
+		page_type: str,
+		claimed_pages: set
+	) -> int:
+		"""
+		Infer page numbers from preceding numbered pages.
+		
+		If an unnumbered page immediately follows page N of the given type,
+		infer it as page N+1.
+		
+		Args:
+			sorted_summaries: Summaries sorted by document order.
+			page_type: 'arabic' or 'roman'.
+			claimed_pages: Set of already-claimed page numbers (modified in-place).
+			
+		Returns:
+			Number of pages inferred.
+		"""
+		inferred_count = 0
+		
+		for i, current in enumerate(sorted_summaries):
+			if not current["is_genuinely_unnumbered"]:
+				continue
+			
+			if i > 0:
+				prev_page = sorted_summaries[i - 1]
+				
+				if (
+					prev_page["page_number_type"] == page_type
+					and prev_page["model_page_number_int"] is not None
+					and not prev_page["is_genuinely_unnumbered"]
+					and prev_page["original_input_order_index"] == current["original_input_order_index"] - 1
+				):
+					inferred_page = prev_page["model_page_number_int"] + 1
+					
+					if inferred_page not in claimed_pages:
+						current["model_page_number_int"] = inferred_page
+						current["page_number_type"] = page_type
+						current["is_genuinely_unnumbered"] = False
+						claimed_pages.add(inferred_page)
+						inferred_count += 1
+						logger.info(
+							f"Inferred {page_type} page {inferred_page} for unnumbered page at "
+							f"document position {current['original_input_order_index']} "
+							f"(after {page_type} page {prev_page['model_page_number_int']})"
+						)
+		
+		return inferred_count
+
+	def _infer_unnumbered_page_numbers(
+		self, parsed_summaries: List[Dict[str, Any]]
+	) -> int:
+		"""
+		Infer page numbers for unnumbered pages based on surrounding context.
+		
+		Uses multiple passes to maximize inference:
+		1. Forward inference from following Arabic page (N-1)
+		2. Backward inference from preceding Arabic page (N+1)
+		3. Forward inference from following Roman page (N-1)
+		4. Backward inference from preceding Roman page (N+1)
+		
+		Examples:
+		- [Preface] Page xii -> [Unnumbered] -> Page 2  =>  infer Arabic page 1
+		- Page 5 -> [Unnumbered] -> Page 7  =>  infer Arabic page 6
+		- Page viii -> [Unnumbered] -> Page x  =>  infer Roman page ix
+		
+		Args:
+			parsed_summaries: List of parsed summary wrappers.
+			
+		Returns:
+			Number of pages that had their page numbers inferred.
+		"""
+		if not parsed_summaries:
+			return 0
+		
+		# Sort by document order for sequential analysis
+		sorted_summaries = sorted(
+			parsed_summaries, key=lambda x: x["original_input_order_index"]
+		)
+		
+		# Build sets of already-claimed page numbers to avoid conflicts
+		claimed_arabic_pages = {
+			s["model_page_number_int"]
+			for s in sorted_summaries
+			if s["page_number_type"] == "arabic"
+			and s["model_page_number_int"] is not None
+			and not s["is_genuinely_unnumbered"]
+		}
+		claimed_roman_pages = {
+			s["model_page_number_int"]
+			for s in sorted_summaries
+			if s["page_number_type"] == "roman"
+			and s["model_page_number_int"] is not None
+			and not s["is_genuinely_unnumbered"]
+		}
+		
+		inferred_count = 0
+		
+		# Pass 1: Forward inference from following Arabic page
+		inferred_count += self._infer_from_following_page(
+			sorted_summaries, "arabic", claimed_arabic_pages
+		)
+		
+		# Pass 2: Backward inference from preceding Arabic page
+		inferred_count += self._infer_from_preceding_page(
+			sorted_summaries, "arabic", claimed_arabic_pages
+		)
+		
+		# Pass 3: Forward inference from following Roman page
+		inferred_count += self._infer_from_following_page(
+			sorted_summaries, "roman", claimed_roman_pages
+		)
+		
+		# Pass 4: Backward inference from preceding Roman page
+		inferred_count += self._infer_from_preceding_page(
+			sorted_summaries, "roman", claimed_roman_pages
+		)
+		
+		return inferred_count
+
 	def _adjust_and_sort_summary_page_numbers(
 		self, summary_results: List[Dict[str, Any]]
 	) -> List[Dict[str, Any]]:
@@ -582,6 +755,13 @@ class ItemTranscriber:
 				"data": r,
 				"is_genuinely_unnumbered": is_unnumbered
 			})
+
+		# Infer page numbers for unnumbered pages based on surrounding context
+		# This must happen before separating pages by type, as it may convert
+		# unnumbered pages to Arabic-numbered pages
+		inferred_count = self._infer_unnumbered_page_numbers(parsed_summaries)
+		if inferred_count > 0:
+			logger.info(f"Inferred page numbers for {inferred_count} previously unnumbered page(s)")
 
 		# Separate Roman and Arabic numbered pages
 		roman_pages = [
