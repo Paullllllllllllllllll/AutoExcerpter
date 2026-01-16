@@ -1,0 +1,13 @@
+# AutoExcerpter Development Dependencies
+# Updated: January 2026
+
+-r requirements.txt
+
+# ============== Testing ==============
+iniconfig==2.3.0
+pluggy==1.6.0
+pytest==9.0.2
+pytest-mock==3.15.1
+pytest-cov==7.0.0
+coverage==7.13.1
+Pygments==2.19.2

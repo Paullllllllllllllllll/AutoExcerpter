@@ -98,6 +98,8 @@ class ConcurrentTaskRunner(Generic[T, R]):
             if self.show_progress:
                 # Use tqdm for progress tracking
                 futures = [executor.submit(task_func, item) for item in items_list]
+                future_to_index = {future: idx for idx, future in enumerate(futures)}
+                results = [None] * len(items_list)  # type: ignore
                 for future in tqdm(
                     concurrent.futures.as_completed(futures),
                     total=total,
@@ -105,11 +107,13 @@ class ConcurrentTaskRunner(Generic[T, R]):
                 ):
                     try:
                         result = future.result()
-                        results.append(result)
+                        idx = future_to_index[future]
+                        results[idx] = result  # type: ignore
                     except Exception as e:
                         logger.exception(f"Task failed with exception: {e}")
                         # Append error result if task_func returns a result type that can handle errors
-                        results.append(None)  # type: ignore
+                        idx = future_to_index[future]
+                        results[idx] = None  # type: ignore
             else:
                 # No progress bar
                 results = list(executor.map(task_func, items_list))

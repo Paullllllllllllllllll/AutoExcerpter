@@ -317,6 +317,18 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+For development and testing, install the dev dependencies:
+
+```bash
+pip install -r requirements-dev.txt
+```
+
+Run the test suite:
+
+```bash
+python -m pytest
+```
+
 4.  **Set up API keys as environment variables:**
 
 ```bash
@@ -1290,7 +1302,8 @@ AutoExcerpter/
 │   └── logger.py                       # Logging configuration
 │
 ├── main.py                             # Entry point and CLI interface
-├── requirements.txt                    # Python dependencies
+├── requirements.txt                    # Python runtime dependencies
+├── requirements-dev.txt                # Python development and testing dependencies
 └── README.md                           # This file
 ```
 
