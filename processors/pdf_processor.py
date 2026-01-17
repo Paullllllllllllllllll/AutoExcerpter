@@ -83,7 +83,8 @@ def _apply_image_preprocessing(
     
     # Grayscale conversion
     if img_cfg.get('grayscale_conversion', True):
-        pil_img = ImageOps.grayscale(pil_img)
+        if pil_img.mode != "L":
+            pil_img = ImageOps.grayscale(pil_img)
     
     # Get detail parameter based on model type
     if model_type == "google":
@@ -166,8 +167,13 @@ def extract_pdf_pages_to_images(
                 page = pdf_document[page_num]
                 zoom = target_dpi / PDF_DPI_CONVERSION_FACTOR
                 matrix = fitz.Matrix(zoom, zoom)
-                pix = page.get_pixmap(matrix=matrix, alpha=False)
-                pil_img = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
+                grayscale_enabled = bool(img_cfg.get('grayscale_conversion', True))
+                if grayscale_enabled:
+                    pix = page.get_pixmap(matrix=matrix, alpha=False, colorspace=fitz.csGRAY)
+                    pil_img = Image.frombytes("L", (pix.width, pix.height), pix.samples)
+                else:
+                    pix = page.get_pixmap(matrix=matrix, alpha=False)
+                    pil_img = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
                 
                 # Apply provider-specific preprocessing (grayscale, resize, etc.)
                 pil_img = _apply_image_preprocessing(pil_img, img_cfg, model_type)

@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Optional
@@ -68,6 +69,35 @@ from modules.roman_numerals import int_to_roman
 from processors.citation_manager import CitationManager
 
 logger = setup_logger(__name__)
+
+
+_LOG_HANDLES: dict[Path, tuple[Any, threading.Lock]] = {}
+_LOG_HANDLES_GUARD = threading.Lock()
+
+
+def _get_log_handle(log_path: Path):
+    key = log_path
+    with _LOG_HANDLES_GUARD:
+        existing = _LOG_HANDLES.get(key)
+        if existing is not None:
+            return existing
+        handle = key.open("a", encoding="utf-8")
+        lock = threading.Lock()
+        _LOG_HANDLES[key] = (handle, lock)
+        return handle, lock
+
+
+def _close_log_handle(log_path: Path) -> None:
+    key = log_path
+    with _LOG_HANDLES_GUARD:
+        existing = _LOG_HANDLES.pop(key, None)
+    if existing is None:
+        return
+    handle, _lock = existing
+    try:
+        handle.close()
+    except Exception:
+        pass
 
 
 # ============================================================================
@@ -1228,6 +1258,7 @@ def initialize_log_file(
     }
 
     try:
+        _close_log_handle(log_path)
         with log_path.open("w", encoding="utf-8") as log_file:
             log_file.write("[\n")  # Start JSON array
             json.dump(payload, log_file)
@@ -1240,7 +1271,8 @@ def initialize_log_file(
 def append_to_log(log_path: Path, entry: dict[str, Any]) -> bool:
     """Append a JSON entry to the log file array (comma-separated)."""
     try:
-        with log_path.open("a", encoding="utf-8") as log_file:
+        log_file, lock = _get_log_handle(log_path)
+        with lock:
             log_file.write(",\n")  # Add comma separator
             json.dump(entry, log_file)
         return True
@@ -1252,8 +1284,10 @@ def append_to_log(log_path: Path, entry: dict[str, Any]) -> bool:
 def finalize_log_file(log_path: Path) -> bool:
     """Finalize the log file by closing the JSON array."""
     try:
-        with log_path.open("a", encoding="utf-8") as log_file:
+        log_file, lock = _get_log_handle(log_path)
+        with lock:
             log_file.write("\n]")  # Close JSON array
+        _close_log_handle(log_path)
         return True
     except Exception as exc:  # pylint: disable=broad-except
         logger.warning("Failed to finalize log file %s: %s", log_path, exc)

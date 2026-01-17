@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import re
 import time
+import base64
 from pathlib import Path
 from typing import Any
 
@@ -461,10 +462,22 @@ class TranscriptionManager(LLMClientBase):
 
         # Preprocess and encode image in-memory
         try:
-            image_processor = ImageProcessor(image_path)
-            pil_image = image_processor.process_image_to_memory()
-            jpeg_quality = image_processor.img_cfg.get('jpeg_quality', 95)
-            base64_image = ImageProcessor.pil_image_to_base64(pil_image, jpeg_quality)
+            if (
+                image_path.suffix.lower() in (".jpg", ".jpeg")
+                and image_path.parent.name == "images"
+                and image_path.parent.parent.name.endswith("_working_files")
+                and image_path.name.startswith("page_")
+            ):
+                base64_image = base64.b64encode(image_path.read_bytes()).decode("utf-8")
+            else:
+                image_processor = ImageProcessor(
+                    image_path,
+                    provider=self.provider or "openai",
+                    model_name=self.model_name,
+                )
+                pil_image = image_processor.process_image_to_memory()
+                jpeg_quality = int(image_processor.img_cfg.get('jpeg_quality', 95))
+                base64_image = ImageProcessor.pil_image_to_base64(pil_image, jpeg_quality)
         except Exception as e:
             logger.error(f"Error preprocessing image {image_path.name}: {e}")
             return {

@@ -105,6 +105,8 @@ class ImageProcessor:
     def convert_to_grayscale(self, image: Image.Image) -> Image.Image:
         """Convert the image to grayscale if enabled."""
         if self.img_cfg.get('grayscale_conversion', True):
+            if image.mode == "L":
+                return image
             return ImageOps.grayscale(image)
         return image
 
@@ -183,7 +185,10 @@ class ImageProcessor:
         new_height = max(1, int(orig_height * scale))
         
         resized_img = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
-        final_img = Image.new("RGB", (target_width, target_height), WHITE_BACKGROUND_COLOR)
+        if image.mode == "L":
+            final_img = Image.new("L", (target_width, target_height), 255)
+        else:
+            final_img = Image.new("RGB", (target_width, target_height), WHITE_BACKGROUND_COLOR)
         paste_x = (target_width - new_width) // 2
         paste_y = (target_height - new_height) // 2
         final_img.paste(resized_img, (paste_x, paste_y))
@@ -255,7 +260,7 @@ class ImageProcessor:
     def process_image_to_memory(self) -> Image.Image:
         """Process the image and return the PIL Image object in-memory."""
         with Image.open(self.image_path) as img:
-            img = img.copy()  # Create a copy to work with after closing the file
+            img.load()
             img = self.handle_transparency(img)
             img = self.convert_to_grayscale(img)
             
@@ -283,8 +288,7 @@ class ImageProcessor:
         if img.mode not in ('RGB', 'L'):
             img = img.convert('RGB')
         img.save(buffer, format='JPEG', quality=jpeg_quality)
-        buffer.seek(0)
-        return base64.b64encode(buffer.read()).decode('utf-8')
+        return base64.b64encode(buffer.getbuffer()).decode('utf-8')
 
 
 # ============================================================================
