@@ -71,7 +71,7 @@ MATH_NAMESPACE = "http://schemas.openxmlformats.org/officeDocument/2006/math"
 EXIT_COMMANDS = frozenset({'exit', 'quit', 'q'})
 BACK_COMMANDS = frozenset({'back', 'b'})
 ALL_COMMANDS = frozenset({'all', 'a'})
-DIVIDER_CHAR = '─'
+DIVIDER_CHAR = '='
 DIVIDER_LENGTH = 70
 
 # ============================================================================

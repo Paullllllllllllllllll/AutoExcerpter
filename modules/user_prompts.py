@@ -17,6 +17,14 @@ from __future__ import annotations
 import sys
 from typing import Callable, Optional, Sequence, TypeVar
 
+
+def _safe_print(text: str) -> None:
+    """Print text with fallback for encoding errors on Windows consoles."""
+    try:
+        print(text)
+    except UnicodeEncodeError:
+        print(text.encode(sys.stdout.encoding, errors='replace').decode(sys.stdout.encoding))
+
 # Initialize colorama for Windows color support
 try:
     import colorama
@@ -71,38 +79,38 @@ def print_header(message: str, subtitle: str = "") -> None:
         message: Main header text
         subtitle: Optional subtitle text
     """
-    print(f"\n{Colors.BOLD}{Colors.HEADER}{'=' * DIVIDER_LENGTH}{Colors.ENDC}")
-    print(f"{Colors.BOLD}{Colors.HEADER}  {message}{Colors.ENDC}")
+    _safe_print(f"\n{Colors.BOLD}{Colors.HEADER}{'=' * DIVIDER_LENGTH}{Colors.ENDC}")
+    _safe_print(f"{Colors.BOLD}{Colors.HEADER}  {message}{Colors.ENDC}")
     if subtitle:
-        print(f"{Colors.OKCYAN}  {subtitle}{Colors.ENDC}")
-    print(f"{Colors.BOLD}{Colors.HEADER}{'=' * DIVIDER_LENGTH}{Colors.ENDC}\n")
+        _safe_print(f"{Colors.OKCYAN}  {subtitle}{Colors.ENDC}")
+    _safe_print(f"{Colors.BOLD}{Colors.HEADER}{'=' * DIVIDER_LENGTH}{Colors.ENDC}\n")
 
 
 def print_section(message: str) -> None:
     """Print a section divider with message."""
-    print(f"\n{Colors.BOLD}{Colors.OKBLUE}{DIVIDER_CHAR * DIVIDER_LENGTH}{Colors.ENDC}")
-    print(f"{Colors.BOLD}{Colors.OKBLUE}{message}{Colors.ENDC}")
-    print(f"{Colors.BOLD}{Colors.OKBLUE}{DIVIDER_CHAR * DIVIDER_LENGTH}{Colors.ENDC}\n")
+    _safe_print(f"\n{Colors.BOLD}{Colors.OKBLUE}{DIVIDER_CHAR * DIVIDER_LENGTH}{Colors.ENDC}")
+    _safe_print(f"{Colors.BOLD}{Colors.OKBLUE}{message}{Colors.ENDC}")
+    _safe_print(f"{Colors.BOLD}{Colors.OKBLUE}{DIVIDER_CHAR * DIVIDER_LENGTH}{Colors.ENDC}\n")
 
 
 def print_success(message: str) -> None:
     """Print a success message."""
-    print(f"{Colors.OKGREEN}✓ {message}{Colors.ENDC}")
+    _safe_print(f"{Colors.OKGREEN}[OK] {message}{Colors.ENDC}")
 
 
 def print_warning(message: str) -> None:
     """Print a warning message."""
-    print(f"{Colors.WARNING}⚠ {message}{Colors.ENDC}")
+    _safe_print(f"{Colors.WARNING}[WARN] {message}{Colors.ENDC}")
 
 
 def print_error(message: str) -> None:
     """Print an error message."""
-    print(f"{Colors.FAIL}✗ {message}{Colors.ENDC}")
+    _safe_print(f"{Colors.FAIL}[ERROR] {message}{Colors.ENDC}")
 
 
 def print_info(message: str) -> None:
     """Print an info message."""
-    print(f"{Colors.OKCYAN}ℹ {message}{Colors.ENDC}")
+    _safe_print(f"{Colors.OKCYAN}[INFO] {message}{Colors.ENDC}")
 
 
 def print_separator(char: str = "-", length: int = 80, color: str = "") -> None:
@@ -115,17 +123,17 @@ def print_separator(char: str = "-", length: int = 80, color: str = "") -> None:
     """
     if not color:
         color = Colors.DIM
-    print(f"{color}{char * length}{Colors.ENDC}")
+    _safe_print(f"{color}{char * length}{Colors.ENDC}")
 
 
 def print_dim(message: str) -> None:
     """Print a dimmed/secondary message."""
-    print(f"{Colors.DIM}{message}{Colors.ENDC}")
+    _safe_print(f"{Colors.DIM}{message}{Colors.ENDC}")
 
 
 def print_highlight(message: str) -> None:
     """Print a highlighted message."""
-    print(f"{Colors.BOLD}{Colors.OKCYAN}{message}{Colors.ENDC}")
+    _safe_print(f"{Colors.BOLD}{Colors.OKCYAN}{message}{Colors.ENDC}")
 
 
 # ============================================================================
@@ -133,7 +141,7 @@ def print_highlight(message: str) -> None:
 # ============================================================================
 def exit_program(message: str = "Exiting program. Goodbye!", exit_code: int = 0) -> None:
     """Exit the program gracefully with a message."""
-    print(f"\n{Colors.OKCYAN}{message}{Colors.ENDC}\n")
+    _safe_print(f"\n{Colors.OKCYAN}{message}{Colors.ENDC}\n")
     sys.exit(exit_code)
 
 
@@ -262,16 +270,16 @@ def prompt_selection(
         # Truncate very long descriptions
         if len(description) > 75:
             description = description[:72] + "..."
-        print(f"  {Colors.BOLD}{index}.{Colors.ENDC} {description}")
+        _safe_print(f"  {Colors.BOLD}{index}.{Colors.ENDC} {description}")
     
     # Selection instructions
-    print(f"\n  {Colors.INFO}Selection options:{Colors.ENDC}")
+    _safe_print(f"\n  {Colors.INFO}Selection options:{Colors.ENDC}")
     if allow_multiple:
-        print(f"    {Colors.DIM}• Enter numbers separated by commas (e.g., '1,3,5'){Colors.ENDC}")
-        print(f"    {Colors.DIM}• Enter a range with a dash (e.g., '1-5'){Colors.ENDC}")
-    print(f"    {Colors.DIM}• Enter a filename or part of it to search{Colors.ENDC}")
+        _safe_print(f"    {Colors.DIM}- Enter numbers separated by commas (e.g., '1,3,5'){Colors.ENDC}")
+        _safe_print(f"    {Colors.DIM}- Enter a range with a dash (e.g., '1-5'){Colors.ENDC}")
+    _safe_print(f"    {Colors.DIM}- Enter a filename or part of it to search{Colors.ENDC}")
     if allow_all:
-        print(f"    {Colors.DIM}• Enter 'all' to select everything{Colors.ENDC}")
+        _safe_print(f"    {Colors.DIM}- Enter 'all' to select everything{Colors.ENDC}")
     
     # Navigation hints
     nav_hints = []
@@ -281,7 +289,7 @@ def prompt_selection(
         nav_hints.append("'exit' to quit")
     
     if nav_hints:
-        print(f"\n  {Colors.DIM}{' | '.join(nav_hints)}{Colors.ENDC}")
+        _safe_print(f"\n  {Colors.DIM}{' | '.join(nav_hints)}{Colors.ENDC}")
     
     hint_text = ""
     

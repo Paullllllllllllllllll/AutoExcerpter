@@ -261,6 +261,16 @@ class SummaryManager(LLMClientBase):
                 else:
                     invoke_kwargs["response_format"] = text_format
 
+        if self.provider == "google":
+            schema_obj = (
+                self.summary_schema.get("schema")
+                if isinstance(self.summary_schema, dict) and "schema" in self.summary_schema
+                else self.summary_schema
+            )
+            if isinstance(schema_obj, dict) and schema_obj:
+                invoke_kwargs.setdefault("response_mime_type", "application/json")
+                invoke_kwargs.setdefault("response_schema", schema_obj)
+
         return [system_msg, user_msg], invoke_kwargs
     
     def _get_structured_chat_model(self):
