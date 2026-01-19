@@ -230,8 +230,8 @@ class ImageProcessor:
     def process_image(self, output_path: Path) -> str:
         """Process the image and save it to the given output path with compression."""
         try:
-            with Image.open(self.image_path) as img:
-                img = self.handle_transparency(img)
+            with Image.open(self.image_path) as img_file:
+                img: Image.Image = self.handle_transparency(img_file)
                 img = self.convert_to_grayscale(img)
                 
                 # Choose resizing based on model type and appropriate config param
@@ -259,9 +259,9 @@ class ImageProcessor:
 
     def process_image_to_memory(self) -> Image.Image:
         """Process the image and return the PIL Image object in-memory."""
-        with Image.open(self.image_path) as img:
-            img.load()
-            img = self.handle_transparency(img)
+        with Image.open(self.image_path) as img_file:
+            img_file.load()
+            img: Image.Image = self.handle_transparency(img_file)
             img = self.convert_to_grayscale(img)
             
             # Choose resizing based on model type and appropriate config param

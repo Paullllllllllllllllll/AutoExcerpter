@@ -994,7 +994,7 @@ def create_docx_summary(
                     meta_run.italic = True
 
     # === SECTION 4: Save document ===
-    document.save(output_path)
+    document.save(str(output_path))
     logger.info("Summary document saved to %s", output_path)
 
 

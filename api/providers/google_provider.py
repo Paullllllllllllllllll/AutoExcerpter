@@ -398,7 +398,7 @@ class GoogleProvider(BaseProvider):
                 actual_schema = json_schema
             
             # Use default method (tool-based) for guaranteed structured output
-            llm_to_use = self._llm.with_structured_output(
+            llm_to_use = self._llm.with_structured_output(  # type: ignore[assignment]
                 actual_schema,
                 include_raw=True,
             )

@@ -367,6 +367,7 @@ class TranscriptionManager(LLMClientBase):
         system_msg = SystemMessage(content=self.system_prompt)
         
         # Build image content based on provider
+        user_content: list[dict[str, Any]]
         if self.provider == "anthropic":
             # Anthropic format
             user_content = [
@@ -400,7 +401,7 @@ class TranscriptionManager(LLMClientBase):
                 }
             ]
         
-        user_msg = HumanMessage(content=user_content)
+        user_msg = HumanMessage(content=user_content)  # type: ignore[arg-type]
 
         # Build invoke kwargs using base class method
         invoke_kwargs = self._build_invoke_kwargs()

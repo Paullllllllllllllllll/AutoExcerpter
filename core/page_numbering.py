@@ -112,8 +112,8 @@ class PageNumberProcessor:
 		if not summaries_with_pages:
 			return []
 		
-		longest_sequence = []
-		current_sequence = []
+		longest_sequence: list[dict[str, Any]] = []
+		current_sequence: list[dict[str, Any]] = []
 		
 		for item in summaries_with_pages:
 			# Start a new sequence or add to current if consecutive

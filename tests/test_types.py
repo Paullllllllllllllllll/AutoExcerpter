@@ -58,27 +58,27 @@ class TestPageInformation:
     """Tests for PageInformation TypedDict."""
 
     def test_basic_structure(self):
-        """PageInformation holds page metadata including page_type."""
+        """PageInformation holds page metadata including page_types."""
         info: PageInformation = {
             "page_number_integer": 5,
             "page_number_type": "arabic",
-            "page_type": "content",
+            "page_types": ["content"],
         }
         
         assert info["page_number_integer"] == 5
         assert info["page_number_type"] == "arabic"
-        assert info["page_type"] == "content"
+        assert info["page_types"] == ["content"]
 
     def test_unnumbered_page(self):
         """PageInformation can represent unnumbered pages."""
         info: PageInformation = {
             "page_number_integer": None,
             "page_number_type": "none",
-            "page_type": "blank",
+            "page_types": ["blank"],
         }
         
         assert info["page_number_type"] == "none"
-        assert info["page_type"] == "blank"
+        assert info["page_types"] == ["blank"]
 
 
 class TestSummaryContent:
@@ -90,7 +90,7 @@ class TestSummaryContent:
             "page_information": {
                 "page_number_integer": 1,
                 "page_number_type": "arabic",
-                "page_type": "content",
+                "page_types": ["content"],
             },
             "bullet_points": ["Point 1", "Point 2"],
             "references": ["Ref 1"],
@@ -105,39 +105,40 @@ class TestSummaryContent:
             "page_information": {
                 "page_number_integer": None,
                 "page_number_type": "none",
-                "page_type": "blank",
+                "page_types": ["blank"],
             },
             "bullet_points": None,
             "references": None,
         }
         
-        assert content["page_information"]["page_type"] == "blank"
+        assert content["page_information"]["page_types"] == ["blank"]
 
 
 class TestSummaryResult:
     """Tests for SummaryResult TypedDict."""
 
     def test_full_structure(self):
-        """SummaryResult holds complete summary result."""
+        """SummaryResult holds complete summary result (flat structure)."""
         result: SummaryResult = {
             "page": 1,
-            "summary": {
-                "page_information": {
-                    "page_number_integer": 1,
-                    "page_number_type": "arabic",
-                    "page_type": "content",
-                },
-                "bullet_points": ["Point"],
-                "references": [],
+            "page_information": {
+                "page_number_integer": 1,
+                "page_number_type": "arabic",
+                "page_types": ["content"],
             },
-            "model_page_number": 1,
+            "bullet_points": ["Point"],
+            "references": [],
             "image_filename": "page_0001.jpg",
             "original_input_order_index": 0,
             "processing_time": 2.5,
+            "provider": "openai",
+            "api_response": {},
+            "schema_retries": {},
+            "error": None,
         }
         
         assert result["page"] == 1
-        assert result["model_page_number"] == 1
+        assert result["page_information"]["page_number_integer"] == 1
 
 
 class TestConcurrencyConfig:

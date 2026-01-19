@@ -456,8 +456,8 @@ class ItemTranscriber:
 
 		# Initialize variables that will be used in finally block
 		should_cleanup = False
-		transcription_results = []
-		summary_results = []
+		transcription_results: list[dict[str, Any]] = []
+		summary_results: list[dict[str, Any]] = []
 
 		try:
 			# Process all images - transcribe and summarize

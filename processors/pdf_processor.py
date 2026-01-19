@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import concurrent.futures
 from pathlib import Path
+from typing import Any
 
 import fitz  # PyMuPDF
 from PIL import Image
@@ -45,7 +46,7 @@ from modules.constants import (
     WHITE_BACKGROUND_COLOR,
 )
 from modules.image_utils import ImageProcessor
-from modules.model_utils import detect_model_type, get_image_config_section_name
+from modules.model_utils import detect_model_type, get_image_config_section_name, ModelType
 from modules.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -56,8 +57,8 @@ logger = setup_logger(__name__)
 # ============================================================================
 def _apply_image_preprocessing(
     pil_img: Image.Image,
-    img_cfg: dict[str, any],
-    model_type: str = "openai",
+    img_cfg: dict[str, Any],
+    model_type: ModelType = "openai",
 ) -> Image.Image:
     """
     Apply preprocessing steps to an image with provider-specific resizing.

@@ -76,7 +76,7 @@ class RateLimiter:
             limits: List of (max_requests, time_window_seconds) tuples defining rate limits
         """
         self.limits = limits
-        self.request_timestamps = [deque(maxlen=limit[0]) for limit in limits]
+        self.request_timestamps: list[deque[float]] = [deque(maxlen=limit[0]) for limit in limits]
         self.lock = threading.Lock()
 
         # Statistics

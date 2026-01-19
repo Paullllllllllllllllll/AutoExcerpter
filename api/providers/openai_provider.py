@@ -381,7 +381,7 @@ class OpenAIProvider(BaseProvider):
     def _build_disabled_params(self) -> Optional[Dict[str, Any]]:
         """Build disabled_params dict based on model capabilities."""
         caps = self._capabilities
-        disabled = {}
+        disabled: Dict[str, Any] = {}
         
         if not caps.supports_temperature:
             disabled["temperature"] = None
@@ -480,7 +480,7 @@ class OpenAIProvider(BaseProvider):
                 actual_schema = json_schema["schema"]
             else:
                 actual_schema = json_schema
-            llm_to_use = self._llm.with_structured_output(
+            llm_to_use = self._llm.with_structured_output(  # type: ignore[assignment]
                 actual_schema,
                 method="json_schema",
                 strict=True,

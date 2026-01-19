@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any, Literal, TYPE_CHECKING
 
 from langchain_core.language_models import BaseChatModel
 
@@ -138,7 +138,7 @@ MODEL_CAPABILITIES: dict[str, dict[str, bool]] = {
 }
 
 
-def get_model_capabilities(model_name: str) -> Dict[str, bool]:
+def get_model_capabilities(model_name: str) -> dict[str, bool]:
     """
     Get capability profile for a model based on its name prefix.
     
@@ -220,14 +220,14 @@ class LLMConfig:
         extra_kwargs: Additional provider-specific parameters
     """
     model: str
-    provider: Optional[ProviderType] = None
-    api_key: Optional[str] = None
+    provider: ProviderType | None = None
+    api_key: str | None = None
     timeout: int = 900
     max_retries: int = 5  # LangChain handles exponential backoff automatically
-    temperature: Optional[float] = None
-    max_tokens: Optional[int] = None
-    service_tier: Optional[str] = None  # OpenAI-specific: "flex", "default", "auto"
-    extra_kwargs: Dict[str, Any] = field(default_factory=dict)
+    temperature: float | None = None
+    max_tokens: int | None = None
+    service_tier: str | None = None  # OpenAI-specific: "flex", "default", "auto"
+    extra_kwargs: dict[str, Any] = field(default_factory=dict)
     
     def __post_init__(self) -> None:
         """Infer provider from model name if not specified."""
@@ -268,7 +268,7 @@ def _infer_provider(model: str) -> ProviderType:
     return "openai"
 
 
-def _get_api_key(provider: ProviderType, config_key: Optional[str] = None) -> str:
+def _get_api_key(provider: ProviderType, config_key: str | None = None) -> str:
     """Get API key for the specified provider.
     
     Args:
@@ -332,7 +332,7 @@ def get_chat_model(config: LLMConfig) -> BaseChatModel:
         model_name = model_name.split(":", 1)[1]
     
     # Build common kwargs
-    kwargs: Dict[str, Any] = {
+    kwargs: dict[str, Any] = {
         "model": model_name,
         "timeout": config.timeout,
         "max_retries": config.max_retries,
@@ -362,8 +362,8 @@ def get_chat_model(config: LLMConfig) -> BaseChatModel:
 
 def _create_openai_model(
     api_key: str, 
-    kwargs: Dict[str, Any], 
-    service_tier: Optional[str] = None
+    kwargs: dict[str, Any], 
+    service_tier: str | None = None,
 ) -> BaseChatModel:
     """Create an OpenAI chat model instance.
     
@@ -387,7 +387,7 @@ def _create_openai_model(
     return ChatOpenAI(**kwargs)
 
 
-def _create_anthropic_model(api_key: str, kwargs: Dict[str, Any]) -> BaseChatModel:
+def _create_anthropic_model(api_key: str, kwargs: dict[str, Any]) -> BaseChatModel:
     """Create an Anthropic chat model instance."""
     try:
         from langchain_anthropic import ChatAnthropic
@@ -407,7 +407,7 @@ def _create_anthropic_model(api_key: str, kwargs: Dict[str, Any]) -> BaseChatMod
     return ChatAnthropic(**kwargs)
 
 
-def _create_google_model(api_key: str, kwargs: Dict[str, Any]) -> BaseChatModel:
+def _create_google_model(api_key: str, kwargs: dict[str, Any]) -> BaseChatModel:
     """Create a Google Generative AI chat model instance."""
     try:
         from langchain_google_genai import ChatGoogleGenerativeAI
@@ -427,7 +427,7 @@ def _create_google_model(api_key: str, kwargs: Dict[str, Any]) -> BaseChatModel:
     return ChatGoogleGenerativeAI(**kwargs)
 
 
-def _create_openrouter_model(api_key: str, kwargs: Dict[str, Any]) -> BaseChatModel:
+def _create_openrouter_model(api_key: str, kwargs: dict[str, Any]) -> BaseChatModel:
     """Create an OpenRouter chat model instance (OpenAI-compatible API)."""
     try:
         from langchain_openai import ChatOpenAI

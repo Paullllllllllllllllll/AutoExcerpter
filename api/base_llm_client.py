@@ -113,7 +113,7 @@ class LLMClientBase:
             model=model_name,
             provider=provider,
             api_key=api_key,
-            timeout=timeout,
+            timeout=self.timeout,  # Use resolved timeout (never None)
             max_retries=max_retries,  # LangChain handles exponential backoff
             service_tier=service_tier,
         )

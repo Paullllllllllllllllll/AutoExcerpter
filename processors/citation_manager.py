@@ -383,7 +383,7 @@ class CitationManager:
     
     def _extract_metadata_from_response(self, work_data: Dict) -> Dict:
         """Extract relevant metadata from OpenAlex API response."""
-        metadata = {
+        metadata: Dict[str, Any] = {
             'title': work_data.get('title'),
             'doi': work_data.get('doi', '').replace('https://doi.org/', '') if work_data.get('doi') else None,
             'publication_year': work_data.get('publication_year'),

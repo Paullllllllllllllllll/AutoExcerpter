@@ -388,8 +388,8 @@ class AnthropicProvider(BaseProvider):
             logger.info(f"Using extended thinking (budget={budget}) for model {model}")
         
         # Initialize LangChain ChatAnthropic
-        self._llm = ChatAnthropic(
-            api_key=api_key,
+        self._llm = ChatAnthropic(  # type: ignore[call-arg]
+            api_key=api_key,  # type: ignore[arg-type]
             model=model,
             max_tokens=max_tokens,
             timeout=timeout,
@@ -479,7 +479,7 @@ class AnthropicProvider(BaseProvider):
             actual_schema = _transform_schema_for_anthropic(actual_schema)
             
             # Use default method (tool-based) for guaranteed structured output
-            llm_to_use = self._llm.with_structured_output(
+            llm_to_use = self._llm.with_structured_output(  # type: ignore[assignment]
                 actual_schema,
                 include_raw=True,
             )

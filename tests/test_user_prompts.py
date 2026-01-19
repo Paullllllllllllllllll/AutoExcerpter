@@ -157,7 +157,7 @@ class TestCLISelectionParsing:
         """Test parsing a single number selection."""
         from main import _parse_cli_selection
         
-        selected = _parse_cli_selection(sample_items, "3")
+        selected = _parse_cli_selection(sample_items, "3")  # type: ignore[arg-type]
         assert len(selected) == 1
         assert selected[0].path.name == "Mennell 1996 All manners of food eating and taste in England and France.pdf"
     
@@ -165,7 +165,7 @@ class TestCLISelectionParsing:
         """Test parsing comma-separated numbers."""
         from main import _parse_cli_selection
         
-        selected = _parse_cli_selection(sample_items, "1,3,6")
+        selected = _parse_cli_selection(sample_items, "1,3,6")  # type: ignore[arg-type]
         assert len(selected) == 3
         assert selected[0].path.name == "Abbott A History Marriage.pdf"
         assert selected[1].path.name == "Mennell 1996 All manners of food eating and taste in England and France.pdf"
@@ -175,7 +175,7 @@ class TestCLISelectionParsing:
         """Test parsing a range selection."""
         from main import _parse_cli_selection
         
-        selected = _parse_cli_selection(sample_items, "1-3")
+        selected = _parse_cli_selection(sample_items, "1-3")  # type: ignore[arg-type]
         assert len(selected) == 3
         assert selected[0].path.name == "Abbott A History Marriage.pdf"
         assert selected[1].path.name == "Abbott A History Mistresses.pdf"
@@ -185,7 +185,7 @@ class TestCLISelectionParsing:
         """Test parsing a filename pattern."""
         from main import _parse_cli_selection
         
-        selected = _parse_cli_selection(sample_items, "Albala")
+        selected = _parse_cli_selection(sample_items, "Albala")  # type: ignore[arg-type]
         assert len(selected) == 2
         assert "Albala 2003" in selected[0].path.name
         assert "Albala 2013" in selected[1].path.name
@@ -194,7 +194,7 @@ class TestCLISelectionParsing:
         """Test parsing a filename pattern with spaces."""
         from main import _parse_cli_selection
         
-        selected = _parse_cli_selection(sample_items, "Black Death")
+        selected = _parse_cli_selection(sample_items, "Black Death")  # type: ignore[arg-type]
         assert len(selected) == 1
         assert "Black Death" in selected[0].path.name
     
@@ -202,14 +202,14 @@ class TestCLISelectionParsing:
         """Test parsing an invalid range (out of bounds)."""
         from main import _parse_cli_selection
         
-        selected = _parse_cli_selection(sample_items, "1-100")
+        selected = _parse_cli_selection(sample_items, "1-100")  # type: ignore[arg-type]
         assert len(selected) == 0  # Invalid range should return empty
     
     def test_parse_no_match(self, sample_items: list[MockItem]) -> None:
         """Test parsing with no matching items."""
         from main import _parse_cli_selection
         
-        selected = _parse_cli_selection(sample_items, "NonexistentAuthor")
+        selected = _parse_cli_selection(sample_items, "NonexistentAuthor")  # type: ignore[arg-type]
         assert len(selected) == 0
 
 
