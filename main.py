@@ -20,6 +20,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
+from core.resume import ProcessingState, ResumeChecker, ResumeResult
 from core.transcriber import ItemTranscriber
 from modules import app_config as config
 from modules.error_handler import handle_critical_error
@@ -56,6 +57,22 @@ def setup_argparse() -> argparse.Namespace:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     
+    # Resume / overwrite behavior (available in both modes)
+    resume_group = parser.add_mutually_exclusive_group()
+    resume_group.add_argument(
+        "--resume",
+        action="store_true",
+        default=None,
+        help="Skip files whose output already exists (default behavior). Overrides resume_mode in config.",
+    )
+    resume_group.add_argument(
+        "--force", "--overwrite",
+        action="store_true",
+        dest="force",
+        default=None,
+        help="Force reprocessing of all files, overwriting existing output.",
+    )
+
     if config.CLI_MODE:
         # CLI mode: require input and output arguments
         parser.add_argument(
@@ -131,6 +148,8 @@ def _process_single_item(
     total_items: int,
     base_output_dir: Path,
     summary_context: Optional[str] = None,
+    resume_mode: str = "skip",
+    completed_page_indices: Optional[set] = None,
 ) -> bool:
     """
     Process a single PDF or image folder item.
@@ -141,6 +160,8 @@ def _process_single_item(
         total_items: Total number of items to process.
         base_output_dir: Base directory for outputs.
         summary_context: Optional context for guiding summarization focus.
+        resume_mode: Resume mode ("skip" or "overwrite").
+        completed_page_indices: Set of page indices already completed (for page-level resume).
         
     Returns:
         True if processing succeeded, False otherwise.
@@ -160,29 +181,18 @@ def _process_single_item(
         print_separator(char="=")
         print_info(f"    • Name: {item_spec.output_stem}")
         print_info(f"    • Type: {item_spec.kind.replace('_', ' ').title()}")
+        if completed_page_indices:
+            print_dim(f"    • Resuming: {len(completed_page_indices)} page(s) already transcribed")
         print()
-
-    # Check if output files already exist
-    expected_outputs = [base_output_dir / f"{item_spec.output_stem}.txt"]
-    if config.SUMMARIZE:
-        if config.OUTPUT_DOCX:
-            expected_outputs.append(base_output_dir / f"{item_spec.output_stem}.docx")
-        if config.OUTPUT_MARKDOWN:
-            expected_outputs.append(base_output_dir / f"{item_spec.output_stem}.md")
-
-    if all(path.exists() for path in expected_outputs):
-        if config.CLI_MODE:
-            logger.warning(f"Output files for '{item_spec.output_stem}' already exist. Skipping.")
-        else:
-            print_warning(f"Output files for '{item_spec.output_stem}' already exist. Skipping.")
-        logger.info("All output files for %s already exist. Skipping.", item_spec.output_stem)
-        return True
 
     # Process the item
     transcriber_instance: Optional[ItemTranscriber] = None
     try:
         transcriber_instance = ItemTranscriber(
-            item_spec.path, item_spec.kind, base_output_dir, summary_context=summary_context
+            item_spec.path, item_spec.kind, base_output_dir,
+            summary_context=summary_context,
+            resume_mode=resume_mode,
+            completed_page_indices=completed_page_indices,
         )
         transcriber_instance.process_item()
         
@@ -204,7 +214,9 @@ def _process_single_item(
         
     finally:
         # Clean up temporary working directory if configured
-        if transcriber_instance and config.DELETE_TEMP_WORKING_DIR:
+        # In resume mode ("skip"), retain working dir to preserve JSONL logs for future resumes
+        should_cleanup_working_dir = config.DELETE_TEMP_WORKING_DIR and resume_mode != "skip"
+        if transcriber_instance and should_cleanup_working_dir:
             working_dir = transcriber_instance.working_dir
             if working_dir.exists():
                 _cleanup_working_directory(working_dir)
@@ -316,8 +328,14 @@ def _wait_for_token_reset(token_tracker, seconds_until_reset: int) -> bool:
     return True
 
 
-def _parse_execution_mode(args: argparse.Namespace) -> Tuple[Path, Path, bool, Optional[str], Optional[str]]:
-    """Parse execution mode and return input path, output path, process_all flag, select pattern, and context."""
+def _parse_execution_mode(args: argparse.Namespace) -> Tuple[Path, Path, bool, Optional[str], Optional[str], str]:
+    """Parse execution mode and return input path, output path, process_all flag, select pattern, context, and resume mode."""
+    # Resolve resume mode from CLI flags (default: "skip")
+    if getattr(args, "force", None):
+        resume_mode = "overwrite"
+    else:
+        resume_mode = "skip"
+
     if config.CLI_MODE:
         # CLI mode: use command line arguments
         input_path_arg = Path(args.input)
@@ -343,7 +361,7 @@ def _parse_execution_mode(args: argparse.Namespace) -> Tuple[Path, Path, bool, O
         select_pattern = None
         summary_context = None
     
-    return input_path_arg, base_output_dir, process_all, select_pattern, summary_context
+    return input_path_arg, base_output_dir, process_all, select_pattern, summary_context, resume_mode
 
 
 def _select_items_for_processing(
@@ -730,11 +748,84 @@ def _prompt_for_summary_context() -> Optional[str]:
         return None
 
 
+def _resolve_item_output_dir(item_spec: ItemSpec, base_output_dir: Path) -> Path:
+    """Resolve the output directory for a single item.
+    
+    Args:
+        item_spec: The item specification.
+        base_output_dir: The base output directory.
+        
+    Returns:
+        The resolved output directory path.
+    """
+    if config.INPUT_PATHS_IS_OUTPUT_PATH:
+        return item_spec.path.parent
+    return base_output_dir
+
+
+def _display_resume_info(
+    resume_mode: str,
+    selected_items: List[ItemSpec],
+    skipped: List[ResumeResult],
+    to_process: List[ItemSpec],
+) -> bool:
+    """Display resume information and handle the all-skipped case.
+    
+    Args:
+        resume_mode: Current resume mode ("skip" or "overwrite").
+        selected_items: Original list of selected items before filtering.
+        skipped: List of ResumeResult for skipped items.
+        to_process: List of items that will be processed.
+        
+    Returns:
+        True if processing should continue, False if user cancelled or nothing to do.
+    """
+    if not skipped:
+        return True
+
+    total_selected = len(selected_items)
+    new_count = len(to_process)
+
+    if config.CLI_MODE:
+        logger.info(
+            f"Resume: skipping {len(skipped)} already-processed item(s), "
+            f"{new_count} item(s) to process"
+        )
+        for sr in skipped:
+            logger.info("  Skipped: %s — %s", sr.item_name, sr.reason)
+    else:
+        print()
+        print_highlight("  Resume Information:")
+        print_separator()
+        print_warning(
+            f"    • {len(skipped)} of {total_selected} item(s) already have output and will be skipped"
+        )
+        print_info(f"    • {new_count} item(s) will be processed")
+        print_dim(f"    • Resume mode: {resume_mode}")
+        print_dim("    • Use --force / --overwrite to reprocess all items")
+        print_separator()
+
+    if new_count == 0:
+        if config.CLI_MODE:
+            logger.info("All items already processed. Nothing to do. Use --force to reprocess.")
+            return False
+        else:
+            print_warning("All items already processed. Nothing to do.")
+            force = prompt_yes_no(
+                "Force reprocess all items?",
+                default=False,
+                allow_exit=True,
+            )
+            return force
+
+    return True
+
+
 def main() -> None:
     args = setup_argparse()
     
     # Determine input and output paths based on mode
-    input_path_arg, base_output_dir, process_all, select_pattern, summary_context = _parse_execution_mode(args)
+    input_path_arg, base_output_dir, process_all, select_pattern, summary_context, resume_mode = _parse_execution_mode(args)
     
     if not config.CLI_MODE:
         print_header(
@@ -777,6 +868,51 @@ def main() -> None:
         sys.exit(0)
 
     logger.info("Selected %s item(s) for processing.", len(selected_items))
+
+    # --- Resume filtering ---
+    resume_checker = ResumeChecker(
+        resume_mode=resume_mode,
+        summarize=config.SUMMARIZE,
+        output_docx=config.OUTPUT_DOCX,
+        output_markdown=config.OUTPUT_MARKDOWN,
+    )
+    items_to_process, skipped_items = resume_checker.filter_items(
+        items=selected_items,
+        output_dir_func=lambda item: _resolve_item_output_dir(item, base_output_dir),
+        name_func=lambda item: item.output_stem,
+    )
+
+    # Build per-item resume info map for items that will be processed
+    # (includes PARTIAL and TRANSCRIPTION_ONLY states for page-level / summary-only resume)
+    item_resume_map: Dict[str, ResumeResult] = {}
+    for item in items_to_process:
+        result = resume_checker.should_skip(
+            item.output_stem,
+            _resolve_item_output_dir(item, base_output_dir),
+        )
+        if result.state in (ProcessingState.PARTIAL, ProcessingState.TRANSCRIPTION_ONLY):
+            item_resume_map[item.output_stem] = result
+
+    # Log resume mode
+    if resume_mode == "skip":
+        logger.info("Resume mode: skip (use --force to reprocess all)")
+    else:
+        logger.info("Resume mode: overwrite (all files will be reprocessed)")
+
+    # Display resume information and handle all-skipped case
+    should_continue = _display_resume_info(resume_mode, selected_items, skipped_items, items_to_process)
+    if not should_continue:
+        # User declined to force-reprocess, or CLI with nothing to do
+        if not config.CLI_MODE:
+            print_info("No items to process. Exiting.")
+        sys.exit(0)
+
+    # If user chose to force-reprocess from the prompt, use original selection
+    if not items_to_process and should_continue:
+        items_to_process = list(selected_items)
+        resume_mode = "overwrite"
+        item_resume_map.clear()
+    # --- End resume filtering ---
     
     # Prompt for summary context in interactive mode (if summarization enabled and not already set)
     if not config.CLI_MODE and config.SUMMARIZE and not summary_context:
@@ -784,12 +920,12 @@ def main() -> None:
     
     # Display processing summary and get confirmation (interactive mode only)
     if not config.CLI_MODE:
-        confirmed = _display_processing_summary(selected_items, base_output_dir, summary_context)
+        confirmed = _display_processing_summary(items_to_process, base_output_dir, summary_context)
         if not confirmed:
             print_info("Processing cancelled by user.")
             sys.exit(0)
         
-        print_section(f"Processing {len(selected_items)} Item(s)")
+        print_section(f"Processing {len(items_to_process)} Item(s)")
     
     # Display initial token usage statistics if enabled
     if config.DAILY_TOKEN_LIMIT_ENABLED:
@@ -808,25 +944,31 @@ def main() -> None:
     
     # Process selected items sequentially (file-by-file to support token limit enforcement)
     processed_count = 0
-    for index, item_spec in enumerate(selected_items, start=1):
+    total_to_process = len(items_to_process)
+    for index, item_spec in enumerate(items_to_process, start=1):
         # Check token limit before starting each new file
         if not _check_and_wait_for_token_limit():
             # User cancelled wait - stop processing
-            logger.info(f"Processing stopped by user. Processed {processed_count}/{len(selected_items)} items.")
+            logger.info(f"Processing stopped by user. Processed {processed_count}/{total_to_process} items.")
             if not config.CLI_MODE:
-                print_warning(f"\nProcessing stopped. Completed {processed_count}/{len(selected_items)} items.")
+                print_warning(f"\nProcessing stopped. Completed {processed_count}/{total_to_process} items.")
             break
         
         # Determine output directory for this item
-        if not config.CLI_MODE and config.INPUT_PATHS_IS_OUTPUT_PATH:
-            # Colocated output: write next to the input item
-            item_output_dir = item_spec.path.parent
-        else:
-            item_output_dir = base_output_dir
+        item_output_dir = _resolve_item_output_dir(item_spec, base_output_dir)
         item_output_dir.mkdir(parents=True, exist_ok=True)
         
+        # Look up per-item resume info (for page-level resume)
+        item_resume = item_resume_map.get(item_spec.output_stem)
+        completed_pages = item_resume.completed_page_indices if item_resume else None
+
         # Process this file
-        success = _process_single_item(item_spec, index, len(selected_items), item_output_dir, summary_context)
+        success = _process_single_item(
+            item_spec, index, total_to_process, item_output_dir,
+            summary_context=summary_context,
+            resume_mode=resume_mode,
+            completed_page_indices=completed_pages,
+        )
         if success:
             processed_count += 1
         
@@ -835,18 +977,25 @@ def main() -> None:
             token_tracker = get_token_tracker()
             stats = token_tracker.get_stats()
             logger.info(
-                f"Token usage after file {index}/{len(selected_items)}: "
+                f"Token usage after file {index}/{total_to_process}: "
                 f"{stats['tokens_used_today']:,}/{stats['daily_limit']:,} "
                 f"({stats['usage_percentage']:.1f}%)"
             )
 
     # Final summary
+    skipped_count = len(skipped_items)
     if config.CLI_MODE:
-        logger.info(f"{processed_count}/{len(selected_items)} selected item(s) have been processed.")
+        msg = f"{processed_count}/{total_to_process} item(s) processed."
+        if skipped_count > 0:
+            msg += f" {skipped_count} item(s) skipped (already complete)."
+        logger.info(msg)
     else:
-        _display_completion_summary(processed_count, len(selected_items), base_output_dir if not config.INPUT_PATHS_IS_OUTPUT_PATH else None)
+        _display_completion_summary(processed_count, total_to_process, base_output_dir if not config.INPUT_PATHS_IS_OUTPUT_PATH else None)
+        if skipped_count > 0:
+            print_dim(f"  ({skipped_count} item(s) were skipped as already complete)")
+            print()
     
-    logger.info(f"{processed_count}/{len(selected_items)} selected items have been processed.")
+    logger.info(f"{processed_count}/{total_to_process} selected items have been processed.")
 
 
 if __name__ == "__main__":

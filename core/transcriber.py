@@ -2,7 +2,7 @@ import concurrent.futures
 import shutil
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from tqdm import tqdm
 
@@ -36,6 +36,7 @@ from processors.pdf_processor import (
     get_image_paths_from_folder,
 )
 from core.page_numbering import PageNumberProcessor
+from core.resume import load_completed_pages, load_transcription_results_from_log
 
 
 logger = setup_logger(__name__)
@@ -60,10 +61,14 @@ class ItemTranscriber:
 		summary_context: Optional context string for guiding summarization focus.
 	"""
 	def __init__(self, input_path: Path, input_type: str,
-	             base_output_dir: Path, summary_context: Optional[str] = None):
+	             base_output_dir: Path, summary_context: Optional[str] = None,
+	             resume_mode: str = "skip",
+	             completed_page_indices: Optional[Set[int]] = None):
 		self.input_path = input_path
 		self.input_type = input_type  # "pdf" or "image_folder"
 		self.name = self.input_path.stem
+		self.resume_mode = resume_mode
+		self.completed_page_indices = completed_page_indices or set()
 
 		self.base_output_dir = base_output_dir
 		self.output_txt_path = self.base_output_dir / f"{self.name}.txt"
@@ -237,10 +242,44 @@ class ItemTranscriber:
 		total_images = len(image_paths)
 		processed_count = 0
 
-		logger.info(
-			f"Starting transcription{' and summarization' if config.SUMMARIZE else ''} of {total_images} images...")
-
+		# --- Page-level resume: pre-load completed results and filter ---
 		image_paths_with_indices = list(enumerate(image_paths))
+		skipped_page_count = 0
+
+		if self.completed_page_indices:
+			# Load previously completed transcription results from log
+			prior_results = load_transcription_results_from_log(self.log_path)
+			if prior_results:
+				for entry in prior_results:
+					idx = entry.get("original_input_order_index")
+					if isinstance(idx, int) and idx in self.completed_page_indices:
+						transcription_results.append(entry)
+
+			# Filter out already-completed pages
+			pending = [
+				(idx, path) for idx, path in image_paths_with_indices
+				if idx not in self.completed_page_indices
+			]
+			skipped_page_count = len(image_paths_with_indices) - len(pending)
+			image_paths_with_indices = pending
+
+			if skipped_page_count > 0:
+				logger.info(
+					f"Page-level resume: {skipped_page_count} page(s) already transcribed, "
+					f"{len(pending)} page(s) remaining"
+				)
+
+		if not image_paths_with_indices:
+			logger.info("All pages already transcribed (page-level resume). Skipping transcription.")
+			transcription_results.sort(
+				key=lambda x: x.get("original_input_order_index", 0))
+			return transcription_results, summary_results
+		# --- End page-level resume ---
+
+		logger.info(
+			f"Starting transcription{' and summarization' if config.SUMMARIZE else ''} of "
+			f"{len(image_paths_with_indices)} images"
+			f"{f' ({skipped_page_count} skipped via resume)' if skipped_page_count else ''}...")
 
 		if config.SUMMARIZE and self.summary_manager:
 			max_workers, _ = get_transcription_concurrency()
