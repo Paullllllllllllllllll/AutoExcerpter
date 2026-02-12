@@ -18,7 +18,7 @@ import stat
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from core.resume import ProcessingState, ResumeChecker, ResumeResult
 from core.transcriber import ItemTranscriber
@@ -45,10 +45,6 @@ from modules.user_prompts import (
 )
 
 logger = setup_logger(__name__)
-
-# Constants
-MIN_VALID_CHOICE = 1
-SELECTION_PROMPT = "\nEnter your choice(s) (e.g., 1; 3-5; all): "
 
 
 def setup_argparse() -> argparse.Namespace:

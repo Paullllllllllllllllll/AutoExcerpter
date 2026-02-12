@@ -66,6 +66,14 @@ ERROR_MARKERS = ["[empty page", "no transcription possible", "empty page", "erro
 MATH_NAMESPACE = "http://schemas.openxmlformats.org/officeDocument/2006/math"
 
 # ============================================================================
+# ETA Calculation Constants
+# ============================================================================
+MIN_SAMPLES_FOR_ETA = 5
+RECENT_SAMPLES_FOR_ETA = 10
+ETA_BLEND_WEIGHT_OVERALL = 0.7
+ETA_BLEND_WEIGHT_RECENT = 0.3
+
+# ============================================================================
 # CLI Constants
 # ============================================================================
 EXIT_COMMANDS = frozenset({'exit', 'quit', 'q'})
@@ -122,4 +130,9 @@ __all__ = [
     "ALL_COMMANDS",
     "DIVIDER_CHAR",
     "DIVIDER_LENGTH",
+    # ETA calculation
+    "MIN_SAMPLES_FOR_ETA",
+    "RECENT_SAMPLES_FOR_ETA",
+    "ETA_BLEND_WEIGHT_OVERALL",
+    "ETA_BLEND_WEIGHT_RECENT",
 ]

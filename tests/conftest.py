@@ -193,40 +193,6 @@ def mock_config_loader(
 
 
 # ============================================================================
-# API Response Fixtures
-# ============================================================================
-@pytest.fixture
-def mock_transcription_response() -> Dict[str, Any]:
-    """Return a mock transcription API response."""
-    return {
-        "page": 1,
-        "transcription": "This is a sample transcription text.",
-        "no_transcribable_text": False,
-        "transcription_not_possible": False,
-    }
-
-
-@pytest.fixture
-def mock_summary_response() -> Dict[str, Any]:
-    """Return a mock summary API response (aligned with summary_schema.json v2.1.0)."""
-    return {
-        "page_information": {
-            "page_number_integer": 1,
-            "page_number_type": "arabic",
-            "page_types": ["content"],
-        },
-        "bullet_points": [
-            "First key point from the page",
-            "Second key point with important information",
-            "Third point summarizing conclusions",
-        ],
-        "references": [
-            "Smith, J. (2020). Sample Reference. Journal of Testing, 10(2), 123-145.",
-        ],
-    }
-
-
-# ============================================================================
 # Citation Fixtures
 # ============================================================================
 @pytest.fixture
@@ -307,49 +273,3 @@ stration of hyphen-
 ation at line breaks that should be merged back together."""
 
 
-# ============================================================================
-# Summary Result Fixtures
-# ============================================================================
-@pytest.fixture
-def sample_summary_results() -> list[Dict[str, Any]]:
-    """Return sample summary results for DOCX generation testing (aligned with summary_schema.json v2.1.0)."""
-    return [
-        {
-            "original_input_order_index": 0,
-            "model_page_number": 1,
-            "page": 1,
-            "image_filename": "page_0001.jpg",
-            "summary": {
-                "page_information": {
-                    "page_number_integer": 1,
-                    "page_number_type": "arabic",
-                    "page_types": ["content"],
-                },
-                "bullet_points": [
-                    "Introduction to the document topic",
-                    "Key definitions and terminology",
-                ],
-                "references": [
-                    "Smith (2020). Test Reference.",
-                ],
-            },
-        },
-        {
-            "original_input_order_index": 1,
-            "model_page_number": 2,
-            "page": 2,
-            "image_filename": "page_0002.jpg",
-            "summary": {
-                "page_information": {
-                    "page_number_integer": 2,
-                    "page_number_type": "arabic",
-                    "page_types": ["content"],
-                },
-                "bullet_points": [
-                    "Methodology section begins",
-                    "Data collection procedures described",
-                ],
-                "references": [],
-            },
-        },
-    ]

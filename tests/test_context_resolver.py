@@ -202,14 +202,22 @@ class TestReadAndValidateContext:
 
     def test_warns_for_large_context_file(self, tmp_path, caplog):
         """Should log warning for context files exceeding threshold."""
-        context_file = tmp_path / "context.txt"
-        large_content = "x" * (DEFAULT_CONTEXT_SIZE_THRESHOLD + 100)
-        context_file.write_text(large_content)
-        
-        content = _read_and_validate_context(context_file, size_threshold=DEFAULT_CONTEXT_SIZE_THRESHOLD)
-        
-        assert content == large_content
-        assert "large" in caplog.text.lower() or len(caplog.records) > 0
+        import logging
+        context_logger = logging.getLogger("modules.context_resolver")
+        original_propagate = context_logger.propagate
+        context_logger.propagate = True
+        try:
+            context_file = tmp_path / "context.txt"
+            large_content = "x" * (DEFAULT_CONTEXT_SIZE_THRESHOLD + 100)
+            context_file.write_text(large_content)
+            
+            with caplog.at_level(logging.WARNING, logger="modules.context_resolver"):
+                content = _read_and_validate_context(context_file, size_threshold=DEFAULT_CONTEXT_SIZE_THRESHOLD)
+            
+            assert content == large_content
+            assert "large" in caplog.text.lower()
+        finally:
+            context_logger.propagate = original_propagate
 
     def test_custom_size_threshold(self, tmp_path):
         """Should respect custom size threshold."""

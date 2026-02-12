@@ -14,11 +14,12 @@ the model to pay special attention to specific topics during summarization.
 
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 from typing import Optional, Tuple
 
-logger = logging.getLogger(__name__)
+from modules.logger import setup_logger
+
+logger = setup_logger(__name__)
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 _CONTEXT_DIR = _PROJECT_ROOT / "context"

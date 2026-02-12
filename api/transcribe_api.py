@@ -26,7 +26,7 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from api.base_llm_client import LLMClientBase, DEFAULT_MAX_RETRIES
+from api.base_llm_client import LLMClientBase
 from api.llm_client import ProviderType, get_model_capabilities
 from api.rate_limiter import RateLimiter
 from modules.concurrency_helper import get_api_timeout
@@ -41,55 +41,6 @@ logger = setup_logger(__name__)
 # Constants
 TRANSCRIPTION_SCHEMA_FILE = "transcription_schema.json"
 SYSTEM_PROMPT_FILE = "transcription_system_prompt.txt"
-
-
-def _transform_schema_for_anthropic(schema: dict[str, Any]) -> dict[str, Any]:
-    """Transform JSON schema to be Anthropic-compatible.
-    
-    Anthropic's SDK doesn't support union types like ["string", "null"].
-    This function converts them to simple types.
-    Also adds required 'title' and 'description' keys for LangChain compatibility.
-    """
-    import copy
-    result = copy.deepcopy(schema)
-    
-    def transform_type(obj: dict[str, Any]) -> None:
-        if not isinstance(obj, dict):
-            return
-            
-        # Handle union types like ["string", "null"]
-        if "type" in obj and isinstance(obj["type"], list):
-            # Filter out "null" and keep the first non-null type
-            non_null_types = [t for t in obj["type"] if t != "null"]
-            if non_null_types:
-                obj["type"] = non_null_types[0]
-            else:
-                obj["type"] = "string"  # fallback
-        
-        # Recursively handle properties
-        if "properties" in obj and isinstance(obj["properties"], dict):
-            for prop in obj["properties"].values():
-                transform_type(prop)
-        
-        # Handle items in arrays
-        if "items" in obj and isinstance(obj["items"], dict):
-            transform_type(obj["items"])
-        
-        # Handle anyOf/oneOf/allOf
-        for key in ("anyOf", "oneOf", "allOf"):
-            if key in obj and isinstance(obj[key], list):
-                for item in obj[key]:
-                    transform_type(item)
-    
-    transform_type(result)
-    
-    # Add required top-level keys for LangChain/Anthropic compatibility
-    if "title" not in result:
-        result["title"] = "TranscriptionSchema"
-    if "description" not in result:
-        result["description"] = "Schema for document transcription output"
-    
-    return result
 
 
 class TranscriptionManager(LLMClientBase):
@@ -143,6 +94,7 @@ class TranscriptionManager(LLMClientBase):
         self.system_prompt: str = ""
 
         self._load_schema_and_prompt()
+        self._output_schema = self.transcription_schema
         
         # Load model configuration and determine service tier
         self.model_config = self._load_model_config("transcription_model")
@@ -222,27 +174,6 @@ class TranscriptionManager(LLMClientBase):
             return nums[-1] if nums else 0
         except Exception:
             return 0
-
-    def _build_text_format(self) -> dict[str, Any] | None:
-        """Build the structured output format specification."""
-        if not isinstance(self.transcription_schema, dict):
-            return None
-
-        name = self.transcription_schema.get("name", "markdown_transcription_schema")
-        strict = bool(self.transcription_schema.get("strict", True))
-        schema_obj = self.transcription_schema.get(
-            "schema", self.transcription_schema
-        )
-
-        if not isinstance(schema_obj, dict) or not schema_obj:
-            return None
-
-        return {
-            "type": "json_schema",
-            "name": name,
-            "schema": schema_obj,
-            "strict": strict,
-        }
 
     @staticmethod
     def _format_image_name(image_name: str) -> str:
@@ -405,63 +336,10 @@ class TranscriptionManager(LLMClientBase):
 
         # Build invoke kwargs using base class method
         invoke_kwargs = self._build_invoke_kwargs()
-
-        # Add structured output format for OpenAI (native response_format)
-        if self.provider == "openai":
-            text_format = self._build_text_format()
-            if text_format:
-                # Check if we already have text params
-                if "text" in invoke_kwargs:
-                    invoke_kwargs["text"]["format"] = text_format
-                else:
-                    invoke_kwargs["response_format"] = text_format
-
-        if self.provider == "google":
-            schema_obj = (
-                self.transcription_schema.get("schema")
-                if isinstance(self.transcription_schema, dict) and "schema" in self.transcription_schema
-                else self.transcription_schema
-            )
-            if isinstance(schema_obj, dict) and schema_obj:
-                invoke_kwargs.setdefault("response_mime_type", "application/json")
-                invoke_kwargs.setdefault("response_schema", schema_obj)
+        self._apply_structured_output_kwargs(invoke_kwargs)
 
         return [system_msg, user_msg], invoke_kwargs
     
-    def _get_structured_chat_model(self):
-        """Get chat model with structured output for each provider.
-        
-        Provider-specific approaches:
-        - OpenAI: Native response_format parameter (guaranteed JSON) - handled separately
-        - Anthropic/Google: Prompt-based JSON with markdown stripping fallback
-          (LangChain's with_structured_output has tool naming compatibility issues)
-        - OpenRouter: Default tool-based structured output (OpenAI-compatible)
-        
-        Returns:
-            Chat model with structured output, or base chat model.
-        """
-        # OpenAI uses native response_format - no need for with_structured_output
-        if self.provider == "openai":
-            return self.chat_model
-        
-        # Anthropic/Google: Don't use with_structured_output due to compatibility issues
-        # Anthropic: Tool names must match ^[a-zA-Z0-9_-]{1,128}$ pattern
-        # Google: Function names have strict requirements
-        # Both rely on schema in system prompt + markdown stripping fallback
-        if self.provider in ("anthropic", "google"):
-            return self.chat_model
-        
-        # OpenRouter: Use tool-based structured output (OpenAI-compatible)
-        if self.transcription_schema:
-            schema = self.transcription_schema.get("schema", self.transcription_schema)
-            if isinstance(schema, dict) and schema:
-                return self.chat_model.with_structured_output(
-                    schema,
-                    include_raw=True,
-                )
-        
-        return self.chat_model
-
     def transcribe_image(
         self,
         image_path: Path,

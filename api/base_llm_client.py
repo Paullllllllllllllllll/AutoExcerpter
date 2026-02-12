@@ -21,7 +21,6 @@ This module provides the foundational LLM client implementation with:
 
 from __future__ import annotations
 
-import json
 import random
 import time
 from collections import deque
@@ -135,6 +134,9 @@ class LLMClientBase:
         
         # Schema retry configuration (loaded by subclasses)
         self.schema_retry_config: dict[str, Any] = {}
+        
+        # Output schema for structured output (set by subclasses)
+        self._output_schema: dict[str, Any] | None = None
         
         logger.info(
             f"Initialized LLM client: provider={self.provider}, model={model_name}, "
@@ -297,6 +299,89 @@ class LLMClientBase:
         except Exception as e:
             logger.warning(f"Error extracting output text: {e}")
             return ""
+
+    def _build_text_format(self, default_name: str = "json_schema") -> dict[str, Any] | None:
+        """Build the structured output format specification from the output schema.
+        
+        Args:
+            default_name: Default schema name if not specified in the schema dict.
+            
+        Returns:
+            JSON schema format dict, or None if no valid schema is available.
+        """
+        schema = self._output_schema
+        if not isinstance(schema, dict):
+            return None
+
+        name = schema.get("name", default_name)
+        strict = bool(schema.get("strict", True))
+        schema_obj = schema.get("schema", schema)
+
+        if not isinstance(schema_obj, dict) or not schema_obj:
+            return None
+
+        return {
+            "type": "json_schema",
+            "name": name,
+            "schema": schema_obj,
+            "strict": strict,
+        }
+
+    def _get_structured_chat_model(self):
+        """Get chat model with structured output for each provider.
+        
+        Provider-specific approaches:
+        - OpenAI: Native response_format parameter (guaranteed JSON) - handled separately
+        - Anthropic/Google: Prompt-based JSON with markdown stripping fallback
+          (LangChain's with_structured_output has tool naming compatibility issues)
+        - OpenRouter: Default tool-based structured output (OpenAI-compatible)
+        
+        Returns:
+            Chat model with structured output, or base chat model.
+        """
+        if self.provider == "openai":
+            return self.chat_model
+        
+        if self.provider in ("anthropic", "google"):
+            return self.chat_model
+        
+        # OpenRouter: Use tool-based structured output (OpenAI-compatible)
+        if self._output_schema:
+            schema = self._output_schema.get("schema", self._output_schema)
+            if isinstance(schema, dict) and schema:
+                return self.chat_model.with_structured_output(
+                    schema,
+                    include_raw=True,
+                )
+        
+        return self.chat_model
+
+    def _apply_structured_output_kwargs(self, invoke_kwargs: dict[str, Any]) -> None:
+        """Apply provider-specific structured output parameters to invoke kwargs.
+        
+        Modifies invoke_kwargs in-place to add structured output format for
+        OpenAI (response_format) and Google (response_mime_type + response_schema).
+        
+        Args:
+            invoke_kwargs: The invocation kwargs dict to modify.
+        """
+        if self.provider == "openai":
+            text_format = self._build_text_format()
+            if text_format:
+                if "text" in invoke_kwargs:
+                    invoke_kwargs["text"]["format"] = text_format
+                else:
+                    invoke_kwargs["response_format"] = text_format
+
+        if self.provider == "google":
+            schema_obj = (
+                self._output_schema.get("schema")
+                if isinstance(self._output_schema, dict) and "schema" in self._output_schema
+                else self._output_schema
+            )
+            if isinstance(schema_obj, dict) and schema_obj:
+                invoke_kwargs.setdefault("response_mime_type", "application/json")
+                invoke_kwargs.setdefault("response_schema", schema_obj)
 
     def get_stats(self) -> dict[str, Any]:
         """Get statistics about API usage."""
