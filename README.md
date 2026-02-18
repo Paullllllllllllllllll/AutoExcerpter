@@ -1,6 +1,6 @@
 # AutoExcerpter
 
-AutoExcerpter is an intelligent document processing pipeline that automatically transcribes and summarizes PDF documents and image collections. Built on LangChain for multi-provider LLM support, it converts scanned documents into searchable, structured text with optional summaries and enriched bibliographic citations. The tool supports OpenAI (GPT-5.1, GPT-5, GPT-4, o-series), Anthropic (Claude 4.5, Claude 4), Google (Gemini 3, Gemini 2.5), and OpenRouter for accessing additional models. It is designed for researchers, academics, and professionals who need to digitize and analyze large volumes of documents efficiently.
+AutoExcerpter is an intelligent document processing pipeline that automatically transcribes and summarizes PDF documents and image collections. Built on LangChain for multi-provider LLM support, it converts scanned documents into searchable, structured text with optional summaries and enriched bibliographic citations. The tool supports OpenAI (GPT-5.2, GPT-5.1, GPT-5, GPT-4, o-series), Anthropic (Claude 4.6, Claude 4.5, Claude 4), Google (Gemini 3, Gemini 2.5), and OpenRouter for accessing additional models. It is designed for researchers, academics, and professionals who need to digitize and analyze large volumes of documents efficiently.
 
 ## Table of Contents
 
@@ -114,6 +114,12 @@ Models
 
 Capabilities
 
+GPT-5.2 (Feb 2026)
+
+gpt-5.2
+
+Reasoning, multimodal, 400k context
+
 GPT-5.1 (Nov 2025)
 
 gpt-5.1, gpt-5.1-instant, gpt-5.1-thinking
@@ -152,6 +158,12 @@ Models
 
 Capabilities
 
+Claude 4.6 (Feb 2026)
+
+claude-opus-4-6, claude-sonnet-4-6
+
+Multimodal, extended thinking, 200k context
+
 Claude 4.5 (Oct-Nov 2025)
 
 claude-opus-4-5, claude-sonnet-4-5, claude-haiku-4-5
@@ -178,9 +190,15 @@ Models
 
 Capabilities
 
+Gemini 3 Preview (Feb 2026)
+
+gemini-3-pro-preview, gemini-3-flash-preview
+
+Thinking, multimodal, 1M context
+
 Gemini 3 (Nov 2025)
 
-gemini-3-pro
+gemini-3-pro, gemini-3-flash
 
 Thinking, multimodal
 
