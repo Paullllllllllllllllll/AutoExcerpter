@@ -2,6 +2,9 @@
 
 AutoExcerpter is an intelligent document processing pipeline that automatically transcribes and summarizes PDF documents and image collections. Built on LangChain for multi-provider LLM support, it converts scanned documents into searchable, structured text with optional summaries and enriched bibliographic citations. The tool supports OpenAI (GPT-5.2, GPT-5.1, GPT-5, GPT-4, o-series), Anthropic (Claude 4.6, Claude 4.5, Claude 4), Google (Gemini 3, Gemini 2.5), and OpenRouter for accessing additional models. It is designed for researchers, academics, and professionals who need to digitize and analyze large volumes of documents efficiently.
 
+> **Work in Progress** — AutoExcerpter is under active development. We aim to keep it well-maintained and up to date, but bugs may occur. If you encounter any issues, please report them on [GitHub Issues](https://github.com/yourusername/AutoExcerpter/issues) — your feedback is greatly appreciated.
+
+
 ## Table of Contents
 
 -   [Overview](#overview)
