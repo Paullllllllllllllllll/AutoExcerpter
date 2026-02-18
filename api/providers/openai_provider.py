@@ -64,6 +64,26 @@ def _get_model_capabilities(model_name: str) -> ProviderCapabilities:
             max_output_tokens=128000,
         )
     
+    # GPT-5.2 family (Feb 2026) - flagship coding and agentic model, 400k context
+    if m.startswith("gpt-5.2"):
+        return ProviderCapabilities(
+            provider_name="openai",
+            model_name=model_name,
+            supports_vision=True,
+            supports_image_detail=True,
+            default_image_detail="high",
+            supports_structured_output=True,
+            supports_json_mode=True,
+            is_reasoning_model=True,
+            supports_reasoning_effort=True,
+            supports_temperature=False,
+            supports_top_p=False,
+            supports_frequency_penalty=False,
+            supports_presence_penalty=False,
+            max_context_tokens=400000,
+            max_output_tokens=128000,
+        )
+    
     # GPT-5 family
     if m.startswith("gpt-5"):
         return ProviderCapabilities(

@@ -79,6 +79,8 @@ MODEL_CAPABILITIES: dict[str, dict[str, bool]] = {
     "gpt-5.1-thinking": {"reasoning": True, "text_verbosity": True, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True},
     "gpt-5.1-instant": {"reasoning": True, "text_verbosity": True, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True},
     "gpt-5.1": {"reasoning": True, "text_verbosity": True, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True},
+    # GPT-5.2 family (Feb 2026) - flagship coding and agentic model, 400k context
+    "gpt-5.2": {"reasoning": True, "text_verbosity": True, "temperature": False, "max_tokens": True, "structured_output": True, "multimodal": True},
     # GPT-5 family (Aug 2025) - supports reasoning and text verbosity
     "gpt-5-mini": {"reasoning": True, "text_verbosity": True, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True},
     "gpt-5-nano": {"reasoning": True, "text_verbosity": True, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True},
@@ -102,6 +104,9 @@ MODEL_CAPABILITIES: dict[str, dict[str, bool]] = {
     "gpt-4": {"reasoning": False, "text_verbosity": False, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": False},
     
     # ============== Anthropic Claude Models ==============
+    # Claude 4.6 family (Feb 2026) - native extended thinking (Opus 4.6), 200k context
+    "claude-opus-4-6": {"reasoning": False, "text_verbosity": False, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True, "extended_thinking": True},
+    "claude-sonnet-4-6": {"reasoning": False, "text_verbosity": False, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True, "extended_thinking": True},
     # Claude 4.5 family (Oct-Nov 2025) - latest generation
     "claude-opus-4-5": {"reasoning": False, "text_verbosity": False, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True, "extended_thinking": True},
     "claude-sonnet-4-5": {"reasoning": False, "text_verbosity": False, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True, "extended_thinking": True},
@@ -121,8 +126,14 @@ MODEL_CAPABILITIES: dict[str, dict[str, bool]] = {
     "claude": {"reasoning": False, "text_verbosity": False, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True},
     
     # ============== Google Gemini Models ==============
+    # Gemini 3 Pro Preview (Feb 2026) - 1M token context, thinking
+    "gemini-3-pro-preview": {"reasoning": False, "thinking": True, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True},
+    # Gemini 3 Flash Preview (Feb 2026) - 1M token context, thinking
+    "gemini-3-flash-preview": {"reasoning": False, "thinking": True, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True},
     # Gemini 3 Pro (Nov 2025) - latest flagship with thinking
     "gemini-3-pro": {"reasoning": False, "thinking": True, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True},
+    # Gemini 3 Flash (catch-all for flash variants)
+    "gemini-3-flash": {"reasoning": False, "thinking": True, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True},
     # Gemini 2.5 family (Mar 2025) - thinking models
     "gemini-2.5-pro": {"reasoning": False, "thinking": True, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True},
     "gemini-2.5-flash": {"reasoning": False, "thinking": True, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True},
@@ -158,6 +169,7 @@ def get_model_capabilities(model_name: str) -> dict[str, bool]:
     # OpenAI models (most specific to least specific)
     openai_prefixes = [
         "gpt-5.1-thinking", "gpt-5.1-instant", "gpt-5.1",
+        "gpt-5.2",
         "gpt-5-mini", "gpt-5-nano", "gpt-5",
         "o4-mini", "o4", "o3-mini", "o3", "o1-mini", "o1",
         "gpt-4.1-mini", "gpt-4.1-nano", "gpt-4.1",
@@ -166,6 +178,7 @@ def get_model_capabilities(model_name: str) -> dict[str, bool]:
     
     # Anthropic models (most specific to least specific)
     anthropic_prefixes = [
+        "claude-opus-4-6", "claude-sonnet-4-6",
         "claude-opus-4-5", "claude-sonnet-4-5", "claude-haiku-4-5",
         "claude-opus-4", "claude-sonnet-4",
         "claude-3-7-sonnet", "claude-3-5-sonnet", "claude-3-5-haiku",
@@ -175,7 +188,8 @@ def get_model_capabilities(model_name: str) -> dict[str, bool]:
     
     # Google models (most specific to least specific)
     google_prefixes = [
-        "gemini-3-pro",
+        "gemini-3-pro-preview", "gemini-3-flash-preview",
+        "gemini-3-pro", "gemini-3-flash",
         "gemini-2.5-pro", "gemini-2.5-flash-lite", "gemini-2.5-flash",
         "gemini-2.0-flash-lite", "gemini-2.0-flash",
         "gemini-1.5-pro", "gemini-1.5-flash",

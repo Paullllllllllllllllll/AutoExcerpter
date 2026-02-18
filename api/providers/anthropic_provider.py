@@ -151,6 +151,46 @@ def _get_model_capabilities(model_name: str) -> ProviderCapabilities:
             max_output_tokens=8192,
         )
     
+    # Claude 4.6 Opus (native extended thinking, 200k context)
+    if "claude-opus-4-6" in m or "claude-opus-4.6" in m:
+        return ProviderCapabilities(
+            provider_name="anthropic",
+            model_name=model_name,
+            supports_vision=True,
+            supports_image_detail=False,
+            default_image_detail="auto",
+            supports_structured_output=True,
+            supports_json_mode=True,
+            is_reasoning_model=True,
+            supports_reasoning_effort=True,
+            supports_temperature=True,
+            supports_top_p=False,
+            supports_frequency_penalty=False,
+            supports_presence_penalty=False,
+            max_context_tokens=200000,
+            max_output_tokens=32768,
+        )
+    
+    # Claude 4.6 Sonnet (extended thinking via beta header, 200k context)
+    if "claude-sonnet-4-6" in m or "claude-sonnet-4.6" in m:
+        return ProviderCapabilities(
+            provider_name="anthropic",
+            model_name=model_name,
+            supports_vision=True,
+            supports_image_detail=False,
+            default_image_detail="auto",
+            supports_structured_output=True,
+            supports_json_mode=True,
+            is_reasoning_model=True,
+            supports_reasoning_effort=True,
+            supports_temperature=True,
+            supports_top_p=False,
+            supports_frequency_penalty=False,
+            supports_presence_penalty=False,
+            max_context_tokens=200000,
+            max_output_tokens=16384,
+        )
+    
     # Claude 4.1 Opus
     if "claude-opus-4-1" in m or "claude-opus-4.1" in m:
         return ProviderCapabilities(
