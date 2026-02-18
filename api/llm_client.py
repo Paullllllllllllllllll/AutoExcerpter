@@ -30,6 +30,11 @@ from typing import Any, Literal, TYPE_CHECKING
 
 from langchain_core.language_models import BaseChatModel
 
+from api.model_capabilities import (
+    ProviderCapabilities,
+    detect_capabilities,
+    detect_provider as _detect_provider_from_caps,
+)
 from modules.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -70,151 +75,30 @@ SUPPORTED_PROVIDERS: dict[str, dict[str, Any]] = {
     },
 }
 
-# Model capability profiles for parameter guarding
-# These define which parameters each model family supports to prevent API errors
-# Updated November 2025 with latest models from all providers
-MODEL_CAPABILITIES: dict[str, dict[str, bool]] = {
-    # ============== OpenAI Models ==============
-    # GPT-5.1 family (Nov 2025) - latest flagship with improved reasoning
-    "gpt-5.1-thinking": {"reasoning": True, "text_verbosity": True, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True},
-    "gpt-5.1-instant": {"reasoning": True, "text_verbosity": True, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True},
-    "gpt-5.1": {"reasoning": True, "text_verbosity": True, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True},
-    # GPT-5.2 family (Feb 2026) - flagship coding and agentic model, 400k context
-    "gpt-5.2": {"reasoning": True, "text_verbosity": True, "temperature": False, "max_tokens": True, "structured_output": True, "multimodal": True},
-    # GPT-5 family (Aug 2025) - supports reasoning and text verbosity
-    "gpt-5-mini": {"reasoning": True, "text_verbosity": True, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True},
-    "gpt-5-nano": {"reasoning": True, "text_verbosity": True, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True},
-    "gpt-5": {"reasoning": True, "text_verbosity": True, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True},
-    # O-series reasoning models (no temperature support)
-    "o4-mini": {"reasoning": True, "temperature": False, "max_tokens": True, "structured_output": True, "multimodal": True},
-    "o4": {"reasoning": True, "temperature": False, "max_tokens": True, "structured_output": True, "multimodal": True},
-    "o3-mini": {"reasoning": True, "temperature": False, "max_tokens": True, "structured_output": True, "multimodal": False},
-    "o3": {"reasoning": True, "temperature": False, "max_tokens": True, "structured_output": True, "multimodal": False},
-    "o1-mini": {"reasoning": True, "temperature": False, "max_tokens": True, "structured_output": True, "multimodal": False},
-    "o1": {"reasoning": True, "temperature": False, "max_tokens": True, "structured_output": True, "multimodal": False},
-    # GPT-4.1 family (no reasoning support)
-    "gpt-4.1-mini": {"reasoning": False, "text_verbosity": False, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True},
-    "gpt-4.1-nano": {"reasoning": False, "text_verbosity": False, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True},
-    "gpt-4.1": {"reasoning": False, "text_verbosity": False, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True},
-    # GPT-4o family (no reasoning support)
-    "gpt-4o-mini": {"reasoning": False, "text_verbosity": False, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True},
-    "gpt-4o": {"reasoning": False, "text_verbosity": False, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True},
-    # GPT-4 legacy (no reasoning, no multimodal for base)
-    "gpt-4-turbo": {"reasoning": False, "text_verbosity": False, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True},
-    "gpt-4": {"reasoning": False, "text_verbosity": False, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": False},
-    
-    # ============== Anthropic Claude Models ==============
-    # Claude 4.6 family (Feb 2026) - native extended thinking (Opus 4.6), 200k context
-    "claude-opus-4-6": {"reasoning": False, "text_verbosity": False, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True, "extended_thinking": True},
-    "claude-sonnet-4-6": {"reasoning": False, "text_verbosity": False, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True, "extended_thinking": True},
-    # Claude 4.5 family (Oct-Nov 2025) - latest generation
-    "claude-opus-4-5": {"reasoning": False, "text_verbosity": False, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True, "extended_thinking": True},
-    "claude-sonnet-4-5": {"reasoning": False, "text_verbosity": False, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True, "extended_thinking": True},
-    "claude-haiku-4-5": {"reasoning": False, "text_verbosity": False, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True, "extended_thinking": False},
-    # Claude 4 family
-    "claude-opus-4": {"reasoning": False, "text_verbosity": False, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True, "extended_thinking": True},
-    "claude-sonnet-4": {"reasoning": False, "text_verbosity": False, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True, "extended_thinking": True},
-    # Claude 3.5/3.7 family
-    "claude-3-7-sonnet": {"reasoning": False, "text_verbosity": False, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True, "extended_thinking": True},
-    "claude-3-5-sonnet": {"reasoning": False, "text_verbosity": False, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True, "extended_thinking": False},
-    "claude-3-5-haiku": {"reasoning": False, "text_verbosity": False, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True, "extended_thinking": False},
-    # Claude 3 family (legacy)
-    "claude-3-opus": {"reasoning": False, "text_verbosity": False, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True, "extended_thinking": False},
-    "claude-3-sonnet": {"reasoning": False, "text_verbosity": False, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True, "extended_thinking": False},
-    "claude-3-haiku": {"reasoning": False, "text_verbosity": False, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True, "extended_thinking": False},
-    # Fallback for any claude model
-    "claude": {"reasoning": False, "text_verbosity": False, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True},
-    
-    # ============== Google Gemini Models ==============
-    # Gemini 3 Pro Preview (Feb 2026) - 1M token context, thinking
-    "gemini-3-pro-preview": {"reasoning": False, "thinking": True, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True},
-    # Gemini 3 Flash Preview (Feb 2026) - 1M token context, thinking
-    "gemini-3-flash-preview": {"reasoning": False, "thinking": True, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True},
-    # Gemini 3 Pro (Nov 2025) - latest flagship with thinking
-    "gemini-3-pro": {"reasoning": False, "thinking": True, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True},
-    # Gemini 3 Flash (catch-all for flash variants)
-    "gemini-3-flash": {"reasoning": False, "thinking": True, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True},
-    # Gemini 2.5 family (Mar 2025) - thinking models
-    "gemini-2.5-pro": {"reasoning": False, "thinking": True, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True},
-    "gemini-2.5-flash": {"reasoning": False, "thinking": True, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True},
-    "gemini-2.5-flash-lite": {"reasoning": False, "thinking": True, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True},
-    # Gemini 2.0 family
-    "gemini-2.0-flash": {"reasoning": False, "thinking": False, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True},
-    "gemini-2.0-flash-lite": {"reasoning": False, "thinking": False, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True},
-    # Gemini 1.5 family (legacy)
-    "gemini-1.5-pro": {"reasoning": False, "thinking": False, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True},
-    "gemini-1.5-flash": {"reasoning": False, "thinking": False, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True},
-    # Fallback for any gemini model
-    "gemini": {"reasoning": False, "thinking": False, "temperature": True, "max_tokens": True, "structured_output": True, "multimodal": True},
-}
+# Backward-compatible re-exports from api.model_capabilities.
+# New code should import directly from api.model_capabilities.
+MODEL_CAPABILITIES = None  # Removed; use detect_capabilities() instead
 
 
 def get_model_capabilities(model_name: str) -> dict[str, bool]:
+    """Backward-compatible wrapper around detect_capabilities().
+    
+    Returns a dict[str, bool] that mirrors the old MODEL_CAPABILITIES format
+    so existing callers (base_llm_client, transcribe_api, tests) continue to work.
+    
+    New code should use ``detect_capabilities()`` from ``api.model_capabilities``
+    which returns a typed ``ProviderCapabilities`` dataclass.
     """
-    Get capability profile for a model based on its name prefix.
-    
-    This enables parameter guarding - filtering out unsupported parameters
-    before they're sent to the API, preventing errors like:
-    "Unsupported parameter: 'reasoning_effort' is not supported with this model"
-    
-    Args:
-        model_name: The model name (e.g., "gpt-5-mini", "o3-mini", "claude-sonnet-4-5-20250929")
-        
-    Returns:
-        Dictionary of capabilities (reasoning, temperature, etc.)
-    """
-    model_lower = model_name.lower()
-    
-    # Check for exact prefix matches (order matters - more specific first)
-    # OpenAI models (most specific to least specific)
-    openai_prefixes = [
-        "gpt-5.1-thinking", "gpt-5.1-instant", "gpt-5.1",
-        "gpt-5.2",
-        "gpt-5-mini", "gpt-5-nano", "gpt-5",
-        "o4-mini", "o4", "o3-mini", "o3", "o1-mini", "o1",
-        "gpt-4.1-mini", "gpt-4.1-nano", "gpt-4.1",
-        "gpt-4o-mini", "gpt-4o", "gpt-4-turbo", "gpt-4",
-    ]
-    
-    # Anthropic models (most specific to least specific)
-    anthropic_prefixes = [
-        "claude-opus-4-6", "claude-sonnet-4-6",
-        "claude-opus-4-5", "claude-sonnet-4-5", "claude-haiku-4-5",
-        "claude-opus-4", "claude-sonnet-4",
-        "claude-3-7-sonnet", "claude-3-5-sonnet", "claude-3-5-haiku",
-        "claude-3-opus", "claude-3-sonnet", "claude-3-haiku",
-        "claude",
-    ]
-    
-    # Google models (most specific to least specific)
-    google_prefixes = [
-        "gemini-3-pro-preview", "gemini-3-flash-preview",
-        "gemini-3-pro", "gemini-3-flash",
-        "gemini-2.5-pro", "gemini-2.5-flash-lite", "gemini-2.5-flash",
-        "gemini-2.0-flash-lite", "gemini-2.0-flash",
-        "gemini-1.5-pro", "gemini-1.5-flash",
-        "gemini",
-    ]
-    
-    # Check all prefixes in order
-    for prefix in openai_prefixes + anthropic_prefixes + google_prefixes:
-        if model_lower.startswith(prefix):
-            caps = MODEL_CAPABILITIES.get(prefix, {})
-            if caps:
-                logger.debug(f"Model '{model_name}' matched profile '{prefix}'")
-                return caps
-    
-    # Default capabilities (conservative - no special features)
-    logger.debug(f"Model '{model_name}' using default capability profile")
+    caps = detect_capabilities(model_name)
     return {
-        "reasoning": False,
-        "text_verbosity": False,
-        "thinking": False,
-        "extended_thinking": False,
-        "temperature": True,
-        "max_tokens": True,
-        "structured_output": False,
-        "multimodal": False,
+        "reasoning": caps.is_reasoning_model,
+        "text_verbosity": caps.supports_text_verbosity,
+        "thinking": caps.is_reasoning_model and caps.provider_name == "google",
+        "extended_thinking": caps.is_reasoning_model and caps.provider_name == "anthropic",
+        "temperature": caps.supports_temperature,
+        "max_tokens": True,  # Always allow setting max tokens
+        "structured_output": caps.supports_structured_output,
+        "multimodal": caps.supports_vision,
     }
 
 
@@ -506,7 +390,7 @@ __all__ = [
     "LLMConfig",
     "get_chat_model",
     "get_model_capabilities",
+    "detect_capabilities",
     "SUPPORTED_PROVIDERS",
-    "MODEL_CAPABILITIES",
     "ProviderType",
 ]

@@ -15,10 +15,10 @@ from api.llm_client import (
     is_provider_available,
     get_available_providers,
     SUPPORTED_PROVIDERS,
-    MODEL_CAPABILITIES,
     _infer_provider,
     _get_api_key,
 )
+from api.model_capabilities import detect_capabilities
 
 
 class TestLLMConfig:
@@ -129,7 +129,8 @@ class TestGetModelCapabilities:
         
         assert caps.get("reasoning") is True
         assert caps.get("multimodal") is True
-        assert caps.get("temperature") is True
+        # GPT-5 is a reasoning model; temperature is not supported
+        assert caps.get("temperature") is False
 
     def test_o_series_no_temperature(self):
         """O-series models don't support temperature."""
@@ -146,14 +147,15 @@ class TestGetModelCapabilities:
         assert caps.get("multimodal") is True
 
     def test_claude_extended_thinking(self):
-        """Claude 4.5 opus/sonnet have extended thinking."""
+        """Claude 4.5 opus/sonnet/haiku have extended thinking (all are reasoning models)."""
         opus_caps = get_model_capabilities("claude-opus-4-5")
         sonnet_caps = get_model_capabilities("claude-sonnet-4-5")
         haiku_caps = get_model_capabilities("claude-haiku-4-5")
         
         assert opus_caps.get("extended_thinking") is True
         assert sonnet_caps.get("extended_thinking") is True
-        assert haiku_caps.get("extended_thinking") is False
+        # Haiku 4.5 is also a reasoning Anthropic model
+        assert haiku_caps.get("extended_thinking") is True
 
     def test_gemini_thinking(self):
         """Gemini 2.5+ models have thinking capability."""
@@ -342,20 +344,27 @@ class TestSupportedProviders:
 
 
 class TestModelCapabilities:
-    """Tests for MODEL_CAPABILITIES constant."""
+    """Tests for detect_capabilities (replaces MODEL_CAPABILITIES dict)."""
 
     def test_has_openai_models(self):
-        """Contains OpenAI models."""
-        assert "gpt-5-mini" in MODEL_CAPABILITIES
-        assert "gpt-5" in MODEL_CAPABILITIES
-        assert "o3-mini" in MODEL_CAPABILITIES
+        """detect_capabilities returns valid results for OpenAI models."""
+        caps = detect_capabilities("gpt-5-mini")
+        assert caps.provider_name == "openai"
+        caps = detect_capabilities("gpt-5")
+        assert caps.is_reasoning_model is True
+        caps = detect_capabilities("o3-mini")
+        assert caps.is_reasoning_model is True
 
     def test_has_anthropic_models(self):
-        """Contains Anthropic models."""
-        assert "claude-sonnet-4-5" in MODEL_CAPABILITIES
-        assert "claude-3-opus" in MODEL_CAPABILITIES
+        """detect_capabilities returns valid results for Anthropic models."""
+        caps = detect_capabilities("claude-sonnet-4-5")
+        assert caps.provider_name == "anthropic"
+        caps = detect_capabilities("claude-3-opus")
+        assert caps.provider_name == "anthropic"
 
     def test_has_google_models(self):
-        """Contains Google models."""
-        assert "gemini-2.5-flash" in MODEL_CAPABILITIES
-        assert "gemini-1.5-pro" in MODEL_CAPABILITIES
+        """detect_capabilities returns valid results for Google models."""
+        caps = detect_capabilities("gemini-2.5-flash")
+        assert caps.provider_name == "google"
+        caps = detect_capabilities("gemini-1.5-pro")
+        assert caps.provider_name == "google"

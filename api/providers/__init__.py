@@ -26,9 +26,9 @@ def __getattr__(name: str):
         "ProviderCapabilities",
         "TranscriptionResult",
     ):
+        from api.model_capabilities import ProviderCapabilities
         from api.providers.base import (
             BaseProvider,
-            ProviderCapabilities,
             TranscriptionResult,
         )
         return {

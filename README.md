@@ -90,7 +90,7 @@ AutoExcerpter processes documents through a sophisticated two-stage pipeline tha
 
 -   **LangChain Integration**: Unified interface for multiple LLM providers via LangChain
 -   **Provider Flexibility**: Switch between OpenAI, Anthropic, Google, or OpenRouter with configuration changes
--   **Capability Guarding**: Automatic parameter filtering based on model capabilities (prevents unsupported parameter errors)
+-   **Capability Guarding**: Automatic parameter filtering via a centralized registry (`api/model_capabilities.py`) that maps every supported model to a typed capability profile, preventing unsupported-parameter API errors
 -   **Model Auto-Detection**: Automatic provider inference from model names (gpt-5 to OpenAI, claude to Anthropic, etc.)
 
 **Architecture Excellence:**
@@ -1280,12 +1280,13 @@ AutoExcerpter follows a modular architecture with clear separation of concerns:
 AutoExcerpter/
 ├── api/                                # LangChain Multi-Provider API Layer
 │   ├── providers/                      # Provider-specific implementations
-│   │   ├── base.py                     # BaseProvider abstract class
+│   │   ├── base.py                     # BaseProvider abstract class and TranscriptionResult
 │   │   ├── openai_provider.py          # OpenAI GPT-5/4/o-series
 │   │   ├── anthropic_provider.py       # Anthropic Claude models
 │   │   ├── google_provider.py          # Google Gemini models
 │   │   └── openrouter_provider.py      # OpenRouter multi-provider proxy
-│   ├── llm_client.py                   # Multi-provider LLM client with capability guarding
+│   ├── model_capabilities.py           # Unified capability registry (single source of truth)
+│   ├── llm_client.py                   # Multi-provider LLM client and provider detection
 │   ├── base_llm_client.py              # Provider-agnostic base class with retry logic
 │   ├── transcribe_api.py               # TranscriptionManager for image-to-text
 │   ├── summary_api.py                  # SummaryManager for structured summaries
@@ -1330,8 +1331,9 @@ AutoExcerpter/
 **`api/` - LangChain Multi-Provider API Layer**
 
 -   Provides a unified interface for multiple LLM providers (OpenAI, Anthropic, Google, OpenRouter)
--   `providers/`: Provider-specific implementations with capability detection
--   `llm_client.py`: Multi-provider LLM client with model capability profiles and auto-detection
+-   `model_capabilities.py`: Centralized registry of model capability profiles; the single source of truth for all providers. Implements a base-dict plus per-model override pattern so adding a new model requires a single line. Exposes `detect_capabilities()` and `detect_provider()` used by every provider and the base client.
+-   `providers/`: Provider-specific implementations; each provider calls `detect_capabilities()` for parameter guarding instead of maintaining its own capability logic
+-   `llm_client.py`: Multi-provider LangChain client with provider auto-detection; delegates capability queries to `model_capabilities.py`
 -   `base_llm_client.py`: Provider-agnostic base class with rate limiting integration and schema retries
 -   `transcribe_api.py`: TranscriptionManager for image-to-text processing with structured output
 -   `summary_api.py`: SummaryManager for generating structured summaries with citation extraction

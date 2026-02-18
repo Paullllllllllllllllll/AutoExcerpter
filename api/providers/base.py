@@ -12,7 +12,15 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Literal
+from typing import Any, Dict, List, Optional
+
+from api.model_capabilities import (
+    ProviderCapabilities,
+    CapabilityError,
+    ImageDetail,
+    MediaResolution,
+    ensure_image_support,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -25,70 +33,6 @@ SUPPORTED_IMAGE_FORMATS: Dict[str, str] = {
     ".webp": "image/webp",
     ".bmp": "image/bmp",
 }
-
-ImageDetail = Literal["auto", "high", "low"]
-MediaResolution = Literal["low", "medium", "high", "ultra_high", "auto"]
-
-
-@dataclass(frozen=True)
-class ProviderCapabilities:
-    """Describes capabilities of an LLM provider/model combination.
-    
-    This enables parameter guarding - filtering out unsupported parameters
-    before they're sent to the API, preventing errors like:
-    "Unsupported parameter: 'reasoning_effort' is not supported with this model"
-    
-    Attributes:
-        provider_name: Name of the provider (openai, anthropic, google, openrouter)
-        model_name: Full model identifier
-        supports_vision: Whether the model can process image inputs
-        supports_image_detail: Whether OpenAI-style "detail" parameter is supported
-        default_image_detail: Default detail level for images
-        supports_media_resolution: Whether Google-style media_resolution is supported
-        default_media_resolution: Default resolution for Google
-        supports_structured_output: Whether native structured output is supported
-        supports_json_mode: Whether JSON mode is available
-        is_reasoning_model: Whether this is a reasoning-capable model family
-        supports_reasoning_effort: Whether reasoning_effort/thinking parameters work
-        supports_temperature: Whether temperature sampling is supported
-        supports_top_p: Whether top_p sampling is supported
-        supports_frequency_penalty: Whether frequency_penalty is supported
-        supports_presence_penalty: Whether presence_penalty is supported
-        supports_streaming: Whether streaming responses are supported
-        max_context_tokens: Maximum input context tokens
-        max_output_tokens: Maximum output tokens
-    """
-    
-    provider_name: str
-    model_name: str
-    
-    # Vision/multimodal
-    supports_vision: bool = False
-    supports_image_detail: bool = True  # OpenAI-style "detail" parameter
-    default_image_detail: ImageDetail = "high"
-    supports_media_resolution: bool = False  # Google-style media_resolution
-    default_media_resolution: MediaResolution = "high"
-    
-    # Structured outputs
-    supports_structured_output: bool = False
-    supports_json_mode: bool = False
-    
-    # Reasoning models
-    is_reasoning_model: bool = False
-    supports_reasoning_effort: bool = False
-    
-    # Sampler controls
-    supports_temperature: bool = True
-    supports_top_p: bool = True
-    supports_frequency_penalty: bool = True
-    supports_presence_penalty: bool = True
-    
-    # Streaming
-    supports_streaming: bool = True
-    
-    # Context window
-    max_context_tokens: int = 128000
-    max_output_tokens: int = 4096
 
 
 @dataclass
@@ -315,24 +259,5 @@ class BaseProvider(ABC):
         return f"data:{mime_type};base64,{base64_data}"
 
 
-class CapabilityError(ValueError):
-    """Raised when a selected model is incompatible with the configured pipeline."""
-    pass
-
-
-def ensure_image_support(model_name: str, capabilities: ProviderCapabilities) -> None:
-    """Fail fast if the model doesn't support image inputs.
-    
-    Args:
-        model_name: Selected model id/alias
-        capabilities: Model capabilities
-        
-    Raises:
-        CapabilityError: If model doesn't support images
-    """
-    if not capabilities.supports_vision:
-        raise CapabilityError(
-            f"Model '{model_name}' does not support image inputs. "
-            "Choose an image-capable model (e.g., gpt-5, gpt-4o, claude, gemini) "
-            "or use a text-only flow."
-        )
+# CapabilityError and ensure_image_support are imported from
+# api.model_capabilities and re-exported for backward compatibility.
