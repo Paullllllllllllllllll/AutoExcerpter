@@ -30,6 +30,7 @@ warnings when configuration files are not found or contain invalid YAML.
 
 from __future__ import annotations
 
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +39,17 @@ import yaml
 from modules.logger import setup_logger
 
 logger = setup_logger(__name__)
+
+
+def _deep_merge_dicts(base: dict[str, Any], updates: dict[str, Any]) -> dict[str, Any]:
+    """Recursively merge *updates* into *base* and return a new dict."""
+    merged = deepcopy(base)
+    for key, value in updates.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _deep_merge_dicts(merged[key], value)
+        else:
+            merged[key] = deepcopy(value)
+    return merged
 
 # ============================================================================
 # Path Resolution
@@ -122,6 +134,17 @@ class ConfigLoader:
     def get_model_config(self) -> dict[str, Any]:
         """Get the model configuration."""
         return dict(self._model)
+
+    def apply_model_overrides(self, overrides: dict[str, Any]) -> None:
+        """Apply runtime overrides to the loaded model configuration.
+
+        This is primarily used by CLI mode to support automation-friendly
+        overrides without editing ``modules/config/model.yaml``.
+        """
+        if not isinstance(overrides, dict) or not overrides:
+            return
+        self._model = _deep_merge_dicts(self._model, overrides)
+        logger.info("Applied runtime model config overrides")
 
     def is_loaded(self) -> bool:
         """Check if configurations have been loaded."""

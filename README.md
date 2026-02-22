@@ -467,13 +467,17 @@ cli_mode: true
 **Command syntax:**
 
 ```bash
-python main.py <input> <output> [--all] [--select PATTERN] [--context TOPICS]
+python main.py <input> <output> [--all] [--select PATTERN] [--context TOPICS] [--model MODEL] [--reasoning-effort LEVEL] [--verbosity LEVEL] [--max-output-tokens N]
+# or use named paths (overrides positional values):
+python main.py --input-path <input> --output-path <output> [other options]
 ```
 
 **Arguments:**
 
 -   `input` (required): Path to a PDF file, an image folder, or a directory containing multiple items
 -   `output` (required): Destination directory for generated transcriptions and summaries
+-   `--input-path PATH` (optional): Named input path; overrides positional `input` when both are provided
+-   `--output-path PATH` (optional): Named output path; overrides positional `output` when both are provided
 -   `--all` (optional): Process every item discovered under the input directory
 -   `--select PATTERN` (optional): Select items by number, range, or filename pattern. Supports:
     -   Single numbers: `--select 5`
@@ -481,6 +485,17 @@ python main.py <input> <output> [--all] [--select PATTERN] [--context TOPICS]
     -   Ranges: `--select "1-10"`
     -   Filename search: `--select "Mennell"` (case-insensitive partial match)
 -   `--context TOPICS` (optional): Specify topics for focused summarization. The model will pay special attention to content related to these topics and summarize them in greater detail. Example: `--context "Food History, Wages, Early Modern"`
+-   `--model MODEL` (optional): Set both transcription and summary model names at runtime
+-   `--transcription-model MODEL` (optional): Override transcription model only
+-   `--summary-model MODEL` (optional): Override summary model only
+-   `--reasoning-effort {minimal,low,medium,high}` (optional): Set reasoning effort for both models
+-   `--transcription-reasoning-effort ...` / `--summary-reasoning-effort ...` (optional): Per-phase reasoning overrides
+-   `--verbosity {low,medium,high}` (optional): Set output verbosity for both models
+-   `--transcription-verbosity ...` / `--summary-verbosity ...` (optional): Per-phase verbosity overrides
+-   `--max-output-tokens N` (optional): Set max output tokens for both models
+-   `--transcription-max-output-tokens N` / `--summary-max-output-tokens N` (optional): Per-phase token budget overrides
+
+Verbosity note: verbosity is currently supported only by OpenAI GPT-5 series models (`gpt-5`, `gpt-5-mini`, `gpt-5.1`, `gpt-5.2`). For other models/providers it is ignored by capability guarding.
 
 When neither `--all` nor `--select` is specified, only the first item is processed if multiple items exist.
 
@@ -508,6 +523,15 @@ python main.py "./documents" "./output" --select "food history"
 # Process with focused summarization on specific topics
 python main.py "./documents" "./output" --all --context "Food History, Wages, Early Modern"
 
+# Use named paths for agentic/scripted runs
+python main.py --input-path "./documents" --output-path "./output" --all
+
+# Override model config at runtime (without editing model.yaml)
+python main.py "./documents" "./output" --all --model "gpt-5.1" --reasoning-effort high --verbosity medium --max-output-tokens 120000
+
+# Use separate model and token settings for transcription vs summary
+python main.py "./documents" "./output" --all --transcription-model "gpt-5.2" --summary-model "gpt-5-mini" --transcription-max-output-tokens 128000 --summary-max-output-tokens 32000
+
 # Process with absolute paths on Windows
 python main.py "C:Documentspaper.pdf" "C:Output"
 
@@ -521,7 +545,8 @@ done
 
 -   No interactive prompts; suitable for cron jobs and CI/CD workflows
 -   Console output limited to structured logging
--   Respects all configuration values defined in YAML files (models, concurrency, retries, cleanup)
+-   Supports runtime model overrides via CLI while preserving YAML defaults on disk
+-   Keeps concurrency/retry/rate-limit controls in YAML config (`concurrency.yaml`)
 -   Allows absolute or relative input/output paths and resolves them before processing
 
 Additional CLI guidance, including scripting patterns and CI/CD samples, is available in `docs/CLI_MODE.md`.

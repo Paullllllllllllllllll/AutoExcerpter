@@ -12,6 +12,7 @@ Covers:
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Set
 from unittest.mock import MagicMock, patch
@@ -627,6 +628,8 @@ class TestMainIntegration:
         args.resume = None
         args.input = "test_input"
         args.output = "test_output"
+        args.input_path = None
+        args.output_path = None
         args.all = False
         args.select = None
         args.context = None
@@ -646,6 +649,8 @@ class TestMainIntegration:
         args.resume = None
         args.input = "test_input"
         args.output = "test_output"
+        args.input_path = None
+        args.output_path = None
         args.all = False
         args.select = None
         args.context = None
@@ -655,6 +660,93 @@ class TestMainIntegration:
             result = _parse_execution_mode(args)
 
         assert result[-1] == "overwrite"
+
+    def test_parse_execution_mode_named_paths_override_positional(self):
+        """Named --input-path/--output-path values override positional paths."""
+        from main import _parse_execution_mode
+
+        args = MagicMock()
+        args.force = None
+        args.resume = None
+        args.input = "positional_input"
+        args.output = "positional_output"
+        args.input_path = "named_input"
+        args.output_path = "named_output"
+        args.all = False
+        args.select = None
+        args.context = None
+
+        with patch("main.config") as mock_config:
+            mock_config.CLI_MODE = True
+            input_path, output_path, *_ = _parse_execution_mode(args)
+
+        assert str(input_path).endswith("named_input")
+        assert str(output_path).endswith("named_output")
+
+    def test_build_cli_model_overrides_shared_and_specific(self):
+        """CLI model override builder applies shared values and specific overrides."""
+        from main import _build_cli_model_overrides
+
+        args = MagicMock()
+        args.model = "gpt-5"
+        args.transcription_model = None
+        args.summary_model = "gpt-5-mini"
+        args.reasoning_effort = "medium"
+        args.transcription_reasoning_effort = "high"
+        args.summary_reasoning_effort = None
+        args.verbosity = "low"
+        args.transcription_verbosity = None
+        args.summary_verbosity = "high"
+        args.max_output_tokens = 6000
+        args.transcription_max_output_tokens = None
+        args.summary_max_output_tokens = 7000
+
+        with patch("main.config") as mock_config:
+            mock_config.CLI_MODE = True
+            overrides = _build_cli_model_overrides(args)
+
+        assert overrides["transcription_model"]["name"] == "gpt-5"
+        assert overrides["summary_model"]["name"] == "gpt-5-mini"
+        assert overrides["transcription_model"]["reasoning"]["effort"] == "high"
+        assert overrides["summary_model"]["reasoning"]["effort"] == "medium"
+        assert overrides["transcription_model"]["text"]["verbosity"] == "low"
+        assert overrides["summary_model"]["text"]["verbosity"] == "high"
+        assert overrides["transcription_model"]["max_output_tokens"] == 6000
+        assert overrides["summary_model"]["max_output_tokens"] == 7000
+
+    def test_positive_int_validator(self):
+        """_positive_int accepts valid positive integers and rejects non-positive values."""
+        from main import _positive_int
+
+        assert _positive_int("7") == 7
+        with pytest.raises(Exception):
+            _positive_int("0")
+
+    def test_setup_argparse_cli_supports_named_paths_without_positionals(self):
+        """setup_argparse accepts named --input-path/--output-path without positional args."""
+        from main import setup_argparse
+
+        with patch("main.config") as mock_config:
+            mock_config.CLI_MODE = True
+            argv = ["main.py", "--input-path", "in_dir", "--output-path", "out_dir", "--all"]
+            with patch.object(sys, "argv", argv):
+                args = setup_argparse()
+
+        assert args.input is None
+        assert args.output is None
+        assert args.input_path == "in_dir"
+        assert args.output_path == "out_dir"
+        assert args.all is True
+
+    def test_setup_argparse_cli_requires_paths(self):
+        """setup_argparse raises SystemExit when CLI mode has no input/output path."""
+        from main import setup_argparse
+
+        with patch("main.config") as mock_config:
+            mock_config.CLI_MODE = True
+            with patch.object(sys, "argv", ["main.py", "--all"]):
+                with pytest.raises(SystemExit):
+                    setup_argparse()
 
     def test_display_resume_info_no_skipped(self):
         """_display_resume_info returns True when no items are skipped."""

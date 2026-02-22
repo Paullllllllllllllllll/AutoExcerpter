@@ -23,6 +23,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 from core.resume import ProcessingState, ResumeChecker, ResumeResult
 from core.transcriber import ItemTranscriber
 from modules import app_config as config
+from modules.config_loader import get_config_loader
 from modules.error_handler import handle_critical_error
 from modules.item_scanner import scan_input_path
 from modules.logger import setup_logger
@@ -45,6 +46,20 @@ from modules.user_prompts import (
 )
 
 logger = setup_logger(__name__)
+
+REASONING_EFFORT_CHOICES = ("minimal", "low", "medium", "high")
+VERBOSITY_CHOICES = ("low", "medium", "high")
+
+
+def _positive_int(value: str) -> int:
+    """Argparse type validator for positive integers."""
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be an integer") from exc
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be > 0")
+    return parsed
 
 
 def setup_argparse() -> argparse.Namespace:
@@ -73,13 +88,29 @@ def setup_argparse() -> argparse.Namespace:
         # CLI mode: require input and output arguments
         parser.add_argument(
             "input",
+            nargs="?",
             type=str,
+            default=None,
             help="Path to PDF file, image folder, or directory containing PDFs/image folders (relative or absolute).",
         )
         parser.add_argument(
             "output",
+            nargs="?",
             type=str,
+            default=None,
             help="Output directory path for transcriptions and summaries (relative or absolute).",
+        )
+        parser.add_argument(
+            "--input-path",
+            type=str,
+            default=None,
+            help="Named input path (same as positional input). Overrides positional input if both are provided.",
+        )
+        parser.add_argument(
+            "--output-path",
+            type=str,
+            default=None,
+            help="Named output path (same as positional output). Overrides positional output if both are provided.",
         )
         parser.add_argument(
             "--all",
@@ -98,6 +129,78 @@ def setup_argparse() -> argparse.Namespace:
             default=None,
             help="Summary context: topics to focus on during summarization (e.g., 'Food History, Wages, Early Modern').",
         )
+        parser.add_argument(
+            "--model",
+            type=str,
+            default=None,
+            help="Set both transcription and summary model names.",
+        )
+        parser.add_argument(
+            "--transcription-model",
+            type=str,
+            default=None,
+            help="Override transcription model name.",
+        )
+        parser.add_argument(
+            "--summary-model",
+            type=str,
+            default=None,
+            help="Override summary model name.",
+        )
+        parser.add_argument(
+            "--reasoning-effort",
+            choices=REASONING_EFFORT_CHOICES,
+            default=None,
+            help="Set reasoning effort for both models (OpenAI reasoning models).",
+        )
+        parser.add_argument(
+            "--transcription-reasoning-effort",
+            choices=REASONING_EFFORT_CHOICES,
+            default=None,
+            help="Override transcription reasoning effort.",
+        )
+        parser.add_argument(
+            "--summary-reasoning-effort",
+            choices=REASONING_EFFORT_CHOICES,
+            default=None,
+            help="Override summary reasoning effort.",
+        )
+        parser.add_argument(
+            "--verbosity",
+            choices=VERBOSITY_CHOICES,
+            default=None,
+            help="Set output verbosity for both models (currently GPT-5 OpenAI models).",
+        )
+        parser.add_argument(
+            "--transcription-verbosity",
+            choices=VERBOSITY_CHOICES,
+            default=None,
+            help="Override transcription verbosity (currently GPT-5 OpenAI models).",
+        )
+        parser.add_argument(
+            "--summary-verbosity",
+            choices=VERBOSITY_CHOICES,
+            default=None,
+            help="Override summary verbosity (currently GPT-5 OpenAI models).",
+        )
+        parser.add_argument(
+            "--max-output-tokens",
+            type=_positive_int,
+            default=None,
+            help="Set max output tokens for both models.",
+        )
+        parser.add_argument(
+            "--transcription-max-output-tokens",
+            type=_positive_int,
+            default=None,
+            help="Override transcription max output tokens.",
+        )
+        parser.add_argument(
+            "--summary-max-output-tokens",
+            type=_positive_int,
+            default=None,
+            help="Override summary max output tokens.",
+        )
     else:
         # Interactive mode: optional input argument with default from config
         parser.add_argument(
@@ -106,8 +209,15 @@ def setup_argparse() -> argparse.Namespace:
             default=config.INPUT_FOLDER_PATH,
             help="Path to the folder containing PDFs and/or image folders, or path to a single PDF/image folder.",
         )
-    
-    return parser.parse_args()
+
+    args = parser.parse_args()
+    if config.CLI_MODE:
+        effective_input = getattr(args, "input_path", None) or getattr(args, "input", None)
+        effective_output = getattr(args, "output_path", None) or getattr(args, "output", None)
+        if not effective_input or not effective_output:
+            parser.error("CLI mode requires both input and output paths.")
+
+    return args
 
 
 
@@ -334,8 +444,13 @@ def _parse_execution_mode(args: argparse.Namespace) -> Tuple[Path, Path, bool, O
 
     if config.CLI_MODE:
         # CLI mode: use command line arguments
-        input_path_arg = Path(args.input)
-        base_output_dir = Path(args.output)
+        input_value = getattr(args, "input_path", None) or getattr(args, "input", None)
+        output_value = getattr(args, "output_path", None) or getattr(args, "output", None)
+        if not input_value or not output_value:
+            raise ValueError("CLI mode requires input and output paths")
+
+        input_path_arg = Path(input_value)
+        base_output_dir = Path(output_value)
         process_all = args.all
         select_pattern = args.select
         summary_context = args.context
@@ -358,6 +473,92 @@ def _parse_execution_mode(args: argparse.Namespace) -> Tuple[Path, Path, bool, O
         summary_context = None
     
     return input_path_arg, base_output_dir, process_all, select_pattern, summary_context, resume_mode
+
+
+def _set_model_override(overrides: dict[str, Any], model_key: str, path: List[str], value: Any) -> None:
+    """Set nested model override value for runtime config application."""
+    model_overrides = overrides.setdefault(model_key, {})
+    cursor = model_overrides
+    for segment in path[:-1]:
+        cursor = cursor.setdefault(segment, {})
+    cursor[path[-1]] = value
+
+
+def _build_cli_model_overrides(args: argparse.Namespace) -> dict[str, Any]:
+    """Build model.yaml runtime override dict from CLI args."""
+    if not config.CLI_MODE:
+        return {}
+
+    overrides: dict[str, Any] = {}
+
+    shared_model = getattr(args, "model", None)
+    shared_reasoning = getattr(args, "reasoning_effort", None)
+    shared_verbosity = getattr(args, "verbosity", None)
+    shared_max_tokens = getattr(args, "max_output_tokens", None)
+
+    transcription_model = getattr(args, "transcription_model", None) or shared_model
+    summary_model = getattr(args, "summary_model", None) or shared_model
+    if transcription_model:
+        _set_model_override(overrides, "transcription_model", ["name"], transcription_model)
+    if summary_model:
+        _set_model_override(overrides, "summary_model", ["name"], summary_model)
+
+    transcription_reasoning = (
+        getattr(args, "transcription_reasoning_effort", None) or shared_reasoning
+    )
+    summary_reasoning = getattr(args, "summary_reasoning_effort", None) or shared_reasoning
+    if transcription_reasoning:
+        _set_model_override(
+            overrides,
+            "transcription_model",
+            ["reasoning", "effort"],
+            transcription_reasoning,
+        )
+    if summary_reasoning:
+        _set_model_override(
+            overrides,
+            "summary_model",
+            ["reasoning", "effort"],
+            summary_reasoning,
+        )
+
+    transcription_verbosity = getattr(args, "transcription_verbosity", None) or shared_verbosity
+    summary_verbosity = getattr(args, "summary_verbosity", None) or shared_verbosity
+    if transcription_verbosity:
+        _set_model_override(
+            overrides,
+            "transcription_model",
+            ["text", "verbosity"],
+            transcription_verbosity,
+        )
+    if summary_verbosity:
+        _set_model_override(
+            overrides,
+            "summary_model",
+            ["text", "verbosity"],
+            summary_verbosity,
+        )
+
+    transcription_max_tokens = (
+        getattr(args, "transcription_max_output_tokens", None) or shared_max_tokens
+    )
+    summary_max_tokens = getattr(args, "summary_max_output_tokens", None) or shared_max_tokens
+    if transcription_max_tokens is not None:
+        _set_model_override(
+            overrides,
+            "transcription_model",
+            ["max_output_tokens"],
+            int(transcription_max_tokens),
+        )
+    if summary_max_tokens is not None:
+        _set_model_override(
+            overrides,
+            "summary_model",
+            ["max_output_tokens"],
+            int(summary_max_tokens),
+        )
+
+    return overrides
 
 
 def _select_items_for_processing(
@@ -822,6 +1023,11 @@ def main() -> None:
     
     # Determine input and output paths based on mode
     input_path_arg, base_output_dir, process_all, select_pattern, summary_context, resume_mode = _parse_execution_mode(args)
+
+    cli_model_overrides = _build_cli_model_overrides(args)
+    if cli_model_overrides:
+        get_config_loader().apply_model_overrides(cli_model_overrides)
+        logger.info("CLI mode model overrides applied: %s", cli_model_overrides)
     
     if not config.CLI_MODE:
         print_header(

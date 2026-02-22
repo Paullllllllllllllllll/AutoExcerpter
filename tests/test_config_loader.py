@@ -159,6 +159,48 @@ class TestConfigLoaderGetters:
         assert result == {"name": "gpt-5"}
 
 
+class TestModelOverrides:
+    """Tests for runtime model override application."""
+
+    def test_apply_model_overrides_deep_merge(self):
+        """apply_model_overrides deep-merges nested dictionaries."""
+        loader = ConfigLoader()
+        loader._model = {
+            "transcription_model": {
+                "name": "gpt-5-mini",
+                "reasoning": {"effort": "medium"},
+                "text": {"verbosity": "medium"},
+            },
+            "summary_model": {
+                "name": "gpt-5-mini",
+                "max_output_tokens": 4096,
+            },
+        }
+
+        loader.apply_model_overrides(
+            {
+                "transcription_model": {"reasoning": {"effort": "high"}},
+                "summary_model": {"max_output_tokens": 8192},
+            }
+        )
+
+        merged = loader.get_model_config()
+        assert merged["transcription_model"]["name"] == "gpt-5-mini"
+        assert merged["transcription_model"]["reasoning"]["effort"] == "high"
+        assert merged["transcription_model"]["text"]["verbosity"] == "medium"
+        assert merged["summary_model"]["max_output_tokens"] == 8192
+
+    def test_apply_model_overrides_ignores_empty(self):
+        """apply_model_overrides ignores empty override payloads."""
+        loader = ConfigLoader()
+        loader._model = {"transcription_model": {"name": "gpt-5-mini"}}
+
+        loader.apply_model_overrides({})
+
+        result = loader.get_model_config()
+        assert result["transcription_model"]["name"] == "gpt-5-mini"
+
+
 class TestGetConfigLoader:
     """Tests for get_config_loader singleton function."""
 
