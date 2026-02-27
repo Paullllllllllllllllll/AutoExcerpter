@@ -143,5 +143,5 @@ text_cleaning:
   # Wrap excessively long lines (usually not needed for LLM output)
   line_wrapping:
     enabled: true
-    auto_width: false   # Compute width from text statistics
-    fixed_width: 120    # Used if auto_width is false
+    auto_width: true   # Compute width from text statistics
+    fixed_width: 80    # Used if auto_width is false
