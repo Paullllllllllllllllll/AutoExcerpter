@@ -1,0 +1,17 @@
+/tmp_math_parse.py
+/.autoexcerpter_token_state.json
+/.idea/misc.xml
+
+# User-specific runtime config (contains paths, emails, model preferences)
+modules/config/app.yaml
+modules/config/concurrency.yaml
+modules/config/image_processing.yaml
+modules/config/model.yaml
+
+.coverage
+.windsurf
+__pycache__/
+.pytest_cache/
+htmlcov/
+.venv/
+context/
