@@ -88,8 +88,10 @@ class TestInit:
         """Explicit timeout overrides the config-loaded default."""
         mock_get_chat.return_value = MagicMock()
         client = LLMClientBase(
-            model_name="gpt-5-mini", provider="openai",
-            api_key="k", timeout=120,
+            model_name="gpt-5-mini",
+            provider="openai",
+            api_key="k",
+            timeout=120,
         )
         assert client.timeout == 120
 
@@ -99,7 +101,9 @@ class TestInit:
         """When timeout is None, get_api_timeout() is used."""
         mock_get_chat.return_value = MagicMock()
         client = LLMClientBase(
-            model_name="gpt-5-mini", provider="openai", api_key="k",
+            model_name="gpt-5-mini",
+            provider="openai",
+            api_key="k",
         )
         assert client.timeout == 600
 
@@ -110,8 +114,10 @@ class TestInit:
         mock_get_chat.return_value = MagicMock()
         limiter = MagicMock()
         client = LLMClientBase(
-            model_name="gpt-5-mini", provider="openai",
-            api_key="k", rate_limiter=limiter,
+            model_name="gpt-5-mini",
+            provider="openai",
+            api_key="k",
+            rate_limiter=limiter,
         )
         assert client.rate_limiter is limiter
 
@@ -121,8 +127,10 @@ class TestInit:
         """Explicit service_tier overrides default 'auto'."""
         mock_get_chat.return_value = MagicMock()
         client = LLMClientBase(
-            model_name="gpt-5-mini", provider="openai",
-            api_key="k", service_tier="flex",
+            model_name="gpt-5-mini",
+            provider="openai",
+            api_key="k",
+            service_tier="flex",
         )
         assert client.service_tier == "flex"
 
@@ -325,11 +333,13 @@ class TestExtractOutputTextExtended:
 
     def test_aimessage_mixed_blocks(self):
         """AIMessage with mixed block types — non-text blocks are skipped."""
-        msg = AIMessage(content=[
-            {"type": "text", "text": "hello"},
-            {"type": "image", "url": "http://..."},
-            "raw_string",
-        ])
+        msg = AIMessage(
+            content=[
+                {"type": "text", "text": "hello"},
+                {"type": "image", "url": "http://..."},
+                "raw_string",
+            ]
+        )
         assert LLMClientBase._extract_output_text(msg) == "helloraw_string"
 
     def test_fallback_to_dict_with_non_text_content_items(self):
@@ -385,9 +395,7 @@ class TestBuildTextFormat:
 
     def test_schema_without_name_uses_default(self):
         """Uses default_name when schema has no 'name' key."""
-        client = _make_client(
-            _output_schema={"schema": {"type": "object"}}
-        )
+        client = _make_client(_output_schema={"schema": {"type": "object"}})
         result = client._build_text_format(default_name="custom_default")
         assert result["name"] == "custom_default"
 
@@ -403,9 +411,7 @@ class TestBuildTextFormat:
 
     def test_empty_inner_schema_returns_none(self):
         """Returns None when inner 'schema' is empty dict."""
-        client = _make_client(
-            _output_schema={"schema": {}}
-        )
+        client = _make_client(_output_schema={"schema": {}})
         assert client._build_text_format() is None
 
     def test_schema_uses_self_as_schema_obj_when_no_inner_key(self):
@@ -475,7 +481,9 @@ class TestGetStructuredChatModel:
         """OpenRouter without schema returns base model."""
         base_model = MagicMock()
         client = _make_client(
-            provider="openrouter", chat_model=base_model, _output_schema=None,
+            provider="openrouter",
+            chat_model=base_model,
+            _output_schema=None,
         )
         assert client._get_structured_chat_model() is base_model
 
@@ -699,7 +707,9 @@ class TestShouldRetryForSchemaFlagExtended:
                 "flag": {"enabled": True, "max_attempts": 3},
             }
         )
-        should, backoff, max_att = client._should_retry_for_schema_flag("flag", False, 0)
+        should, backoff, max_att = client._should_retry_for_schema_flag(
+            "flag", False, 0
+        )
         assert should is False
 
     def test_flag_none_value(self):

@@ -23,7 +23,6 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from api.transcribe_api import TranscriptionManager
 
-
 # ============================================================================
 # Helpers
 # ============================================================================
@@ -327,11 +326,13 @@ class TestParseTranscriptionFromText:
     def test_no_transcribable_text_flag(self):
         """no_transcribable_text flag generates formatted message."""
         mgr = _make_manager()
-        data = json.dumps({
-            "no_transcribable_text": True,
-            "image_analysis": "Page is blank.",
-            "transcription_not_possible": False,
-        })
+        data = json.dumps(
+            {
+                "no_transcribable_text": True,
+                "image_analysis": "Page is blank.",
+                "transcription_not_possible": False,
+            }
+        )
         result = mgr._parse_transcription_from_text(data, "page_005.png")
         assert "page_005.png" in result
         assert "no transcribable text" in result
@@ -340,11 +341,13 @@ class TestParseTranscriptionFromText:
     def test_transcription_not_possible_flag(self):
         """transcription_not_possible flag generates formatted message."""
         mgr = _make_manager()
-        data = json.dumps({
-            "transcription_not_possible": True,
-            "image_analysis": "Image too blurry.",
-            "no_transcribable_text": False,
-        })
+        data = json.dumps(
+            {
+                "transcription_not_possible": True,
+                "image_analysis": "Image too blurry.",
+                "no_transcribable_text": False,
+            }
+        )
         result = mgr._parse_transcription_from_text(data, "scan_01.jpg")
         assert "scan_01.jpg" in result
         assert "transcription not possible" in result
@@ -360,10 +363,12 @@ class TestParseTranscriptionFromText:
     def test_legacy_cannot_transcribe_flag(self):
         """Legacy cannot_transcribe flag with reason."""
         mgr = _make_manager()
-        data = json.dumps({
-            "cannot_transcribe": True,
-            "reason": "damaged scan",
-        })
+        data = json.dumps(
+            {
+                "cannot_transcribe": True,
+                "reason": "damaged scan",
+            }
+        )
         result = mgr._parse_transcription_from_text(data, "img.png")
         assert "cannot transcribe" in result
         assert "damaged scan" in result
@@ -378,11 +383,13 @@ class TestParseTranscriptionFromText:
     def test_json_with_transcription_field(self):
         """JSON with transcription field extracts the text."""
         mgr = _make_manager()
-        data = json.dumps({
-            "transcription": "This is the extracted text.",
-            "no_transcribable_text": False,
-            "transcription_not_possible": False,
-        })
+        data = json.dumps(
+            {
+                "transcription": "This is the extracted text.",
+                "no_transcribable_text": False,
+                "transcription_not_possible": False,
+            }
+        )
         result = mgr._parse_transcription_from_text(data, "page_01.jpg")
         assert result == "This is the extracted text."
 
@@ -510,6 +517,7 @@ class TestTranscribeImage:
         image_path.parent.mkdir(parents=True)
         # Create a small JPEG file
         from PIL import Image
+
         img = Image.new("RGB", (100, 100), color="white")
         img.save(image_path, "JPEG")
 
@@ -518,12 +526,16 @@ class TestTranscribeImage:
         # so it will go through ImageProcessor path. Let's mock that.
         mgr = _make_manager(provider="openai")
 
-        mock_response = AIMessage(content=json.dumps({
-            "transcription": "Hello world.",
-            "no_transcribable_text": False,
-            "transcription_not_possible": False,
-            "image_analysis": "Clear text.",
-        }))
+        mock_response = AIMessage(
+            content=json.dumps(
+                {
+                    "transcription": "Hello world.",
+                    "no_transcribable_text": False,
+                    "transcription_not_possible": False,
+                    "image_analysis": "Clear text.",
+                }
+            )
+        )
         mock_response.usage_metadata = {"total_tokens": 100}
         mock_response.response_metadata = {}
 
@@ -531,7 +543,9 @@ class TestTranscribeImage:
         mock_structured.invoke.return_value = mock_response
 
         with (
-            patch.object(mgr, "_get_structured_chat_model", return_value=mock_structured),
+            patch.object(
+                mgr, "_get_structured_chat_model", return_value=mock_structured
+            ),
             patch.object(mgr, "_build_model_inputs", return_value=([], {})),
             patch("api.transcribe_api.ImageProcessor") as mock_ip_cls,
             patch("api.transcribe_api.get_token_tracker") as mock_tt,
@@ -580,13 +594,18 @@ class TestTranscribeImage:
         mock_structured.invoke.side_effect = RuntimeError("API timeout")
 
         with (
-            patch.object(mgr, "_get_structured_chat_model", return_value=mock_structured),
+            patch.object(
+                mgr, "_get_structured_chat_model", return_value=mock_structured
+            ),
             patch.object(mgr, "_build_model_inputs", return_value=([], {})),
             patch("api.transcribe_api.ImageProcessor") as mock_ip_cls,
         ):
             mock_processor = MagicMock()
             from PIL import Image
-            mock_processor.process_image_to_memory.return_value = Image.new("RGB", (10, 10))
+
+            mock_processor.process_image_to_memory.return_value = Image.new(
+                "RGB", (10, 10)
+            )
             mock_processor.img_cfg = {"jpeg_quality": 95}
             mock_ip_cls.return_value = mock_processor
             mock_ip_cls.pil_image_to_base64.return_value = "fakebase64"
@@ -615,19 +634,27 @@ class TestTranscribeImage:
         )
 
         # First call returns no_transcribable_text, second returns normal
-        response_retry = AIMessage(content=json.dumps({
-            "no_transcribable_text": True,
-            "image_analysis": "Blank page.",
-            "transcription_not_possible": False,
-        }))
+        response_retry = AIMessage(
+            content=json.dumps(
+                {
+                    "no_transcribable_text": True,
+                    "image_analysis": "Blank page.",
+                    "transcription_not_possible": False,
+                }
+            )
+        )
         response_retry.usage_metadata = None
         response_retry.response_metadata = {}
 
-        response_ok = AIMessage(content=json.dumps({
-            "transcription": "Got it this time.",
-            "no_transcribable_text": False,
-            "transcription_not_possible": False,
-        }))
+        response_ok = AIMessage(
+            content=json.dumps(
+                {
+                    "transcription": "Got it this time.",
+                    "no_transcribable_text": False,
+                    "transcription_not_possible": False,
+                }
+            )
+        )
         response_ok.usage_metadata = None
         response_ok.response_metadata = {}
 
@@ -635,15 +662,20 @@ class TestTranscribeImage:
         mock_structured.invoke.side_effect = [response_retry, response_ok]
 
         with (
-            patch.object(mgr, "_get_structured_chat_model", return_value=mock_structured),
+            patch.object(
+                mgr, "_get_structured_chat_model", return_value=mock_structured
+            ),
             patch.object(mgr, "_build_model_inputs", return_value=([], {})),
             patch("api.transcribe_api.ImageProcessor") as mock_ip_cls,
             patch("api.transcribe_api.time.sleep"),
             patch("api.base_llm_client.random.uniform", return_value=1.0),
         ):
             from PIL import Image
+
             mock_processor = MagicMock()
-            mock_processor.process_image_to_memory.return_value = Image.new("RGB", (10, 10))
+            mock_processor.process_image_to_memory.return_value = Image.new(
+                "RGB", (10, 10)
+            )
             mock_processor.img_cfg = {"jpeg_quality": 95}
             mock_ip_cls.return_value = mock_processor
             mock_ip_cls.pil_image_to_base64.return_value = "fakebase64"
@@ -659,16 +691,21 @@ class TestTranscribeImage:
         image_path = working / "page_0001.jpg"
         # Write minimal JPEG bytes
         from PIL import Image
+
         img = Image.new("RGB", (10, 10))
         img.save(image_path, "JPEG")
 
         mgr = _make_manager(provider="openai")
 
-        mock_response = AIMessage(content=json.dumps({
-            "transcription": "Direct JPEG read.",
-            "no_transcribable_text": False,
-            "transcription_not_possible": False,
-        }))
+        mock_response = AIMessage(
+            content=json.dumps(
+                {
+                    "transcription": "Direct JPEG read.",
+                    "no_transcribable_text": False,
+                    "transcription_not_possible": False,
+                }
+            )
+        )
         mock_response.usage_metadata = None
         mock_response.response_metadata = {}
 
@@ -676,7 +713,9 @@ class TestTranscribeImage:
         mock_structured.invoke.return_value = mock_response
 
         with (
-            patch.object(mgr, "_get_structured_chat_model", return_value=mock_structured),
+            patch.object(
+                mgr, "_get_structured_chat_model", return_value=mock_structured
+            ),
             patch.object(mgr, "_build_model_inputs", return_value=([], {})),
         ):
             result = mgr.transcribe_image(image_path)

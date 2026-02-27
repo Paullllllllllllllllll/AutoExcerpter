@@ -116,7 +116,9 @@ class TestGetImageConfigSectionName:
 
     def test_anthropic_section_name(self):
         """Anthropic model type returns anthropic_image_processing section."""
-        assert get_image_config_section_name("anthropic") == "anthropic_image_processing"
+        assert (
+            get_image_config_section_name("anthropic") == "anthropic_image_processing"
+        )
 
     def test_unknown_type_defaults_to_openai(self):
         """Unknown type defaults to api_image_processing section."""

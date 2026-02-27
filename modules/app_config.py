@@ -53,19 +53,21 @@ def _load_yaml_app_config() -> dict[str, Any]:
         Configuration dictionary, or empty dict on error
     """
     if not _APP_CONFIG_PATH.exists():
-        logger.warning(f"App config file not found: {_APP_CONFIG_PATH}. Using defaults.")
+        logger.warning(
+            f"App config file not found: {_APP_CONFIG_PATH}. Using defaults."
+        )
         return {}
 
     try:
         with _APP_CONFIG_PATH.open("r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
-            
+
         if not isinstance(data, dict):
             logger.warning("App config is not a dictionary. Using defaults.")
             return {}
-            
+
         return data
-        
+
     except yaml.YAMLError as e:
         logger.error(f"YAML parsing error in app.yaml: {e}. Using defaults.")
         return {}
@@ -100,9 +102,19 @@ def _get_bool(data: dict[str, Any], key: str, default: bool) -> bool:
 # ============================================================================
 # Load configuration
 _APP_CFG: dict[str, Any] = _load_yaml_app_config()
-_CITATION: dict[str, Any] = _APP_CFG.get("citation", {}) if isinstance(_APP_CFG.get("citation"), dict) else {}
-_TOKEN_LIMIT: dict[str, Any] = _APP_CFG.get("daily_token_limit", {}) if isinstance(_APP_CFG.get("daily_token_limit"), dict) else {}
-_SUMMARY_OUTPUT: dict[str, Any] = _APP_CFG.get("summary_output", {}) if isinstance(_APP_CFG.get("summary_output"), dict) else {}
+_CITATION: dict[str, Any] = (
+    _APP_CFG.get("citation", {}) if isinstance(_APP_CFG.get("citation"), dict) else {}
+)
+_TOKEN_LIMIT: dict[str, Any] = (
+    _APP_CFG.get("daily_token_limit", {})
+    if isinstance(_APP_CFG.get("daily_token_limit"), dict)
+    else {}
+)
+_SUMMARY_OUTPUT: dict[str, Any] = (
+    _APP_CFG.get("summary_output", {})
+    if isinstance(_APP_CFG.get("summary_output"), dict)
+    else {}
+)
 
 # --- Execution Mode ---
 CLI_MODE = _get_bool(_APP_CFG, "cli_mode", False)
@@ -115,15 +127,21 @@ OUTPUT_DOCX = _get_bool(_SUMMARY_OUTPUT, "docx", True)
 OUTPUT_MARKDOWN = _get_bool(_SUMMARY_OUTPUT, "markdown", True)
 
 # --- File Paths ---
-INPUT_FOLDER_PATH = _get_str(_APP_CFG, "input_folder_path", r"C:\Users\paulg\OneDrive\Desktop\New Literature")
-OUTPUT_FOLDER_PATH = _get_str(_APP_CFG, "output_folder_path", r"C:\Users\paulg\OneDrive\Desktop\New Literature")
+INPUT_FOLDER_PATH = _get_str(
+    _APP_CFG, "input_folder_path", r"C:\Users\paulg\OneDrive\Desktop\New Literature"
+)
+OUTPUT_FOLDER_PATH = _get_str(
+    _APP_CFG, "output_folder_path", r"C:\Users\paulg\OneDrive\Desktop\New Literature"
+)
 INPUT_PATHS_IS_OUTPUT_PATH = _get_bool(_APP_CFG, "input_paths_is_output_path", False)
 
 # --- Cleanup Settings ---
 DELETE_TEMP_WORKING_DIR = _get_bool(_APP_CFG, "delete_temp_working_dir", True)
 
 # --- Citation Management Settings ---
-CITATION_OPENALEX_EMAIL = _get_str(_CITATION, "openalex_email", "your-email@example.com")
+CITATION_OPENALEX_EMAIL = _get_str(
+    _CITATION, "openalex_email", "your-email@example.com"
+)
 CITATION_MAX_API_REQUESTS = _get_int(_CITATION, "max_api_requests", 50)
 CITATION_ENABLE_OPENALEX = _get_bool(_CITATION, "enable_openalex_enrichment", True)
 
@@ -165,4 +183,6 @@ DAILY_TOKEN_LIMIT = _get_int(_TOKEN_LIMIT, "daily_tokens", 10000000)
 # ============================================================================
 logger.debug(f"Configuration loaded: CLI_MODE={CLI_MODE}, SUMMARIZE={SUMMARIZE}")
 logger.debug("Model config in model.yaml, API concurrency in concurrency.yaml")
-logger.debug(f"Daily token limit: enabled={DAILY_TOKEN_LIMIT_ENABLED}, limit={DAILY_TOKEN_LIMIT}")
+logger.debug(
+    f"Daily token limit: enabled={DAILY_TOKEN_LIMIT_ENABLED}, limit={DAILY_TOKEN_LIMIT}"
+)

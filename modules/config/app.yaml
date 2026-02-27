@@ -31,7 +31,7 @@ summary_output:
 # =============================================================================
 # Input: Directory containing PDFs/images to process
 # Output: Where to write transcription/summary files
-input_folder_path: ''
+input_folder_path: 'C:\Users\pagoetz\Documents\Arbeit\Doktor\02_Lehre\Kurse\2025-2026\2026_SoSe_Globalisierung\Literatur'
 output_folder_path: ''  # Empty = use input_folder_path as output location
 input_paths_is_output_path: true  # true = write outputs next to each input file
 
@@ -47,7 +47,7 @@ delete_temp_working_dir: true  # Delete extracted images and temp files after co
 # OpenAlex API integration for enriching extracted citations with metadata
 # (DOI, publication year, authors, venue, hyperlinks in DOCX output)
 citation:
-  openalex_email: ''  # Required for polite pool (faster responses)
+  openalex_email: 'goetz@soziologie.uzh.ch'  # Required for polite pool (faster responses)
   max_api_requests: 300  # Cap API calls per document to avoid rate limits
   enable_openalex_enrichment: true  # Set to false to disable API calls (faster summary generation)
 

@@ -22,10 +22,10 @@ def get_api_concurrency(api_type: str = "transcription") -> tuple[int, float]:
         cfg_loader = get_config_loader()
         concurrency_cfg = cfg_loader.get_concurrency_config()
         api_cfg = concurrency_cfg.get("api_requests", {}).get(api_type, {})
-        
+
         max_workers = api_cfg.get("concurrency_limit", DEFAULT_CONCURRENT_REQUESTS)
         delay = api_cfg.get("delay_between_tasks", 0.05)
-        
+
         return max_workers, delay
     except Exception as e:
         logger.warning(f"Error loading {api_type} concurrency config: {e}")
@@ -48,10 +48,10 @@ def get_image_processing_concurrency() -> tuple[int, float]:
         cfg_loader = get_config_loader()
         concurrency_cfg = cfg_loader.get_concurrency_config()
         img_cfg = concurrency_cfg.get("image_processing", {})
-        
+
         max_workers = img_cfg.get("concurrency_limit", 24)
         delay = img_cfg.get("delay_between_tasks", 0)
-        
+
         return max_workers, delay
     except Exception as e:
         logger.warning(f"Error loading image processing concurrency config: {e}")
@@ -63,17 +63,16 @@ def get_service_tier(api_type: str = "transcription") -> str:
     try:
         cfg_loader = get_config_loader()
         concurrency_cfg = cfg_loader.get_concurrency_config()
-        
+
         service_tier = (
-            concurrency_cfg
-            .get("api_requests", {})
+            concurrency_cfg.get("api_requests", {})
             .get(api_type, {})
             .get("service_tier")
         )
-        
+
         if service_tier:
             return service_tier
-        
+
         return "flex"  # Default to flex for cost savings
     except Exception as e:
         logger.debug(f"Error determining service tier: {e}")
@@ -94,7 +93,7 @@ def get_api_timeout() -> int:
 
 def get_rate_limits() -> list[tuple[int, int]]:
     """Get rate limiting configuration from concurrency.yaml.
-    
+
     Returns:
         List of (max_requests, time_window_seconds) tuples.
     """
@@ -103,10 +102,10 @@ def get_rate_limits() -> list[tuple[int, int]]:
         cfg_loader = get_config_loader()
         concurrency_cfg = cfg_loader.get_concurrency_config()
         raw_limits = concurrency_cfg.get("api_requests", {}).get("rate_limits")
-        
+
         if not isinstance(raw_limits, list):
             return default_limits
-        
+
         limits: list[tuple[int, int]] = []
         for item in raw_limits:
             if isinstance(item, (list, tuple)) and len(item) == 2:
@@ -114,7 +113,7 @@ def get_rate_limits() -> list[tuple[int, int]]:
                     limits.append((int(item[0]), int(item[1])))
                 except (ValueError, TypeError):
                     continue
-        
+
         return limits if limits else default_limits
     except Exception as e:
         logger.debug(f"Error loading rate limits: {e}")
@@ -126,7 +125,7 @@ def get_target_dpi() -> int:
     try:
         cfg_loader = get_config_loader()
         img_cfg = cfg_loader.get_image_processing_config()
-        dpi = img_cfg.get('api_image_processing', {}).get('target_dpi', 300)
+        dpi = img_cfg.get("api_image_processing", {}).get("target_dpi", 300)
         return int(dpi)
     except Exception as e:
         logger.debug(f"Error loading target DPI: {e}")

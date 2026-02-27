@@ -16,6 +16,7 @@ from typing import Any, TypedDict
 # ============================================================================
 class TranscriptionResult(TypedDict, total=False):
     """Type definition for transcription API results."""
+
     page: int
     image: str
     transcription: str
@@ -29,6 +30,7 @@ class TranscriptionResult(TypedDict, total=False):
 
 class PageInformation(TypedDict, total=False):
     """Type definition for page information metadata."""
+
     page_number_integer: int | None
     page_number_type: str  # "roman", "arabic", "none"
     page_types: list[str]  # 1-3 classifications: content, bibliography, abstract, etc.
@@ -36,6 +38,7 @@ class PageInformation(TypedDict, total=False):
 
 class SummaryContent(TypedDict, total=False):
     """Type definition for summary content structure."""
+
     page_information: PageInformation
     bullet_points: list[str] | None
     references: list[str] | None
@@ -43,19 +46,20 @@ class SummaryContent(TypedDict, total=False):
 
 class SummaryResult(TypedDict, total=False):
     """Type definition for summary API results.
-    
+
     Uses flat structure with all fields at top level (no nested "summary" key).
     """
+
     # Metadata fields
     page: int
     original_input_order_index: int
     image_filename: str
-    
+
     # Content fields (from LLM output, merged at top level)
     page_information: PageInformation
     bullet_points: list[str] | None
     references: list[str] | None
-    
+
     # Processing metadata
     processing_time: float
     provider: str
@@ -70,6 +74,7 @@ class SummaryResult(TypedDict, total=False):
 @dataclass(frozen=True)
 class ConcurrencyConfig:
     """Configuration for concurrent processing."""
+
     image_processing_limit: int = 24
     transcription_limit: int = 150
     summary_limit: int = 150
@@ -77,7 +82,7 @@ class ConcurrencyConfig:
     summary_delay: float = 0.05
     transcription_service_tier: str = "flex"
     summary_service_tier: str = "flex"
-    
+
     @classmethod
     def from_dict(cls, config: dict[str, Any]) -> ConcurrencyConfig:
         """Create ConcurrencyConfig from configuration dictionary."""
@@ -85,7 +90,7 @@ class ConcurrencyConfig:
         api_req = config.get("api_requests", {})
         trans_cfg = api_req.get("transcription", {})
         summ_cfg = api_req.get("summary", {})
-        
+
         return cls(
             image_processing_limit=img_proc.get("concurrency_limit", 24),
             transcription_limit=trans_cfg.get("concurrency_limit", 150),
@@ -100,21 +105,24 @@ class ConcurrencyConfig:
 @dataclass(frozen=True)
 class ModelConfig:
     """Configuration for model parameters."""
+
     name: str
     max_output_tokens: int
     reasoning_effort: str | None = None
     text_verbosity: str | None = None
-    
+
     @classmethod
     def from_dict(cls, config: dict[str, Any]) -> ModelConfig:
         """Create ModelConfig from configuration dictionary."""
         reasoning = config.get("reasoning", {})
         text = config.get("text", {})
-        
+
         return cls(
             name=config.get("name", "gpt-5-mini"),
             max_output_tokens=config.get("max_output_tokens", 16384),
-            reasoning_effort=reasoning.get("effort") if isinstance(reasoning, dict) else None,
+            reasoning_effort=(
+                reasoning.get("effort") if isinstance(reasoning, dict) else None
+            ),
             text_verbosity=text.get("verbosity") if isinstance(text, dict) else None,
         )
 
@@ -125,45 +133,51 @@ class ModelConfig:
 @dataclass(frozen=True)
 class ItemSpec:
     """Descriptor for a PDF file or image folder to process."""
+
     kind: str  # "pdf" or "image_folder"
     path: Path
     image_count: int | None = None
-    
+
     @property
     def output_stem(self) -> str:
         """Get the output filename stem."""
         return self.path.stem
-    
+
     def display_label(self) -> str:
         """Generate a human-readable display label."""
         item_type_label = "PDF" if self.kind == "pdf" else "Image Folder"
         count_str = ""
         if self.kind == "image_folder" and self.image_count is not None:
             count_str = f" ({self.image_count} images)"
-        return f"{item_type_label}: {self.path.name}{count_str} (from: {self.path.parent})"
+        return (
+            f"{item_type_label}: {self.path.name}{count_str} (from: {self.path.parent})"
+        )
 
 
 @dataclass
 class ProcessingStats:
     """Statistics for processing operations."""
+
     total_items: int = 0
     successful_items: int = 0
     failed_items: int = 0
     total_time: float = 0.0
     average_time_per_item: float = 0.0
     processing_times: list[float] = field(default_factory=list)
-    
+
     def add_success(self, processing_time: float) -> None:
         """Record a successful processing operation."""
         self.successful_items += 1
         self.processing_times.append(processing_time)
         if self.processing_times:
-            self.average_time_per_item = sum(self.processing_times) / len(self.processing_times)
-    
+            self.average_time_per_item = sum(self.processing_times) / len(
+                self.processing_times
+            )
+
     def add_failure(self) -> None:
         """Record a failed processing operation."""
         self.failed_items += 1
-    
+
     @property
     def success_rate(self) -> float:
         """Calculate success rate as percentage."""

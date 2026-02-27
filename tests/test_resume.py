@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Set
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -89,7 +89,7 @@ def _create_file(path: Path, content: str = "content") -> None:
 def _create_log_with_entries(
     output_dir: Path,
     item_name: str,
-    entries: List[Dict[str, Any]],
+    entries: list[dict[str, Any]],
     finalize: bool = True,
 ) -> Path:
     """Create a transcription log file in the working directory."""
@@ -176,7 +176,9 @@ class TestResumeCheckerOverwrite:
         assert result.state == ProcessingState.NONE
         assert result.reason == "overwrite mode"
 
-    def test_filter_items_returns_all(self, checker_overwrite: ResumeChecker, output_dir: Path):
+    def test_filter_items_returns_all(
+        self, checker_overwrite: ResumeChecker, output_dir: Path
+    ):
         """In overwrite mode, filter_items returns all items."""
         items = ["a", "b", "c"]
         to_process, skipped = checker_overwrite.filter_items(
@@ -420,7 +422,8 @@ class TestResumeCheckerFilterItems:
         _create_file(output_dir / "Done.md")
         # Partial: "Half"
         _create_log_with_entries(
-            output_dir, "Half",
+            output_dir,
+            "Half",
             [{"original_input_order_index": 0, "page": 1, "transcription": "t"}],
         )
         # None: "New"
@@ -449,9 +452,7 @@ class TestLoadCompletedPages:
             {"original_input_order_index": 2, "page": 3, "error": "fail"},
         ]
         log_path = tmp_path / "test_log.json"
-        log_path.write_text(
-            json.dumps([header] + entries), encoding="utf-8"
-        )
+        log_path.write_text(json.dumps([header] + entries), encoding="utf-8")
 
         result = load_completed_pages(log_path)
         assert result == {0, 1}  # index 2 has error, excluded
@@ -621,7 +622,7 @@ class TestMainIntegration:
 
     def test_parse_execution_mode_default_resume(self):
         """Default resume mode is 'skip'."""
-        from main import _parse_execution_mode
+        from cli.argument_parser import _parse_execution_mode
 
         args = MagicMock()
         args.force = None
@@ -634,7 +635,7 @@ class TestMainIntegration:
         args.select = None
         args.context = None
 
-        with patch("main.config") as mock_config:
+        with patch("cli.argument_parser.config") as mock_config:
             mock_config.CLI_MODE = True
             result = _parse_execution_mode(args)
 
@@ -642,7 +643,7 @@ class TestMainIntegration:
 
     def test_parse_execution_mode_force(self):
         """--force flag sets resume_mode to 'overwrite'."""
-        from main import _parse_execution_mode
+        from cli.argument_parser import _parse_execution_mode
 
         args = MagicMock()
         args.force = True
@@ -655,7 +656,7 @@ class TestMainIntegration:
         args.select = None
         args.context = None
 
-        with patch("main.config") as mock_config:
+        with patch("cli.argument_parser.config") as mock_config:
             mock_config.CLI_MODE = True
             result = _parse_execution_mode(args)
 
@@ -663,7 +664,7 @@ class TestMainIntegration:
 
     def test_parse_execution_mode_named_paths_override_positional(self):
         """Named --input-path/--output-path values override positional paths."""
-        from main import _parse_execution_mode
+        from cli.argument_parser import _parse_execution_mode
 
         args = MagicMock()
         args.force = None
@@ -676,7 +677,7 @@ class TestMainIntegration:
         args.select = None
         args.context = None
 
-        with patch("main.config") as mock_config:
+        with patch("cli.argument_parser.config") as mock_config:
             mock_config.CLI_MODE = True
             input_path, output_path, *_ = _parse_execution_mode(args)
 
@@ -685,7 +686,7 @@ class TestMainIntegration:
 
     def test_build_cli_model_overrides_shared_and_specific(self):
         """CLI model override builder applies shared values and specific overrides."""
-        from main import _build_cli_model_overrides
+        from cli.argument_parser import _build_cli_model_overrides
 
         args = MagicMock()
         args.model = "gpt-5"
@@ -701,7 +702,7 @@ class TestMainIntegration:
         args.transcription_max_output_tokens = None
         args.summary_max_output_tokens = 7000
 
-        with patch("main.config") as mock_config:
+        with patch("cli.argument_parser.config") as mock_config:
             mock_config.CLI_MODE = True
             overrides = _build_cli_model_overrides(args)
 
@@ -716,7 +717,7 @@ class TestMainIntegration:
 
     def test_positive_int_validator(self):
         """_positive_int accepts valid positive integers and rejects non-positive values."""
-        from main import _positive_int
+        from cli.argument_parser import _positive_int
 
         assert _positive_int("7") == 7
         with pytest.raises(Exception):
@@ -724,11 +725,18 @@ class TestMainIntegration:
 
     def test_setup_argparse_cli_supports_named_paths_without_positionals(self):
         """setup_argparse accepts named --input-path/--output-path without positional args."""
-        from main import setup_argparse
+        from cli.argument_parser import setup_argparse
 
-        with patch("main.config") as mock_config:
+        with patch("cli.argument_parser.config") as mock_config:
             mock_config.CLI_MODE = True
-            argv = ["main.py", "--input-path", "in_dir", "--output-path", "out_dir", "--all"]
+            argv = [
+                "main.py",
+                "--input-path",
+                "in_dir",
+                "--output-path",
+                "out_dir",
+                "--all",
+            ]
             with patch.object(sys, "argv", argv):
                 args = setup_argparse()
 
@@ -740,9 +748,9 @@ class TestMainIntegration:
 
     def test_setup_argparse_cli_requires_paths(self):
         """setup_argparse raises SystemExit when CLI mode has no input/output path."""
-        from main import setup_argparse
+        from cli.argument_parser import setup_argparse
 
-        with patch("main.config") as mock_config:
+        with patch("cli.argument_parser.config") as mock_config:
             mock_config.CLI_MODE = True
             with patch.object(sys, "argv", ["main.py", "--all"]):
                 with pytest.raises(SystemExit):
@@ -750,19 +758,19 @@ class TestMainIntegration:
 
     def test_display_resume_info_no_skipped(self):
         """_display_resume_info returns True when no items are skipped."""
-        from main import _display_resume_info
+        from cli.display import _display_resume_info
 
         result = _display_resume_info("skip", [], [], [])
         assert result is True
 
     def test_display_resume_info_all_skipped_cli(self):
         """_display_resume_info returns False in CLI mode when all items are skipped."""
-        from main import _display_resume_info
+        from cli.display import _display_resume_info
 
         skipped = [ResumeResult(item_name="A", state=ProcessingState.COMPLETE)]
         items = [MagicMock()]
 
-        with patch("main.config") as mock_config:
+        with patch("cli.display.config") as mock_config:
             mock_config.CLI_MODE = True
             result = _display_resume_info("skip", items, skipped, [])
 

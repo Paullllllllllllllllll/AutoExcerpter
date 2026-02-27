@@ -104,9 +104,9 @@ class TestCreateSafeLogFilename:
         ]
         for name in names:
             result = create_safe_log_filename(name, "transcription")
-            assert len(result) <= MAX_SAFE_NAME_LENGTH, (
-                f"Filename too long ({len(result)} chars) for input: {name[:40]}..."
-            )
+            assert (
+                len(result) <= MAX_SAFE_NAME_LENGTH
+            ), f"Filename too long ({len(result)} chars) for input: {name[:40]}..."
 
 
 # ============================================================================

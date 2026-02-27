@@ -29,7 +29,6 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from api.base_llm_client import LLMClientBase
 from api.llm_client import ProviderType, get_model_capabilities
 from api.rate_limiter import RateLimiter
-from modules.concurrency_helper import get_api_timeout
 from modules.prompt_utils import render_prompt_with_schema
 from modules.image_utils import ImageProcessor
 from modules.config_loader import PROMPTS_DIR, SCHEMAS_DIR
@@ -46,11 +45,11 @@ SYSTEM_PROMPT_FILE = "transcription_system_prompt.txt"
 class TranscriptionManager(LLMClientBase):
     """
     Transcribes images using LangChain with structured outputs.
-    
+
     This class handles image transcription using various LLM providers through
     LangChain's unified interface. Images are preprocessed and encoded in-memory
     before being sent to the API.
-    
+
     Supports:
     - OpenAI with Responses API structured outputs
     - Anthropic Claude with tool-based structured outputs
@@ -75,12 +74,12 @@ class TranscriptionManager(LLMClientBase):
             api_key: Optional API key. If None, uses environment variable.
             rate_limiter: Optional RateLimiter instance.
             timeout: Request timeout in seconds.
-            
+
         Raises:
             ValueError: If the selected model doesn't support multimodal (image) input.
         """
         super().__init__(model_name, provider, api_key, timeout, rate_limiter)
-        
+
         # Check multimodal capability (required for image transcription)
         capabilities = get_model_capabilities(model_name)
         if not capabilities.get("multimodal", False):
@@ -95,11 +94,11 @@ class TranscriptionManager(LLMClientBase):
 
         self._load_schema_and_prompt()
         self._output_schema = self.transcription_schema
-        
+
         # Load model configuration and determine service tier
         self.model_config = self._load_model_config("transcription_model")
         self.service_tier = self._determine_service_tier("transcription")
-        
+
         # Load schema-specific retry configuration
         self.schema_retry_config = self._load_schema_retry_config("transcription")
 
@@ -139,12 +138,14 @@ class TranscriptionManager(LLMClientBase):
                     )
                 else:
                     self.system_prompt = raw_prompt
-                    logger.info("Loaded transcription system prompt without schema injection")
+                    logger.info(
+                        "Loaded transcription system prompt without schema injection"
+                    )
             else:
                 logger.error(f"Transcription prompt not found at {prompt_path}")
                 raise FileNotFoundError(f"Required prompt file missing: {prompt_path}")
-                
-        except Exception as e:
+
+        except (FileNotFoundError, json.JSONDecodeError, OSError) as e:
             logger.error(f"Error loading schema/prompt: {e}")
             raise
 
@@ -165,38 +166,38 @@ class TranscriptionManager(LLMClientBase):
             last = parts[-1]
             if last.isdigit():
                 return int(last)
-        except Exception:
+        except (ValueError, IndexError):
             pass
 
         # Fallback: extract last number from filename
         try:
             nums = [int(s) for s in re.findall(r"\d+", image_path.stem)]
             return nums[-1] if nums else 0
-        except Exception:
+        except (ValueError, IndexError):
             return 0
 
     @staticmethod
     def _format_image_name(image_name: str) -> str:
         """Format image name for display in failure messages.
-        
+
         Args:
             image_name: Image filename (e.g., 'page_001.png', 'image_42.jpg').
-            
+
         Returns:
             Formatted image name string (keeps original filename).
         """
         if not image_name:
             return "unknown_image"
         return image_name
-    
+
     @staticmethod
     def _truncate_analysis(text: str, max_chars: int = 100) -> str:
         """Truncate image analysis text to a reasonable length.
-        
+
         Args:
             text: Full image analysis text.
             max_chars: Maximum characters to include.
-            
+
         Returns:
             Truncated text with ellipsis if needed.
         """
@@ -227,7 +228,7 @@ class TranscriptionManager(LLMClientBase):
             return f"[transcription error: {image_name or '[unknown image]'}]"
 
         stripped = text.lstrip()
-        
+
         # Strip markdown code blocks if present
         if stripped.startswith("```json"):
             stripped = stripped[7:]  # Remove ```json
@@ -236,14 +237,14 @@ class TranscriptionManager(LLMClientBase):
         if stripped.endswith("```"):
             stripped = stripped[:-3]  # Remove ```
         stripped = stripped.strip()
-        
+
         if not stripped.startswith("{"):
             return text
 
         # Try to parse JSON response
         try:
             obj = json.loads(stripped)
-        except Exception:
+        except (json.JSONDecodeError, ValueError):
             # Attempt to salvage JSON from the string
             last_close = stripped.rfind("}")
             obj = None
@@ -254,7 +255,7 @@ class TranscriptionManager(LLMClientBase):
                         try:
                             obj = json.loads(candidate)
                             break
-                        except Exception:
+                        except (json.JSONDecodeError, ValueError):
                             continue
 
             if obj is None:
@@ -263,19 +264,19 @@ class TranscriptionManager(LLMClientBase):
         # Handle special flags in parsed JSON
         if isinstance(obj, dict):
             img_name = self._format_image_name(image_name)
-            
+
             # Check for "no_transcribable_text" flag (current schema)
             if obj.get("no_transcribable_text") is True:
                 image_analysis = obj.get("image_analysis", "")
                 brief_reason = self._truncate_analysis(image_analysis)
                 return f"[{img_name}: no transcribable text — {brief_reason}]"
-            
+
             # Check for "transcription_not_possible" flag (current schema)
             if obj.get("transcription_not_possible") is True:
                 image_analysis = obj.get("image_analysis", "")
                 brief_reason = self._truncate_analysis(image_analysis)
                 return f"[{img_name}: transcription not possible — {brief_reason}]"
-            
+
             # Check for legacy "contains_no_text" flag
             if obj.get("contains_no_text") is True:
                 return f"[{img_name}: no text on page]"
@@ -296,7 +297,7 @@ class TranscriptionManager(LLMClientBase):
     def _build_model_inputs(self, base64_image: str) -> tuple[list, dict[str, Any]]:
         """Build messages and invocation kwargs for the chat model."""
         system_msg = SystemMessage(content=self.system_prompt)
-        
+
         # Build image content based on provider
         user_content: list[dict[str, Any]]
         if self.provider == "anthropic":
@@ -331,7 +332,7 @@ class TranscriptionManager(LLMClientBase):
                     },
                 }
             ]
-        
+
         user_msg = HumanMessage(content=user_content)  # type: ignore[arg-type]
 
         # Build invoke kwargs using base class method
@@ -339,7 +340,7 @@ class TranscriptionManager(LLMClientBase):
         self._apply_structured_output_kwargs(invoke_kwargs)
 
         return [system_msg, user_msg], invoke_kwargs
-    
+
     def transcribe_image(
         self,
         image_path: Path,
@@ -365,8 +366,10 @@ class TranscriptionManager(LLMClientBase):
                     model_name=self.model_name,
                 )
                 pil_image = image_processor.process_image_to_memory()
-                jpeg_quality = int(image_processor.img_cfg.get('jpeg_quality', 95))
-                base64_image = ImageProcessor.pil_image_to_base64(pil_image, jpeg_quality)
+                jpeg_quality = int(image_processor.img_cfg.get("jpeg_quality", 95))
+                base64_image = ImageProcessor.pil_image_to_base64(
+                    pil_image, jpeg_quality
+                )
         except Exception as e:
             logger.error(f"Error preprocessing image {image_path.name}: {e}")
             return {
@@ -393,7 +396,7 @@ class TranscriptionManager(LLMClientBase):
 
                 # Get structured chat model (uses with_structured_output for non-OpenAI providers)
                 structured_model = self._get_structured_chat_model()
-                
+
                 # LangChain handles API retries with exponential backoff internally
                 response = structured_model.invoke(messages, **invoke_kwargs)
 
@@ -401,7 +404,7 @@ class TranscriptionManager(LLMClientBase):
                 processing_time = time.time() - start_time
                 self.processing_times.append(processing_time)
                 self._report_success()
-                
+
                 # Report token usage (built into LangChain's response metadata)
                 try:
                     usage_meta = getattr(response, "usage_metadata", None)
@@ -414,31 +417,35 @@ class TranscriptionManager(LLMClientBase):
                                 f"[TOKEN] Transcription for {image_path.name}: "
                                 f"added {total_tokens} tokens (total now: {token_tracker.get_tokens_used_today():,})"
                             )
-                except Exception as e:
-                    logger.warning(f"Error reporting token usage for {image_path.name}: {e}")
+                except (AttributeError, TypeError, ValueError) as e:
+                    logger.warning(
+                        f"Error reporting token usage for {image_path.name}: {e}"
+                    )
 
                 raw_text = self._extract_output_text(response)
                 transcription = self._parse_transcription_from_text(
                     raw_text, image_path.name
                 )
-                
+
                 # Parse the raw text as JSON to check for schema flags
                 parsed_response = None
                 try:
                     parsed_response = json.loads(raw_text)
                 except (json.JSONDecodeError, TypeError):
                     pass
-                
+
                 # Check for schema-specific retry conditions
                 if isinstance(parsed_response, dict):
                     # Check no_transcribable_text flag
                     if parsed_response.get("no_transcribable_text") is True:
-                        should_retry, backoff_time, max_attempts = self._should_retry_for_schema_flag(
-                            "no_transcribable_text",
-                            True,
-                            schema_retry_attempts["no_transcribable_text"]
+                        should_retry, backoff_time, max_attempts = (
+                            self._should_retry_for_schema_flag(
+                                "no_transcribable_text",
+                                True,
+                                schema_retry_attempts["no_transcribable_text"],
+                            )
                         )
-                        
+
                         if should_retry:
                             schema_retry_attempts["no_transcribable_text"] += 1
                             logger.warning(
@@ -448,15 +455,17 @@ class TranscriptionManager(LLMClientBase):
                             )
                             time.sleep(backoff_time)
                             continue
-                    
+
                     # Check transcription_not_possible flag
                     if parsed_response.get("transcription_not_possible") is True:
-                        should_retry, backoff_time, max_attempts = self._should_retry_for_schema_flag(
-                            "transcription_not_possible",
-                            True,
-                            schema_retry_attempts["transcription_not_possible"]
+                        should_retry, backoff_time, max_attempts = (
+                            self._should_retry_for_schema_flag(
+                                "transcription_not_possible",
+                                True,
+                                schema_retry_attempts["transcription_not_possible"],
+                            )
                         )
-                        
+
                         if should_retry:
                             schema_retry_attempts["transcription_not_possible"] += 1
                             logger.warning(
@@ -474,7 +483,7 @@ class TranscriptionManager(LLMClientBase):
                     "processing_time": round(processing_time, 2),
                     "provider": self.provider,
                 }
-                
+
                 # Include schema retry statistics if any occurred
                 total_schema_retries = sum(schema_retry_attempts.values())
                 if total_schema_retries > 0:
@@ -504,7 +513,9 @@ class TranscriptionManager(LLMClientBase):
         return {
             "image": image_path.name,
             "sequence_number": sequence_number,
-            "transcription": self._parse_transcription_from_text(raw_text, image_path.name),
+            "transcription": self._parse_transcription_from_text(
+                raw_text, image_path.name
+            ),
             "processing_time": round(time.time() - start_time, 2),
             "schema_retries": schema_retry_attempts.copy(),
             "provider": self.provider,

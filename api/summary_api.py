@@ -41,11 +41,11 @@ SUMMARY_PROMPT_FILE = "summary_system_prompt.txt"
 class SummaryManager(LLMClientBase):
     """
     Manages LLM API requests for generating structured summaries.
-    
+
     This class handles summarization of transcribed text using various LLM providers
-    through LangChain's unified interface. It loads schemas and prompts from 
+    through LangChain's unified interface. It loads schemas and prompts from
     configuration files and applies model-specific parameters.
-    
+
     Supports:
     - OpenAI with Responses API structured outputs
     - Anthropic Claude with tool-based structured outputs
@@ -79,14 +79,14 @@ class SummaryManager(LLMClientBase):
 
         self._load_schema_and_prompt()
         self._output_schema = self.summary_schema
-        
+
         # Store summary context for prompt injection
         self.summary_context = summary_context
-        
+
         # Load model configuration and determine service tier
         self.model_config = self._load_model_config("summary_model")
         self.service_tier = self._determine_service_tier("summary")
-        
+
         # Load schema-specific retry configuration
         self.schema_retry_config = self._load_schema_retry_config("summary")
 
@@ -115,21 +115,24 @@ class SummaryManager(LLMClientBase):
             else:
                 logger.error(f"Summary prompt not found at {prompt_path}")
                 raise FileNotFoundError(f"Required prompt file missing: {prompt_path}")
-                
-        except Exception as e:
+
+        except (FileNotFoundError, json.JSONDecodeError, OSError) as e:
             logger.error(f"Error loading schema/prompt: {e}")
             raise
 
     def _create_placeholder_summary(
-        self, page_num: int, error_message: str = "", page_types: list[str] | None = None
+        self,
+        page_num: int,
+        error_message: str = "",
+        page_types: list[str] | None = None,
     ) -> dict[str, Any]:
         """Create a placeholder summary for pages that couldn't be processed.
-        
+
         Returns a flat structure with all fields at top level.
         """
         if page_types is None:
             page_types = ["other"]
-        
+
         bullet_text = (
             f"[Error generating summary: {error_message}]"
             if error_message
@@ -165,12 +168,10 @@ class SummaryManager(LLMClientBase):
         )
 
         system_msg = SystemMessage(content=system_text)
-        
+
         # Build user message based on provider
         if self.provider in ("openai", "openrouter"):
-            user_msg = HumanMessage(
-                content=[{"type": "text", "text": transcription}]
-            )
+            user_msg = HumanMessage(content=[{"type": "text", "text": transcription}])
         else:
             # Anthropic, Google use simpler format
             user_msg = HumanMessage(content=transcription)
@@ -180,7 +181,7 @@ class SummaryManager(LLMClientBase):
         self._apply_structured_output_kwargs(invoke_kwargs)
 
         return [system_msg, user_msg], invoke_kwargs
-    
+
     def _ensure_page_information_structure(
         self, summary_json: dict[str, Any], page_num: int
     ) -> None:
@@ -203,13 +204,17 @@ class SummaryManager(LLMClientBase):
             if "page_number_integer" not in page_info:
                 page_info["page_number_integer"] = page_num
             if "page_number_type" not in page_info:
-                page_info["page_number_type"] = "arabic" if page_info.get("page_number_integer") else "none"
+                page_info["page_number_type"] = (
+                    "arabic" if page_info.get("page_number_integer") else "none"
+                )
             # Handle both page_types (array) and legacy page_type (string)
             if "page_types" not in page_info:
                 if "page_type" in page_info:
                     # Convert legacy page_type to page_types array
                     legacy_type = page_info.pop("page_type")
-                    page_info["page_types"] = [legacy_type] if legacy_type else ["content"]
+                    page_info["page_types"] = (
+                        [legacy_type] if legacy_type else ["content"]
+                    )
                 else:
                     page_info["page_types"] = ["content"]
 
@@ -222,7 +227,7 @@ class SummaryManager(LLMClientBase):
         schema_retry_attempts = {
             "page_type_null_bullets": 0,
         }
-        
+
         summary_json = None
 
         # Schema retry loop (API retries handled by LangChain)
@@ -235,7 +240,7 @@ class SummaryManager(LLMClientBase):
 
                 # Get structured chat model (uses with_structured_output for non-OpenAI providers)
                 structured_model = self._get_structured_chat_model()
-                
+
                 # LangChain handles API retries with exponential backoff internally
                 response = structured_model.invoke(messages, **invoke_kwargs)
 
@@ -243,7 +248,7 @@ class SummaryManager(LLMClientBase):
                 processing_time = time.time() - start_time
                 self.processing_times.append(processing_time)
                 self._report_success()
-                
+
                 # Report token usage (built into LangChain's response metadata)
                 try:
                     usage_meta = getattr(response, "usage_metadata", None)
@@ -256,8 +261,10 @@ class SummaryManager(LLMClientBase):
                                 f"[TOKEN] Summary for page {page_num}: "
                                 f"added {total_tokens} tokens (total now: {token_tracker.get_tokens_used_today():,})"
                             )
-                except Exception as e:
-                    logger.warning(f"Error reporting token usage for page {page_num}: {e}")
+                except (AttributeError, TypeError, ValueError) as e:
+                    logger.warning(
+                        f"Error reporting token usage for page {page_num}: {e}"
+                    )
 
                 summary_json_str = self._extract_output_text(response)
                 if not summary_json_str:
@@ -295,7 +302,7 @@ class SummaryManager(LLMClientBase):
                     "processing_time": round(processing_time, 2),
                     "provider": self.provider,
                 }
-                
+
                 # Include schema retry statistics if any occurred
                 total_schema_retries = sum(schema_retry_attempts.values())
                 if total_schema_retries > 0:
@@ -325,8 +332,12 @@ class SummaryManager(LLMClientBase):
         # Build flat structure from summary_json
         result = {
             "page": page_num,
-            "page_information": summary_json.get("page_information") if summary_json else None,
-            "bullet_points": summary_json.get("bullet_points") if summary_json else None,
+            "page_information": (
+                summary_json.get("page_information") if summary_json else None
+            ),
+            "bullet_points": (
+                summary_json.get("bullet_points") if summary_json else None
+            ),
             "references": summary_json.get("references") if summary_json else None,
             "processing_time": round(time.time() - start_time, 2),
             "schema_retries": schema_retry_attempts.copy(),

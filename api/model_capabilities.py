@@ -109,7 +109,6 @@ class ProviderCapabilities:
 
 class CapabilityError(ValueError):
     """Raised when a selected model is incompatible with the configured pipeline."""
-    pass
 
 
 def ensure_image_support(model_name: str, capabilities: ProviderCapabilities) -> None:
@@ -272,110 +271,280 @@ _OPENROUTER_BASE: dict = dict(
 
 _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict, dict]] = [
     # ===== OpenAI GPT-5.x family (reasoning + text verbosity) =====
-    (("gpt-5.2",), "gpt-5.2", _OPENAI_REASONING_BASE, dict(
-        supports_text_verbosity=True, max_context_tokens=400000, max_output_tokens=128000,
-    )),
-    (("gpt-5.1",), "gpt-5.1", _OPENAI_REASONING_BASE, dict(
-        supports_text_verbosity=True, max_context_tokens=256000, max_output_tokens=128000,
-    )),
-    (("gpt-5",), "gpt-5", _OPENAI_REASONING_BASE, dict(
-        supports_text_verbosity=True, max_context_tokens=256000, max_output_tokens=128000,
-    )),
+    (
+        ("gpt-5.2",),
+        "gpt-5.2",
+        _OPENAI_REASONING_BASE,
+        dict(
+            supports_text_verbosity=True,
+            max_context_tokens=400000,
+            max_output_tokens=128000,
+        ),
+    ),
+    (
+        ("gpt-5.1",),
+        "gpt-5.1",
+        _OPENAI_REASONING_BASE,
+        dict(
+            supports_text_verbosity=True,
+            max_context_tokens=256000,
+            max_output_tokens=128000,
+        ),
+    ),
+    (
+        ("gpt-5",),
+        "gpt-5",
+        _OPENAI_REASONING_BASE,
+        dict(
+            supports_text_verbosity=True,
+            max_context_tokens=256000,
+            max_output_tokens=128000,
+        ),
+    ),
     # ===== OpenAI o-series reasoning models =====
     (("o4",), "o4", _OPENAI_REASONING_BASE, {}),
     (("o3-pro",), "o3-pro", _OPENAI_REASONING_BASE, {}),
-    (("o3-mini",), "o3-mini", _OPENAI_REASONING_BASE, dict(
-        supports_vision=False, supports_image_detail=False,
-    )),
+    (
+        ("o3-mini",),
+        "o3-mini",
+        _OPENAI_REASONING_BASE,
+        dict(
+            supports_vision=False,
+            supports_image_detail=False,
+        ),
+    ),
     # o3 (not o3-mini, not o3-pro) — handled below in detect_capabilities()
-    (("o1-mini",), "o1-mini", _OPENAI_REASONING_BASE, dict(
-        supports_vision=False, supports_image_detail=False,
-        supports_structured_output=False, supports_json_mode=False,
-        max_context_tokens=128000, max_output_tokens=65536,
-    )),
+    (
+        ("o1-mini",),
+        "o1-mini",
+        _OPENAI_REASONING_BASE,
+        dict(
+            supports_vision=False,
+            supports_image_detail=False,
+            supports_structured_output=False,
+            supports_json_mode=False,
+            max_context_tokens=128000,
+            max_output_tokens=65536,
+        ),
+    ),
     # o1-pro and o1 — handled below in detect_capabilities()
     # ===== OpenAI GPT-4.x standard models =====
     (("gpt-4o",), "gpt-4o", _OPENAI_STANDARD_BASE, {}),
-    (("gpt-4.1",), "gpt-4.1", _OPENAI_STANDARD_BASE, dict(
-        max_context_tokens=1000000, max_output_tokens=32768,
-    )),
-    (("gpt-4-turbo",), "gpt-4-turbo", _OPENAI_STANDARD_BASE, dict(
-        max_output_tokens=4096,
-    )),
-    (("gpt-4",), "gpt-4", _OPENAI_STANDARD_BASE, dict(
-        supports_vision=False, max_output_tokens=4096,
-    )),
+    (
+        ("gpt-4.1",),
+        "gpt-4.1",
+        _OPENAI_STANDARD_BASE,
+        dict(
+            max_context_tokens=1000000,
+            max_output_tokens=32768,
+        ),
+    ),
+    (
+        ("gpt-4-turbo",),
+        "gpt-4-turbo",
+        _OPENAI_STANDARD_BASE,
+        dict(
+            max_output_tokens=4096,
+        ),
+    ),
+    (
+        ("gpt-4",),
+        "gpt-4",
+        _OPENAI_STANDARD_BASE,
+        dict(
+            supports_vision=False,
+            max_output_tokens=4096,
+        ),
+    ),
     # ===== Anthropic Claude models (most-specific first) =====
-    (("claude-opus-4-6", "claude-opus-4.6"), "claude-opus-4.6", _ANTHROPIC_BASE, dict(
-        is_reasoning_model=True, supports_reasoning_effort=True,
-        supports_top_p=False, max_output_tokens=32768,
-    )),
-    (("claude-sonnet-4-6", "claude-sonnet-4.6"), "claude-sonnet-4.6", _ANTHROPIC_BASE, dict(
-        is_reasoning_model=True, supports_reasoning_effort=True,
-        supports_top_p=False, max_output_tokens=16384,
-    )),
-    (("claude-opus-4-5", "claude-opus-4.5"), "claude-opus-4.5", _ANTHROPIC_BASE, dict(
-        is_reasoning_model=True, supports_reasoning_effort=True,
-        supports_top_p=False, max_output_tokens=32768,
-    )),
-    (("claude-sonnet-4-5", "claude-sonnet-4.5"), "claude-sonnet-4.5", _ANTHROPIC_BASE, dict(
-        is_reasoning_model=True, supports_reasoning_effort=True,
-        supports_top_p=False, max_output_tokens=16384,
-    )),
-    (("claude-haiku-4-5", "claude-haiku-4.5"), "claude-haiku-4.5", _ANTHROPIC_BASE, dict(
-        is_reasoning_model=True, supports_reasoning_effort=True,
-        supports_top_p=False, supports_structured_output=False, supports_json_mode=False,
-    )),
-    (("claude-opus-4-1", "claude-opus-4.1"), "claude-opus-4.1", _ANTHROPIC_BASE, dict(
-        is_reasoning_model=True, supports_reasoning_effort=True,
-        max_output_tokens=16384,
-    )),
-    (("claude-opus-4",), "claude-opus-4", _ANTHROPIC_BASE, dict(
-        is_reasoning_model=True, supports_reasoning_effort=True,
-        max_output_tokens=16384,
-    )),
+    (
+        ("claude-opus-4-6", "claude-opus-4.6"),
+        "claude-opus-4.6",
+        _ANTHROPIC_BASE,
+        dict(
+            is_reasoning_model=True,
+            supports_reasoning_effort=True,
+            supports_top_p=False,
+            max_output_tokens=32768,
+        ),
+    ),
+    (
+        ("claude-sonnet-4-6", "claude-sonnet-4.6"),
+        "claude-sonnet-4.6",
+        _ANTHROPIC_BASE,
+        dict(
+            is_reasoning_model=True,
+            supports_reasoning_effort=True,
+            supports_top_p=False,
+            max_output_tokens=16384,
+        ),
+    ),
+    (
+        ("claude-opus-4-5", "claude-opus-4.5"),
+        "claude-opus-4.5",
+        _ANTHROPIC_BASE,
+        dict(
+            is_reasoning_model=True,
+            supports_reasoning_effort=True,
+            supports_top_p=False,
+            max_output_tokens=32768,
+        ),
+    ),
+    (
+        ("claude-sonnet-4-5", "claude-sonnet-4.5"),
+        "claude-sonnet-4.5",
+        _ANTHROPIC_BASE,
+        dict(
+            is_reasoning_model=True,
+            supports_reasoning_effort=True,
+            supports_top_p=False,
+            max_output_tokens=16384,
+        ),
+    ),
+    (
+        ("claude-haiku-4-5", "claude-haiku-4.5"),
+        "claude-haiku-4.5",
+        _ANTHROPIC_BASE,
+        dict(
+            is_reasoning_model=True,
+            supports_reasoning_effort=True,
+            supports_top_p=False,
+            supports_structured_output=False,
+            supports_json_mode=False,
+        ),
+    ),
+    (
+        ("claude-opus-4-1", "claude-opus-4.1"),
+        "claude-opus-4.1",
+        _ANTHROPIC_BASE,
+        dict(
+            is_reasoning_model=True,
+            supports_reasoning_effort=True,
+            max_output_tokens=16384,
+        ),
+    ),
+    (
+        ("claude-opus-4",),
+        "claude-opus-4",
+        _ANTHROPIC_BASE,
+        dict(
+            is_reasoning_model=True,
+            supports_reasoning_effort=True,
+            max_output_tokens=16384,
+        ),
+    ),
     (("claude-sonnet-4",), "claude-sonnet-4", _ANTHROPIC_BASE, {}),
-    (("claude-3-7-sonnet", "claude-3.7-sonnet"), "claude-3.7-sonnet", _ANTHROPIC_BASE, {}),
-    (("claude-3-5-sonnet", "claude-3.5-sonnet"), "claude-3.5-sonnet", _ANTHROPIC_BASE, {}),
+    (
+        ("claude-3-7-sonnet", "claude-3.7-sonnet"),
+        "claude-3.7-sonnet",
+        _ANTHROPIC_BASE,
+        {},
+    ),
+    (
+        ("claude-3-5-sonnet", "claude-3.5-sonnet"),
+        "claude-3.5-sonnet",
+        _ANTHROPIC_BASE,
+        {},
+    ),
     (("claude-3-5-haiku", "claude-3.5-haiku"), "claude-3.5-haiku", _ANTHROPIC_BASE, {}),
-    (("claude-3-opus",), "claude-3-opus", _ANTHROPIC_BASE, dict(max_output_tokens=4096)),
-    (("claude-3-sonnet",), "claude-3-sonnet", _ANTHROPIC_BASE, dict(max_output_tokens=4096)),
-    (("claude-3-haiku",), "claude-3-haiku", _ANTHROPIC_BASE, dict(max_output_tokens=4096)),
+    (
+        ("claude-3-opus",),
+        "claude-3-opus",
+        _ANTHROPIC_BASE,
+        dict(max_output_tokens=4096),
+    ),
+    (
+        ("claude-3-sonnet",),
+        "claude-3-sonnet",
+        _ANTHROPIC_BASE,
+        dict(max_output_tokens=4096),
+    ),
+    (
+        ("claude-3-haiku",),
+        "claude-3-haiku",
+        _ANTHROPIC_BASE,
+        dict(max_output_tokens=4096),
+    ),
     (("claude",), "claude", _ANTHROPIC_BASE, {}),
     # ===== Google Gemini models (most-specific first) =====
-    (("gemini-3-flash", "gemini-3.0-flash"), "gemini-3-flash", _GOOGLE_BASE, dict(
-        is_reasoning_model=True, supports_reasoning_effort=True,
-        max_context_tokens=1048576, max_output_tokens=65536,
-    )),
-    (("gemini-3-pro", "gemini-3.0-pro"), "gemini-3-pro", _GOOGLE_BASE, dict(
-        is_reasoning_model=True, supports_reasoning_effort=True,
-        max_context_tokens=2000000, max_output_tokens=65536,
-    )),
-    (("gemini-3",), "gemini-3", _GOOGLE_BASE, dict(
-        is_reasoning_model=True, supports_reasoning_effort=True,
-        max_output_tokens=65536,
-    )),
-    (("gemini-2.5-pro", "gemini-2-5-pro"), "gemini-2.5-pro", _GOOGLE_BASE, dict(
-        is_reasoning_model=True, supports_reasoning_effort=True,
-        max_context_tokens=2000000, max_output_tokens=65536,
-    )),
-    (("gemini-2.5-flash-lite", "gemini-2-5-flash-lite"), "gemini-2.5-flash-lite", _GOOGLE_BASE, dict(
-        max_context_tokens=1048576,
-    )),
-    (("gemini-2.5-flash", "gemini-2-5-flash"), "gemini-2.5-flash", _GOOGLE_BASE, dict(
-        is_reasoning_model=True, supports_reasoning_effort=True,
-        max_output_tokens=32768,
-    )),
+    (
+        ("gemini-3-flash", "gemini-3.0-flash"),
+        "gemini-3-flash",
+        _GOOGLE_BASE,
+        dict(
+            is_reasoning_model=True,
+            supports_reasoning_effort=True,
+            max_context_tokens=1048576,
+            max_output_tokens=65536,
+        ),
+    ),
+    (
+        ("gemini-3-pro", "gemini-3.0-pro"),
+        "gemini-3-pro",
+        _GOOGLE_BASE,
+        dict(
+            is_reasoning_model=True,
+            supports_reasoning_effort=True,
+            max_context_tokens=2000000,
+            max_output_tokens=65536,
+        ),
+    ),
+    (
+        ("gemini-3",),
+        "gemini-3",
+        _GOOGLE_BASE,
+        dict(
+            is_reasoning_model=True,
+            supports_reasoning_effort=True,
+            max_output_tokens=65536,
+        ),
+    ),
+    (
+        ("gemini-2.5-pro", "gemini-2-5-pro"),
+        "gemini-2.5-pro",
+        _GOOGLE_BASE,
+        dict(
+            is_reasoning_model=True,
+            supports_reasoning_effort=True,
+            max_context_tokens=2000000,
+            max_output_tokens=65536,
+        ),
+    ),
+    (
+        ("gemini-2.5-flash-lite", "gemini-2-5-flash-lite"),
+        "gemini-2.5-flash-lite",
+        _GOOGLE_BASE,
+        dict(
+            max_context_tokens=1048576,
+        ),
+    ),
+    (
+        ("gemini-2.5-flash", "gemini-2-5-flash"),
+        "gemini-2.5-flash",
+        _GOOGLE_BASE,
+        dict(
+            is_reasoning_model=True,
+            supports_reasoning_effort=True,
+            max_output_tokens=32768,
+        ),
+    ),
     (("gemini-2.0", "gemini-2-0"), "gemini-2.0", _GOOGLE_BASE, {}),
-    (("gemini-1.5-pro", "gemini-1-5-pro"), "gemini-1.5-pro", _GOOGLE_BASE, dict(
-        max_context_tokens=2000000,
-    )),
+    (
+        ("gemini-1.5-pro", "gemini-1-5-pro"),
+        "gemini-1.5-pro",
+        _GOOGLE_BASE,
+        dict(
+            max_context_tokens=2000000,
+        ),
+    ),
     (("gemini-1.5-flash", "gemini-1-5-flash"), "gemini-1.5-flash", _GOOGLE_BASE, {}),
     (("gemini",), "gemini", _GOOGLE_BASE, {}),
 ]
 
 
-def _build_caps(model_name: str, family: str, base: dict, overrides: dict) -> ProviderCapabilities:
+def _build_caps(
+    model_name: str, family: str, base: dict, overrides: dict
+) -> ProviderCapabilities:
     """Merge *base* defaults with *overrides* and return a ProviderCapabilities instance."""
     merged = {**base, **overrides}
     merged["model_name"] = model_name
@@ -405,20 +574,42 @@ def detect_capabilities(model_name: str) -> ProviderCapabilities:
             return _build_caps(model_name, family, base, overrides)
 
     # --- o3 (not o3-mini, not o3-pro) — requires negative-prefix logic ----
-    if m == "o3" or (m.startswith("o3-") and not m.startswith("o3-mini") and not m.startswith("o3-pro")):
+    if m == "o3" or (
+        m.startswith("o3-")
+        and not m.startswith("o3-mini")
+        and not m.startswith("o3-pro")
+    ):
         return _build_caps(model_name, "o3", _OPENAI_REASONING_BASE, {})
 
     # --- o1-pro -----------------------------------------------------------
     if m.startswith("o1-pro"):
-        return _build_caps(model_name, "o1-pro", _OPENAI_REASONING_BASE, dict(
-            supports_structured_output=False,
-        ))
+        return _build_caps(
+            model_name,
+            "o1-pro",
+            _OPENAI_REASONING_BASE,
+            dict(
+                supports_structured_output=False,
+            ),
+        )
 
     # --- o1 (not o1-mini, not o1-pro) -------------------------------------
-    if m == "o1" or m.startswith("o1-20") or (m.startswith("o1") and not m.startswith("o1-mini") and not m.startswith("o1-pro")):
-        return _build_caps(model_name, "o1", _OPENAI_REASONING_BASE, dict(
-            supports_structured_output=False,
-        ))
+    if (
+        m == "o1"
+        or m.startswith("o1-20")
+        or (
+            m.startswith("o1")
+            and not m.startswith("o1-mini")
+            and not m.startswith("o1-pro")
+        )
+    ):
+        return _build_caps(
+            model_name,
+            "o1",
+            _OPENAI_REASONING_BASE,
+            dict(
+                supports_structured_output=False,
+            ),
+        )
 
     # --- OpenRouter models (dynamic matching on underlying model) ---------
     if "/" in m:
@@ -426,7 +617,9 @@ def detect_capabilities(model_name: str) -> ProviderCapabilities:
 
     # --- Fallback: conservative -------------------------------------------
     provider = detect_provider(model_name)
-    logger.debug(f"Model '{model_name}' using fallback capability profile (provider={provider})")
+    logger.debug(
+        f"Model '{model_name}' using fallback capability profile (provider={provider})"
+    )
     return ProviderCapabilities(
         provider_name=provider,
         model_name=model_name,
@@ -453,86 +646,133 @@ def _detect_openrouter_capabilities(model_name: str, m: str) -> ProviderCapabili
     if "deepseek" in m:
         is_r1 = "deepseek-r1" in m or "r1" in m
         is_terminus = "terminus" in m
-        return _build_caps(model_name, "openrouter-deepseek", _OPENROUTER_BASE, dict(
-            is_reasoning_model=is_r1 or is_terminus,
-            supports_reasoning_effort=is_r1 or is_terminus,
-        ))
+        return _build_caps(
+            model_name,
+            "openrouter-deepseek",
+            _OPENROUTER_BASE,
+            dict(
+                is_reasoning_model=is_r1 or is_terminus,
+                supports_reasoning_effort=is_r1 or is_terminus,
+            ),
+        )
 
     # GPT-OSS via OpenRouter
     if "gpt-oss" in m:
-        return _build_caps(model_name, "openrouter-gpt-oss", _OPENROUTER_BASE, dict(
-            supports_image_detail=True,
-            default_image_detail="high",
-            is_reasoning_model=True,
-            supports_reasoning_effort=True,
-            supports_frequency_penalty=True,
-            supports_presence_penalty=True,
-        ))
+        return _build_caps(
+            model_name,
+            "openrouter-gpt-oss",
+            _OPENROUTER_BASE,
+            dict(
+                supports_image_detail=True,
+                default_image_detail="high",
+                is_reasoning_model=True,
+                supports_reasoning_effort=True,
+                supports_frequency_penalty=True,
+                supports_presence_penalty=True,
+            ),
+        )
 
     # GPT-5 via OpenRouter
     if "gpt-5" in m:
-        return _build_caps(model_name, "openrouter-gpt5", _OPENROUTER_BASE, dict(
-            supports_image_detail=True,
-            default_image_detail="high",
-            is_reasoning_model=True,
-            supports_reasoning_effort=True,
-            supports_temperature=False,
-            supports_top_p=False,
-        ))
+        return _build_caps(
+            model_name,
+            "openrouter-gpt5",
+            _OPENROUTER_BASE,
+            dict(
+                supports_image_detail=True,
+                default_image_detail="high",
+                is_reasoning_model=True,
+                supports_reasoning_effort=True,
+                supports_temperature=False,
+                supports_top_p=False,
+            ),
+        )
 
     # o-series via OpenRouter
     if any(x in m for x in ("/o1", "/o3", "/o4")):
-        return _build_caps(model_name, "openrouter-o-series", _OPENROUTER_BASE, dict(
-            supports_image_detail=True,
-            default_image_detail="high",
-            is_reasoning_model=True,
-            supports_reasoning_effort=True,
-            supports_temperature=False,
-            supports_top_p=False,
-        ))
+        return _build_caps(
+            model_name,
+            "openrouter-o-series",
+            _OPENROUTER_BASE,
+            dict(
+                supports_image_detail=True,
+                default_image_detail="high",
+                is_reasoning_model=True,
+                supports_reasoning_effort=True,
+                supports_temperature=False,
+                supports_top_p=False,
+            ),
+        )
 
     # Other OpenAI models via OpenRouter
     if "openai/" in m or "gpt-4" in m:
-        return _build_caps(model_name, "openrouter-openai", _OPENROUTER_BASE, dict(
-            supports_image_detail=True,
-            default_image_detail="high",
-            supports_frequency_penalty=True,
-            supports_presence_penalty=True,
-        ))
+        return _build_caps(
+            model_name,
+            "openrouter-openai",
+            _OPENROUTER_BASE,
+            dict(
+                supports_image_detail=True,
+                default_image_detail="high",
+                supports_frequency_penalty=True,
+                supports_presence_penalty=True,
+            ),
+        )
 
     # Claude via OpenRouter
     if "claude" in underlying or "anthropic/" in m:
-        return _build_caps(model_name, "openrouter-claude", _OPENROUTER_BASE, dict(
-            is_reasoning_model=True,
-            supports_reasoning_effort=True,
-            max_context_tokens=200000,
-        ))
+        return _build_caps(
+            model_name,
+            "openrouter-claude",
+            _OPENROUTER_BASE,
+            dict(
+                is_reasoning_model=True,
+                supports_reasoning_effort=True,
+                max_context_tokens=200000,
+            ),
+        )
 
     # Gemini via OpenRouter
     if "gemini" in underlying or "google/" in m:
-        is_thinking = any(x in m for x in ("gemini-2.5", "gemini-3", "gemini-2-5", "gemini-3-"))
-        return _build_caps(model_name, "openrouter-gemini", _OPENROUTER_BASE, dict(
-            supports_media_resolution=True,
-            default_media_resolution="high",
-            is_reasoning_model=is_thinking,
-            supports_reasoning_effort=True,
-            max_context_tokens=1000000,
-            max_output_tokens=8192,
-        ))
+        is_thinking = any(
+            x in m for x in ("gemini-2.5", "gemini-3", "gemini-2-5", "gemini-3-")
+        )
+        return _build_caps(
+            model_name,
+            "openrouter-gemini",
+            _OPENROUTER_BASE,
+            dict(
+                supports_media_resolution=True,
+                default_media_resolution="high",
+                is_reasoning_model=is_thinking,
+                supports_reasoning_effort=True,
+                max_context_tokens=1000000,
+                max_output_tokens=8192,
+            ),
+        )
 
     # Llama via OpenRouter
     if "llama" in underlying or "meta/" in m:
-        return _build_caps(model_name, "openrouter-llama", _OPENROUTER_BASE, dict(
-            supports_vision="vision" in m or "llama-3.2" in m,
-            supports_frequency_penalty=True,
-            supports_presence_penalty=True,
-        ))
+        return _build_caps(
+            model_name,
+            "openrouter-llama",
+            _OPENROUTER_BASE,
+            dict(
+                supports_vision="vision" in m or "llama-3.2" in m,
+                supports_frequency_penalty=True,
+                supports_presence_penalty=True,
+            ),
+        )
 
     # Mistral via OpenRouter
     if "mistral" in m or "mixtral" in m:
-        return _build_caps(model_name, "openrouter-mistral", _OPENROUTER_BASE, dict(
-            supports_vision="pixtral" in m,
-        ))
+        return _build_caps(
+            model_name,
+            "openrouter-mistral",
+            _OPENROUTER_BASE,
+            dict(
+                supports_vision="pixtral" in m,
+            ),
+        )
 
     # Generic OpenRouter fallback
     return _build_caps(model_name, "openrouter", _OPENROUTER_BASE, {})

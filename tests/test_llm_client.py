@@ -27,31 +27,31 @@ class TestLLMConfig:
     def test_basic_init(self):
         """Basic initialization with model name."""
         config = LLMConfig(model="gpt-5-mini")
-        
+
         assert config.model == "gpt-5-mini"
         assert config.provider == "openai"  # Auto-inferred
 
     def test_explicit_provider(self):
         """Explicit provider is used."""
         config = LLMConfig(model="gpt-5-mini", provider="openai")
-        
+
         assert config.provider == "openai"
 
     def test_provider_inferred_from_model(self):
         """Provider is inferred from model name."""
         openai_config = LLMConfig(model="gpt-4o")
         assert openai_config.provider == "openai"
-        
+
         anthropic_config = LLMConfig(model="claude-sonnet-4-5")
         assert anthropic_config.provider == "anthropic"
-        
+
         google_config = LLMConfig(model="gemini-2.5-flash")
         assert google_config.provider == "google"
 
     def test_default_values(self):
         """Default values are set correctly."""
         config = LLMConfig(model="gpt-5")
-        
+
         assert config.timeout == 900
         assert config.max_retries == 5
         assert config.temperature is None
@@ -68,7 +68,7 @@ class TestLLMConfig:
             timeout=600,
             service_tier="flex",
         )
-        
+
         assert config.temperature == 0.7
         assert config.max_tokens == 4096
         assert config.timeout == 600
@@ -126,7 +126,7 @@ class TestGetModelCapabilities:
     def test_gpt5_capabilities(self):
         """GPT-5 models have reasoning and multimodal."""
         caps = get_model_capabilities("gpt-5-mini")
-        
+
         assert caps.get("reasoning") is True
         assert caps.get("multimodal") is True
         # GPT-5 is a reasoning model; temperature is not supported
@@ -135,14 +135,14 @@ class TestGetModelCapabilities:
     def test_o_series_no_temperature(self):
         """O-series models don't support temperature."""
         caps = get_model_capabilities("o3-mini")
-        
+
         assert caps.get("reasoning") is True
         assert caps.get("temperature") is False
 
     def test_gpt4o_no_reasoning(self):
         """GPT-4o models don't support reasoning."""
         caps = get_model_capabilities("gpt-4o")
-        
+
         assert caps.get("reasoning") is False
         assert caps.get("multimodal") is True
 
@@ -151,7 +151,7 @@ class TestGetModelCapabilities:
         opus_caps = get_model_capabilities("claude-opus-4-5")
         sonnet_caps = get_model_capabilities("claude-sonnet-4-5")
         haiku_caps = get_model_capabilities("claude-haiku-4-5")
-        
+
         assert opus_caps.get("extended_thinking") is True
         assert sonnet_caps.get("extended_thinking") is True
         # Haiku 4.5 is also a reasoning Anthropic model
@@ -160,19 +160,19 @@ class TestGetModelCapabilities:
     def test_gemini_thinking(self):
         """Gemini 2.5+ models have thinking capability."""
         caps = get_model_capabilities("gemini-2.5-flash")
-        
+
         assert caps.get("thinking") is True
 
     def test_gemini_2_no_thinking(self):
         """Gemini 2.0 models don't have thinking."""
         caps = get_model_capabilities("gemini-2.0-flash")
-        
+
         assert caps.get("thinking") is False
 
     def test_unknown_model_defaults(self):
         """Unknown models get conservative defaults."""
         caps = get_model_capabilities("unknown-model")
-        
+
         assert caps.get("reasoning") is False
         assert caps.get("multimodal") is False
         assert caps.get("temperature") is True
@@ -211,10 +211,10 @@ class TestGetChatModel:
         """Creates OpenAI model with correct class."""
         with patch("langchain_openai.ChatOpenAI") as mock_class:
             mock_class.return_value = MagicMock()
-            
+
             config = LLMConfig(model="gpt-5-mini", provider="openai")
             model = get_chat_model(config)
-            
+
             mock_class.assert_called_once()
             call_kwargs = mock_class.call_args[1]
             assert call_kwargs["model"] == "gpt-5-mini"
@@ -224,30 +224,30 @@ class TestGetChatModel:
         """Creates Anthropic model with correct class."""
         with patch("langchain_anthropic.ChatAnthropic") as mock_class:
             mock_class.return_value = MagicMock()
-            
+
             config = LLMConfig(model="claude-3-opus", provider="anthropic")
             model = get_chat_model(config)
-            
+
             mock_class.assert_called_once()
 
     def test_creates_google_model(self, mock_api_keys):
         """Creates Google model with correct class."""
         with patch("langchain_google_genai.ChatGoogleGenerativeAI") as mock_class:
             mock_class.return_value = MagicMock()
-            
+
             config = LLMConfig(model="gemini-2.5-flash", provider="google")
             model = get_chat_model(config)
-            
+
             mock_class.assert_called_once()
 
     def test_creates_openrouter_model(self, mock_api_keys):
         """Creates OpenRouter model with correct base URL."""
         with patch("langchain_openai.ChatOpenAI") as mock_class:
             mock_class.return_value = MagicMock()
-            
+
             config = LLMConfig(model="anthropic/claude-3-opus", provider="openrouter")
             model = get_chat_model(config)
-            
+
             call_kwargs = mock_class.call_args[1]
             assert call_kwargs["base_url"] == "https://openrouter.ai/api/v1"
 
@@ -255,17 +255,19 @@ class TestGetChatModel:
         """Includes service_tier parameter for OpenAI."""
         with patch("langchain_openai.ChatOpenAI") as mock_class:
             mock_class.return_value = MagicMock()
-            
-            config = LLMConfig(model="gpt-5-mini", provider="openai", service_tier="flex")
+
+            config = LLMConfig(
+                model="gpt-5-mini", provider="openai", service_tier="flex"
+            )
             get_chat_model(config)
-            
+
             call_kwargs = mock_class.call_args[1]
             assert call_kwargs["service_tier"] == "flex"
 
     def test_unsupported_provider_raises(self, mock_api_keys):
         """Unsupported provider raises ValueError."""
         config = LLMConfig(model="test", provider="unsupported")  # type: ignore
-        
+
         with pytest.raises(ValueError, match="Unsupported provider"):
             get_chat_model(config)
 
@@ -273,10 +275,10 @@ class TestGetChatModel:
         """Provider prefix is removed from model name."""
         with patch("langchain_openai.ChatOpenAI") as mock_class:
             mock_class.return_value = MagicMock()
-            
+
             config = LLMConfig(model="openai:gpt-5-mini")
             get_chat_model(config)
-            
+
             call_kwargs = mock_class.call_args[1]
             assert call_kwargs["model"] == "gpt-5-mini"
 
@@ -312,7 +314,7 @@ class TestGetAvailableProviders:
     def test_returns_available_providers(self, mock_api_keys):
         """Returns list of providers with available keys."""
         providers = get_available_providers()
-        
+
         assert "openai" in providers
         assert "anthropic" in providers
         assert "google" in providers

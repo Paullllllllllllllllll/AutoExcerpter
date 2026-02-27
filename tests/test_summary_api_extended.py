@@ -22,7 +22,6 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from api.summary_api import SummaryManager
 
-
 # ============================================================================
 # Helpers
 # ============================================================================
@@ -81,8 +80,13 @@ class TestSummaryManagerInit:
     @patch("api.summary_api.get_rate_limits", return_value=[(120, 1)])
     @patch("api.summary_api.RateLimiter")
     def test_init_sets_key_attributes(
-        self, mock_rl_cls, mock_rate_limits, mock_timeout_sum,
-        mock_timeout_base, mock_gcm, tmp_path,
+        self,
+        mock_rl_cls,
+        mock_rate_limits,
+        mock_timeout_sum,
+        mock_timeout_base,
+        mock_gcm,
+        tmp_path,
     ):
         """Initialization sets schema, prompt, model_config, and service_tier."""
         mock_gcm.return_value = MagicMock()
@@ -131,8 +135,13 @@ class TestSummaryManagerInit:
     @patch("api.summary_api.get_rate_limits", return_value=[(120, 1)])
     @patch("api.summary_api.RateLimiter")
     def test_init_no_context(
-        self, mock_rl_cls, mock_rate_limits, mock_timeout_sum,
-        mock_timeout_base, mock_gcm, tmp_path,
+        self,
+        mock_rl_cls,
+        mock_rate_limits,
+        mock_timeout_sum,
+        mock_timeout_base,
+        mock_gcm,
+        tmp_path,
     ):
         """Initialization without summary_context stores None."""
         mock_gcm.return_value = MagicMock()
@@ -591,10 +600,10 @@ class TestGenerateSummary:
         mock_structured.invoke.return_value = response
 
         with (
-            patch.object(mgr, "_get_structured_chat_model", return_value=mock_structured),
             patch.object(
-                mgr, "_build_model_inputs", return_value=([], {})
+                mgr, "_get_structured_chat_model", return_value=mock_structured
             ),
+            patch.object(mgr, "_build_model_inputs", return_value=([], {})),
         ):
             result = mgr.generate_summary("Some transcription.", 5)
 
@@ -616,7 +625,9 @@ class TestGenerateSummary:
         mock_structured.invoke.return_value = response
 
         with (
-            patch.object(mgr, "_get_structured_chat_model", return_value=mock_structured),
+            patch.object(
+                mgr, "_get_structured_chat_model", return_value=mock_structured
+            ),
             patch.object(mgr, "_build_model_inputs", return_value=([], {})),
         ):
             result = mgr.generate_summary("Some text.", 3)
@@ -636,7 +647,9 @@ class TestGenerateSummary:
         mock_structured.invoke.return_value = response
 
         with (
-            patch.object(mgr, "_get_structured_chat_model", return_value=mock_structured),
+            patch.object(
+                mgr, "_get_structured_chat_model", return_value=mock_structured
+            ),
             patch.object(mgr, "_build_model_inputs", return_value=([], {})),
         ):
             result = mgr.generate_summary("Some text.", 1)
@@ -651,7 +664,9 @@ class TestGenerateSummary:
         mock_structured.invoke.side_effect = RuntimeError("Connection timeout")
 
         with (
-            patch.object(mgr, "_get_structured_chat_model", return_value=mock_structured),
+            patch.object(
+                mgr, "_get_structured_chat_model", return_value=mock_structured
+            ),
             patch.object(mgr, "_build_model_inputs", return_value=([], {})),
         ):
             result = mgr.generate_summary("Some text.", 2)
@@ -684,7 +699,9 @@ class TestGenerateSummary:
         mock_structured.invoke.return_value = response
 
         with (
-            patch.object(mgr, "_get_structured_chat_model", return_value=mock_structured),
+            patch.object(
+                mgr, "_get_structured_chat_model", return_value=mock_structured
+            ),
             patch.object(mgr, "_build_model_inputs", return_value=([], {})),
         ):
             result = mgr.generate_summary("Text.", 1)
@@ -711,7 +728,9 @@ class TestGenerateSummary:
         mock_structured.invoke.return_value = response
 
         with (
-            patch.object(mgr, "_get_structured_chat_model", return_value=mock_structured),
+            patch.object(
+                mgr, "_get_structured_chat_model", return_value=mock_structured
+            ),
             patch.object(mgr, "_build_model_inputs", return_value=([], {})),
             patch("api.summary_api.get_token_tracker") as mock_tt,
         ):
@@ -742,7 +761,9 @@ class TestGenerateSummary:
         mock_structured.invoke.return_value = response
 
         with (
-            patch.object(mgr, "_get_structured_chat_model", return_value=mock_structured),
+            patch.object(
+                mgr, "_get_structured_chat_model", return_value=mock_structured
+            ),
             patch.object(mgr, "_build_model_inputs", return_value=([], {})),
         ):
             result = mgr.generate_summary("Text.", 1)

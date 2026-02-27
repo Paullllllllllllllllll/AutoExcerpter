@@ -9,10 +9,14 @@ from __future__ import annotations
 
 import logging
 import sys
-from typing import Optional
 
 # Public API
-__all__ = ["setup_logger", "set_log_level", "setup_console_handler", "setup_file_handler"]
+__all__ = [
+    "setup_logger",
+    "set_log_level",
+    "setup_console_handler",
+    "setup_file_handler",
+]
 
 # ============================================================================
 # Constants
@@ -30,8 +34,8 @@ DEFAULT_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 def setup_logger(
     name: str,
     level: int = DEFAULT_LOG_LEVEL,
-    format_string: Optional[str] = None,
-    date_format: Optional[str] = None,
+    format_string: str | None = None,
+    date_format: str | None = None,
     verbose: bool = False,
 ) -> logging.Logger:
     """
@@ -68,17 +72,17 @@ def setup_logger(
         console_handler = logging.StreamHandler(sys.stderr)
         console_level = level if verbose else USER_LOG_LEVEL
         console_handler.setLevel(console_level)
-        
+
         # Use simple format for console, detailed for files
         console_formatter = logging.Formatter(
             fmt=SIMPLE_FORMAT,
             datefmt=date_format or DEFAULT_DATE_FORMAT,
         )
         console_handler.setFormatter(console_formatter)
-        
+
         logger.addHandler(console_handler)
         logger.setLevel(level)
-        
+
         # Prevent propagation to avoid duplicate logs
         logger.propagate = False
 
@@ -95,7 +99,7 @@ def setup_console_handler(
 ) -> None:
     """
     Add or update console handler for a logger.
-    
+
     Args:
         logger: Logger instance to modify
         level: Logging level for console output
@@ -105,14 +109,14 @@ def setup_console_handler(
     for handler in logger.handlers[:]:
         if isinstance(handler, logging.StreamHandler) and handler.stream == sys.stderr:
             logger.removeHandler(handler)
-    
+
     console_handler = logging.StreamHandler(sys.stderr)
     console_handler.setLevel(level)
-    
+
     format_str = SIMPLE_FORMAT if simple_format else DETAILED_FORMAT
     formatter = logging.Formatter(fmt=format_str, datefmt=DEFAULT_DATE_FORMAT)
     console_handler.setFormatter(formatter)
-    
+
     logger.addHandler(console_handler)
 
 
@@ -123,21 +127,21 @@ def setup_file_handler(
 ) -> None:
     """
     Add file handler to logger for detailed logging.
-    
+
     Args:
         logger: Logger instance to modify
         log_file_path: Path to log file
         level: Logging level for file output (default: DEBUG for full details)
     """
-    file_handler = logging.FileHandler(log_file_path, mode='a', encoding='utf-8')
+    file_handler = logging.FileHandler(log_file_path, mode="a", encoding="utf-8")
     file_handler.setLevel(level)
-    
+
     formatter = logging.Formatter(
         fmt=DETAILED_FORMAT,
         datefmt=DEFAULT_DATE_FORMAT,
     )
     file_handler.setFormatter(formatter)
-    
+
     logger.addHandler(file_handler)
 
 

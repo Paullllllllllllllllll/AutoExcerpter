@@ -62,23 +62,52 @@ class TestIsPdfFile:
 class TestIsSupportedImage:
     """Tests for is_supported_image()."""
 
-    @pytest.mark.parametrize("ext", [
-        ".jpg", ".jpeg", ".png", ".tiff", ".tif", ".bmp", ".gif", ".webp",
-    ])
+    @pytest.mark.parametrize(
+        "ext",
+        [
+            ".jpg",
+            ".jpeg",
+            ".png",
+            ".tiff",
+            ".tif",
+            ".bmp",
+            ".gif",
+            ".webp",
+        ],
+    )
     def test_supported_extensions(self, ext: str):
         """All supported image extensions are recognized."""
         assert is_supported_image(Path(f"image{ext}")) is True
 
-    @pytest.mark.parametrize("ext", [
-        ".JPG", ".JPEG", ".PNG", ".TIFF", ".TIF", ".BMP", ".GIF", ".WEBP",
-    ])
+    @pytest.mark.parametrize(
+        "ext",
+        [
+            ".JPG",
+            ".JPEG",
+            ".PNG",
+            ".TIFF",
+            ".TIF",
+            ".BMP",
+            ".GIF",
+            ".WEBP",
+        ],
+    )
     def test_supported_uppercase(self, ext: str):
         """Uppercase image extensions are recognized (case-insensitive)."""
         assert is_supported_image(Path(f"image{ext}")) is True
 
-    @pytest.mark.parametrize("ext", [
-        ".pdf", ".txt", ".doc", ".svg", ".ico", ".psd", ".raw",
-    ])
+    @pytest.mark.parametrize(
+        "ext",
+        [
+            ".pdf",
+            ".txt",
+            ".doc",
+            ".svg",
+            ".ico",
+            ".psd",
+            ".raw",
+        ],
+    )
     def test_unsupported_extensions(self, ext: str):
         """Unsupported extensions are rejected."""
         assert is_supported_image(Path(f"file{ext}")) is False
@@ -172,10 +201,12 @@ class TestBuildImageFolderItems:
         img_a.touch()
         img_b.touch()
 
-        result = _build_image_folder_items({
-            folder_a: [img_a],
-            folder_b: [img_b],
-        })
+        result = _build_image_folder_items(
+            {
+                folder_a: [img_a],
+                folder_b: [img_b],
+            }
+        )
 
         assert len(result) == 2
         paths = {item.path for item in result}

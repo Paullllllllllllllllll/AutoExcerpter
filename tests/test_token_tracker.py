@@ -91,15 +91,23 @@ class TestDailyTokenTracker:
 
 
 class TestGetTokenTrackerSingleton:
-    def test_get_token_tracker_returns_singleton_and_uses_config(self, tmp_path: Path, monkeypatch):
+    def test_get_token_tracker_returns_singleton_and_uses_config(
+        self, tmp_path: Path, monkeypatch
+    ):
         # Reset singleton state
         monkeypatch.setattr(token_tracker, "_tracker_instance", None)
 
         # Ensure we don't write to cwd
-        monkeypatch.setattr(token_tracker, "_TOKEN_TRACKER_FILE", tmp_path / "state.json")
+        monkeypatch.setattr(
+            token_tracker, "_TOKEN_TRACKER_FILE", tmp_path / "state.json"
+        )
 
-        monkeypatch.setattr(token_tracker.config, "DAILY_TOKEN_LIMIT", 123, raising=False)
-        monkeypatch.setattr(token_tracker.config, "DAILY_TOKEN_LIMIT_ENABLED", True, raising=False)
+        monkeypatch.setattr(
+            token_tracker.config, "DAILY_TOKEN_LIMIT", 123, raising=False
+        )
+        monkeypatch.setattr(
+            token_tracker.config, "DAILY_TOKEN_LIMIT_ENABLED", True, raising=False
+        )
 
         t1 = token_tracker.get_token_tracker()
         t2 = token_tracker.get_token_tracker()

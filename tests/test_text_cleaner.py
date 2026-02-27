@@ -41,17 +41,17 @@ class TestNormalizeUnicode:
 
     def test_soft_hyphen_removed(self):
         """Soft hyphens are removed."""
-        text = "test\u00ADword"
+        text = "test\u00adword"
         assert normalize_unicode(text) == "testword"
 
     def test_zero_width_space_removed(self):
         """Zero-width spaces are removed."""
-        text = "test\u200Bword"
+        text = "test\u200bword"
         assert normalize_unicode(text) == "testword"
 
     def test_bom_removed(self):
         """Byte order marks are removed."""
-        text = "\uFEFFstart of text"
+        text = "\ufeffstart of text"
         assert normalize_unicode(text) == "start of text"
 
     def test_word_joiner_removed(self):
@@ -372,15 +372,15 @@ class TestCleanTranscription:
 
     def test_disabled_returns_unchanged(self):
         """Disabled cleaning returns text unchanged."""
-        text = "Test\u00AD text"  # With soft hyphen
+        text = "Test\u00ad text"  # With soft hyphen
         config = {"enabled": False}
         assert clean_transcription(text, config) == text
 
     def test_unicode_normalization_applied(self):
         """Unicode normalization is applied by default."""
-        text = "test\u00ADword"
+        text = "test\u00adword"
         result = clean_transcription(text)
-        assert "\u00AD" not in result
+        assert "\u00ad" not in result
 
     def test_latex_fixing_applied(self):
         """LaTeX fixing is applied by default."""
@@ -434,7 +434,7 @@ class TestGetTextCleaningConfig:
             mock_loader = MagicMock()
             mock_loader.get_image_processing_config.return_value = {}
             mock.return_value = mock_loader
-            
+
             result = get_text_cleaning_config()
             assert isinstance(result, dict)
 
@@ -444,7 +444,7 @@ class TestGetTextCleaningConfig:
             mock_loader = MagicMock()
             mock_loader.get_image_processing_config.return_value = {}
             mock.return_value = mock_loader
-            
+
             result = get_text_cleaning_config()
             assert "enabled" in result
             assert "unicode_normalization" in result

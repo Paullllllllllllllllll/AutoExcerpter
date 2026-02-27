@@ -10,7 +10,7 @@ import json
 import os
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, Generator
+from typing import Any, Generator
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -72,7 +72,9 @@ def sample_image_file(temp_dir: Path, sample_rgb_image: Image.Image) -> Path:
 
 
 @pytest.fixture
-def sample_png_with_transparency(temp_dir: Path, sample_rgba_image: Image.Image) -> Path:
+def sample_png_with_transparency(
+    temp_dir: Path, sample_rgba_image: Image.Image
+) -> Path:
     """Create a PNG file with transparency for testing."""
     image_path = temp_dir / "test_transparent.png"
     sample_rgba_image.save(image_path, "PNG")
@@ -83,7 +85,7 @@ def sample_png_with_transparency(temp_dir: Path, sample_rgba_image: Image.Image)
 # Configuration Fixtures
 # ============================================================================
 @pytest.fixture
-def mock_image_processing_config() -> Dict[str, Any]:
+def mock_image_processing_config() -> dict[str, Any]:
     """Return a mock image processing configuration."""
     return {
         "api_image_processing": {
@@ -139,7 +141,7 @@ def mock_image_processing_config() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def mock_concurrency_config() -> Dict[str, Any]:
+def mock_concurrency_config() -> dict[str, Any]:
     """Return a mock concurrency configuration."""
     return {
         "image_processing": {
@@ -163,7 +165,7 @@ def mock_concurrency_config() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def mock_model_config() -> Dict[str, Any]:
+def mock_model_config() -> dict[str, Any]:
     """Return a mock model configuration."""
     return {
         "transcription_model": {
@@ -179,9 +181,9 @@ def mock_model_config() -> Dict[str, Any]:
 
 @pytest.fixture
 def mock_config_loader(
-    mock_image_processing_config: Dict[str, Any],
-    mock_concurrency_config: Dict[str, Any],
-    mock_model_config: Dict[str, Any],
+    mock_image_processing_config: dict[str, Any],
+    mock_concurrency_config: dict[str, Any],
+    mock_model_config: dict[str, Any],
 ) -> MagicMock:
     """Create a mock ConfigLoader with predefined configurations."""
     mock_loader = MagicMock()
@@ -207,7 +209,7 @@ def sample_citations() -> list[str]:
 
 
 @pytest.fixture
-def mock_openalex_response() -> Dict[str, Any]:
+def mock_openalex_response() -> dict[str, Any]:
     """Return a mock OpenAlex API response."""
     return {
         "id": "https://openalex.org/W12345",
@@ -229,12 +231,15 @@ def mock_openalex_response() -> Dict[str, Any]:
 @pytest.fixture
 def mock_api_keys():
     """Set up mock API keys for testing."""
-    with patch.dict(os.environ, {
-        "OPENAI_API_KEY": "test-openai-key",
-        "ANTHROPIC_API_KEY": "test-anthropic-key",
-        "GOOGLE_API_KEY": "test-google-key",
-        "OPENROUTER_API_KEY": "test-openrouter-key",
-    }):
+    with patch.dict(
+        os.environ,
+        {
+            "OPENAI_API_KEY": "test-openai-key",
+            "ANTHROPIC_API_KEY": "test-anthropic-key",
+            "GOOGLE_API_KEY": "test-google-key",
+            "OPENROUTER_API_KEY": "test-openrouter-key",
+        },
+    ):
         yield
 
 
@@ -259,9 +264,9 @@ def sample_text_with_unicode_issues() -> str:
     """Return sample text with Unicode normalization issues."""
     return (
         "Café\u0301 "  # Combining acute accent (should normalize)
-        "test\u00AD"   # Soft hyphen (should be removed)
-        "\uFEFFstart"  # BOM (should be removed)
-        " \u200Bword"  # Zero-width space (should be removed)
+        "test\u00ad"  # Soft hyphen (should be removed)
+        "\ufeffstart"  # BOM (should be removed)
+        " \u200bword"  # Zero-width space (should be removed)
     )
 
 
@@ -271,5 +276,3 @@ def sample_hyphenated_text() -> str:
     return """The quick brown fox jumped over the lazy dog. This is a demon-
 stration of hyphen-
 ation at line breaks that should be merged back together."""
-
-

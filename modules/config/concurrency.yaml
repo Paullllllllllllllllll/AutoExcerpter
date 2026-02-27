@@ -41,7 +41,7 @@ api_requests:
   # ---------------------------------------------------------------------------
   transcription:
     concurrency_limit: 1500  # Parallel API requests (OpenAI: 50-150, Anthropic: 5-10)
-    delay_between_tasks: 0.1  # Stagger requests to smooth rate limit usage
+    delay_between_tasks: 0  # Stagger requests to smooth rate limit usage
     
     # OpenAI service tier: 'default' | 'flex' | 'priority'
     # flex = cheaper but may queue; priority = fastest but expensive
@@ -52,7 +52,7 @@ api_requests:
   # ---------------------------------------------------------------------------
   summary:
     concurrency_limit: 1500  # Lower than transcription (summaries are larger)
-    delay_between_tasks: 0.1
+    delay_between_tasks: 0
     service_tier: flex  # Cost optimization for batch summarization
 
 # =============================================================================

@@ -10,7 +10,7 @@ Covers:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 from unittest.mock import patch, MagicMock, PropertyMock
 
 import pytest
@@ -35,7 +35,7 @@ def output_dir(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def mock_img_cfg() -> Dict[str, Any]:
+def mock_img_cfg() -> dict[str, Any]:
     """Return a default image processing config dict for OpenAI."""
     return {
         "target_dpi": 300,
@@ -60,7 +60,9 @@ def _build_mock_pixmap(width: int, height: int, mode: str = "RGB") -> MagicMock:
     return mock_pix
 
 
-def _build_mock_pdf_document(num_pages: int, pix_width: int = 100, pix_height: int = 150, grayscale: bool = True):
+def _build_mock_pdf_document(
+    num_pages: int, pix_width: int = 100, pix_height: int = 150, grayscale: bool = True
+):
     """Build a mock fitz.Document with the given number of pages."""
     mock_doc = MagicMock()
     mock_doc.__len__ = MagicMock(return_value=num_pages)
@@ -130,7 +132,9 @@ class TestExtractPdfPagesToImages:
         mock_fitz.open.return_value = mock_doc
 
         cfg_loader = MagicMock()
-        cfg_loader.get_image_processing_config.return_value = {"api_image_processing": {}}
+        cfg_loader.get_image_processing_config.return_value = {
+            "api_image_processing": {}
+        }
         mock_loader.return_value = cfg_loader
 
         pdf_path = output_dir.parent / "empty.pdf"

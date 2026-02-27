@@ -134,7 +134,9 @@ class TestSaveState:
         # Use a directory path as the state file so that writing fails
         bad_path = tmp_path / "nonexistent_dir" / "subdir" / "state.json"
         tracker = DailyTokenTracker(
-            daily_limit=100, enabled=True, state_file=bad_path,
+            daily_limit=100,
+            enabled=True,
+            state_file=bad_path,
         )
         # Manually call save; should not raise
         tracker._save_state()
@@ -378,8 +380,12 @@ class TestGetTokenTrackerSingleton:
     def test_first_call_creates_instance(self, monkeypatch, tmp_path: Path):
         """First call creates a new DailyTokenTracker instance."""
         monkeypatch.setattr(token_tracker, "_TOKEN_TRACKER_FILE", tmp_path / "s.json")
-        monkeypatch.setattr(token_tracker.config, "DAILY_TOKEN_LIMIT", 500, raising=False)
-        monkeypatch.setattr(token_tracker.config, "DAILY_TOKEN_LIMIT_ENABLED", True, raising=False)
+        monkeypatch.setattr(
+            token_tracker.config, "DAILY_TOKEN_LIMIT", 500, raising=False
+        )
+        monkeypatch.setattr(
+            token_tracker.config, "DAILY_TOKEN_LIMIT_ENABLED", True, raising=False
+        )
 
         t = token_tracker.get_token_tracker()
         assert isinstance(t, DailyTokenTracker)
@@ -389,8 +395,12 @@ class TestGetTokenTrackerSingleton:
     def test_second_call_returns_same_instance(self, monkeypatch, tmp_path: Path):
         """Second call returns the same singleton instance."""
         monkeypatch.setattr(token_tracker, "_TOKEN_TRACKER_FILE", tmp_path / "s.json")
-        monkeypatch.setattr(token_tracker.config, "DAILY_TOKEN_LIMIT", 500, raising=False)
-        monkeypatch.setattr(token_tracker.config, "DAILY_TOKEN_LIMIT_ENABLED", True, raising=False)
+        monkeypatch.setattr(
+            token_tracker.config, "DAILY_TOKEN_LIMIT", 500, raising=False
+        )
+        monkeypatch.setattr(
+            token_tracker.config, "DAILY_TOKEN_LIMIT_ENABLED", True, raising=False
+        )
 
         t1 = token_tracker.get_token_tracker()
         t2 = token_tracker.get_token_tracker()

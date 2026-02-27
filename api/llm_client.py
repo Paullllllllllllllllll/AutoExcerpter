@@ -26,14 +26,12 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
-from typing import Any, Literal, TYPE_CHECKING
+from typing import Any, Literal
 
 from langchain_core.language_models import BaseChatModel
 
 from api.model_capabilities import (
-    ProviderCapabilities,
     detect_capabilities,
-    detect_provider as _detect_provider_from_caps,
 )
 from modules.logger import setup_logger
 
@@ -75,26 +73,21 @@ SUPPORTED_PROVIDERS: dict[str, dict[str, Any]] = {
     },
 }
 
-# Backward-compatible re-exports from api.model_capabilities.
-# New code should import directly from api.model_capabilities.
-MODEL_CAPABILITIES = None  # Removed; use detect_capabilities() instead
-
 
 def get_model_capabilities(model_name: str) -> dict[str, bool]:
-    """Backward-compatible wrapper around detect_capabilities().
-    
-    Returns a dict[str, bool] that mirrors the old MODEL_CAPABILITIES format
-    so existing callers (base_llm_client, transcribe_api, tests) continue to work.
-    
-    New code should use ``detect_capabilities()`` from ``api.model_capabilities``
-    which returns a typed ``ProviderCapabilities`` dataclass.
+    """Return a dict of capability flags for the given model.
+
+    Thin wrapper around ``detect_capabilities()`` that returns a flat
+    ``dict[str, bool]`` consumed by ``base_llm_client``, ``transcribe_api``,
+    and the test suite.
     """
     caps = detect_capabilities(model_name)
     return {
         "reasoning": caps.is_reasoning_model,
         "text_verbosity": caps.supports_text_verbosity,
         "thinking": caps.is_reasoning_model and caps.provider_name == "google",
-        "extended_thinking": caps.is_reasoning_model and caps.provider_name == "anthropic",
+        "extended_thinking": caps.is_reasoning_model
+        and caps.provider_name == "anthropic",
         "temperature": caps.supports_temperature,
         "max_tokens": True,  # Always allow setting max tokens
         "structured_output": caps.supports_structured_output,
@@ -105,7 +98,7 @@ def get_model_capabilities(model_name: str) -> dict[str, bool]:
 @dataclass
 class LLMConfig:
     """Configuration for LLM client initialization.
-    
+
     Attributes:
         model: Model identifier (e.g., "gpt-5-mini", "claude-sonnet-4-5-20250929")
         provider: Provider name ("openai", "anthropic", "google", "openrouter")
@@ -117,6 +110,7 @@ class LLMConfig:
         service_tier: OpenAI service tier ("flex", "default", "auto")
         extra_kwargs: Additional provider-specific parameters
     """
+
     model: str
     provider: ProviderType | None = None
     api_key: str | None = None
@@ -126,23 +120,25 @@ class LLMConfig:
     max_tokens: int | None = None
     service_tier: str | None = None  # OpenAI-specific: "flex", "default", "auto"
     extra_kwargs: dict[str, Any] = field(default_factory=dict)
-    
+
     def __post_init__(self) -> None:
         """Infer provider from model name if not specified."""
         if self.provider is None:
             self.provider = _infer_provider(self.model)
-            logger.debug(f"Inferred provider '{self.provider}' for model '{self.model}'")
+            logger.debug(
+                f"Inferred provider '{self.provider}' for model '{self.model}'"
+            )
 
 
 def _infer_provider(model: str) -> ProviderType:
     """Infer the provider from the model name.
-    
+
     Args:
         model: Model identifier string
-        
+
     Returns:
         Inferred provider name
-        
+
     Raises:
         ValueError: If provider cannot be inferred
     """
@@ -151,100 +147,102 @@ def _infer_provider(model: str) -> ProviderType:
         provider = model.split(":")[0].lower()
         if provider in SUPPORTED_PROVIDERS:
             return provider  # type: ignore
-    
+
     # Check model name patterns
     model_lower = model.lower()
-    
+
     for provider_name, provider_info in SUPPORTED_PROVIDERS.items():
         prefixes = provider_info.get("model_prefixes", [])
         for prefix in prefixes:
             if model_lower.startswith(prefix):
                 return provider_name  # type: ignore
-    
+
     # Default to OpenAI for unknown models
-    logger.warning(f"Could not infer provider for model '{model}', defaulting to 'openai'")
+    logger.warning(
+        f"Could not infer provider for model '{model}', defaulting to 'openai'"
+    )
     return "openai"
 
 
 def _get_api_key(provider: ProviderType, config_key: str | None = None) -> str:
     """Get API key for the specified provider.
-    
+
     Args:
         provider: Provider name
         config_key: Optional API key from configuration
-        
+
     Returns:
         API key string
-        
+
     Raises:
         EnvironmentError: If API key is not found
     """
     if config_key:
         return config_key
-    
+
     provider_info = SUPPORTED_PROVIDERS.get(provider, {})
     env_key = provider_info.get("env_key", f"{provider.upper()}_API_KEY")
-    
+
     api_key = os.environ.get(env_key)
     if not api_key:
         raise EnvironmentError(
             f"API key not found for provider '{provider}'. "
             f"Please set the {env_key} environment variable."
         )
-    
+
     return api_key
 
 
 def get_chat_model(config: LLMConfig) -> BaseChatModel:
     """Create a LangChain chat model instance for the specified configuration.
-    
+
     This function creates a provider-appropriate chat model using LangChain's
     unified interface. It handles:
     - Provider detection and initialization
     - API key resolution
     - Timeout and retry configuration
     - Provider-specific parameters
-    
+
     Args:
         config: LLM configuration object
-        
+
     Returns:
         Configured BaseChatModel instance
-        
+
     Raises:
         ImportError: If required provider package is not installed
         EnvironmentError: If API key is not found
         ValueError: If provider is not supported
     """
     provider = config.provider or _infer_provider(config.model)
-    
+
     if provider not in SUPPORTED_PROVIDERS:
         raise ValueError(f"Unsupported provider: {provider}")
-    
+
     # Get API key
     api_key = _get_api_key(provider, config.api_key)
-    
+
     # Parse model name (remove provider prefix if present)
     model_name = config.model
     if ":" in model_name:
         model_name = model_name.split(":", 1)[1]
-    
+
     # Build common kwargs
     kwargs: dict[str, Any] = {
         "model": model_name,
         "timeout": config.timeout,
         "max_retries": config.max_retries,
     }
-    
+
     if config.temperature is not None:
         kwargs["temperature"] = config.temperature
-    
+
     if config.max_tokens is not None:
         kwargs["max_tokens"] = config.max_tokens
-    
+
     # Add extra kwargs
     kwargs.update(config.extra_kwargs)
-    
+
     # Provider-specific initialization
     if provider == "openai":
         return _create_openai_model(api_key, kwargs, config.service_tier)
@@ -259,12 +257,12 @@ def get_chat_model(config: LLMConfig) -> BaseChatModel:
 
 
 def _create_openai_model(
-    api_key: str, 
-    kwargs: dict[str, Any], 
+    api_key: str,
+    kwargs: dict[str, Any],
     service_tier: str | None = None,
 ) -> BaseChatModel:
     """Create an OpenAI chat model instance.
-    
+
     Uses LangChain's built-in retry with exponential backoff via max_retries parameter.
     """
     try:
@@ -274,14 +272,16 @@ def _create_openai_model(
             "langchain-openai package is required for OpenAI models. "
             "Install with: pip install langchain-openai"
         )
-    
+
     kwargs["api_key"] = api_key
-    
+
     # Add service tier if specified (OpenAI-specific feature)
     if service_tier:
         kwargs["service_tier"] = service_tier
-    
-    logger.debug(f"Creating OpenAI model: {kwargs.get('model')} (max_retries={kwargs.get('max_retries', 2)})")
+
+    logger.debug(
+        f"Creating OpenAI model: {kwargs.get('model')} (max_retries={kwargs.get('max_retries', 2)})"
+    )
     return ChatOpenAI(**kwargs)
 
 
@@ -294,13 +294,13 @@ def _create_anthropic_model(api_key: str, kwargs: dict[str, Any]) -> BaseChatMod
             "langchain-anthropic package is required for Anthropic models. "
             "Install with: pip install langchain-anthropic"
         )
-    
+
     kwargs["api_key"] = api_key
-    
+
     # Anthropic uses 'max_tokens' instead of 'max_output_tokens'
     if "max_output_tokens" in kwargs:
         kwargs["max_tokens"] = kwargs.pop("max_output_tokens")
-    
+
     logger.debug(f"Creating Anthropic model: {kwargs.get('model')}")
     return ChatAnthropic(**kwargs)
 
@@ -314,13 +314,13 @@ def _create_google_model(api_key: str, kwargs: dict[str, Any]) -> BaseChatModel:
             "langchain-google-genai package is required for Google models. "
             "Install with: pip install langchain-google-genai"
         )
-    
+
     kwargs["google_api_key"] = api_key
-    
+
     # Google uses different parameter names
     if "max_tokens" in kwargs:
         kwargs["max_output_tokens"] = kwargs.pop("max_tokens")
-    
+
     logger.debug(f"Creating Google model: {kwargs.get('model')}")
     return ChatGoogleGenerativeAI(**kwargs)
 
@@ -334,26 +334,26 @@ def _create_openrouter_model(api_key: str, kwargs: dict[str, Any]) -> BaseChatMo
             "langchain-openai package is required for OpenRouter models. "
             "Install with: pip install langchain-openai"
         )
-    
+
     kwargs["api_key"] = api_key
     kwargs["base_url"] = SUPPORTED_PROVIDERS["openrouter"]["base_url"]
-    
+
     # OpenRouter recommends including site info in headers
     default_headers = kwargs.get("default_headers", {})
     default_headers.setdefault("HTTP-Referer", "https://github.com/autoexcerpter")
     default_headers.setdefault("X-Title", "AutoExcerpter")
     kwargs["default_headers"] = default_headers
-    
+
     logger.debug(f"Creating OpenRouter model: {kwargs.get('model')}")
     return ChatOpenAI(**kwargs)
 
 
 def get_provider_for_model(model: str) -> ProviderType:
     """Get the provider name for a given model.
-    
+
     Args:
         model: Model identifier string
-        
+
     Returns:
         Provider name
     """
@@ -362,10 +362,10 @@ def get_provider_for_model(model: str) -> ProviderType:
 
 def is_provider_available(provider: ProviderType) -> bool:
     """Check if a provider's API key is available.
-    
+
     Args:
         provider: Provider name
-        
+
     Returns:
         True if API key is available
     """
@@ -376,7 +376,7 @@ def is_provider_available(provider: ProviderType) -> bool:
 
 def get_available_providers() -> list[ProviderType]:
     """Get a list of providers with available API keys.
-    
+
     Returns:
         List of available provider names
     """

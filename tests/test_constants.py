@@ -80,7 +80,7 @@ class TestAPIConfigurationDefaults:
         """DEFAULT_RATE_LIMITS has correct structure."""
         assert isinstance(DEFAULT_RATE_LIMITS, list)
         assert len(DEFAULT_RATE_LIMITS) > 0
-        
+
         for limit in DEFAULT_RATE_LIMITS:
             assert isinstance(limit, tuple)
             assert len(limit) == 2

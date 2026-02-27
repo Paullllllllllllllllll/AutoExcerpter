@@ -54,7 +54,7 @@ class TestConfigLoaderInit:
     def test_init_creates_empty_configs(self):
         """Initialization creates empty config dictionaries."""
         loader = ConfigLoader()
-        
+
         assert loader._image_processing == {}
         assert loader._concurrency == {}
         assert loader._model == {}
@@ -62,7 +62,7 @@ class TestConfigLoaderInit:
     def test_is_loaded_false_initially(self):
         """is_loaded returns False before loading."""
         loader = ConfigLoader()
-        
+
         assert loader.is_loaded() is False
 
 
@@ -73,17 +73,17 @@ class TestConfigLoaderLoadConfigs:
         """load_configs populates configuration dictionaries."""
         loader = ConfigLoader()
         loader.load_configs()
-        
+
         # At least one config should be loaded
         assert loader.is_loaded() is True
 
     def test_load_configs_handles_missing_file(self, temp_dir: Path):
         """load_configs handles missing config files gracefully."""
         loader = ConfigLoader()
-        
+
         with patch.object(loader, "_load_yaml_config", return_value={}):
             loader.load_configs()
-        
+
         # Should not raise, should have empty configs
         assert loader._image_processing == {}
 
@@ -92,36 +92,36 @@ class TestConfigLoaderLoadConfigs:
         # Create a temporary config file
         config_path = temp_dir / "test_config.yaml"
         config_path.write_text("key: value\nnested:\n  subkey: subvalue")
-        
+
         loader = ConfigLoader()
-        
+
         with patch("modules.config_loader.CONFIG_DIR", temp_dir):
             result = loader._load_yaml_config("test_config.yaml")
-        
+
         assert result == {"key": "value", "nested": {"subkey": "subvalue"}}
 
     def test_load_yaml_config_handles_invalid_yaml(self, temp_dir: Path):
         """_load_yaml_config handles invalid YAML gracefully."""
         config_path = temp_dir / "invalid.yaml"
         config_path.write_text("key: [unclosed bracket")
-        
+
         loader = ConfigLoader()
-        
+
         with patch("modules.config_loader.CONFIG_DIR", temp_dir):
             result = loader._load_yaml_config("invalid.yaml")
-        
+
         assert result == {}
 
     def test_load_yaml_config_handles_non_dict(self, temp_dir: Path):
         """_load_yaml_config handles non-dict YAML content."""
         config_path = temp_dir / "list.yaml"
         config_path.write_text("- item1\n- item2")
-        
+
         loader = ConfigLoader()
-        
+
         with patch("modules.config_loader.CONFIG_DIR", temp_dir):
             result = loader._load_yaml_config("list.yaml")
-        
+
         assert result == {}
 
 
@@ -132,9 +132,9 @@ class TestConfigLoaderGetters:
         """get_image_processing_config returns copy of config."""
         loader = ConfigLoader()
         loader._image_processing = {"key": "value"}
-        
+
         result = loader.get_image_processing_config()
-        
+
         assert result == {"key": "value"}
         # Should be a copy
         result["new_key"] = "new_value"
@@ -144,18 +144,18 @@ class TestConfigLoaderGetters:
         """get_concurrency_config returns copy of config."""
         loader = ConfigLoader()
         loader._concurrency = {"limit": 100}
-        
+
         result = loader.get_concurrency_config()
-        
+
         assert result == {"limit": 100}
 
     def test_get_model_config(self):
         """get_model_config returns copy of config."""
         loader = ConfigLoader()
         loader._model = {"name": "gpt-5"}
-        
+
         result = loader.get_model_config()
-        
+
         assert result == {"name": "gpt-5"}
 
 
@@ -208,31 +208,34 @@ class TestGetConfigLoader:
         """Returns a ConfigLoader instance."""
         # Reset singleton for test
         import modules.config_loader as config_module
+
         config_module._config_loader_instance = None
-        
+
         loader = get_config_loader()
-        
+
         assert isinstance(loader, ConfigLoader)
 
     def test_returns_same_instance(self):
         """Returns same instance on repeated calls."""
         # Reset singleton for test
         import modules.config_loader as config_module
+
         config_module._config_loader_instance = None
-        
+
         loader1 = get_config_loader()
         loader2 = get_config_loader()
-        
+
         assert loader1 is loader2
 
     def test_instance_is_loaded(self):
         """Singleton instance has configs loaded."""
         # Reset singleton for test
         import modules.config_loader as config_module
+
         config_module._config_loader_instance = None
-        
+
         loader = get_config_loader()
-        
+
         assert loader.is_loaded() is True
 
 
@@ -243,9 +246,9 @@ class TestConfigLoaderIntegration:
         """Loads actual image_processing.yaml file."""
         loader = ConfigLoader()
         loader.load_configs()
-        
+
         config = loader.get_image_processing_config()
-        
+
         # Should have some expected keys (if file exists)
         if config:
             assert isinstance(config, dict)
@@ -254,9 +257,9 @@ class TestConfigLoaderIntegration:
         """Loads actual concurrency.yaml file."""
         loader = ConfigLoader()
         loader.load_configs()
-        
+
         config = loader.get_concurrency_config()
-        
+
         if config:
             assert isinstance(config, dict)
 
@@ -264,8 +267,8 @@ class TestConfigLoaderIntegration:
         """Loads actual model.yaml file."""
         loader = ConfigLoader()
         loader.load_configs()
-        
+
         config = loader.get_model_config()
-        
+
         if config:
             assert isinstance(config, dict)

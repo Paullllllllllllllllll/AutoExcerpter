@@ -20,7 +20,6 @@ from unittest.mock import patch, MagicMock
 import pytest
 import yaml
 
-
 # ---------------------------------------------------------------------------
 # Direct helper function tests
 # ---------------------------------------------------------------------------
@@ -48,6 +47,7 @@ class TestLoadYamlAppConfig:
         config_file.write_text(yaml.dump(yaml_content), encoding="utf-8")
 
         import modules.app_config as ac
+
         monkeypatch.setattr(ac, "_APP_CONFIG_PATH", config_file)
 
         result = _load_yaml_app_config()
@@ -60,6 +60,7 @@ class TestLoadYamlAppConfig:
         nonexistent = tmp_path / "does_not_exist.yaml"
 
         import modules.app_config as ac
+
         monkeypatch.setattr(ac, "_APP_CONFIG_PATH", nonexistent)
 
         result = _load_yaml_app_config()
@@ -71,6 +72,7 @@ class TestLoadYamlAppConfig:
         bad_yaml.write_text(":::not: valid: yaml: [[[", encoding="utf-8")
 
         import modules.app_config as ac
+
         monkeypatch.setattr(ac, "_APP_CONFIG_PATH", bad_yaml)
 
         result = _load_yaml_app_config()
@@ -82,6 +84,7 @@ class TestLoadYamlAppConfig:
         list_yaml.write_text("- item1\n- item2\n", encoding="utf-8")
 
         import modules.app_config as ac
+
         monkeypatch.setattr(ac, "_APP_CONFIG_PATH", list_yaml)
 
         result = _load_yaml_app_config()

@@ -16,20 +16,20 @@ ModelType = Literal["openai", "google", "anthropic"]
 
 def detect_model_type(provider: str, model_name: str | None = None) -> ModelType:
     """Detect the underlying model type from provider and model name.
-    
+
     This allows correct preprocessing even when using models via OpenRouter.
     For example, 'google/gemini-2.5-flash' via OpenRouter should use Google config.
-    
+
     Args:
         provider: The LLM provider name (e.g., 'openai', 'anthropic', 'google', 'openrouter')
         model_name: The model name (e.g., 'gpt-4o', 'claude-3-opus', 'gemini-2.5-flash')
-    
+
     Returns:
         Model type: 'google', 'anthropic', or 'openai'
     """
     provider = provider.lower()
     model_name = model_name.lower() if model_name else ""
-    
+
     # Direct providers take precedence
     if provider == "google":
         return "google"
@@ -37,7 +37,7 @@ def detect_model_type(provider: str, model_name: str | None = None) -> ModelType
         return "anthropic"
     if provider == "openai":
         return "openai"
-    
+
     # For OpenRouter or unknown providers, detect from model name
     if model_name:
         # Google models
@@ -49,17 +49,17 @@ def detect_model_type(provider: str, model_name: str | None = None) -> ModelType
         # OpenAI models
         if any(x in model_name for x in ["gpt-", "o1", "o3", "o4", "openai/"]):
             return "openai"
-    
+
     # Default to OpenAI-style config
     return "openai"
 
 
 def get_image_config_section_name(model_type: ModelType) -> str:
     """Get the image processing config section name for a model type.
-    
+
     Args:
         model_type: The model type ('google', 'anthropic', or 'openai')
-    
+
     Returns:
         Config section name (e.g., 'google_image_processing', 'api_image_processing')
     """

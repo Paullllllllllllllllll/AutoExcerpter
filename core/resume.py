@@ -18,11 +18,10 @@ Processing states:
 from __future__ import annotations
 
 import json
-import logging
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable
 
 from modules.logger import setup_logger
 from modules.path_utils import create_safe_directory_name, create_safe_log_filename
@@ -32,6 +31,7 @@ logger = setup_logger(__name__)
 
 class ProcessingState(Enum):
     """Represents the processing state of an input item."""
+
     COMPLETE = "complete"
     TRANSCRIPTION_ONLY = "transcription_only"
     PARTIAL = "partial"
@@ -41,13 +41,14 @@ class ProcessingState(Enum):
 @dataclass
 class ResumeResult:
     """Result of a resume check for a single item."""
+
     item_name: str
     state: ProcessingState
-    output_dir: Optional[Path] = None
+    output_dir: Path | None = None
     existing_outputs: list[Path] = field(default_factory=list)
     missing_outputs: list[Path] = field(default_factory=list)
     reason: str = ""
-    completed_page_indices: Optional[Set[int]] = None
+    completed_page_indices: set[int] | None = None
 
 
 class ResumeChecker:
@@ -105,7 +106,7 @@ class ResumeChecker:
         items: list[Any],
         output_dir_func: Callable[[Any], Path],
         name_func: Callable[[Any], str],
-    ) -> Tuple[list[Any], list[ResumeResult]]:
+    ) -> tuple[list[Any], list[ResumeResult]]:
         """Partition items into those that need processing and those to skip.
 
         Args:
@@ -209,7 +210,7 @@ class ResumeChecker:
             reason="no output",
         )
 
-    def _check_partial_log(self, item_name: str, output_dir: Path) -> Optional[Set[int]]:
+    def _check_partial_log(self, item_name: str, output_dir: Path) -> set[int] | None:
         """Check if a partial transcription log exists with completed pages.
 
         Returns:
@@ -230,7 +231,7 @@ class ResumeChecker:
         return load_completed_pages(log_path)
 
 
-def load_completed_pages(log_path: Path) -> Optional[Set[int]]:
+def load_completed_pages(log_path: Path) -> set[int] | None:
     """Parse a transcription JSONL log and return indices of successfully completed pages.
 
     The log format is a JSON array where the first element is the header/metadata
@@ -274,7 +275,7 @@ def load_completed_pages(log_path: Path) -> Optional[Set[int]]:
         return None
 
 
-def _parse_log_entries(raw: str) -> Optional[list[dict]]:
+def _parse_log_entries(raw: str) -> list[dict] | None:
     """Parse log file content, handling both complete and incomplete JSON arrays.
 
     Args:
@@ -308,7 +309,7 @@ def _parse_log_entries(raw: str) -> Optional[list[dict]]:
     return None
 
 
-def load_transcription_results_from_log(log_path: Path) -> Optional[list[dict[str, Any]]]:
+def load_transcription_results_from_log(log_path: Path) -> list[dict[str, Any]] | None:
     """Load full transcription results from a log file for summary-only reprocessing.
 
     Args:
@@ -339,7 +340,9 @@ def load_transcription_results_from_log(log_path: Path) -> Optional[list[dict[st
         return results if results else None
 
     except Exception as exc:
-        logger.warning("Could not load transcription results from %s: %s", log_path, exc)
+        logger.warning(
+            "Could not load transcription results from %s: %s", log_path, exc
+        )
         return None
 
 

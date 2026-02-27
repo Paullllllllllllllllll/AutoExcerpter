@@ -25,27 +25,31 @@ from unittest.mock import patch, MagicMock, call
 
 import pytest
 
-from processors.file_manager import (
-    initialize_log_file,
-    append_to_log,
-    finalize_log_file,
-    write_transcription_to_text,
+from processors.docx_writer import (
     create_docx_summary,
-    create_markdown_summary,
-    sanitize_for_xml,
     sanitize_omml_xml,
     add_math_to_paragraph,
     add_formatted_text_to_paragraph,
     add_hyperlink,
-    _format_page_range,
     _format_page_heading_docx,
+)
+from processors.file_manager import (
+    write_transcription_to_text,
+    sanitize_for_xml,
+    _format_page_range,
     _should_render_bullets,
     _get_structure_types,
+    filter_empty_pages,
+)
+from processors.log_manager import (
+    initialize_log_file,
+    append_to_log,
+    finalize_log_file,
     _close_log_handle,
     _LOG_HANDLES,
     _LOG_HANDLES_GUARD,
-    filter_empty_pages,
 )
+from processors.markdown_writer import create_markdown_summary
 
 
 # ---------------------------------------------------------------------------
@@ -78,9 +82,9 @@ def _clear_log_handles():
 class TestInitializeLogFile:
     """Tests for initialize_log_file()."""
 
-    @patch("processors.file_manager.get_api_concurrency", return_value=(4, 0.05))
-    @patch("processors.file_manager.get_api_timeout", return_value=900)
-    @patch("processors.file_manager.get_service_tier", return_value="flex")
+    @patch("processors.log_manager.get_api_concurrency", return_value=(4, 0.05))
+    @patch("processors.log_manager.get_api_timeout", return_value=900)
+    @patch("processors.log_manager.get_service_tier", return_value="flex")
     def test_creates_log_file_with_header(
         self, mock_tier, mock_timeout, mock_conc, tmp_path: Path
     ):
@@ -109,9 +113,9 @@ class TestInitializeLogFile:
         assert payload["configuration"]["concurrent_requests"] == 8
         assert payload["configuration"]["extraction_dpi"] == 300
 
-    @patch("processors.file_manager.get_api_concurrency", return_value=(4, 0.05))
-    @patch("processors.file_manager.get_api_timeout", return_value=900)
-    @patch("processors.file_manager.get_service_tier", return_value="flex")
+    @patch("processors.log_manager.get_api_concurrency", return_value=(4, 0.05))
+    @patch("processors.log_manager.get_api_timeout", return_value=900)
+    @patch("processors.log_manager.get_service_tier", return_value="flex")
     def test_non_openai_model_service_tier_na(
         self, mock_tier, mock_timeout, mock_conc, tmp_path: Path
     ):
@@ -131,9 +135,9 @@ class TestInitializeLogFile:
         payload = json.loads(content[1:].strip())
         assert payload["configuration"]["service_tier"] == "N/A"
 
-    @patch("processors.file_manager.get_api_concurrency", return_value=(4, 0.05))
-    @patch("processors.file_manager.get_api_timeout", return_value=900)
-    @patch("processors.file_manager.get_service_tier", return_value="flex")
+    @patch("processors.log_manager.get_api_concurrency", return_value=(4, 0.05))
+    @patch("processors.log_manager.get_api_timeout", return_value=900)
+    @patch("processors.log_manager.get_service_tier", return_value="flex")
     def test_returns_false_on_error(
         self, mock_tier, mock_timeout, mock_conc, tmp_path: Path
     ):
@@ -158,9 +162,9 @@ class TestInitializeLogFile:
 class TestAppendToLog:
     """Tests for append_to_log()."""
 
-    @patch("processors.file_manager.get_api_concurrency", return_value=(4, 0.05))
-    @patch("processors.file_manager.get_api_timeout", return_value=900)
-    @patch("processors.file_manager.get_service_tier", return_value="flex")
+    @patch("processors.log_manager.get_api_concurrency", return_value=(4, 0.05))
+    @patch("processors.log_manager.get_api_timeout", return_value=900)
+    @patch("processors.log_manager.get_service_tier", return_value="flex")
     def test_appends_entry_as_json(
         self, mock_tier, mock_timeout, mock_conc, tmp_path: Path
     ):
@@ -201,9 +205,9 @@ class TestAppendToLog:
 class TestFinalizeLogFile:
     """Tests for finalize_log_file()."""
 
-    @patch("processors.file_manager.get_api_concurrency", return_value=(4, 0.05))
-    @patch("processors.file_manager.get_api_timeout", return_value=900)
-    @patch("processors.file_manager.get_service_tier", return_value="flex")
+    @patch("processors.log_manager.get_api_concurrency", return_value=(4, 0.05))
+    @patch("processors.log_manager.get_api_timeout", return_value=900)
+    @patch("processors.log_manager.get_service_tier", return_value="flex")
     def test_closes_json_array(
         self, mock_tier, mock_timeout, mock_conc, tmp_path: Path
     ):
@@ -227,9 +231,9 @@ class TestFinalizeLogFile:
         content = log_path.read_text(encoding="utf-8")
         assert content.strip().endswith("]")
 
-    @patch("processors.file_manager.get_api_concurrency", return_value=(4, 0.05))
-    @patch("processors.file_manager.get_api_timeout", return_value=900)
-    @patch("processors.file_manager.get_service_tier", return_value="flex")
+    @patch("processors.log_manager.get_api_concurrency", return_value=(4, 0.05))
+    @patch("processors.log_manager.get_api_timeout", return_value=900)
+    @patch("processors.log_manager.get_service_tier", return_value="flex")
     def test_full_lifecycle_produces_valid_json(
         self, mock_tier, mock_timeout, mock_conc, tmp_path: Path
     ):
@@ -439,7 +443,9 @@ class TestFormatPageHeadingDocx:
 
     def test_figures_tables_prefix(self):
         """Figures/tables page type adds prefix."""
-        result = _format_page_heading_docx(50, "arabic", ["figures_tables_sources"], False)
+        result = _format_page_heading_docx(
+            50, "arabic", ["figures_tables_sources"], False
+        )
         assert result == "[Figures/Tables] Page 50"
 
 
@@ -487,8 +493,8 @@ class TestGetStructureTypes:
 class TestCreateDocxSummary:
     """Tests for create_docx_summary with mocked python-docx."""
 
-    @patch("processors.file_manager.CitationManager")
-    @patch("processors.file_manager.Document")
+    @patch("processors.docx_writer.CitationManager")
+    @patch("processors.docx_writer.Document")
     def test_creates_docx_file(self, mock_doc_class, mock_cm_class, tmp_path: Path):
         """create_docx_summary calls Document and saves to output_path."""
         output_path = tmp_path / "summary.docx"
@@ -516,8 +522,8 @@ class TestCreateDocxSummary:
 
         mock_doc.save.assert_called_once_with(str(output_path))
 
-    @patch("processors.file_manager.CitationManager")
-    @patch("processors.file_manager.Document")
+    @patch("processors.docx_writer.CitationManager")
+    @patch("processors.docx_writer.Document")
     def test_empty_results_creates_minimal_docx(
         self, mock_doc_class, mock_cm_class, tmp_path: Path
     ):
@@ -535,12 +541,17 @@ class TestCreateDocxSummary:
 
         mock_doc.save.assert_called_once()
 
-    @patch("processors.file_manager.add_hyperlink")
-    @patch("processors.file_manager.config")
-    @patch("processors.file_manager.CitationManager")
-    @patch("processors.file_manager.Document")
+    @patch("processors.docx_writer.add_hyperlink")
+    @patch("processors.docx_writer.config")
+    @patch("processors.docx_writer.CitationManager")
+    @patch("processors.docx_writer.Document")
     def test_references_section_added(
-        self, mock_doc_class, mock_cm_class, mock_config, mock_add_hyperlink, tmp_path: Path
+        self,
+        mock_doc_class,
+        mock_cm_class,
+        mock_config,
+        mock_add_hyperlink,
+        tmp_path: Path,
     ):
         """References section is added when citations are present."""
         output_path = tmp_path / "summary.docx"
@@ -582,8 +593,8 @@ class TestCreateDocxSummary:
         # Hyperlink should have been added for the citation
         mock_add_hyperlink.assert_called_once()
 
-    @patch("processors.file_manager.CitationManager")
-    @patch("processors.file_manager.Document")
+    @patch("processors.docx_writer.CitationManager")
+    @patch("processors.docx_writer.Document")
     def test_structure_section_for_bibliography_pages(
         self, mock_doc_class, mock_cm_class, tmp_path: Path
     ):
@@ -613,7 +624,8 @@ class TestCreateDocxSummary:
 
         # Should have been called with "Document Structure" heading
         heading_calls = [
-            c for c in mock_doc.add_heading.call_args_list
+            c
+            for c in mock_doc.add_heading.call_args_list
             if "Document Structure" in str(c)
         ]
         assert len(heading_calls) > 0
@@ -625,7 +637,7 @@ class TestCreateDocxSummary:
 class TestCreateMarkdownSummaryExtended:
     """Extended edge case tests for create_markdown_summary."""
 
-    @patch("processors.file_manager.CitationManager")
+    @patch("processors.markdown_writer.CitationManager")
     def test_structure_section_for_toc_pages(self, mock_cm_class, tmp_path: Path):
         """Table of contents pages appear in the Document Structure section."""
         output_path = tmp_path / "summary.md"
@@ -661,7 +673,7 @@ class TestCreateMarkdownSummaryExtended:
         assert "## Document Structure" in content
         assert "Table of Contents" in content
 
-    @patch("processors.file_manager.CitationManager")
+    @patch("processors.markdown_writer.CitationManager")
     def test_appendix_page_heading(self, mock_cm_class, tmp_path: Path):
         """Appendix pages get [Appendix] prefix in heading."""
         output_path = tmp_path / "summary.md"
@@ -687,7 +699,7 @@ class TestCreateMarkdownSummaryExtended:
         content = output_path.read_text(encoding="utf-8")
         assert "## [Appendix] Page 100" in content
 
-    @patch("processors.file_manager.CitationManager")
+    @patch("processors.markdown_writer.CitationManager")
     def test_figures_tables_page_heading(self, mock_cm_class, tmp_path: Path):
         """Figures/tables pages get [Figures/Tables] prefix."""
         output_path = tmp_path / "summary.md"
@@ -713,8 +725,8 @@ class TestCreateMarkdownSummaryExtended:
         content = output_path.read_text(encoding="utf-8")
         assert "[Figures/Tables]" in content
 
-    @patch("processors.file_manager.config")
-    @patch("processors.file_manager.CitationManager")
+    @patch("processors.markdown_writer.config")
+    @patch("processors.markdown_writer.CitationManager")
     def test_references_with_metadata(self, mock_cm_class, mock_config, tmp_path: Path):
         """References with DOI and year metadata are rendered."""
         output_path = tmp_path / "summary.md"
@@ -753,7 +765,7 @@ class TestCreateMarkdownSummaryExtended:
         assert "DOI: 10.1234/test" in content
         assert "Year: 2020" in content
 
-    @patch("processors.file_manager.CitationManager")
+    @patch("processors.markdown_writer.CitationManager")
     def test_citation_without_url(self, mock_cm_class, tmp_path: Path):
         """Citations without URLs are rendered as plain text."""
         output_path = tmp_path / "summary.md"

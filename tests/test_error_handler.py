@@ -195,6 +195,7 @@ class TestSafeExecute:
 
     def test_function_that_raises_returns_none(self):
         """Returns None when function raises and no default is given."""
+
         def failing():
             raise ValueError("fail")
 
@@ -203,6 +204,7 @@ class TestSafeExecute:
 
     def test_function_that_raises_returns_default(self):
         """Returns the default value when function raises."""
+
         def failing():
             raise ValueError("fail")
 
@@ -211,6 +213,7 @@ class TestSafeExecute:
 
     def test_default_zero_returned(self):
         """Falsy default value (0) is correctly returned on failure."""
+
         def failing():
             raise RuntimeError("boom")
 
@@ -220,6 +223,7 @@ class TestSafeExecute:
     @patch("modules.error_handler.logger")
     def test_log_errors_true_logs_warning(self, mock_logger: MagicMock):
         """Warning is logged when log_errors is True (default)."""
+
         def failing():
             raise RuntimeError("logged error")
 
@@ -232,6 +236,7 @@ class TestSafeExecute:
     @patch("modules.error_handler.logger")
     def test_log_errors_false_no_logging(self, mock_logger: MagicMock):
         """No logging occurs when log_errors is False."""
+
         def failing():
             raise RuntimeError("silent error")
 
@@ -242,6 +247,7 @@ class TestSafeExecute:
 
     def test_passes_kwargs_through(self):
         """Keyword arguments are forwarded to the function."""
+
         def greet(name, greeting="Hello"):
             return f"{greeting}, {name}!"
 

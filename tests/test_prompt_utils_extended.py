@@ -26,11 +26,7 @@ class TestRenderPromptStrategy3MarkerReplacement:
     def test_marker_present_replaces_existing_schema(self):
         """When marker and existing JSON block are present, replaces the block."""
         schema = {"type": "object", "properties": {"name": {"type": "string"}}}
-        prompt = (
-            'Transcribe this document.\n'
-            'The JSON schema:\n'
-            '{"old": "schema"}'
-        )
+        prompt = "Transcribe this document.\n" "The JSON schema:\n" '{"old": "schema"}'
 
         result = render_prompt_with_schema(prompt, schema)
 
@@ -83,7 +79,7 @@ class TestRenderPromptStrategy4Append:
 
         # Extract JSON from the result after the marker
         marker_idx = result.find(SCHEMA_MARKER)
-        json_part = result[marker_idx + len(SCHEMA_MARKER):].strip()
+        json_part = result[marker_idx + len(SCHEMA_MARKER) :].strip()
         parsed = json.loads(json_part)
         assert parsed == schema
 
@@ -116,6 +112,7 @@ class TestRenderPromptValidation:
 
     def test_json_serialization_failure_falls_back_to_str(self):
         """When JSON serialization fails, falls back to str() representation."""
+
         # Create a dict with a non-serializable value
         class NonSerializable:
             def __repr__(self):
@@ -200,10 +197,10 @@ class TestReplaceSchemaAtMarker:
     def test_marker_with_existing_schema_replaces(self):
         """Existing schema block after marker is replaced."""
         prompt = (
-            'Instructions here.\n'
-            'The JSON schema:\n'
+            "Instructions here.\n"
+            "The JSON schema:\n"
             '{"old": "data", "nested": {"a": 1}}\n'
-            'End.'
+            "End."
         )
         new_schema = '{"new": "schema"}'
 

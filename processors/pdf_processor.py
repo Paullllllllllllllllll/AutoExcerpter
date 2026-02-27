@@ -6,16 +6,16 @@ processing image folders for the AutoExcerpter transcription pipeline.
 Key Features:
 1. **Parallel PDF Extraction**: Uses ThreadPoolExecutor to extract multiple
    PDF pages concurrently for improved performance
-   
+
 2. **Provider-Specific Preprocessing**: Applies image preprocessing optimized
    for the target LLM provider (OpenAI, Google Gemini, Anthropic Claude):
    - OpenAI: Box fitting with padding (768×1536)
-   - Google: Box fitting optimized for 768px tiles  
+   - Google: Box fitting optimized for 768px tiles
    - Anthropic: Max-side capping (1568px, no padding)
-   
+
 3. **Configuration-Driven**: Loads target DPI, JPEG quality, and preprocessing
    settings from image_processing.yaml with provider-specific sections
-   
+
 4. **Error Resilient**: Continues processing even if individual pages fail,
    logging errors for troubleshooting
 
@@ -46,7 +46,11 @@ from modules.constants import (
     WHITE_BACKGROUND_COLOR,
 )
 from modules.image_utils import ImageProcessor
-from modules.model_utils import detect_model_type, get_image_config_section_name, ModelType
+from modules.model_utils import (
+    detect_model_type,
+    get_image_config_section_name,
+    ModelType,
+)
 from modules.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -62,42 +66,43 @@ def _apply_image_preprocessing(
 ) -> Image.Image:
     """
     Apply preprocessing steps to an image with provider-specific resizing.
-    
+
     Args:
         pil_img: PIL Image to preprocess
         img_cfg: Provider-specific image configuration dict
         model_type: Model type for resize strategy ('openai', 'google', 'anthropic')
-    
+
     Returns:
         Preprocessed PIL Image
     """
     from PIL import ImageOps
-    
+
     # Handle transparency
-    if img_cfg.get('handle_transparency', True):
-        if pil_img.mode in ('RGBA', 'LA') or (
-                pil_img.mode == 'P' and 'transparency' in pil_img.info):
+    if img_cfg.get("handle_transparency", True):
+        if pil_img.mode in ("RGBA", "LA") or (
+            pil_img.mode == "P" and "transparency" in pil_img.info
+        ):
             background = Image.new("RGB", pil_img.size, WHITE_BACKGROUND_COLOR)
-            mask = pil_img.split()[-1] if pil_img.mode in ('RGBA', 'LA') else None
+            mask = pil_img.split()[-1] if pil_img.mode in ("RGBA", "LA") else None
             background.paste(pil_img, mask=mask)
             pil_img = background
-    
+
     # Grayscale conversion
-    if img_cfg.get('grayscale_conversion', True):
+    if img_cfg.get("grayscale_conversion", True):
         if pil_img.mode != "L":
             pil_img = ImageOps.grayscale(pil_img)
-    
+
     # Get detail parameter based on model type
     if model_type == "google":
-        detail = img_cfg.get('media_resolution', 'high') or 'high'
+        detail = img_cfg.get("media_resolution", "high") or "high"
     elif model_type == "anthropic":
-        detail = img_cfg.get('resize_profile', 'auto') or 'auto'
+        detail = img_cfg.get("resize_profile", "auto") or "auto"
     else:
-        detail = img_cfg.get('llm_detail', 'high') or 'high'
-    
+        detail = img_cfg.get("llm_detail", "high") or "high"
+
     # Resize with provider-specific strategy
     pil_img = ImageProcessor.resize_for_detail(pil_img, detail, img_cfg, model_type)
-    
+
     return pil_img
 
 
@@ -137,14 +142,14 @@ def extract_pdf_pages_to_images(
         # Detect model type and load provider-specific config
         model_type = detect_model_type(provider, model_name)
         section_name = get_image_config_section_name(model_type)
-        
+
         cfg_loader = get_config_loader()
         full_img_cfg = cfg_loader.get_image_processing_config()
         img_cfg = full_img_cfg.get(section_name, {})
-        
-        target_dpi = int(img_cfg.get('target_dpi', DEFAULT_TARGET_DPI))
-        jpeg_quality = int(img_cfg.get('jpeg_quality', DEFAULT_JPEG_QUALITY))
-        
+
+        target_dpi = int(img_cfg.get("target_dpi", DEFAULT_TARGET_DPI))
+        jpeg_quality = int(img_cfg.get("jpeg_quality", DEFAULT_JPEG_QUALITY))
+
         logger.debug(
             f"PDF extraction using provider={provider}, model_type={model_type}, "
             f"config_section={section_name}, dpi={target_dpi}"
@@ -168,17 +173,21 @@ def extract_pdf_pages_to_images(
                 page = pdf_document[page_num]
                 zoom = target_dpi / PDF_DPI_CONVERSION_FACTOR
                 matrix = fitz.Matrix(zoom, zoom)
-                grayscale_enabled = bool(img_cfg.get('grayscale_conversion', True))
+                grayscale_enabled = bool(img_cfg.get("grayscale_conversion", True))
                 if grayscale_enabled:
-                    pix = page.get_pixmap(matrix=matrix, alpha=False, colorspace=fitz.csGRAY)
+                    pix = page.get_pixmap(
+                        matrix=matrix, alpha=False, colorspace=fitz.csGRAY
+                    )
                     pil_img = Image.frombytes("L", (pix.width, pix.height), pix.samples)
                 else:
                     pix = page.get_pixmap(matrix=matrix, alpha=False)
-                    pil_img = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
-                
+                    pil_img = Image.frombytes(
+                        "RGB", (pix.width, pix.height), pix.samples
+                    )
+
                 # Apply provider-specific preprocessing (grayscale, resize, etc.)
                 pil_img = _apply_image_preprocessing(pil_img, img_cfg, model_type)
-                
+
                 # Save preprocessed image
                 image_path = output_images_dir / f"page_{page_num + 1:04d}.jpg"
                 pil_img.save(image_path, "JPEG", quality=jpeg_quality)
@@ -188,7 +197,9 @@ def extract_pdf_pages_to_images(
                 return page_num, None
 
         # Extract pages in parallel
-        with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_EXTRACTION_WORKERS) as executor:
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=MAX_EXTRACTION_WORKERS
+        ) as executor:
             future_to_page = {
                 executor.submit(extract_page_task, pn): pn for pn in page_numbers
             }

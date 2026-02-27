@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Dict, Optional
+from typing import Any
 
 from modules.logger import setup_logger
 
@@ -52,8 +52,8 @@ DEFAULT_INDENT = 2
 # ============================================================================
 def render_prompt_with_schema(
     prompt_text: str,
-    schema_obj: Dict[str, Any],
-    context: Optional[str] = None,
+    schema_obj: dict[str, Any],
+    context: str | None = None,
 ) -> str:
     """
     Inject a JSON schema and optional context into a prompt.
@@ -63,7 +63,7 @@ def render_prompt_with_schema(
     2. Legacy token replacement: If "{{TRANSCRIPTION_SCHEMA}}" exists, replace it
     3. Marker replacement: If "The JSON schema:" exists, replace JSON after it
     4. Append: If none exist, append schema at the end
-    
+
     For context injection:
     - If "{{CONTEXT}}" placeholder exists and context is provided, it's replaced
     - If context is None or empty, the entire context line is removed
@@ -107,7 +107,7 @@ def render_prompt_with_schema(
     # Strategy 1: Generic token replacement (preferred)
     if SCHEMA_TOKEN_GENERIC in prompt_text:
         return prompt_text.replace(SCHEMA_TOKEN_GENERIC, schema_str)
-    
+
     # Strategy 2: Legacy token replacement (for backward compatibility)
     if SCHEMA_TOKEN in prompt_text:
         return prompt_text.replace(SCHEMA_TOKEN, schema_str)
@@ -138,27 +138,23 @@ def _replace_schema_at_marker(prompt_text: str, schema_str: str) -> str:
 
     # Locate the first opening brace after the marker
     start_brace = prompt_text.find("{", marker_idx)
-    
+
     if start_brace == -1:
         # No existing schema, append after marker
         return prompt_text + "\n" + schema_str
 
     # Find the last closing brace to identify the schema block
     end_brace = prompt_text.rfind("}")
-    
+
     if end_brace == -1 or end_brace <= start_brace:
         # No valid schema block found, append after marker
         return prompt_text + "\n" + schema_str
 
     # Replace the existing schema block
-    return (
-        prompt_text[:start_brace]
-        + schema_str
-        + prompt_text[end_brace + 1:]
-    )
+    return prompt_text[:start_brace] + schema_str + prompt_text[end_brace + 1 :]
 
 
-def _inject_context(prompt_text: str, context: Optional[str]) -> str:
+def _inject_context(prompt_text: str, context: str | None) -> str:
     """
     Inject context into a prompt or remove the context placeholder.
 
@@ -173,15 +169,17 @@ def _inject_context(prompt_text: str, context: Optional[str]) -> str:
         Updated prompt text with context injected or placeholder removed
     """
     context_placeholder = "{{CONTEXT}}"
-    
+
     if context_placeholder not in prompt_text:
         return prompt_text
-    
+
     if context and context.strip():
         # Replace placeholder with actual context
         return prompt_text.replace(context_placeholder, context.strip())
     else:
         # Remove entire line containing the placeholder to save tokens
         # Pattern matches lines containing {{CONTEXT}} including the line break
-        prompt_text = re.sub(r"^.*\{\{CONTEXT\}\}.*\n?", "", prompt_text, flags=re.MULTILINE)
+        prompt_text = re.sub(
+            r"^.*\{\{CONTEXT\}\}.*\n?", "", prompt_text, flags=re.MULTILINE
+        )
         return prompt_text

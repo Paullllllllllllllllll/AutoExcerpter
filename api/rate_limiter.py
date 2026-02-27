@@ -5,7 +5,7 @@ It tracks requests across multiple time windows and automatically adjusts wait t
 based on error patterns.
 
 Key Features:
-1. **Multi-Window Rate Limiting**: Enforces multiple concurrent rate limits (e.g., 
+1. **Multi-Window Rate Limiting**: Enforces multiple concurrent rate limits (e.g.,
    per-second, per-minute, per-hour) to comply with API quotas
 
 2. **Adaptive Backoff**: Dynamically adjusts wait times based on consecutive errors:
@@ -21,11 +21,11 @@ Key Features:
 Usage:
     >>> limits = [(120, 1), (15000, 60)]  # 120/sec, 15000/min
     >>> limiter = RateLimiter(limits)
-    >>> 
+    >>>
     >>> limiter.wait_for_capacity()  # Blocks until capacity available
     >>> # ... make API call ...
     >>> limiter.report_success()  # or limiter.report_error(is_rate_limit=True)
-    >>> 
+    >>>
     >>> stats = limiter.get_stats()  # Get performance metrics
 
 The adaptive error multiplier starts at 1.0 and can increase up to 5.0 based on
@@ -76,7 +76,9 @@ class RateLimiter:
             limits: List of (max_requests, time_window_seconds) tuples defining rate limits
         """
         self.limits = limits
-        self.request_timestamps: list[deque[float]] = [deque(maxlen=limit[0]) for limit in limits]
+        self.request_timestamps: list[deque[float]] = [
+            deque(maxlen=limit[0]) for limit in limits
+        ]
         self.lock = threading.Lock()
 
         # Statistics
@@ -151,7 +153,9 @@ class RateLimiter:
         with self.lock:
             self.consecutive_errors = 0
             if self.error_multiplier > 1.0:
-                self.error_multiplier = max(1.0, self.error_multiplier * ERROR_MULTIPLIER_DECREASE_RATE)
+                self.error_multiplier = max(
+                    1.0, self.error_multiplier * ERROR_MULTIPLIER_DECREASE_RATE
+                )
 
     def report_error(self, is_rate_limit: bool = False) -> None:
         """

@@ -27,7 +27,7 @@ class TestTranscriptionResult:
             "transcription": "Sample text",
             "processing_time": 1.5,
         }
-        
+
         assert result["page"] == 1
         assert result["transcription"] == "Sample text"
 
@@ -38,7 +38,7 @@ class TestTranscriptionResult:
             "image": "test.jpg",
             "transcription": "Text",
         }
-        
+
         # Optional fields should not be required
         assert "error" not in result
 
@@ -50,7 +50,7 @@ class TestTranscriptionResult:
             "transcription": "",
             "error": "API timeout",
         }
-        
+
         assert result["error"] == "API timeout"
 
 
@@ -64,7 +64,7 @@ class TestPageInformation:
             "page_number_type": "arabic",
             "page_types": ["content"],
         }
-        
+
         assert info["page_number_integer"] == 5
         assert info["page_number_type"] == "arabic"
         assert info["page_types"] == ["content"]
@@ -76,7 +76,7 @@ class TestPageInformation:
             "page_number_type": "none",
             "page_types": ["blank"],
         }
-        
+
         assert info["page_number_type"] == "none"
         assert info["page_types"] == ["blank"]
 
@@ -95,7 +95,7 @@ class TestSummaryContent:
             "bullet_points": ["Point 1", "Point 2"],
             "references": ["Ref 1"],
         }
-        
+
         assert len(content["bullet_points"]) == 2
         assert len(content["references"]) == 1
 
@@ -110,7 +110,7 @@ class TestSummaryContent:
             "bullet_points": None,
             "references": None,
         }
-        
+
         assert content["page_information"]["page_types"] == ["blank"]
 
 
@@ -136,7 +136,7 @@ class TestSummaryResult:
             "schema_retries": {},
             "error": None,
         }
-        
+
         assert result["page"] == 1
         assert result["page_information"]["page_number_integer"] == 1
 
@@ -147,7 +147,7 @@ class TestConcurrencyConfig:
     def test_default_values(self):
         """ConcurrencyConfig has sensible defaults."""
         config = ConcurrencyConfig()
-        
+
         assert config.image_processing_limit == 24
         assert config.transcription_limit == 150
         assert config.summary_limit == 150
@@ -167,7 +167,7 @@ class TestConcurrencyConfig:
             transcription_service_tier="default",
             summary_service_tier="default",
         )
-        
+
         assert config.image_processing_limit == 16
         assert config.transcription_limit == 100
 
@@ -190,9 +190,9 @@ class TestConcurrencyConfig:
                 },
             },
         }
-        
+
         config = ConcurrencyConfig.from_dict(config_dict)
-        
+
         assert config.image_processing_limit == 32
         assert config.transcription_limit == 200
         assert config.transcription_delay == 0.1
@@ -201,7 +201,7 @@ class TestConcurrencyConfig:
     def test_from_dict_with_missing_keys(self):
         """ConcurrencyConfig.from_dict handles missing keys."""
         config = ConcurrencyConfig.from_dict({})
-        
+
         # Should use defaults
         assert config.image_processing_limit == 24
         assert config.transcription_limit == 150
@@ -209,7 +209,7 @@ class TestConcurrencyConfig:
     def test_frozen(self):
         """ConcurrencyConfig is immutable."""
         config = ConcurrencyConfig()
-        
+
         with pytest.raises(Exception):
             config.image_processing_limit = 100  # type: ignore
 
@@ -221,9 +221,9 @@ class TestItemSpec:
         """ItemSpec represents PDF items correctly."""
         pdf_path = temp_dir / "test.pdf"
         pdf_path.touch()
-        
+
         item = ItemSpec(kind="pdf", path=pdf_path)
-        
+
         assert item.path == pdf_path
         assert item.kind == "pdf"
 
@@ -231,9 +231,9 @@ class TestItemSpec:
         """ItemSpec represents image folder items correctly."""
         folder_path = temp_dir / "images"
         folder_path.mkdir()
-        
+
         item = ItemSpec(kind="image_folder", path=folder_path, image_count=10)
-        
+
         assert item.path == folder_path
         assert item.kind == "image_folder"
         assert item.image_count == 10
@@ -242,10 +242,10 @@ class TestItemSpec:
         """ItemSpec.display_label returns readable string."""
         pdf_path = temp_dir / "my_document.pdf"
         pdf_path.touch()
-        
+
         item = ItemSpec(kind="pdf", path=pdf_path)
         label = item.display_label()
-        
+
         assert "my_document" in label or str(pdf_path) in label
         assert "PDF" in label
 
@@ -253,18 +253,18 @@ class TestItemSpec:
         """ItemSpec provides output_stem property."""
         pdf_path = temp_dir / "test_file.pdf"
         pdf_path.touch()
-        
+
         item = ItemSpec(kind="pdf", path=pdf_path)
-        
+
         assert item.output_stem == "test_file"
 
     def test_display_label_with_image_count(self, temp_dir: Path):
         """Display label includes image count for image folders."""
         folder_path = temp_dir / "images"
         folder_path.mkdir()
-        
+
         item = ItemSpec(kind="image_folder", path=folder_path, image_count=25)
         label = item.display_label()
-        
+
         assert "25 images" in label
         assert "Image Folder" in label

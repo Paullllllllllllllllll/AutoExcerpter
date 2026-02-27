@@ -27,9 +27,9 @@ WHITE_BACKGROUND_COLOR = (255, 255, 255)
 MAX_EXTRACTION_WORKERS = 8
 PDF_DPI_CONVERSION_FACTOR = 72.0
 
-SUPPORTED_IMAGE_EXTENSIONS = frozenset({
-    '.jpg', '.jpeg', '.png', '.tiff', '.tif', '.bmp', '.gif', '.webp'
-})
+SUPPORTED_IMAGE_EXTENSIONS = frozenset(
+    {".jpg", ".jpeg", ".png", ".tiff", ".tif", ".bmp", ".gif", ".webp"}
+)
 
 # ============================================================================
 # Rate Limiter Constants
@@ -76,10 +76,10 @@ ETA_BLEND_WEIGHT_RECENT = 0.3
 # ============================================================================
 # CLI Constants
 # ============================================================================
-EXIT_COMMANDS = frozenset({'exit', 'quit', 'q'})
-BACK_COMMANDS = frozenset({'back', 'b'})
-ALL_COMMANDS = frozenset({'all', 'a'})
-DIVIDER_CHAR = '='
+EXIT_COMMANDS = frozenset({"exit", "quit", "q"})
+BACK_COMMANDS = frozenset({"back", "b"})
+ALL_COMMANDS = frozenset({"all", "a"})
+DIVIDER_CHAR = "="
 DIVIDER_LENGTH = 70
 
 # ============================================================================

@@ -77,7 +77,11 @@ class TestBuildInvokeKwargs:
 
         with patch(
             "api.base_llm_client.get_model_capabilities",
-            return_value={"max_tokens": True, "reasoning": True, "text_verbosity": True},
+            return_value={
+                "max_tokens": True,
+                "reasoning": True,
+                "text_verbosity": True,
+            },
         ):
             kwargs = client._build_invoke_kwargs()
 
@@ -99,7 +103,11 @@ class TestBuildInvokeKwargs:
 
         with patch(
             "api.base_llm_client.get_model_capabilities",
-            return_value={"max_tokens": True, "reasoning": False, "text_verbosity": False},
+            return_value={
+                "max_tokens": True,
+                "reasoning": False,
+                "text_verbosity": False,
+            },
         ):
             kwargs = client._build_invoke_kwargs()
 
@@ -117,7 +125,11 @@ class TestBuildInvokeKwargs:
 
         with patch(
             "api.base_llm_client.get_model_capabilities",
-            return_value={"max_tokens": True, "reasoning": False, "text_verbosity": False},
+            return_value={
+                "max_tokens": True,
+                "reasoning": False,
+                "text_verbosity": False,
+            },
         ):
             kwargs = client._build_invoke_kwargs()
 

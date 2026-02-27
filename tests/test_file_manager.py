@@ -5,28 +5,32 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 from unittest.mock import patch, MagicMock
 
 import pytest
 
-from processors.file_manager import (
-    sanitize_for_xml,
+from processors.docx_writer import (
     parse_latex_in_text,
     normalize_latex_whitespace,
     simplify_problematic_latex,
+)
+from processors.file_manager import (
+    sanitize_for_xml,
     _extract_summary_payload,
     _page_information,
     _is_meaningful_summary,
     _should_render_bullets,
     _get_structure_types,
-    _format_page_heading_md,
-    int_to_roman,
-    create_markdown_summary,
     filter_empty_pages,
     PAGE_TYPES_WITH_BULLETS,
     STRUCTURE_PAGE_TYPE_ORDER,
 )
+from processors.markdown_writer import (
+    _format_page_heading_md,
+    create_markdown_summary,
+)
+from modules.roman_numerals import int_to_roman
 
 
 class TestSanitizeForXml:
@@ -73,7 +77,7 @@ class TestSanitizeForXml:
 
     def test_removes_delete_character(self):
         """DEL character (0x7F) is removed."""
-        text = "test\x7Ftext"
+        text = "test\x7ftext"
         assert sanitize_for_xml(text) == "testtext"
 
 
@@ -84,7 +88,7 @@ class TestParseLatexInText:
         """Text without LaTeX returns single text segment."""
         text = "Plain text without formulas"
         result = parse_latex_in_text(text)
-        
+
         assert len(result) == 1
         assert result[0][1] == "text"
 
@@ -92,7 +96,7 @@ class TestParseLatexInText:
         """Inline LaTeX ($...$) is detected."""
         text = "Here is $x + y = z$ inline"
         result = parse_latex_in_text(text)
-        
+
         types = [seg[1] for seg in result]
         assert "latex_inline" in types
 
@@ -100,7 +104,7 @@ class TestParseLatexInText:
         """Display LaTeX ($$...$$) is detected."""
         text = "Here is $$x + y = z$$ display"
         result = parse_latex_in_text(text)
-        
+
         types = [seg[1] for seg in result]
         assert "latex_display" in types
 
@@ -108,7 +112,7 @@ class TestParseLatexInText:
         """Mixed inline and display LaTeX are both detected."""
         text = "Inline $a$ and display $$b$$"
         result = parse_latex_in_text(text)
-        
+
         types = [seg[1] for seg in result]
         assert "latex_inline" in types
         assert "latex_display" in types
@@ -117,7 +121,7 @@ class TestParseLatexInText:
         """Escaped dollar signs are not treated as LaTeX."""
         text = "Price is \\$50 and \\$100"
         result = parse_latex_in_text(text)
-        
+
         # Should preserve the escaped dollar signs
         full_text = "".join(seg[0] for seg in result)
         assert "$" in full_text
@@ -125,7 +129,7 @@ class TestParseLatexInText:
     def test_empty_text(self):
         """Empty text returns single empty segment."""
         result = parse_latex_in_text("")
-        
+
         assert len(result) == 1
         assert result[0] == ("", "text")
 
@@ -133,7 +137,7 @@ class TestParseLatexInText:
         """Multiline display LaTeX is handled."""
         text = "$$\nx + y\n= z\n$$"
         result = parse_latex_in_text(text)
-        
+
         types = [seg[1] for seg in result]
         assert "latex_display" in types
 
@@ -165,7 +169,7 @@ class TestSimplifyProblematicLatex:
     def test_returns_tuple(self):
         """Returns tuple of (simplified, applied_simplifications)."""
         result = simplify_problematic_latex("\\frac{a}{b}")
-        
+
         assert isinstance(result, tuple)
         assert len(result) == 2
         assert isinstance(result[0], str)
@@ -175,7 +179,7 @@ class TestSimplifyProblematicLatex:
         """Logical operators are replaced with alternatives."""
         latex = "a \\land b \\lor c"
         simplified, applied = simplify_problematic_latex(latex)
-        
+
         assert "\\land" not in simplified
         assert "\\lor" not in simplified
 
@@ -183,14 +187,14 @@ class TestSimplifyProblematicLatex:
         """\\text commands are replaced with \\mathrm."""
         latex = "\\text{hello}"
         simplified, applied = simplify_problematic_latex(latex)
-        
+
         assert "\\text{" not in simplified or "\\mathrm{" in simplified
 
     def test_left_right_delimiters_simplified(self):
         """\\left and \\right are simplified."""
         latex = "\\left( x \\right)"
         simplified, applied = simplify_problematic_latex(latex)
-        
+
         assert "\\left" not in simplified
         assert "\\right" not in simplified
 
@@ -198,14 +202,14 @@ class TestSimplifyProblematicLatex:
         """\\phantom commands are removed."""
         latex = "x + \\phantom{hidden} y"
         simplified, applied = simplify_problematic_latex(latex)
-        
+
         assert "\\phantom" not in simplified
 
     def test_spacing_normalized(self):
         """Spacing commands are normalized."""
         latex = "x\\,y\\;z"
         simplified, applied = simplify_problematic_latex(latex)
-        
+
         assert "\\," not in simplified
         assert "\\;" not in simplified
 
@@ -213,7 +217,7 @@ class TestSimplifyProblematicLatex:
         """Math environments are unwrapped."""
         latex = "\\begin{align}x = y\\end{align}"
         simplified, applied = simplify_problematic_latex(latex)
-        
+
         assert "\\begin{align}" not in simplified
         assert "\\end{align}" not in simplified
 
@@ -224,13 +228,16 @@ class TestExtractSummaryPayload:
     def test_flat_structure(self):
         """Extracts from flat structure (preferred)."""
         result = {
-            "page_information": {"page_number_integer": 1, "page_number_type": "arabic"},
+            "page_information": {
+                "page_number_integer": 1,
+                "page_number_type": "arabic",
+            },
             "bullet_points": ["Point 1"],
             "references": [],
         }
-        
+
         payload = _extract_summary_payload(result)
-        
+
         assert "bullet_points" in payload
         assert payload["bullet_points"] == ["Point 1"]
 
@@ -242,9 +249,9 @@ class TestExtractSummaryPayload:
                 "references": [],
             }
         }
-        
+
         payload = _extract_summary_payload(result)
-        
+
         assert "bullet_points" in payload
 
     def test_legacy_nested_summary(self):
@@ -256,25 +263,25 @@ class TestExtractSummaryPayload:
                 }
             }
         }
-        
+
         payload = _extract_summary_payload(result)
-        
+
         assert "bullet_points" in payload
 
     def test_missing_summary(self):
         """Returns empty dict for missing summary."""
         result = {}
-        
+
         payload = _extract_summary_payload(result)
-        
+
         assert payload == {}
 
     def test_non_dict_summary(self):
         """Returns empty dict for non-dict summary."""
         result = {"summary": "string value"}
-        
+
         payload = _extract_summary_payload(result)
-        
+
         assert payload == {}
 
 
@@ -289,27 +296,27 @@ class TestPageNumberAndFlags:
                 "page_number_type": "arabic",
             }
         }
-        
+
         result = _page_information(summary)
-        
+
         assert result["page_number_integer"] == 5
         assert result["is_unnumbered"] is False
 
     def test_fallback_to_page_field_only(self):
         """Falls back to page field when page_information is missing."""
         summary = {"page": 10}
-        
+
         result = _page_information(summary)
-        
+
         assert result["page_number_integer"] == 10
         assert result["page_types"] == ["content"]
 
     def test_empty_page_information(self):
         """Empty page_information dict falls back to page field."""
         summary = {"page_information": {}, "page": 5}
-        
+
         result = _page_information(summary)
-        
+
         # Empty dict is falsy, so falls back to page field
         assert result["page_number_integer"] == 5
         assert result["is_unnumbered"] is False
@@ -317,9 +324,9 @@ class TestPageNumberAndFlags:
     def test_fallback_to_page_field(self):
         """Falls back to 'page' field if page_number missing."""
         summary = {"page": 3}
-        
+
         result = _page_information(summary)
-        
+
         # The function may return '?' for missing page_number or the page value
         assert result["page_number_integer"] in (3, "?")
 
@@ -337,36 +344,46 @@ class TestIsMeaningfulSummary:
             "bullet_points": ["Key point 1", "Key point 2"],
             "page_type": "content",
         }
-        
+
         assert _is_meaningful_summary(summary) is True
 
     def test_empty_bullet_points(self):
         """Returns False for empty bullet points."""
         summary = {
-            "page_information": {"page_number_integer": 1, "page_number_type": "arabic"},
+            "page_information": {
+                "page_number_integer": 1,
+                "page_number_type": "arabic",
+            },
             "bullet_points": [],
             "page_type": "content",
         }
-        
+
         assert _is_meaningful_summary(summary) is False
 
     def test_error_marker_in_bullet(self):
         """Returns False when bullet contains error marker."""
         summary = {
-            "page_information": {"page_number_integer": 1, "page_number_type": "arabic"},
+            "page_information": {
+                "page_number_integer": 1,
+                "page_number_type": "arabic",
+            },
             "bullet_points": ["[empty page]"],
             "page_type": "content",
         }
-        
+
         assert _is_meaningful_summary(summary) is False
 
     def test_blank_page_type(self):
         """Returns False when page_type is 'blank'."""
         summary = {
-            "page_information": {"page_number_integer": 1, "page_number_type": "arabic", "page_type": "blank"},
+            "page_information": {
+                "page_number_integer": 1,
+                "page_number_type": "arabic",
+                "page_type": "blank",
+            },
             "bullet_points": None,
         }
-        
+
         assert _is_meaningful_summary(summary) is False
 
     def test_unnumbered_page_with_content_type(self):
@@ -379,29 +396,35 @@ class TestIsMeaningfulSummary:
             },
             "bullet_points": ["Some point"],
         }
-        
+
         # Content pages with bullet points are meaningful
         assert _is_meaningful_summary(summary) is True
 
     def test_null_bullet_points(self):
         """Returns False for null bullet_points."""
         summary = {
-            "page_information": {"page_number_integer": 1, "page_number_type": "arabic"},
+            "page_information": {
+                "page_number_integer": 1,
+                "page_number_type": "arabic",
+            },
             "bullet_points": None,
             "page_type": "content",
         }
-        
+
         assert _is_meaningful_summary(summary) is False
 
     def test_null_references_still_meaningful(self):
         """Returns True for meaningful summary with null references."""
         summary = {
-            "page_information": {"page_number_integer": 1, "page_number_type": "arabic"},
+            "page_information": {
+                "page_number_integer": 1,
+                "page_number_type": "arabic",
+            },
             "bullet_points": ["Key point 1", "Key point 2"],
             "references": None,
             "page_type": "content",
         }
-        
+
         assert _is_meaningful_summary(summary) is True
 
 
@@ -458,9 +481,9 @@ class TestPageNumberAndFlagsWithType:
                 "page_number_type": "arabic",
             }
         }
-        
+
         result = _page_information(summary)
-        
+
         assert result["page_number_integer"] == 5
         assert result["page_number_type"] == "arabic"
         assert result["is_unnumbered"] is False
@@ -473,9 +496,9 @@ class TestPageNumberAndFlagsWithType:
                 "page_number_type": "roman",
             }
         }
-        
+
         result = _page_information(summary)
-        
+
         assert result["page_number_integer"] == 12
         assert result["page_number_type"] == "roman"
         assert result["is_unnumbered"] is False
@@ -488,9 +511,9 @@ class TestPageNumberAndFlagsWithType:
                 "page_number_type": "none",
             }
         }
-        
+
         result = _page_information(summary)
-        
+
         assert result["page_number_type"] == "none"
         assert result["is_unnumbered"] is True
 
@@ -501,27 +524,27 @@ class TestPageNumberAndFlagsWithType:
                 "page_number_integer": 5,
             }
         }
-        
+
         result = _page_information(summary)
-        
+
         assert result["page_number_type"] == "arabic"
         assert result["is_unnumbered"] is False
 
     def test_page_field_fallback_defaults_to_arabic(self):
         """Fallback to page field uses arabic type."""
         summary = {"page": 10}
-        
+
         result = _page_information(summary)
-        
+
         assert result["page_number_integer"] == 10
         assert result["page_number_type"] == "arabic"
 
     def test_fallback_with_page_field(self):
         """Fallback case uses page field value."""
         summary = {"page": 3}
-        
+
         result = _page_information(summary)
-        
+
         # Fallback case returns the page value but marks as arabic type
         assert result["page_number_integer"] == 3
         assert result["page_number_type"] == "arabic"
@@ -534,9 +557,9 @@ class TestPageNumberAndFlagsWithType:
                 "page_number_type": "arabic",
             }
         }
-        
+
         result = _page_information(summary)
-        
+
         assert result["page_number_integer"] == "?"
         assert result["page_number_type"] == "none"
         assert result["is_unnumbered"] is True
@@ -550,7 +573,7 @@ class TestFileManagerIntegration:
         from docx import Document
         from docx.shared import Pt
         from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
-        
+
         # Should not raise
         doc = Document()
         assert doc is not None
@@ -559,7 +582,7 @@ class TestFileManagerIntegration:
         """Required imports for LaTeX conversion are available."""
         from latex2mathml.converter import convert as latex_to_mathml
         import mathml2omml
-        
+
         # Test basic conversion
         mathml = latex_to_mathml("x")
         assert mathml is not None
@@ -612,14 +635,18 @@ class TestCreateMarkdownSummary:
         output_path = tmp_path / "test_summary.md"
         summary_results = [
             {
-                "page_information": {"page_number_integer": 1, "page_number_type": "arabic", "page_types": ["content"]},
+                "page_information": {
+                    "page_number_integer": 1,
+                    "page_number_type": "arabic",
+                    "page_types": ["content"],
+                },
                 "bullet_points": ["Point 1", "Point 2"],
                 "references": [],
             }
         ]
-        
+
         create_markdown_summary(summary_results, output_path, "Test Document")
-        
+
         assert output_path.exists()
 
     def test_contains_title(self, tmp_path):
@@ -627,14 +654,18 @@ class TestCreateMarkdownSummary:
         output_path = tmp_path / "test_summary.md"
         summary_results = [
             {
-                "page_information": {"page_number_integer": 1, "page_number_type": "arabic", "page_types": ["content"]},
+                "page_information": {
+                    "page_number_integer": 1,
+                    "page_number_type": "arabic",
+                    "page_types": ["content"],
+                },
                 "bullet_points": ["Point 1"],
                 "references": [],
             }
         ]
-        
+
         create_markdown_summary(summary_results, output_path, "My Test Doc")
-        
+
         content = output_path.read_text(encoding="utf-8")
         assert "# Summary of My Test Doc" in content
 
@@ -643,14 +674,18 @@ class TestCreateMarkdownSummary:
         output_path = tmp_path / "test_summary.md"
         summary_results = [
             {
-                "page_information": {"page_number_integer": 1, "page_number_type": "arabic", "page_types": ["content"]},
+                "page_information": {
+                    "page_number_integer": 1,
+                    "page_number_type": "arabic",
+                    "page_types": ["content"],
+                },
                 "bullet_points": ["Point 1"],
                 "references": [],
             }
         ]
-        
+
         create_markdown_summary(summary_results, output_path, "Test")
-        
+
         content = output_path.read_text(encoding="utf-8")
         assert "*Processed:" in content
         assert "Total pages: 1*" in content
@@ -660,14 +695,18 @@ class TestCreateMarkdownSummary:
         output_path = tmp_path / "test_summary.md"
         summary_results = [
             {
-                "page_information": {"page_number_integer": 5, "page_number_type": "arabic", "page_types": ["content"]},
+                "page_information": {
+                    "page_number_integer": 5,
+                    "page_number_type": "arabic",
+                    "page_types": ["content"],
+                },
                 "bullet_points": ["Point 1"],
                 "references": [],
             }
         ]
-        
+
         create_markdown_summary(summary_results, output_path, "Test")
-        
+
         content = output_path.read_text(encoding="utf-8")
         assert "## Page 5" in content
 
@@ -676,14 +715,18 @@ class TestCreateMarkdownSummary:
         output_path = tmp_path / "test_summary.md"
         summary_results = [
             {
-                "page_information": {"page_number_integer": 1, "page_number_type": "arabic", "page_types": ["content"]},
+                "page_information": {
+                    "page_number_integer": 1,
+                    "page_number_type": "arabic",
+                    "page_types": ["content"],
+                },
                 "bullet_points": ["First point", "Second point"],
                 "references": [],
             }
         ]
-        
+
         create_markdown_summary(summary_results, output_path, "Test")
-        
+
         content = output_path.read_text(encoding="utf-8")
         assert "- First point" in content
         assert "- Second point" in content
@@ -693,14 +736,18 @@ class TestCreateMarkdownSummary:
         output_path = tmp_path / "test_summary.md"
         summary_results = [
             {
-                "page_information": {"page_number_integer": 3, "page_number_type": "roman", "page_types": ["content"]},
+                "page_information": {
+                    "page_number_integer": 3,
+                    "page_number_type": "roman",
+                    "page_types": ["content"],
+                },
                 "bullet_points": ["Preface content"],
                 "references": [],
             }
         ]
-        
+
         create_markdown_summary(summary_results, output_path, "Test")
-        
+
         content = output_path.read_text(encoding="utf-8")
         assert "## Page iii" in content
 
@@ -709,19 +756,27 @@ class TestCreateMarkdownSummary:
         output_path = tmp_path / "test_summary.md"
         summary_results = [
             {
-                "page_information": {"page_number_integer": 1, "page_number_type": "arabic", "page_types": ["content"]},
+                "page_information": {
+                    "page_number_integer": 1,
+                    "page_number_type": "arabic",
+                    "page_types": ["content"],
+                },
                 "bullet_points": ["Valid content"],
                 "references": [],
             },
             {
-                "page_information": {"page_number_integer": 2, "page_number_type": "arabic", "page_types": ["content"]},
+                "page_information": {
+                    "page_number_integer": 2,
+                    "page_number_type": "arabic",
+                    "page_types": ["content"],
+                },
                 "bullet_points": [],
                 "references": [],
             },
         ]
-        
+
         create_markdown_summary(summary_results, output_path, "Test")
-        
+
         content = output_path.read_text(encoding="utf-8")
         assert "## Page 1" in content
         assert "## Page 2" not in content
@@ -731,14 +786,18 @@ class TestCreateMarkdownSummary:
         output_path = tmp_path / "test_summary.md"
         summary_results = [
             {
-                "page_information": {"page_number_integer": 1, "page_number_type": "arabic", "page_types": ["content"]},
+                "page_information": {
+                    "page_number_integer": 1,
+                    "page_number_type": "arabic",
+                    "page_types": ["content"],
+                },
                 "bullet_points": ["The formula $x + y = z$ is important"],
                 "references": [],
             }
         ]
-        
+
         create_markdown_summary(summary_results, output_path, "Test")
-        
+
         content = output_path.read_text(encoding="utf-8")
         assert "$x + y = z$" in content
 
@@ -747,19 +806,27 @@ class TestCreateMarkdownSummary:
         output_path = tmp_path / "test_summary.md"
         summary_results = [
             {
-                "page_information": {"page_number_integer": 1, "page_number_type": "arabic", "page_types": ["content"]},
+                "page_information": {
+                    "page_number_integer": 1,
+                    "page_number_type": "arabic",
+                    "page_types": ["content"],
+                },
                 "bullet_points": ["Page 1 content"],
                 "references": [],
             },
             {
-                "page_information": {"page_number_integer": 2, "page_number_type": "arabic", "page_types": ["content"]},
+                "page_information": {
+                    "page_number_integer": 2,
+                    "page_number_type": "arabic",
+                    "page_types": ["content"],
+                },
                 "bullet_points": ["Page 2 content"],
                 "references": [],
             },
         ]
-        
+
         create_markdown_summary(summary_results, output_path, "Test")
-        
+
         content = output_path.read_text(encoding="utf-8")
         assert "## Page 1" in content
         assert "## Page 2" in content
@@ -769,41 +836,47 @@ class TestCreateMarkdownSummary:
     def test_empty_results(self, tmp_path):
         """Empty results create minimal file."""
         output_path = tmp_path / "test_summary.md"
-        
+
         create_markdown_summary([], output_path, "Empty Doc")
-        
+
         assert output_path.exists()
         content = output_path.read_text(encoding="utf-8")
         assert "# Summary of Empty Doc" in content
         assert "Total pages: 0*" in content
 
-    @patch("processors.file_manager.CitationManager")
-    def test_references_section_with_citations(self, mock_citation_manager_class, tmp_path):
+    @patch("processors.markdown_writer.CitationManager")
+    def test_references_section_with_citations(
+        self, mock_citation_manager_class, tmp_path
+    ):
         """References section is added when citations exist."""
         output_path = tmp_path / "test_summary.md"
-        
+
         # Setup mock citation manager
         mock_citation = MagicMock()
         mock_citation.raw_text = "Author (2020). Title."
         mock_citation.url = "https://example.com"
         mock_citation.doi = "10.1234/example"
         mock_citation.metadata = {"publication_year": 2020}
-        
+
         mock_manager = MagicMock()
         mock_manager.citations = {"key": mock_citation}
         mock_manager.get_citations_with_pages.return_value = [(mock_citation, "p. 1")]
         mock_citation_manager_class.return_value = mock_manager
-        
+
         summary_results = [
             {
-                "page_information": {"page_number_integer": 1, "page_number_type": "arabic", "page_types": ["content"]},
+                "page_information": {
+                    "page_number_integer": 1,
+                    "page_number_type": "arabic",
+                    "page_types": ["content"],
+                },
                 "bullet_points": ["Content"],
                 "references": ["Author (2020). Title."],
             }
         ]
-        
+
         create_markdown_summary(summary_results, output_path, "Test")
-        
+
         content = output_path.read_text(encoding="utf-8")
         assert "## Consolidated References" in content
         assert "[Author (2020). Title.](https://example.com)" in content
@@ -813,21 +886,31 @@ class TestCreateMarkdownSummary:
         output_path = tmp_path / "test_summary.md"
         summary_results = [
             {
-                "page_information": {"page_number_integer": None, "page_number_type": "none", "page_types": ["content"]},
+                "page_information": {
+                    "page_number_integer": None,
+                    "page_number_type": "none",
+                    "page_types": ["content"],
+                },
                 "bullet_points": ["Unnumbered content"],
                 "references": [],
             }
         ]
-        
+
         # Note: This page will be filtered as unnumbered, so let's add a valid page too
-        summary_results.append({
-            "page_information": {"page_number_integer": 1, "page_number_type": "arabic", "page_types": ["content"]},
-            "bullet_points": ["Valid content"],
-            "references": [],
-        })
-        
+        summary_results.append(
+            {
+                "page_information": {
+                    "page_number_integer": 1,
+                    "page_number_type": "arabic",
+                    "page_types": ["content"],
+                },
+                "bullet_points": ["Valid content"],
+                "references": [],
+            }
+        )
+
         create_markdown_summary(summary_results, output_path, "Test")
-        
+
         content = output_path.read_text(encoding="utf-8")
         # Unnumbered page should be filtered out
         assert "## Page 1" in content

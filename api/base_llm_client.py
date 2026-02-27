@@ -7,7 +7,7 @@ This module provides the foundational LLM client implementation with:
 
 2. **LangChain Built-in Retry**: API error retries (rate limits, timeouts, server errors)
    are handled by LangChain's built-in exponential backoff via `max_retries` parameter.
-   
+
 3. **Schema-Specific Retries**: Optional retries based on model-returned flags
    in responses (e.g., no_transcribable_text, page_type_null_bullets).
 
@@ -22,14 +22,18 @@ This module provides the foundational LLM client implementation with:
 from __future__ import annotations
 
 import random
-import time
 from collections import deque
 from typing import Any
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage
 
-from api.llm_client import LLMConfig, get_chat_model, get_model_capabilities, ProviderType
+from api.llm_client import (
+    LLMConfig,
+    get_chat_model,
+    get_model_capabilities,
+    ProviderType,
+)
 from modules.concurrency_helper import get_api_timeout, get_service_tier
 from modules.config_loader import get_config_loader
 from modules.logger import setup_logger
@@ -42,10 +46,10 @@ def _load_retry_config() -> dict[str, Any]:
     try:
         config_loader = get_config_loader()
         retry_cfg = config_loader.get_concurrency_config().get("retry", {})
-        
+
         if not retry_cfg:
             logger.debug("No retry config found in concurrency.yaml, using defaults")
-            
+
         return retry_cfg
     except Exception as e:
         logger.warning(f"Error loading retry config: {e}. Using defaults.")
@@ -66,7 +70,7 @@ JITTER_MAX = _JITTER.get("max", 1.0)
 class LLMClientBase:
     """
     Base class for LLM clients leveraging LangChain's built-in capabilities.
-    
+
     This class provides:
     - Multi-provider support through LangChain
     - API error retries handled by LangChain's built-in exponential backoff
@@ -74,7 +78,7 @@ class LLMClientBase:
     - Rate limiting integration (complementary to LangChain's retry)
     - Model configuration loading from YAML
     - Request statistics tracking
-    
+
     Subclasses should implement specific API endpoint logic (transcription, summarization, etc.)
     """
 
@@ -116,7 +120,7 @@ class LLMClientBase:
             max_retries=max_retries,  # LangChain handles exponential backoff
             service_tier=service_tier,
         )
-        
+
         # Store the resolved provider
         self.provider = llm_config.provider
 
@@ -127,17 +131,17 @@ class LLMClientBase:
         self.successful_requests = 0
         self.failed_requests = 0
         self.processing_times: deque = deque(maxlen=50)
-        
+
         # Model configuration and service tier (loaded by subclasses)
         self.model_config: dict[str, Any] = {}
         self.service_tier: str = service_tier or "auto"
-        
+
         # Schema retry configuration (loaded by subclasses)
         self.schema_retry_config: dict[str, Any] = {}
-        
+
         # Output schema for structured output (set by subclasses)
         self._output_schema: dict[str, Any] | None = None
-        
+
         logger.info(
             f"Initialized LLM client: provider={self.provider}, model={model_name}, "
             f"max_retries={max_retries} (handled by LangChain)"
@@ -149,14 +153,14 @@ class LLMClientBase:
             config_loader = get_config_loader()
             model_cfg = config_loader.get_model_config()
             config_dict = model_cfg.get(config_key, {})
-            
+
             if config_dict:
                 logger.debug(
                     f"Loaded {config_key} config: {config_dict.get('name', 'unknown')}"
                 )
             else:
                 logger.debug(f"No {config_key} config found, using defaults")
-                
+
             return config_dict
         except Exception as e:
             logger.warning(f"Error loading model config for {config_key}: {e}")
@@ -165,25 +169,25 @@ class LLMClientBase:
     def _determine_service_tier(self, api_type: str = "transcription") -> str:
         """
         Determine service tier from configuration.
-        
+
         Service tier controls request prioritization (OpenAI-specific):
         - 'flex': Lower cost, may queue during high demand
         - 'default': Standard processing speed
         - 'priority': Fastest processing, higher cost
         - 'auto': Let provider decide
-        
+
         For non-OpenAI providers, this returns 'auto' as it's not applicable.
-        
+
         Args:
             api_type: Type of API request ('transcription' or 'summary').
-            
+
         Returns:
             Service tier string.
         """
         # Service tier is primarily an OpenAI concept
         if self.provider != "openai":
             return "auto"
-        
+
         # Use centralized service tier configuration
         return get_service_tier(api_type)
 
@@ -201,7 +205,7 @@ class LLMClientBase:
     def _report_error(self, is_rate_limit_or_server: bool) -> None:
         """
         Report error to rate limiter.
-        
+
         Args:
             is_rate_limit_or_server: True if error is rate limit or server error.
         """
@@ -300,12 +304,14 @@ class LLMClientBase:
             logger.warning(f"Error extracting output text: {e}")
             return ""
 
-    def _build_text_format(self, default_name: str = "json_schema") -> dict[str, Any] | None:
+    def _build_text_format(
+        self, default_name: str = "json_schema"
+    ) -> dict[str, Any] | None:
         """Build the structured output format specification from the output schema.
-        
+
         Args:
             default_name: Default schema name if not specified in the schema dict.
-            
+
         Returns:
             JSON schema format dict, or None if no valid schema is available.
         """
@@ -329,22 +335,22 @@ class LLMClientBase:
 
     def _get_structured_chat_model(self):
         """Get chat model with structured output for each provider.
-        
+
         Provider-specific approaches:
         - OpenAI: Native response_format parameter (guaranteed JSON) - handled separately
         - Anthropic/Google: Prompt-based JSON with markdown stripping fallback
           (LangChain's with_structured_output has tool naming compatibility issues)
         - OpenRouter: Default tool-based structured output (OpenAI-compatible)
-        
+
         Returns:
             Chat model with structured output, or base chat model.
         """
         if self.provider == "openai":
             return self.chat_model
-        
+
         if self.provider in ("anthropic", "google"):
             return self.chat_model
-        
+
         # OpenRouter: Use tool-based structured output (OpenAI-compatible)
         if self._output_schema:
             schema = self._output_schema.get("schema", self._output_schema)
@@ -353,15 +359,15 @@ class LLMClientBase:
                     schema,
                     include_raw=True,
                 )
-        
+
         return self.chat_model
 
     def _apply_structured_output_kwargs(self, invoke_kwargs: dict[str, Any]) -> None:
         """Apply provider-specific structured output parameters to invoke kwargs.
-        
+
         Modifies invoke_kwargs in-place to add structured output format for
         OpenAI (response_format) and Google (response_mime_type + response_schema).
-        
+
         Args:
             invoke_kwargs: The invocation kwargs dict to modify.
         """
@@ -376,7 +382,8 @@ class LLMClientBase:
         if self.provider == "google":
             schema_obj = (
                 self._output_schema.get("schema")
-                if isinstance(self._output_schema, dict) and "schema" in self._output_schema
+                if isinstance(self._output_schema, dict)
+                and "schema" in self._output_schema
                 else self._output_schema
             )
             if isinstance(schema_obj, dict) and schema_obj:
@@ -407,65 +414,63 @@ class LLMClientBase:
         try:
             config_loader = get_config_loader()
             concurrency_cfg = config_loader.get_concurrency_config()
-            
+
             schema_retries = (
-                concurrency_cfg
-                .get("retry", {})
+                concurrency_cfg.get("retry", {})
                 .get("schema_retries", {})
                 .get(api_type, {})
             )
-            
+
             if schema_retries:
-                logger.debug(f"Loaded schema retry config for {api_type}: {list(schema_retries.keys())}")
+                logger.debug(
+                    f"Loaded schema retry config for {api_type}: {list(schema_retries.keys())}"
+                )
             else:
                 logger.debug(f"No schema retry config found for {api_type}")
-                
+
             return schema_retries
         except Exception as e:
             logger.warning(f"Error loading schema retry config for {api_type}: {e}")
             return {}
 
     def _should_retry_for_schema_flag(
-        self, 
-        flag_name: str, 
-        flag_value: Any,
-        current_attempt: int
+        self, flag_name: str, flag_value: Any, current_attempt: int
     ) -> tuple[bool, float, int]:
         """Check if we should retry based on a schema flag value."""
         # Get configuration for this specific flag
         flag_config = self.schema_retry_config.get(flag_name, {})
-        
+
         # Check if retries are enabled for this flag
         if not flag_config.get("enabled", False):
             return False, 0.0, 0
-        
+
         # Check if flag is set to a truthy value
         if not flag_value:
             return False, 0.0, 0
-        
+
         # Get max attempts for this flag
         max_attempts = flag_config.get("max_attempts", 0)
-        
+
         # Check if we've exceeded max attempts
         if current_attempt >= max_attempts:
             return False, 0.0, max_attempts
-        
+
         # Calculate backoff time
         backoff_base = flag_config.get("backoff_base", 2.0)
         backoff_multiplier = flag_config.get("backoff_multiplier", 1.5)
         jitter = random.uniform(JITTER_MIN, JITTER_MAX)
-        
-        backoff_time = backoff_base * (backoff_multiplier ** current_attempt) * jitter
-        
+
+        backoff_time = backoff_base * (backoff_multiplier**current_attempt) * jitter
+
         return True, backoff_time, max_attempts
 
     def _build_invoke_kwargs(self) -> dict[str, Any]:
         """Build provider-appropriate invocation kwargs with capability guarding."""
         invoke_kwargs: dict[str, Any] = {}
-        
+
         # Get model capabilities for parameter guarding
         capabilities = get_model_capabilities(self.model_name)
-        
+
         # Add max_output_tokens from config (most models support this)
         if capabilities.get("max_tokens", True):
             max_tokens = self.model_config.get("max_output_tokens")
@@ -478,11 +483,11 @@ class LLMClientBase:
                     invoke_kwargs["max_output_tokens"] = max_tokens
                 else:
                     invoke_kwargs["max_tokens"] = max_tokens
-        
+
         # OpenAI-specific: service tier (supported by all OpenAI models)
         if self.provider == "openai" and self.service_tier:
             invoke_kwargs["service_tier"] = self.service_tier
-        
+
         # OpenAI-specific: reasoning parameters (only GPT-5 and o-series)
         # GUARDED: Only add if model supports reasoning
         if self.provider == "openai" and capabilities.get("reasoning", False):
@@ -495,7 +500,7 @@ class LLMClientBase:
             logger.debug(
                 f"Skipping reasoning params for {self.model_name} (not supported)"
             )
-        
+
         # OpenAI-specific: text verbosity parameters (only GPT-5 family)
         # GUARDED: Only add if model supports text_verbosity
         if self.provider == "openai" and capabilities.get("text_verbosity", False):
@@ -507,12 +512,14 @@ class LLMClientBase:
                         text_params["verbosity"] = text_cfg["verbosity"]
                     if text_params:
                         invoke_kwargs["text"] = text_params
-                        logger.debug(f"Added text verbosity params for {self.model_name}")
+                        logger.debug(
+                            f"Added text verbosity params for {self.model_name}"
+                        )
         elif "text" in self.model_config:
             logger.debug(
                 f"Skipping text verbosity params for {self.model_name} (not supported)"
             )
-        
+
         return invoke_kwargs
 
 

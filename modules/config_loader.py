@@ -51,6 +51,7 @@ def _deep_merge_dicts(base: dict[str, Any], updates: dict[str, Any]) -> dict[str
             merged[key] = deepcopy(value)
     return merged
 
+
 # ============================================================================
 # Path Resolution
 # ============================================================================
@@ -70,7 +71,7 @@ class ConfigLoader:
 
     This class loads configuration files for image processing, concurrency,
     and model settings from the modules/config/ directory.
-    
+
     Example:
         >>> loader = ConfigLoader()
         >>> loader.load_configs()
@@ -101,7 +102,7 @@ class ConfigLoader:
     def _load_yaml_config(self, filename: str) -> dict[str, Any]:
         """Load a single YAML configuration file."""
         config_path = CONFIG_DIR / filename
-        
+
         if not config_path.exists():
             logger.debug(f"Config file not found: {config_path}")
             return {}
@@ -109,13 +110,15 @@ class ConfigLoader:
         try:
             with config_path.open("r", encoding="utf-8") as f:
                 data = yaml.safe_load(f)
-                
+
             if not isinstance(data, dict):
-                logger.warning(f"Config file {filename} did not contain a dictionary. Using empty config.")
+                logger.warning(
+                    f"Config file {filename} did not contain a dictionary. Using empty config."
+                )
                 return {}
-                
+
             return data
-            
+
         except yaml.YAMLError as e:
             logger.error(f"YAML parsing error in {filename}: {e}")
             return {}
@@ -160,12 +163,12 @@ _config_loader_instance: ConfigLoader | None = None
 def get_config_loader() -> ConfigLoader:
     """Get or create a singleton ConfigLoader instance."""
     global _config_loader_instance
-    
+
     if _config_loader_instance is None:
         _config_loader_instance = ConfigLoader()
         _config_loader_instance.load_configs()
         logger.debug("Initialized singleton ConfigLoader")
-    
+
     return _config_loader_instance
 
 

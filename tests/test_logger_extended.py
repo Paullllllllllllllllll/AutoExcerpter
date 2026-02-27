@@ -27,8 +27,7 @@ def _cleanup_test_loggers():
     # Clean up any loggers created during tests
     logger_manager = logging.Logger.manager
     loggers_to_remove = [
-        name for name in logger_manager.loggerDict
-        if name.startswith("test_logger_")
+        name for name in logger_manager.loggerDict if name.startswith("test_logger_")
     ]
     for name in loggers_to_remove:
         log = logging.getLogger(name)
@@ -81,9 +80,7 @@ class TestSetupLogger:
 
     def test_verbose_mode_sets_console_to_full_level(self):
         """Verbose mode sets console handler to the logger's level."""
-        logger = setup_logger(
-            "test_logger_verbose", level=logging.DEBUG, verbose=True
-        )
+        logger = setup_logger("test_logger_verbose", level=logging.DEBUG, verbose=True)
 
         handler = logger.handlers[0]
         assert handler.level == logging.DEBUG
@@ -145,7 +142,8 @@ class TestSetupConsoleHandler:
 
         # Only the new one should remain
         stderr_handlers = [
-            h for h in logger.handlers
+            h
+            for h in logger.handlers
             if isinstance(h, logging.StreamHandler) and h.stream == sys.stderr
         ]
         assert len(stderr_handlers) == 1

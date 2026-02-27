@@ -46,7 +46,9 @@ class TestGetApiConcurrency:
     def test_missing_api_type_falls_back_to_defaults(self, monkeypatch):
         """When the requested api_type is absent, defaults are returned."""
         cfg = {"api_requests": {}}
-        monkeypatch.setattr(ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg=cfg))
+        monkeypatch.setattr(
+            ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg=cfg)
+        )
 
         workers, delay = ch.get_api_concurrency("transcription")
         assert workers == ch.DEFAULT_CONCURRENT_REQUESTS
@@ -54,7 +56,9 @@ class TestGetApiConcurrency:
 
     def test_completely_empty_config(self, monkeypatch):
         """Empty concurrency config returns defaults."""
-        monkeypatch.setattr(ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg={}))
+        monkeypatch.setattr(
+            ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg={})
+        )
 
         workers, delay = ch.get_api_concurrency("transcription")
         assert workers == ch.DEFAULT_CONCURRENT_REQUESTS
@@ -67,7 +71,9 @@ class TestGetApiConcurrency:
                 "summary": {"concurrency_limit": 20, "delay_between_tasks": 0.1},
             }
         }
-        monkeypatch.setattr(ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg=cfg))
+        monkeypatch.setattr(
+            ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg=cfg)
+        )
 
         workers, delay = ch.get_api_concurrency("summary")
         assert workers == 20
@@ -87,7 +93,9 @@ class TestConvenienceWrappers:
                 "transcription": {"concurrency_limit": 8, "delay_between_tasks": 0.02},
             }
         }
-        monkeypatch.setattr(ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg=cfg))
+        monkeypatch.setattr(
+            ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg=cfg)
+        )
 
         workers, delay = ch.get_transcription_concurrency()
         assert workers == 8
@@ -100,7 +108,9 @@ class TestConvenienceWrappers:
                 "summary": {"concurrency_limit": 12, "delay_between_tasks": 0.03},
             }
         }
-        monkeypatch.setattr(ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg=cfg))
+        monkeypatch.setattr(
+            ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg=cfg)
+        )
 
         workers, delay = ch.get_summary_concurrency()
         assert workers == 12
@@ -125,8 +135,12 @@ class TestGetImageProcessingConcurrency:
 
     def test_reads_config(self, monkeypatch):
         """Reads concurrency_limit and delay from image_processing section."""
-        cfg = {"image_processing": {"concurrency_limit": 16, "delay_between_tasks": 0.01}}
-        monkeypatch.setattr(ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg=cfg))
+        cfg = {
+            "image_processing": {"concurrency_limit": 16, "delay_between_tasks": 0.01}
+        }
+        monkeypatch.setattr(
+            ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg=cfg)
+        )
 
         workers, delay = ch.get_image_processing_concurrency()
         assert workers == 16
@@ -134,7 +148,9 @@ class TestGetImageProcessingConcurrency:
 
     def test_missing_image_processing_section(self, monkeypatch):
         """Returns defaults when image_processing section is absent."""
-        monkeypatch.setattr(ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg={}))
+        monkeypatch.setattr(
+            ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg={})
+        )
 
         workers, delay = ch.get_image_processing_concurrency()
         assert workers == 24
@@ -164,28 +180,36 @@ class TestGetServiceTier:
                 "transcription": {"service_tier": "priority"},
             }
         }
-        monkeypatch.setattr(ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg=cfg))
+        monkeypatch.setattr(
+            ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg=cfg)
+        )
 
         assert ch.get_service_tier("transcription") == "priority"
 
     def test_tier_missing_returns_flex(self, monkeypatch):
         """Returns 'flex' when service_tier is not specified."""
         cfg = {"api_requests": {"transcription": {}}}
-        monkeypatch.setattr(ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg=cfg))
+        monkeypatch.setattr(
+            ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg=cfg)
+        )
 
         assert ch.get_service_tier("transcription") == "flex"
 
     def test_tier_none_returns_flex(self, monkeypatch):
         """Returns 'flex' when service_tier is explicitly None."""
         cfg = {"api_requests": {"transcription": {"service_tier": None}}}
-        monkeypatch.setattr(ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg=cfg))
+        monkeypatch.setattr(
+            ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg=cfg)
+        )
 
         assert ch.get_service_tier("transcription") == "flex"
 
     def test_tier_empty_string_returns_flex(self, monkeypatch):
         """Returns 'flex' when service_tier is an empty string."""
         cfg = {"api_requests": {"transcription": {"service_tier": ""}}}
-        monkeypatch.setattr(ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg=cfg))
+        monkeypatch.setattr(
+            ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg=cfg)
+        )
 
         assert ch.get_service_tier("transcription") == "flex"
 
@@ -204,7 +228,9 @@ class TestGetServiceTier:
                 "summary": {"service_tier": "auto"},
             }
         }
-        monkeypatch.setattr(ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg=cfg))
+        monkeypatch.setattr(
+            ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg=cfg)
+        )
 
         assert ch.get_service_tier("summary") == "auto"
 
@@ -218,14 +244,18 @@ class TestGetApiTimeout:
     def test_reads_timeout_from_config(self, monkeypatch):
         """Returns the configured timeout value."""
         cfg = {"api_requests": {"api_timeout": 600}}
-        monkeypatch.setattr(ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg=cfg))
+        monkeypatch.setattr(
+            ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg=cfg)
+        )
 
         assert ch.get_api_timeout() == 600
 
     def test_missing_timeout_returns_default(self, monkeypatch):
         """Returns 900 when api_timeout is not in config."""
         cfg = {"api_requests": {}}
-        monkeypatch.setattr(ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg=cfg))
+        monkeypatch.setattr(
+            ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg=cfg)
+        )
 
         assert ch.get_api_timeout() == 900
 
@@ -240,7 +270,9 @@ class TestGetApiTimeout:
     def test_string_timeout_converted_to_int(self, monkeypatch):
         """String timeout values are converted to int."""
         cfg = {"api_requests": {"api_timeout": "450"}}
-        monkeypatch.setattr(ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg=cfg))
+        monkeypatch.setattr(
+            ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg=cfg)
+        )
 
         assert ch.get_api_timeout() == 450
 
@@ -254,7 +286,9 @@ class TestGetRateLimits:
     def test_valid_limits_parsed(self, monkeypatch):
         """Valid rate limits are parsed into tuples of ints."""
         cfg = {"api_requests": {"rate_limits": [[100, 1], [5000, 60]]}}
-        monkeypatch.setattr(ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg=cfg))
+        monkeypatch.setattr(
+            ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg=cfg)
+        )
 
         limits = ch.get_rate_limits()
         assert limits == [(100, 1), (5000, 60)]
@@ -262,7 +296,9 @@ class TestGetRateLimits:
     def test_invalid_items_skipped(self, monkeypatch):
         """Invalid items in the list are skipped."""
         cfg = {"api_requests": {"rate_limits": [[100, 1], "bad", [3], [200, 2]]}}
-        monkeypatch.setattr(ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg=cfg))
+        monkeypatch.setattr(
+            ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg=cfg)
+        )
 
         limits = ch.get_rate_limits()
         assert (100, 1) in limits
@@ -271,7 +307,9 @@ class TestGetRateLimits:
     def test_empty_list_returns_default(self, monkeypatch):
         """Empty rate_limits list returns the default limits."""
         cfg = {"api_requests": {"rate_limits": []}}
-        monkeypatch.setattr(ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg=cfg))
+        monkeypatch.setattr(
+            ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg=cfg)
+        )
 
         limits = ch.get_rate_limits()
         # Default limits from the module
@@ -280,7 +318,9 @@ class TestGetRateLimits:
     def test_all_invalid_items_returns_default(self, monkeypatch):
         """When all items are invalid, returns the default limits."""
         cfg = {"api_requests": {"rate_limits": [["bad", "worse"], "string"]}}
-        monkeypatch.setattr(ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg=cfg))
+        monkeypatch.setattr(
+            ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg=cfg)
+        )
 
         limits = ch.get_rate_limits()
         assert len(limits) == 3  # default
@@ -288,7 +328,9 @@ class TestGetRateLimits:
     def test_not_a_list_returns_default(self, monkeypatch):
         """Non-list rate_limits returns the default limits."""
         cfg = {"api_requests": {"rate_limits": "not_a_list"}}
-        monkeypatch.setattr(ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg=cfg))
+        monkeypatch.setattr(
+            ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg=cfg)
+        )
 
         limits = ch.get_rate_limits()
         assert isinstance(limits, list)
@@ -297,7 +339,9 @@ class TestGetRateLimits:
     def test_missing_rate_limits_returns_default(self, monkeypatch):
         """Missing rate_limits key returns the default limits."""
         cfg = {"api_requests": {}}
-        monkeypatch.setattr(ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg=cfg))
+        monkeypatch.setattr(
+            ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg=cfg)
+        )
 
         limits = ch.get_rate_limits()
         assert isinstance(limits, list)
@@ -316,7 +360,9 @@ class TestGetRateLimits:
     def test_tuple_items_accepted(self, monkeypatch):
         """Tuple items in the list are also accepted."""
         cfg = {"api_requests": {"rate_limits": [(50, 1), (1000, 60)]}}
-        monkeypatch.setattr(ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg=cfg))
+        monkeypatch.setattr(
+            ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg=cfg)
+        )
 
         limits = ch.get_rate_limits()
         assert limits == [(50, 1), (1000, 60)]
@@ -331,14 +377,18 @@ class TestGetTargetDpi:
     def test_reads_dpi_from_config(self, monkeypatch):
         """Returns the configured target DPI."""
         img_cfg = {"api_image_processing": {"target_dpi": 600}}
-        monkeypatch.setattr(ch, "get_config_loader", lambda: _mock_loader(image_cfg=img_cfg))
+        monkeypatch.setattr(
+            ch, "get_config_loader", lambda: _mock_loader(image_cfg=img_cfg)
+        )
 
         assert ch.get_target_dpi() == 600
 
     def test_missing_target_dpi_returns_default(self, monkeypatch):
         """Returns 300 when target_dpi is not in config."""
         img_cfg = {"api_image_processing": {}}
-        monkeypatch.setattr(ch, "get_config_loader", lambda: _mock_loader(image_cfg=img_cfg))
+        monkeypatch.setattr(
+            ch, "get_config_loader", lambda: _mock_loader(image_cfg=img_cfg)
+        )
 
         assert ch.get_target_dpi() == 300
 
@@ -359,6 +409,8 @@ class TestGetTargetDpi:
     def test_string_dpi_converted_to_int(self, monkeypatch):
         """String DPI values are converted to int."""
         img_cfg = {"api_image_processing": {"target_dpi": "450"}}
-        monkeypatch.setattr(ch, "get_config_loader", lambda: _mock_loader(image_cfg=img_cfg))
+        monkeypatch.setattr(
+            ch, "get_config_loader", lambda: _mock_loader(image_cfg=img_cfg)
+        )
 
         assert ch.get_target_dpi() == 450
