@@ -272,6 +272,36 @@ _OPENROUTER_BASE: dict = dict(
 _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict, dict]] = [
     # ===== OpenAI GPT-5.x family (reasoning + text verbosity) =====
     (
+        ("gpt-5.4-pro",),
+        "gpt-5.4-pro",
+        _OPENAI_REASONING_BASE,
+        dict(
+            supports_text_verbosity=True,
+            max_context_tokens=1050000,
+            max_output_tokens=128000,
+        ),
+    ),
+    (
+        ("gpt-5.4",),
+        "gpt-5.4",
+        _OPENAI_REASONING_BASE,
+        dict(
+            supports_text_verbosity=True,
+            max_context_tokens=1050000,
+            max_output_tokens=128000,
+        ),
+    ),
+    (
+        ("gpt-5.3",),
+        "gpt-5.3",
+        _OPENAI_REASONING_BASE,
+        dict(
+            supports_text_verbosity=True,
+            max_context_tokens=400000,
+            max_output_tokens=128000,
+        ),
+    ),
+    (
         ("gpt-5.2",),
         "gpt-5.2",
         _OPENAI_REASONING_BASE,

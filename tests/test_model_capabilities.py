@@ -20,6 +20,10 @@ class TestDetectProvider:
         assert detect_provider("gpt-5") == "openai"
         assert detect_provider("gpt-5.1") == "openai"
         assert detect_provider("gpt-5.2") == "openai"
+        assert detect_provider("gpt-5.3") == "openai"
+        assert detect_provider("gpt-5.3-chat-latest") == "openai"
+        assert detect_provider("gpt-5.4") == "openai"
+        assert detect_provider("gpt-5.4-pro") == "openai"
 
     def test_detect_openai_reasoning_models(self):
         assert detect_provider("o1") == "openai"
@@ -87,6 +91,52 @@ class TestDetectCapabilities:
         caps = detect_capabilities("gpt-5.2")
         assert caps.family == "gpt-5.2"
         assert caps.max_context_tokens == 400000
+
+    def test_gpt53_capabilities(self):
+        caps = detect_capabilities("gpt-5.3")
+        assert caps.family == "gpt-5.3"
+        assert caps.provider_name == "openai"
+        assert caps.is_reasoning_model is True
+        assert caps.supports_reasoning_effort is True
+        assert caps.supports_text_verbosity is True
+        assert caps.supports_temperature is False
+        assert caps.supports_vision is True
+        assert caps.max_context_tokens == 400000
+        assert caps.max_output_tokens == 128000
+
+    def test_gpt53_chat_latest_inherits_family(self):
+        caps = detect_capabilities("gpt-5.3-chat-latest")
+        assert caps.family == "gpt-5.3"
+        assert caps.supports_text_verbosity is True
+
+    def test_gpt54_capabilities(self):
+        caps = detect_capabilities("gpt-5.4")
+        assert caps.family == "gpt-5.4"
+        assert caps.provider_name == "openai"
+        assert caps.is_reasoning_model is True
+        assert caps.supports_reasoning_effort is True
+        assert caps.supports_text_verbosity is True
+        assert caps.supports_temperature is False
+        assert caps.supports_vision is True
+        assert caps.max_context_tokens == 1050000
+        assert caps.max_output_tokens == 128000
+
+    def test_gpt54_pro_capabilities(self):
+        caps = detect_capabilities("gpt-5.4-pro")
+        assert caps.family == "gpt-5.4-pro"
+        assert caps.provider_name == "openai"
+        assert caps.is_reasoning_model is True
+        assert caps.supports_reasoning_effort is True
+        assert caps.supports_text_verbosity is True
+        assert caps.max_context_tokens == 1050000
+        assert caps.max_output_tokens == 128000
+
+    def test_gpt54_pro_does_not_match_gpt54(self):
+        """Ensure gpt-5.4-pro is matched by its own entry, not the gpt-5.4 prefix."""
+        pro = detect_capabilities("gpt-5.4-pro")
+        base = detect_capabilities("gpt-5.4")
+        assert pro.family == "gpt-5.4-pro"
+        assert base.family == "gpt-5.4"
 
     # --- OpenAI GPT-4.x standard models ---
 
