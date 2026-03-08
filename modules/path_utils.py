@@ -12,6 +12,8 @@ Strategy:
 Reference: https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation
 """
 
+from __future__ import annotations
+
 import hashlib
 from pathlib import Path
 

@@ -14,7 +14,7 @@ from core.transcriber import ItemTranscriber
 from modules import app_config as config
 from modules.error_handler import handle_critical_error
 from modules.logger import setup_logger
-from modules.token_tracker import get_token_tracker
+from modules.token_tracker import get_token_tracker, DailyTokenTracker
 from modules.types import ItemSpec
 from modules.user_prompts import (
     print_success,
@@ -34,7 +34,7 @@ def _process_single_item(
     base_output_dir: Path,
     summary_context: str | None = None,
     resume_mode: str = "skip",
-    completed_page_indices: set | None = None,
+    completed_page_indices: set[int] | None = None,
 ) -> bool:
     """Process a single PDF or image folder item.
 
@@ -167,7 +167,7 @@ def _check_and_wait_for_token_limit() -> bool:
         return False
 
 
-def _wait_for_token_reset(token_tracker, seconds_until_reset: int) -> bool:
+def _wait_for_token_reset(token_tracker: DailyTokenTracker, seconds_until_reset: int) -> bool:
     """Wait for token limit reset with cancellation support."""
     elapsed = 0
     sleep_interval = 1  # Check every second for responsiveness

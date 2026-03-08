@@ -268,6 +268,7 @@ class TestSetupFileHandler:
         file_handler = [
             h for h in logger.handlers if isinstance(h, logging.FileHandler)
         ][0]
+        assert file_handler.formatter is not None
         assert file_handler.formatter._fmt == DETAILED_FORMAT
 
     def test_append_mode(self, tmp_path: Path):

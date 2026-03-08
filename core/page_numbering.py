@@ -147,7 +147,7 @@ class PageNumberProcessor:
         return adjusted_page
 
     def _infer_from_following_page(
-        self, sorted_summaries: list[dict[str, Any]], page_type: str, claimed_pages: set
+        self, sorted_summaries: list[dict[str, Any]], page_type: str, claimed_pages: set[int]
     ) -> int:
         """
         Infer page numbers for gaps between numbered pages.

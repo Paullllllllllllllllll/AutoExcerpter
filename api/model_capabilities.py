@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 logger = logging.getLogger(__name__)
 
@@ -172,7 +172,7 @@ def detect_provider(model_name: str) -> ProviderType:
 # only needs to declare the fields that *differ* from its provider default.
 # ---------------------------------------------------------------------------
 
-_OPENAI_REASONING_BASE: dict = dict(
+_OPENAI_REASONING_BASE: dict[str, Any] = dict(
     provider_name="openai",
     supports_vision=True,
     supports_image_detail=True,
@@ -190,7 +190,7 @@ _OPENAI_REASONING_BASE: dict = dict(
     max_output_tokens=100000,
 )
 
-_OPENAI_STANDARD_BASE: dict = dict(
+_OPENAI_STANDARD_BASE: dict[str, Any] = dict(
     provider_name="openai",
     supports_vision=True,
     supports_image_detail=True,
@@ -208,7 +208,7 @@ _OPENAI_STANDARD_BASE: dict = dict(
     max_output_tokens=16384,
 )
 
-_ANTHROPIC_BASE: dict = dict(
+_ANTHROPIC_BASE: dict[str, Any] = dict(
     provider_name="anthropic",
     supports_vision=True,
     supports_image_detail=False,
@@ -226,7 +226,7 @@ _ANTHROPIC_BASE: dict = dict(
     max_output_tokens=8192,
 )
 
-_GOOGLE_BASE: dict = dict(
+_GOOGLE_BASE: dict[str, Any] = dict(
     provider_name="google",
     supports_vision=True,
     supports_image_detail=False,
@@ -246,7 +246,7 @@ _GOOGLE_BASE: dict = dict(
     max_output_tokens=8192,
 )
 
-_OPENROUTER_BASE: dict = dict(
+_OPENROUTER_BASE: dict[str, Any] = dict(
     provider_name="openrouter",
     supports_vision=True,
     supports_image_detail=False,
@@ -269,7 +269,7 @@ _OPENROUTER_BASE: dict = dict(
 # Order matters: more specific prefixes MUST come before less specific ones.
 # ---------------------------------------------------------------------------
 
-_MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict, dict]] = [
+_MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]]] = [
     # ===== OpenAI GPT-5.x family (reasoning + text verbosity) =====
     (
         ("gpt-5.4-pro",),
@@ -573,7 +573,7 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict, dict]] = [
 
 
 def _build_caps(
-    model_name: str, family: str, base: dict, overrides: dict
+    model_name: str, family: str, base: dict[str, Any], overrides: dict[str, Any]
 ) -> ProviderCapabilities:
     """Merge *base* defaults with *overrides* and return a ProviderCapabilities instance."""
     merged = {**base, **overrides}

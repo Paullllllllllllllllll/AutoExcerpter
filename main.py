@@ -30,7 +30,7 @@ from cli.processing import (
     _check_and_wait_for_token_limit,
     _process_single_item,
 )
-from core.resume import ProcessingState, ResumeChecker
+from core.resume import ProcessingState, ResumeChecker, ResumeResult
 from modules import app_config as config
 from modules.config_loader import get_config_loader
 from modules.error_handler import handle_critical_error
@@ -181,7 +181,7 @@ def main() -> None:
 
     # Build per-item resume info map for items that will be processed
     # (includes PARTIAL and TRANSCRIPTION_ONLY states for page-level / summary-only resume)
-    item_resume_map: dict[str, object] = {}
+    item_resume_map: dict[str, ResumeResult] = {}
     for item in items_to_process:
         result = resume_checker.should_skip(
             item.output_stem,

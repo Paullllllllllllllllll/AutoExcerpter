@@ -409,7 +409,7 @@ def sanitize_omml_xml(omml_markup: str) -> str:
         return omml_markup
 
 
-def add_math_to_paragraph(paragraph, latex_code: str) -> None:
+def add_math_to_paragraph(paragraph: Any, latex_code: str) -> None:
     """Add a mathematical formula to a paragraph using OMML for native Word equation rendering."""
     try:
         mathml = latex_to_mathml(latex_code)
@@ -482,7 +482,7 @@ def add_math_to_paragraph(paragraph, latex_code: str) -> None:
         run.italic = True
 
 
-def add_formatted_text_to_paragraph(paragraph, text: str) -> None:
+def add_formatted_text_to_paragraph(paragraph: Any, text: str) -> None:
     """Add text to a paragraph, parsing and rendering LaTeX formulas."""
     segments = parse_latex_in_text(text)
 
@@ -493,7 +493,7 @@ def add_formatted_text_to_paragraph(paragraph, text: str) -> None:
             paragraph.add_run(sanitize_for_xml(content))
 
 
-def add_hyperlink(paragraph, url: str, text: str) -> None:
+def add_hyperlink(paragraph: Any, url: str, text: str) -> None:
     """Add a hyperlink to a paragraph in a DOCX document."""
     part = paragraph.part
     r_id = part.relate_to(

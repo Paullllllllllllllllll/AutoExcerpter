@@ -130,7 +130,7 @@ class LLMClientBase:
         # Statistics tracking
         self.successful_requests = 0
         self.failed_requests = 0
-        self.processing_times: deque = deque(maxlen=50)
+        self.processing_times: deque[float] = deque(maxlen=50)
 
         # Model configuration and service tier (loaded by subclasses)
         self.model_config: dict[str, Any] = {}
@@ -333,7 +333,7 @@ class LLMClientBase:
             "strict": strict,
         }
 
-    def _get_structured_chat_model(self):
+    def _get_structured_chat_model(self) -> Any:
         """Get chat model with structured output for each provider.
 
         Provider-specific approaches:

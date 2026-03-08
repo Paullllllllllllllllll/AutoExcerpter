@@ -33,6 +33,7 @@ import json
 import threading
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 from modules import app_config as config
 from modules.logger import setup_logger
@@ -287,7 +288,7 @@ class DailyTokenTracker:
         used = self.get_tokens_used_today()
         return (used / self.daily_limit) * 100.0
 
-    def get_stats(self) -> dict:
+    def get_stats(self) -> dict[str, Any]:
         """
         Get comprehensive token usage statistics.
 

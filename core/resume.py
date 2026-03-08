@@ -275,7 +275,7 @@ def load_completed_pages(log_path: Path) -> set[int] | None:
         return None
 
 
-def _parse_log_entries(raw: str) -> list[dict] | None:
+def _parse_log_entries(raw: str) -> list[dict[str, Any]] | None:
     """Parse log file content, handling both complete and incomplete JSON arrays.
 
     Args:

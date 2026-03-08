@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import collections.abc
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -311,7 +312,7 @@ def _display_completion_summary(
 
 
 def _log_token_limit_reached(
-    stats: dict[str, Any], reset_time, hours: int, minutes: int
+    stats: dict[str, Any], reset_time: datetime, hours: int, minutes: int
 ) -> None:
     """Log token limit reached message to appropriate output."""
     logger.warning(

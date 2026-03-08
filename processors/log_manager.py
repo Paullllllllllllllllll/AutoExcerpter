@@ -21,7 +21,7 @@ _LOG_HANDLES: dict[Path, tuple[Any, threading.Lock]] = {}
 _LOG_HANDLES_GUARD = threading.Lock()
 
 
-def _get_log_handle(log_path: Path):
+def _get_log_handle(log_path: Path) -> tuple[Any, threading.Lock]:
     key = log_path
     with _LOG_HANDLES_GUARD:
         existing = _LOG_HANDLES.get(key)

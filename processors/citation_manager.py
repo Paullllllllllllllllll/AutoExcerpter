@@ -39,7 +39,7 @@ class Citation:
     raw_text: str
     pages: set[int] = field(default_factory=set)
     normalized_key: str = ""
-    metadata: Dict | None = None
+    metadata: dict[str, Any] | None = None
     doi: str | None = None
     url: str | None = None
 
@@ -156,7 +156,7 @@ class CitationManager:
         """
         self.citations: dict[str, Citation] = {}
         self.polite_pool_email = polite_pool_email or OPENALEX_POLITE_POOL_EMAIL
-        self._api_cache: dict[str, Dict | None] = {}
+        self._api_cache: dict[str, dict[str, Any] | None] = {}
 
     def add_citations(self, citations: list[str], page_number: int) -> None:
         """
@@ -222,7 +222,7 @@ class CitationManager:
 
         logger.info("Successfully enriched %d citations with metadata", requests_made)
 
-    def _fetch_metadata_from_openalex(self, citation_text: str) -> Dict | None:
+    def _fetch_metadata_from_openalex(self, citation_text: str) -> dict[str, Any] | None:
         """
         Fetch metadata for a citation from OpenAlex API.
 
@@ -269,7 +269,7 @@ class CitationManager:
 
     def _make_openalex_request(
         self, url: str, params: dict[str, Any], context_description: str = ""
-    ) -> Dict | None:
+    ) -> dict[str, Any] | None:
         """
         Make a request to OpenAlex API with retry logic and error handling.
 
@@ -331,7 +331,7 @@ class CitationManager:
 
         return None
 
-    def _query_openalex_by_doi(self, doi: str) -> Dict | None:
+    def _query_openalex_by_doi(self, doi: str) -> dict[str, Any] | None:
         """Query OpenAlex API using DOI."""
         url = f"{OPENALEX_API_BASE}/works/https://doi.org/{doi}"
         params = {"mailto": self.polite_pool_email}
@@ -341,7 +341,7 @@ class CitationManager:
             return self._extract_metadata_from_response(data)
         return None
 
-    def _query_openalex_by_text(self, citation_text: str) -> Dict | None:
+    def _query_openalex_by_text(self, citation_text: str) -> dict[str, Any] | None:
         """Query OpenAlex API using citation text search."""
         # Extract key terms for better search
         search_query = self._extract_search_terms(citation_text)
@@ -383,7 +383,7 @@ class CitationManager:
             else text
         )
 
-    def _verify_citation_match(self, citation_text: str, work_data: Dict) -> bool:
+    def _verify_citation_match(self, citation_text: str, work_data: dict[str, Any]) -> bool:
         """Verify that OpenAlex result matches the citation."""
         raw_title = work_data.get("title") or work_data.get("display_name") or ""
         title = raw_title.lower()
@@ -403,7 +403,7 @@ class CitationManager:
 
         return False
 
-    def _extract_metadata_from_response(self, work_data: Dict) -> Dict:
+    def _extract_metadata_from_response(self, work_data: dict[str, Any]) -> dict[str, Any]:
         """Extract relevant metadata from OpenAlex API response."""
         metadata: dict[str, Any] = {
             "title": work_data.get("title"),

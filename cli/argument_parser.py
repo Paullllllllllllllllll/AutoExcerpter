@@ -8,6 +8,7 @@ from typing import Any
 
 from modules import app_config as config
 from modules.logger import setup_logger
+from modules.types import ItemSpec
 
 logger = setup_logger(__name__)
 
@@ -337,7 +338,7 @@ def _build_cli_model_overrides(args: argparse.Namespace) -> dict[str, Any]:
     return overrides
 
 
-def _parse_cli_selection(items: list, pattern: str) -> list:
+def _parse_cli_selection(items: list[ItemSpec], pattern: str) -> list[ItemSpec]:
     """Parse CLI selection pattern and return matching items.
 
     Args:
