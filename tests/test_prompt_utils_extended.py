@@ -12,7 +12,6 @@ from modules.prompt_utils import (
     _replace_schema_at_marker,
     _inject_context,
     SCHEMA_MARKER,
-    SCHEMA_TOKEN,
     SCHEMA_TOKEN_GENERIC,
 )
 

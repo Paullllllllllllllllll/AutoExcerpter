@@ -207,16 +207,8 @@ class SummaryManager(LLMClientBase):
                 page_info["page_number_type"] = (
                     "arabic" if page_info.get("page_number_integer") else "none"
                 )
-            # Handle both page_types (array) and legacy page_type (string)
             if "page_types" not in page_info:
-                if "page_type" in page_info:
-                    # Convert legacy page_type to page_types array
-                    legacy_type = page_info.pop("page_type")
-                    page_info["page_types"] = (
-                        [legacy_type] if legacy_type else ["content"]
-                    )
-                else:
-                    page_info["page_types"] = ["content"]
+                page_info["page_types"] = ["content"]
 
     def generate_summary(
         self, transcription: str, page_num: int, max_schema_retries: int = 3

@@ -43,7 +43,6 @@ from modules.constants import (
     DEFAULT_JPEG_QUALITY,
     MAX_EXTRACTION_WORKERS,
     PDF_DPI_CONVERSION_FACTOR,
-    WHITE_BACKGROUND_COLOR,
 )
 from modules.image_utils import ImageProcessor
 from modules.model_utils import (
@@ -64,8 +63,9 @@ def _apply_image_preprocessing(
     img_cfg: dict[str, Any],
     model_type: ModelType = "openai",
 ) -> Image.Image:
-    """
-    Apply preprocessing steps to an image with provider-specific resizing.
+    """Apply preprocessing steps to an image with provider-specific resizing.
+
+    Delegates to ImageProcessor.preprocess_pil_image for the actual processing.
 
     Args:
         pil_img: PIL Image to preprocess
@@ -75,35 +75,7 @@ def _apply_image_preprocessing(
     Returns:
         Preprocessed PIL Image
     """
-    from PIL import ImageOps
-
-    # Handle transparency
-    if img_cfg.get("handle_transparency", True):
-        if pil_img.mode in ("RGBA", "LA") or (
-            pil_img.mode == "P" and "transparency" in pil_img.info
-        ):
-            background = Image.new("RGB", pil_img.size, WHITE_BACKGROUND_COLOR)
-            mask = pil_img.split()[-1] if pil_img.mode in ("RGBA", "LA") else None
-            background.paste(pil_img, mask=mask)
-            pil_img = background
-
-    # Grayscale conversion
-    if img_cfg.get("grayscale_conversion", True):
-        if pil_img.mode != "L":
-            pil_img = ImageOps.grayscale(pil_img)
-
-    # Get detail parameter based on model type
-    if model_type == "google":
-        detail = img_cfg.get("media_resolution", "high") or "high"
-    elif model_type == "anthropic":
-        detail = img_cfg.get("resize_profile", "auto") or "auto"
-    else:
-        detail = img_cfg.get("llm_detail", "high") or "high"
-
-    # Resize with provider-specific strategy
-    pil_img = ImageProcessor.resize_for_detail(pil_img, detail, img_cfg, model_type)
-
-    return pil_img
+    return ImageProcessor.preprocess_pil_image(pil_img, img_cfg, model_type)
 
 
 # ============================================================================

@@ -277,15 +277,6 @@ class TranscriptionManager(LLMClientBase):
                 brief_reason = self._truncate_analysis(image_analysis)
                 return f"[{img_name}: transcription not possible — {brief_reason}]"
 
-            # Check for legacy "contains_no_text" flag
-            if obj.get("contains_no_text") is True:
-                return f"[{img_name}: no text on page]"
-
-            # Check for legacy "cannot_transcribe" flag
-            if obj.get("cannot_transcribe") is True:
-                reason = obj.get("reason", "unknown reason")
-                return f"[{img_name}: cannot transcribe — {reason}]"
-
             # Extract transcription text
             transcription = obj.get("transcription")
             if isinstance(transcription, str):

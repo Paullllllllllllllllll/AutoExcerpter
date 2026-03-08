@@ -44,8 +44,6 @@ class PageNumberProcessor:
         """
         Extract page information from a summary result.
 
-        Supports both flat structure (preferred) and legacy nested structure.
-
         Args:
             summary_result: Summary result dictionary.
 
@@ -54,24 +52,9 @@ class PageNumberProcessor:
             page_number_type is one of: 'roman', 'arabic', 'none'.
             page_types is a list of page type classifications.
         """
-        # Try flat structure first (page_information at top level)
         page_info_obj = summary_result.get("page_information")
-
-        # Fall back to legacy nested structure if needed
         if not isinstance(page_info_obj, dict) or not page_info_obj:
-            summary_container = summary_result.get("summary", {})
-            inner_summary = (
-                summary_container.get("summary")
-                if isinstance(summary_container, dict)
-                else None
-            )
-
-            if isinstance(inner_summary, dict):
-                page_info_obj = inner_summary.get("page_information", {})
-            elif isinstance(summary_container, dict):
-                page_info_obj = summary_container.get("page_information", {})
-            else:
-                page_info_obj = {}
+            page_info_obj = {}
 
         model_page_num = None
         page_number_type = "none"
@@ -83,12 +66,9 @@ class PageNumberProcessor:
             model_page_num = page_info_obj.get("page_number_integer")
             page_number_type = page_info_obj.get("page_number_type", "none")
 
-            # Handle both page_types (array) and legacy page_type (string)
             raw_page_types = page_info_obj.get("page_types")
             if raw_page_types is None:
-                # Fallback to legacy page_type field
-                legacy_type = page_info_obj.get("page_type", "content")
-                page_types = [legacy_type] if legacy_type else ["content"]
+                page_types = ["content"]
             elif isinstance(raw_page_types, str):
                 page_types = [raw_page_types]
             elif isinstance(raw_page_types, list) and raw_page_types:

@@ -4,10 +4,9 @@ This module provides flexible prompt template rendering with JSON schema injecti
 It supports multiple injection strategies to accommodate different prompt formats.
 
 Injection Strategies (applied in order):
-1. **Generic Token Replacement**: Replaces {{SCHEMA}} with formatted JSON
-2. **Legacy Token Replacement**: Replaces {{TRANSCRIPTION_SCHEMA}} for backward compatibility
-3. **Marker Replacement**: Finds "The JSON schema:" and replaces/appends JSON after it
-4. **Append Strategy**: Appends schema at end if no token/marker found
+1. **Token Replacement**: Replaces {{SCHEMA}} with formatted JSON
+2. **Marker Replacement**: Finds "The JSON schema:" and replaces/appends JSON after it
+3. **Append Strategy**: Appends schema at end if no token/marker found
 
 Features:
 - Pretty-prints JSON with configurable indentation
@@ -41,8 +40,7 @@ __all__ = ["render_prompt_with_schema"]
 # ============================================================================
 # Constants
 # ============================================================================
-SCHEMA_TOKEN = "{{TRANSCRIPTION_SCHEMA}}"  # Legacy token for backward compatibility
-SCHEMA_TOKEN_GENERIC = "{{SCHEMA}}"  # Generic token for any schema
+SCHEMA_TOKEN_GENERIC = "{{SCHEMA}}"
 SCHEMA_MARKER = "The JSON schema:"
 DEFAULT_INDENT = 2
 
@@ -60,9 +58,8 @@ def render_prompt_with_schema(
 
     This function supports multiple injection strategies:
     1. Token replacement: If "{{SCHEMA}}" exists, replace it
-    2. Legacy token replacement: If "{{TRANSCRIPTION_SCHEMA}}" exists, replace it
-    3. Marker replacement: If "The JSON schema:" exists, replace JSON after it
-    4. Append: If none exist, append schema at the end
+    2. Marker replacement: If "The JSON schema:" exists, replace JSON after it
+    3. Append: If none exist, append schema at the end
 
     For context injection:
     - If "{{CONTEXT}}" placeholder exists and context is provided, it's replaced
@@ -104,19 +101,15 @@ def render_prompt_with_schema(
         # Fallback to string representation
         schema_str = str(schema_obj)
 
-    # Strategy 1: Generic token replacement (preferred)
+    # Strategy 1: Token replacement (preferred)
     if SCHEMA_TOKEN_GENERIC in prompt_text:
         return prompt_text.replace(SCHEMA_TOKEN_GENERIC, schema_str)
 
-    # Strategy 2: Legacy token replacement (for backward compatibility)
-    if SCHEMA_TOKEN in prompt_text:
-        return prompt_text.replace(SCHEMA_TOKEN, schema_str)
-
-    # Strategy 3: Marker replacement
+    # Strategy 2: Marker replacement
     if SCHEMA_MARKER in prompt_text:
         return _replace_schema_at_marker(prompt_text, schema_str)
 
-    # Strategy 4: Append to end
+    # Strategy 3: Append to end
     return prompt_text + f"\n\n{SCHEMA_MARKER}\n" + schema_str
 
 

@@ -353,33 +353,6 @@ class TestParseTranscriptionFromText:
         assert "transcription not possible" in result
         assert "Image too blurry" in result
 
-    def test_legacy_contains_no_text_flag(self):
-        """Legacy contains_no_text flag generates message."""
-        mgr = _make_manager()
-        data = json.dumps({"contains_no_text": True})
-        result = mgr._parse_transcription_from_text(data, "img.png")
-        assert "no text on page" in result
-
-    def test_legacy_cannot_transcribe_flag(self):
-        """Legacy cannot_transcribe flag with reason."""
-        mgr = _make_manager()
-        data = json.dumps(
-            {
-                "cannot_transcribe": True,
-                "reason": "damaged scan",
-            }
-        )
-        result = mgr._parse_transcription_from_text(data, "img.png")
-        assert "cannot transcribe" in result
-        assert "damaged scan" in result
-
-    def test_legacy_cannot_transcribe_no_reason(self):
-        """Legacy cannot_transcribe without reason uses default."""
-        mgr = _make_manager()
-        data = json.dumps({"cannot_transcribe": True})
-        result = mgr._parse_transcription_from_text(data, "img.png")
-        assert "unknown reason" in result
-
     def test_json_with_transcription_field(self):
         """JSON with transcription field extracts the text."""
         mgr = _make_manager()

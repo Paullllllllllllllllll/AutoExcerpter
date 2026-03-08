@@ -35,10 +35,10 @@ def sanitize_for_xml(text: str | None) -> str:
 # Summary Data Extraction (shared by DOCX and Markdown writers)
 # ============================================================================
 def _extract_summary_payload(result: dict[str, Any]) -> dict[str, Any]:
-    """Return the summary payload dict, handling both flat and nested formats.
+    """Return the summary payload dict from flat structure.
 
-    Flat structure (preferred): page_information, bullet_points, references at top level.
-    Legacy nested: summary.summary containing those fields.
+    Expects page_information, bullet_points, references at top level.
+    Falls back to summary dict if page_information is not at top level.
     """
     if "page_information" in result and isinstance(
         result.get("page_information"), dict
@@ -46,13 +46,7 @@ def _extract_summary_payload(result: dict[str, Any]) -> dict[str, Any]:
         return result
 
     summary = result.get("summary", {})
-    if not isinstance(summary, dict):
-        return {}
-
-    nested_summary = summary.get("summary")
-    if isinstance(nested_summary, dict):
-        return nested_summary
-    return summary
+    return summary if isinstance(summary, dict) else {}
 
 
 def _page_information(summary_data: dict[str, Any]) -> dict[str, Any]:
@@ -72,8 +66,7 @@ def _page_information(summary_data: dict[str, Any]) -> dict[str, Any]:
 
         page_types = page_info.get("page_types")
         if page_types is None:
-            legacy_type = page_info.get("page_type", "content")
-            page_types = [legacy_type] if legacy_type else ["content"]
+            page_types = ["content"]
         elif isinstance(page_types, str):
             page_types = [page_types]
         elif not isinstance(page_types, list) or not page_types:

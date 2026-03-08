@@ -254,20 +254,6 @@ class TestExtractSummaryPayload:
 
         assert "bullet_points" in payload
 
-    def test_legacy_nested_summary(self):
-        """Handles legacy nested summary structure."""
-        result = {
-            "summary": {
-                "summary": {
-                    "bullet_points": ["Point 1"],
-                }
-            }
-        }
-
-        payload = _extract_summary_payload(result)
-
-        assert "bullet_points" in payload
-
     def test_missing_summary(self):
         """Returns empty dict for missing summary."""
         result = {}
@@ -342,7 +328,7 @@ class TestIsMeaningfulSummary:
                 "page_number_type": "arabic",
             },
             "bullet_points": ["Key point 1", "Key point 2"],
-            "page_type": "content",
+            "page_types": ["content"],
         }
 
         assert _is_meaningful_summary(summary) is True
@@ -353,9 +339,9 @@ class TestIsMeaningfulSummary:
             "page_information": {
                 "page_number_integer": 1,
                 "page_number_type": "arabic",
+                "page_types": ["content"],
             },
             "bullet_points": [],
-            "page_type": "content",
         }
 
         assert _is_meaningful_summary(summary) is False
@@ -366,20 +352,20 @@ class TestIsMeaningfulSummary:
             "page_information": {
                 "page_number_integer": 1,
                 "page_number_type": "arabic",
+                "page_types": ["content"],
             },
             "bullet_points": ["[empty page]"],
-            "page_type": "content",
         }
 
         assert _is_meaningful_summary(summary) is False
 
     def test_blank_page_type(self):
-        """Returns False when page_type is 'blank'."""
+        """Returns False when page_types is ['blank']."""
         summary = {
             "page_information": {
                 "page_number_integer": 1,
                 "page_number_type": "arabic",
-                "page_type": "blank",
+                "page_types": ["blank"],
             },
             "bullet_points": None,
         }
@@ -392,7 +378,7 @@ class TestIsMeaningfulSummary:
             "page_information": {
                 "page_number_integer": None,
                 "page_number_type": "none",
-                "page_type": "content",
+                "page_types": ["content"],
             },
             "bullet_points": ["Some point"],
         }
@@ -406,9 +392,9 @@ class TestIsMeaningfulSummary:
             "page_information": {
                 "page_number_integer": 1,
                 "page_number_type": "arabic",
+                "page_types": ["content"],
             },
             "bullet_points": None,
-            "page_type": "content",
         }
 
         assert _is_meaningful_summary(summary) is False
@@ -419,10 +405,10 @@ class TestIsMeaningfulSummary:
             "page_information": {
                 "page_number_integer": 1,
                 "page_number_type": "arabic",
+                "page_types": ["content"],
             },
             "bullet_points": ["Key point 1", "Key point 2"],
             "references": None,
-            "page_type": "content",
         }
 
         assert _is_meaningful_summary(summary) is True

@@ -492,35 +492,6 @@ class TestEnsurePageInformationStructure:
         # sees page_number_integer == 7 (truthy) => "arabic"
         assert summary["page_information"]["page_number_type"] == "arabic"
 
-    def test_legacy_page_type_conversion(self):
-        """Converts legacy page_type string to page_types array."""
-        mgr = _make_manager()
-        summary = {
-            "page_information": {
-                "page_number_integer": 1,
-                "page_number_type": "arabic",
-                "page_type": "title_page",
-            }
-        }
-        mgr._ensure_page_information_structure(summary, 1)
-
-        assert summary["page_information"]["page_types"] == ["title_page"]
-        assert "page_type" not in summary["page_information"]
-
-    def test_legacy_page_type_empty_string(self):
-        """Empty legacy page_type converts to ['content']."""
-        mgr = _make_manager()
-        summary = {
-            "page_information": {
-                "page_number_integer": 1,
-                "page_number_type": "arabic",
-                "page_type": "",
-            }
-        }
-        mgr._ensure_page_information_structure(summary, 1)
-
-        assert summary["page_information"]["page_types"] == ["content"]
-
     def test_missing_page_types_no_legacy(self):
         """Missing page_types without legacy page_type defaults to ['content']."""
         mgr = _make_manager()

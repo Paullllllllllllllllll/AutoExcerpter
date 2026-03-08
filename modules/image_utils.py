@@ -60,6 +60,23 @@ logger = setup_logger(__name__)
 # Default max side for Anthropic high-detail mode
 DEFAULT_ANTHROPIC_HIGH_MAX_SIDE = 1568
 
+# Resampling algorithm mapping
+_RESAMPLING_ALGORITHMS = {
+    "bilinear": Image.Resampling.BILINEAR,
+    "lanczos": Image.Resampling.LANCZOS,
+}
+
+
+def _get_resampling_filter() -> Image.Resampling:
+    """Return the configured resampling filter from image_processing.yaml."""
+    try:
+        config_loader = get_config_loader()
+        img_config = config_loader.get_image_processing_config()
+        algo = str(img_config.get("resampling_algorithm", "bilinear")).lower()
+        return _RESAMPLING_ALGORITHMS.get(algo, Image.Resampling.BILINEAR)
+    except Exception:
+        return Image.Resampling.BILINEAR
+
 
 # ============================================================================
 # Image Processing Class
@@ -171,7 +188,7 @@ class ImageProcessor:
 
         scale = max_side / float(longest)
         new_size = (max(1, int(w * scale)), max(1, int(h * scale)))
-        return image.resize(new_size, Image.Resampling.LANCZOS)
+        return image.resize(new_size, _get_resampling_filter())
 
     @staticmethod
     def _resize_box_fit(image: Image.Image, img_cfg: dict[str, Any]) -> Image.Image:
@@ -193,7 +210,7 @@ class ImageProcessor:
         new_width = max(1, int(orig_width * scale))
         new_height = max(1, int(orig_height * scale))
 
-        resized_img = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+        resized_img = image.resize((new_width, new_height), _get_resampling_filter())
         if image.mode == "L":
             final_img = Image.new("L", (target_width, target_height), 255)
         else:
@@ -219,7 +236,7 @@ class ImageProcessor:
 
         scale = max_side / float(longest)
         new_size = (max(1, int(w * scale)), max(1, int(h * scale)))
-        return image.resize(new_size, Image.Resampling.LANCZOS)
+        return image.resize(new_size, _get_resampling_filter())
 
     def handle_transparency(self, image: Image.Image) -> Image.Image:
         """Handle transparency by pasting the image onto a white background."""
@@ -240,6 +257,56 @@ class ImageProcessor:
             return self.img_cfg.get("resize_profile", "auto") or "auto"
         else:
             return self.img_cfg.get("llm_detail", "high") or "high"
+
+    @staticmethod
+    def preprocess_pil_image(
+        pil_img: Image.Image,
+        img_cfg: dict[str, Any],
+        model_type: ModelType = "openai",
+    ) -> Image.Image:
+        """Apply preprocessing steps to an in-memory PIL image.
+
+        Performs: transparency handling -> grayscale -> resize (provider-specific).
+        This is the shared preprocessing core used by both file-based and
+        in-memory pipelines (e.g. PDF page extraction).
+
+        Args:
+            pil_img: PIL Image to preprocess.
+            img_cfg: Provider-specific image configuration dict.
+            model_type: Model type for resize strategy.
+
+        Returns:
+            Preprocessed PIL Image.
+        """
+        # Handle transparency
+        if img_cfg.get("handle_transparency", True):
+            if pil_img.mode in ("RGBA", "LA") or (
+                pil_img.mode == "P" and "transparency" in pil_img.info
+            ):
+                background = Image.new("RGB", pil_img.size, WHITE_BACKGROUND_COLOR)
+                mask = pil_img.split()[-1] if pil_img.mode in ("RGBA", "LA") else None
+                background.paste(pil_img, mask=mask)
+                pil_img = background
+
+        # Grayscale conversion
+        if img_cfg.get("grayscale_conversion", True):
+            if pil_img.mode != "L":
+                pil_img = ImageOps.grayscale(pil_img)
+
+        # Get detail parameter based on model type
+        if model_type == "google":
+            detail = img_cfg.get("media_resolution", "high") or "high"
+        elif model_type == "anthropic":
+            detail = img_cfg.get("resize_profile", "auto") or "auto"
+        else:
+            detail = img_cfg.get("llm_detail", "high") or "high"
+
+        # Resize with provider-specific strategy
+        pil_img = ImageProcessor.resize_for_detail(
+            pil_img, detail, img_cfg, model_type
+        )
+
+        return pil_img
 
     def process_image(self, output_path: Path) -> str:
         """Process the image and save it to the given output path with compression."""
@@ -273,13 +340,8 @@ class ImageProcessor:
         """Process the image and return the PIL Image object in-memory."""
         with Image.open(self.image_path) as img_file:
             img_file.load()
-            img: Image.Image = self.handle_transparency(img_file)
-            img = self.convert_to_grayscale(img)
-
-            # Choose resizing based on model type and appropriate config param
-            detail = self._get_detail_param()
-            img = ImageProcessor.resize_for_detail(
-                img, detail, self.img_cfg, self.model_type
+            img = ImageProcessor.preprocess_pil_image(
+                img_file, self.img_cfg, self.model_type
             )
 
             # Convert to RGB if grayscale for JPEG encoding
@@ -288,7 +350,7 @@ class ImageProcessor:
 
             logger.debug(
                 f"Processed image {self.image_path.name} in-memory: size={img.size} "
-                f"detail={detail} model_type={self.model_type}"
+                f"model_type={self.model_type}"
             )
             return img
 

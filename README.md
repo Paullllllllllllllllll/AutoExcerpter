@@ -1,8 +1,8 @@
 # AutoExcerpter
 
-AutoExcerpter is an intelligent document processing pipeline that automatically transcribes and summarizes PDF documents and image collections. Built on LangChain for multi-provider LLM support, it converts scanned documents into searchable, structured text with optional summaries and enriched bibliographic citations. The tool supports OpenAI (GPT-5.4, GPT-5.3, GPT-5.2, GPT-5.1, GPT-5, GPT-4, o-series), Anthropic (Claude 4.6, Claude 4.5, Claude 4), Google (Gemini 3, Gemini 2.5), and OpenRouter for accessing additional models. It is designed for researchers, academics, and professionals who need to digitize and analyze large volumes of documents efficiently.
+AutoExcerpter is an intelligent document processing pipeline that automatically transcribes and summarizes PDF documents and image collections. Built on LangChain for multi-provider LLM support, it converts scanned documents into searchable, structured text with optional summaries and enriched bibliographic citations. The tool supports OpenAI (GPT-5.4 Pro, GPT-5.4, GPT-5.3, GPT-5.2, GPT-5.1, GPT-5, GPT-4, o-series), Anthropic (Claude 4.6, Claude 4.5, Claude 4), Google (Gemini 3, Gemini 2.5), and OpenRouter for accessing additional models. It is designed for researchers, academics, and professionals who need to digitize and analyze large volumes of documents efficiently.
 
-> **Work in Progress** — AutoExcerpter is under active development. We aim to keep it well-maintained and up to date, but bugs may occur. If you encounter any issues, please report them on [GitHub Issues](https://github.com/yourusername/AutoExcerpter/issues) — your feedback is greatly appreciated.
+**Note**: AutoExcerpter v3.0 uses LangChain for unified multi-provider LLM integration. If you encounter any issues, please report them on [GitHub Issues](https://github.com/yourusername/AutoExcerpter/issues).
 
 
 ## Table of Contents
@@ -13,19 +13,19 @@ AutoExcerpter is an intelligent document processing pipeline that automatically 
 -   [How It Works](#how-it-works)
 -   [Prerequisites](#prerequisites)
 -   [Installation](#installation)
--   [Quick Start](#quick-start)
--   [CLI Mode and Interactive Mode](#cli-mode-and-interactive-mode)
--   [Configuration](#configuration)
-    -   [Basic Configuration](#basic-configuration)
-    -   [Provider Configuration](#provider-configuration)
-    -   [Model Configuration](#model-configuration)
-    -   [Concurrency Configuration](#concurrency-configuration)
-    -   [Image Processing Configuration](#image-processing-configuration)
-    -   [Text Cleaning Configuration](#text-cleaning-configuration)
-    -   [Summary Context Configuration](#summary-context-configuration)
-    -   [Citation Management](#citation-management)
-    -   [Daily Token Limit Tracking](#daily-token-limit-tracking)
 -   [Usage](#usage)
+    -   [Interactive Mode (Default)](#interactive-mode-default)
+    -   [CLI Mode](#cli-mode)
+    -   [Processing Modes](#processing-modes)
+    -   [Batch Processing](#batch-processing)
+-   [Configuration](#configuration)
+    -   [Basic Configuration (app.yaml)](#basic-configuration-appyaml)
+    -   [Model Configuration (model.yaml)](#model-configuration-modelyaml)
+    -   [Concurrency Configuration (concurrency.yaml)](#concurrency-configuration-concurrencyyaml)
+    -   [Image Processing Configuration (image_processing.yaml)](#image-processing-configuration-image_processingyaml)
+    -   [Summary Context](#summary-context)
+    -   [Citation Management](#citation-management)
+    -   [Daily Token Limit](#daily-token-limit)
 -   [Output Files](#output-files)
 -   [Project Structure](#project-structure)
 -   [Advanced Topics](#advanced-topics)
@@ -111,117 +111,36 @@ AutoExcerpter supports a wide range of models from multiple providers. The syste
 
 **OpenAI Models:**
 
-Model Family
-
-Models
-
-Capabilities
-
-GPT-5.2 (Feb 2026)
-
-gpt-5.2
-
-Reasoning, multimodal, 400k context
-
-GPT-5.1 (Nov 2025)
-
-gpt-5.1, gpt-5.1-instant, gpt-5.1-thinking
-
-Reasoning, text verbosity, multimodal
-
-GPT-5 (Aug 2025)
-
-gpt-5, gpt-5-mini, gpt-5-nano
-
-Reasoning, text verbosity, multimodal
-
-O-series
-
-o4, o4-mini, o3, o3-mini, o1, o1-mini
-
-Reasoning (no temperature control)
-
-GPT-4.1
-
-gpt-4.1, gpt-4.1-mini, gpt-4.1-nano
-
-Multimodal
-
-GPT-4o
-
-gpt-4o, gpt-4o-mini
-
-Multimodal
+| Model Family | Models | Capabilities |
+|---|---|---|
+| GPT-5.4 Pro (Mar 2026) | gpt-5.4-pro | Reasoning, text verbosity, multimodal, 1.05M context |
+| GPT-5.4 (Mar 2026) | gpt-5.4 | Reasoning, text verbosity, multimodal, 1.05M context |
+| GPT-5.3 (Feb 2026) | gpt-5.3 | Reasoning, text verbosity, multimodal, 400k context |
+| GPT-5.2 (Feb 2026) | gpt-5.2 | Reasoning, text verbosity, multimodal, 400k context |
+| GPT-5.1 (Nov 2025) | gpt-5.1, gpt-5.1-instant, gpt-5.1-thinking | Reasoning, text verbosity, multimodal |
+| GPT-5 (Aug 2025) | gpt-5, gpt-5-mini, gpt-5-nano | Reasoning, text verbosity, multimodal |
+| O-series | o4, o4-mini, o3, o3-mini, o1, o1-mini | Reasoning (no temperature control) |
+| GPT-4.1 | gpt-4.1, gpt-4.1-mini, gpt-4.1-nano | Multimodal |
+| GPT-4o | gpt-4o, gpt-4o-mini | Multimodal |
 
 **Anthropic Claude Models:**
 
-Model Family
-
-Models
-
-Capabilities
-
-Claude 4.6 (Feb 2026)
-
-claude-opus-4-6, claude-sonnet-4-6
-
-Multimodal, extended thinking, 200k context
-
-Claude 4.5 (Oct-Nov 2025)
-
-claude-opus-4-5, claude-sonnet-4-5, claude-haiku-4-5
-
-Multimodal, extended thinking (opus/sonnet)
-
-Claude 4
-
-claude-opus-4, claude-sonnet-4
-
-Multimodal, extended thinking
-
-Claude 3.x
-
-claude-3-7-sonnet, claude-3-5-sonnet, claude-3-5-haiku
-
-Multimodal
+| Model Family | Models | Capabilities |
+|---|---|---|
+| Claude 4.6 (Feb 2026) | claude-opus-4-6, claude-sonnet-4-6 | Multimodal, extended thinking, 200k context |
+| Claude 4.5 (Oct-Nov 2025) | claude-opus-4-5, claude-sonnet-4-5, claude-haiku-4-5 | Multimodal, extended thinking (opus/sonnet) |
+| Claude 4 | claude-opus-4, claude-sonnet-4 | Multimodal, extended thinking |
+| Claude 3.x | claude-3-7-sonnet, claude-3-5-sonnet, claude-3-5-haiku | Multimodal |
 
 **Google Gemini Models:**
 
-Model Family
-
-Models
-
-Capabilities
-
-Gemini 3 Preview (Feb 2026)
-
-gemini-3-pro-preview, gemini-3-flash-preview
-
-Thinking, multimodal, 1M context
-
-Gemini 3 (Nov 2025)
-
-gemini-3-pro, gemini-3-flash
-
-Thinking, multimodal
-
-Gemini 2.5 (Mar 2025)
-
-gemini-2.5-pro, gemini-2.5-flash, gemini-2.5-flash-lite
-
-Thinking, multimodal
-
-Gemini 2.0
-
-gemini-2.0-flash, gemini-2.0-flash-lite
-
-Multimodal
-
-Gemini 1.5
-
-gemini-1.5-pro, gemini-1.5-flash
-
-Multimodal
+| Model Family | Models | Capabilities |
+|---|---|---|
+| Gemini 3 Preview (Feb 2026) | gemini-3-pro-preview, gemini-3-flash-preview | Thinking, multimodal, 1M context |
+| Gemini 3 (Nov 2025) | gemini-3-pro, gemini-3-flash | Thinking, multimodal |
+| Gemini 2.5 (Mar 2025) | gemini-2.5-pro, gemini-2.5-flash, gemini-2.5-flash-lite | Thinking, multimodal |
+| Gemini 2.0 | gemini-2.0-flash, gemini-2.0-flash-lite | Multimodal |
+| Gemini 1.5 | gemini-1.5-pro, gemini-1.5-flash | Multimodal |
 
 **OpenRouter:**
 
@@ -271,7 +190,7 @@ LangChain handles API retries with exponential backoff automatically. Schema-spe
 
 **5. Summarization (Optional)**
 
-When enabled, transcribed text is processed by the OpenAI API again with a summarization prompt that extracts:
+When enabled, transcribed text is processed by the configured LLM provider with a summarization prompt that extracts:
 
 -   Concise bullet-point summaries of main ideas
 -   Full bibliographic citations in APA format
@@ -294,6 +213,7 @@ The pipeline produces multiple output files:
 
 -   Plain text file with complete transcriptions including metadata headers
 -   Formatted DOCX file with structured summaries and consolidated citations
+-   Markdown file with the same summary content in version-control friendly format
 -   JSON log files with detailed processing metadata, timing, and error information
 
 **8. Cleanup**
@@ -326,7 +246,7 @@ cd AutoExcerpter
 python -m venv .venv
 
 # On Windows:
-.venvScriptsactivate
+.venv\Scripts\activate
 
 # On macOS/Linux:
 source .venv/bin/activate
@@ -373,8 +293,8 @@ On Windows, use `set` instead of `export`, or configure environment variables th
 Edit `modules/config/app.yaml` to set your input/output paths:
 
 ```yaml
-input_folder_path: 'C:UsersyournameDocumentsPDFs'
-output_folder_path: 'C:UsersyournameDocumentsOutput'
+input_folder_path: 'C:\Users\yourname\Documents\PDFs'
+output_folder_path: 'C:\Users\yourname\Documents\Output'
 input_paths_is_output_path: true  # Write outputs next to each input file
 ```
 
@@ -390,58 +310,17 @@ summary_model:
   provider: "openai"
 ```
 
-## Quick Start
+## Usage
 
-1.  **Run AutoExcerpter:**
+### Interactive Mode (Default)
 
-```bash
-python main.py
-```
-
-2.  **Select documents to process** from the interactive menu
-    
-3.  **Wait for processing** to complete (progress bars show estimated time)
-    
-4.  **Find outputs** in your configured output directory:
-    
-    -   `.txt` files contain full transcriptions
-    -   `.docx` files contain formatted summaries (if enabled)
-    -   Enable `input_paths_is_output_path` to drop each item's outputs next to the original input when running in interactive mode
-
-## CLI Mode and Interactive Mode
-
-AutoExcerpter supports two execution modes: **Interactive Mode** (default) for user-friendly document processing, and **CLI Mode** for automation and scripting.
-
-### Execution Modes
-
-#### Interactive Mode (Default)
-
-Interactive mode provides a guided experience with structured prompts and visual feedback.
-
-**Enable Interactive Mode** in `modules/config/app.yaml`:
-
-```yaml
-cli_mode: false
-```
-
-**Run the application:**
+Interactive mode provides a guided experience with structured prompts and visual feedback. Set `cli_mode: false` in `modules/config/app.yaml` (or leave as default) and run:
 
 ```bash
 python main.py
 ```
 
-**Highlights:**
-
--   Styled console output with headers, sections, and status indicators
--   Guided item selection for PDFs and image folders discovered under the input path
--   Exit options available at every prompt (`exit`, `quit`, or `q`)
--   Daily token-limit wait screen can be cancelled instantly by typing `q` and pressing Enter
--   Flexible selection syntax supporting single indices (`1`), multiple selections (`1;3;5`), ranges (`1-5`), `all`, or filename search
--   **Filename search**: Enter a filename or partial text to find matching items (case-insensitive)
--   Immediate confirmation and error feedback for each action
--   Inline progress updates for every document processed
-
-**Selection Examples:**
+The application scans the configured input directory and presents an interactive menu. Use flexible selection syntax to choose documents:
 
 ```
 Select items to process: 42                    # Select item #42
@@ -452,17 +331,16 @@ Select items to process: Mennell              # Find items containing "Mennell"
 Select items to process: food history         # Find items containing "food history"
 ```
 
-The full interactive interface is documented in `docs/USER_PROMPTS_AND_LOGGING.md`.
+Interactive mode highlights:
 
-#### CLI Mode (Automation-Friendly)
+-   Styled console output with headers, sections, and status indicators
+-   Exit options available at every prompt (`exit`, `quit`, or `q`)
+-   Daily token-limit wait screen can be cancelled instantly by typing `q` and pressing Enter
+-   Inline progress updates for every document processed
 
-CLI mode is optimized for batch processing, automation, and integration into pipelines without interactive prompts.
+### CLI Mode
 
-**Enable CLI Mode** in `modules/config/app.yaml`:
-
-```yaml
-cli_mode: true
-```
+CLI mode is optimized for batch processing, automation, and integration into pipelines without interactive prompts. Set `cli_mode: true` in `modules/config/app.yaml`.
 
 **Command syntax:**
 
@@ -476,26 +354,18 @@ python main.py --input-path <input> --output-path <output> [other options]
 
 -   `input` (required): Path to a PDF file, an image folder, or a directory containing multiple items
 -   `output` (required): Destination directory for generated transcriptions and summaries
--   `--input-path PATH` (optional): Named input path; overrides positional `input` when both are provided
--   `--output-path PATH` (optional): Named output path; overrides positional `output` when both are provided
+-   `--input-path PATH` / `--output-path PATH` (optional): Named paths; override positional values when both are provided
 -   `--all` (optional): Process every item discovered under the input directory
--   `--select PATTERN` (optional): Select items by number, range, or filename pattern. Supports:
-    -   Single numbers: `--select 5`
-    -   Comma-separated: `--select "1,3,5"`
-    -   Ranges: `--select "1-10"`
-    -   Filename search: `--select "Mennell"` (case-insensitive partial match)
--   `--context TOPICS` (optional): Specify topics for focused summarization. The model will pay special attention to content related to these topics and summarize them in greater detail. Example: `--context "Food History, Wages, Early Modern"`
+-   `--select PATTERN` (optional): Select items by number, range, or filename pattern. Supports single numbers (`--select 5`), comma-separated (`--select "1,3,5"`), ranges (`--select "1-10"`), and filename search (`--select "Mennell"`)
+-   `--context TOPICS` (optional): Specify topics for focused summarization. Example: `--context "Food History, Wages, Early Modern"`
 -   `--model MODEL` (optional): Set both transcription and summary model names at runtime
--   `--transcription-model MODEL` (optional): Override transcription model only
--   `--summary-model MODEL` (optional): Override summary model only
+-   `--transcription-model MODEL` / `--summary-model MODEL` (optional): Per-phase model overrides
 -   `--reasoning-effort {minimal,low,medium,high}` (optional): Set reasoning effort for both models
 -   `--transcription-reasoning-effort ...` / `--summary-reasoning-effort ...` (optional): Per-phase reasoning overrides
--   `--verbosity {low,medium,high}` (optional): Set output verbosity for both models
+-   `--verbosity {low,medium,high}` (optional): Set output verbosity for both models (GPT-5 family only; ignored for other providers via capability guarding)
 -   `--transcription-verbosity ...` / `--summary-verbosity ...` (optional): Per-phase verbosity overrides
 -   `--max-output-tokens N` (optional): Set max output tokens for both models
 -   `--transcription-max-output-tokens N` / `--summary-max-output-tokens N` (optional): Per-phase token budget overrides
-
-Verbosity note: verbosity is currently supported only by OpenAI GPT-5 series models (`gpt-5`, `gpt-5-mini`, `gpt-5.1`, `gpt-5.2`). For other models/providers it is ignored by capability guarding.
 
 When neither `--all` nor `--select` is specified, only the first item is processed if multiple items exist.
 
@@ -508,32 +378,21 @@ python main.py "./documents/paper.pdf" "./output"
 # Process every item found in a directory
 python main.py "./documents" "./output" --all
 
-# Process specific items by number
+# Process specific items by number or range
 python main.py "./documents" "./output" --select "1,5,10"
-
-# Process a range of items
 python main.py "./documents" "./output" --select "1-20"
 
 # Process items matching a filename pattern
 python main.py "./documents" "./output" --select "Mennell"
 
-# Process items containing specific text (case-insensitive)
-python main.py "./documents" "./output" --select "food history"
-
 # Process with focused summarization on specific topics
 python main.py "./documents" "./output" --all --context "Food History, Wages, Early Modern"
 
-# Use named paths for agentic/scripted runs
-python main.py --input-path "./documents" --output-path "./output" --all
-
-# Override model config at runtime (without editing model.yaml)
+# Override model config at runtime
 python main.py "./documents" "./output" --all --model "gpt-5.1" --reasoning-effort high --verbosity medium --max-output-tokens 120000
 
 # Use separate model and token settings for transcription vs summary
 python main.py "./documents" "./output" --all --transcription-model "gpt-5.2" --summary-model "gpt-5-mini" --transcription-max-output-tokens 128000 --summary-max-output-tokens 32000
-
-# Process with absolute paths on Windows
-python main.py "C:Documentspaper.pdf" "C:Output"
 
 # Automate multiple PDFs in a shell script
 for pdf in ./papers/*.pdf; do
@@ -541,41 +400,46 @@ for pdf in ./papers/*.pdf; do
 done
 ```
 
-**Highlights:**
+CLI mode highlights:
 
 -   No interactive prompts; suitable for cron jobs and CI/CD workflows
 -   Console output limited to structured logging
 -   Supports runtime model overrides via CLI while preserving YAML defaults on disk
--   Keeps concurrency/retry/rate-limit controls in YAML config (`concurrency.yaml`)
 -   Allows absolute or relative input/output paths and resolves them before processing
 
-Additional CLI guidance, including scripting patterns and CI/CD samples, is available in `docs/CLI_MODE.md`.
+### Processing Modes
+
+**Transcription-Only Mode:**
+
+For faster processing without summaries, set `summarize: false` in `modules/config/app.yaml`. This mode is ideal for creating searchable text archives, quick digitization projects, cost-sensitive workflows, and building document databases for later analysis.
+
+**Transcription + Summarization Mode:**
+
+Enable full processing with `summarize: true`. This mode provides complete transcriptions, structured summaries, extracted and enriched citations, and professional DOCX and Markdown output.
+
+### Batch Processing
+
+Process multiple documents in sequence:
+
+1.  Place all PDFs and image folders in your input directory
+2.  Run `python main.py`
+3.  Select "all" when prompted (or use `--all` in CLI mode)
+4.  The system processes each item sequentially with progress tracking
+
+The application automatically skips items that have already been processed (output files exist).
 
 ## Configuration
 
-AutoExcerpter uses a multi-file YAML configuration system that provides fine-grained control over every aspect of processing. All configuration files are located in `modules/config/` and include cross-references to related files for easy navigation.
+AutoExcerpter uses a multi-file YAML configuration system located in `modules/config/`. Each configuration file includes cross-references to related files for easy navigation.
 
-File
+| File | Purpose |
+|---|---|
+| `app.yaml` | Application settings, file paths, feature toggles, daily limits |
+| `model.yaml` | LLM provider and model settings (transcription and summary) |
+| `concurrency.yaml` | API rate limits, retries, and parallelism settings |
+| `image_processing.yaml` | Image preprocessing and text cleaning options |
 
-Purpose
-
-`app.yaml`
-
-Application settings, file paths, feature toggles, daily limits
-
-`model.yaml`
-
-LLM provider and model settings (transcription and summary)
-
-`concurrency.yaml`
-
-API rate limits, retries, and parallelism settings
-
-`image_processing.yaml`
-
-Image preprocessing and text cleaning options
-
-### Basic Configuration
+### Basic Configuration (app.yaml)
 
 **File**: `modules/config/app.yaml`
 
@@ -594,7 +458,7 @@ summary_output:
   markdown: true  # Generate .md summary for version control and markdown viewers
 
 # File Paths
-input_folder_path: 'C:UsersyournameDocumentsPDFs'
+input_folder_path: 'C:\Users\yourname\Documents\PDFs'
 output_folder_path: ''  # Empty = use input_folder_path as output location
 input_paths_is_output_path: true  # true = write outputs next to each input file
 
@@ -622,76 +486,11 @@ daily_token_limit:
 -   **delete_temp_working_dir**: Automatically cleans up extracted images and temporary files after processing
 -   **daily_token_limit**: Enforces a configurable daily token budget to stay within API allowances
 
-### Provider Configuration
-
-AutoExcerpter supports multiple LLM providers through LangChain. Configure your preferred provider in `modules/config/model.yaml`:
-
-**Using OpenAI (default):**
-
-```yaml
-transcription_model:
-  name: "gpt-5-mini"
-  provider: "openai"  # Optional, auto-detected from model name
-  max_output_tokens: 12000
-
-summary_model:
-  name: "gpt-5-mini"
-  provider: "openai"
-  max_output_tokens: 16384
-```
-
-**Using Anthropic Claude:**
-
-```yaml
-transcription_model:
-  name: "claude-sonnet-4-5-20250929"
-  provider: "anthropic"
-  max_output_tokens: 16384
-  temperature: 1.0  # Required for extended thinking
-```
-
-**Using Google Gemini:**
-
-```yaml
-transcription_model:
-  name: "gemini-2.5-pro"
-  provider: "google"
-  max_output_tokens: 32768
-  reasoning:
-    effort: high  # Maps to thinking_level: "high"
-```
-
-**Using OpenRouter (access to multiple providers):**
-
-```yaml
-transcription_model:
-  name: "anthropic/claude-sonnet-4-5"  # Use provider/model format
-  provider: "openrouter"
-  max_output_tokens: 8192
-```
-
-**Provider Auto-Detection:**
-
-If you do not specify a provider, AutoExcerpter will infer it from the model name:
-
--   Models starting with `gpt-`, `o1`, `o3`, `o4` use OpenAI
--   Models starting with `claude-` use Anthropic
--   Models starting with `gemini-` use Google
-
-**API Keys:**
-
-Each provider requires its own API key set as an environment variable:
-
--   `OPENAI_API_KEY` for OpenAI
--   `ANTHROPIC_API_KEY` for Anthropic
--   `GOOGLE_API_KEY` for Google
--   `OPENROUTER_API_KEY` for OpenRouter
-
-### Model Configuration
+### Model Configuration (model.yaml)
 
 **File**: `modules/config/model.yaml`
 
-LLM settings for transcription and summarization phases. Loaded by `api/llm_client.py`, `api/transcribe_api.py`, and `api/summary_api.py`. The file includes cross-references to related configuration files.
+LLM settings for transcription and summarization phases. The provider is auto-detected from the model name but can be set explicitly.
 
 ```yaml
 # Transcription Model (OCR/image-to-text conversion)
@@ -699,16 +498,16 @@ transcription_model:
   name: "gpt-5.2"      # Model identifier
   provider: "openai"   # Optional if model prefix is unambiguous
   max_output_tokens: 12000
-  
+
   # Cross-provider reasoning (maps to native implementations):
   # OpenAI: reasoning_effort | Anthropic: extended_thinking | Google: thinking_level
   reasoning:
     effort: medium  # low | medium | high
-  
+
   # OpenAI GPT-5 only: controls output verbosity
   text:
     verbosity: medium  # low | medium | high
-  
+
   temperature: 1.0  # 0.0-2.0 (null = provider default)
 
 # Summary Model (structured summaries from transcriptions)
@@ -716,13 +515,13 @@ summary_model:
   name: "gpt-5-mini"
   provider: "openai"
   max_output_tokens: 16384
-  
+
   reasoning:
     effort: medium
-  
+
   text:
     verbosity: low  # Lower verbosity for concise summaries
-  
+
   temperature: 1.0
 ```
 
@@ -732,7 +531,7 @@ summary_model:
 -   **provider**: LLM provider (openai, anthropic, google, openrouter); can be auto-detected from model name
 -   **max_output_tokens**: Controls the maximum length of model responses; increase for longer documents
 -   **temperature**: Controls randomness in generation (0.0 for deterministic, up to 2.0 for creative output)
--   **reasoning.effort**: Higher effort improves accuracy but increases processing time and cost (OpenAI GPT-5/o-series only)
+-   **reasoning.effort**: Higher effort improves accuracy but increases processing time and cost
     -   `minimal`: Fastest, lowest cost, basic reasoning
     -   `low`: Balanced for simple documents (recommended)
     -   `medium`: Good balance for complex documents
@@ -742,43 +541,36 @@ summary_model:
     -   `medium`: Balanced detail level (good for transcriptions)
     -   `high`: Maximum detail, comprehensive output
 
-**Usage Recommendations:**
-
--   For **technical papers** with equations: Use `medium` or `high` reasoning effort
--   For **general documents**: Use `low` reasoning effort and `medium` verbosity
--   For **summaries**: Use `low` verbosity to keep them concise
--   For **transcriptions**: Use `medium` verbosity to capture all content
--   For **Anthropic/Google models**: The reasoning and text parameters are ignored; temperature and max_output_tokens apply
-
-**Example configurations for other providers:**
+**Provider-specific examples:**
 
 ```yaml
 # Anthropic Claude
 transcription_model:
   name: "claude-sonnet-4-5-20250929"
   provider: "anthropic"
-  max_output_tokens: 8192
-  temperature: 0.0
+  max_output_tokens: 16384
+  temperature: 1.0  # Required for extended thinking
 
 # Google Gemini
 transcription_model:
   name: "gemini-2.5-pro"
   provider: "google"
-  max_output_tokens: 8192
-  temperature: 0.0
+  max_output_tokens: 32768
+  reasoning:
+    effort: high  # Maps to thinking_level: "high"
 
 # OpenRouter (access any model)
 transcription_model:
-  name: "anthropic/claude-3-opus"
+  name: "anthropic/claude-sonnet-4-5"  # Use provider/model format
   provider: "openrouter"
-  max_output_tokens: 4096
+  max_output_tokens: 8192
 ```
 
-### Concurrency Configuration
+### Concurrency Configuration (concurrency.yaml)
 
 **File**: `modules/config/concurrency.yaml`
 
-Controls parallel processing behavior for both local operations and API requests. Each config file includes cross-references to related configuration files for easy navigation.
+Controls parallel processing behavior for both local operations and API requests.
 
 ```yaml
 # Local Image Processing (CPU/Disk bound)
@@ -789,18 +581,18 @@ image_processing:
 # API Request Concurrency
 api_requests:
   api_timeout: 900  # Request timeout (seconds). 900s for flex tier queuing
-  
+
   # Rate limiting: [max_requests, window_seconds]
   rate_limits:
     - [120, 1]       # Per-second burst limit
     - [15000, 60]    # Per-minute sustained limit
     - [15000, 3600]  # Per-hour aggregate limit
-  
+
   transcription:
     concurrency_limit: 5  # Parallel API requests (OpenAI: 50-150, Anthropic: 5-10)
     delay_between_tasks: 0.1
     service_tier: default  # 'default' | 'flex' | 'priority'
-  
+
   summary:
     concurrency_limit: 5
     delay_between_tasks: 0.1
@@ -818,7 +610,7 @@ retry:
   jitter:
     min: 0.5
     max: 1.0
-  
+
   # Schema-specific retries (based on model output flags)
   schema_retries:
     transcription:
@@ -873,100 +665,58 @@ AutoExcerpter implements two complementary retry layers:
 
 When a flag is enabled and the model returns `true`, AutoExcerpter automatically re-issues the same request after waiting `backoff_base * backoff_multiplier^attempt + jitter`. Statistics for both API-level and schema-level retries are logged per page for auditing.
 
-### Image Processing Configuration
+### Image Processing Configuration (image_processing.yaml)
 
 **File**: `modules/config/image_processing.yaml`
 
-Controls image preprocessing before LLM API calls. The file includes cross-references to related configuration files and is loaded by `modules/image_utils.py`.
+Controls image preprocessing before LLM API calls and post-transcription text cleaning.
 
 ```yaml
 api_image_processing:
   # PDF rendering resolution (higher = better quality, more tokens)
   target_dpi: 300  # 150-300 recommended for OCR
-  
+
   # Preprocessing steps
   grayscale_conversion: true  # Convert to grayscale (improves OCR, reduces noise)
   handle_transparency: true   # Flatten alpha channel onto white background
-  
+
   # Image fidelity for OpenAI Vision API
   # high = better OCR, more tokens | low = faster, cheaper | auto = model decides
   llm_detail: high
-  
+
   # JPEG compression quality (1-100). Higher = better quality, larger files
   jpeg_quality: 100
-  
+
   # Resize strategy: 'high' | 'low' | 'auto' | 'none'
   resize_profile: high
-  
+
   # Resize parameters
   low_max_side_px: 512         # Max dimension for 'low' profile
   high_target_box: [768, 1536] # [width, height] target for 'high' profile
-```
 
-**Parameter Effects:**
-
--   **target_dpi**: Higher DPI improves OCR accuracy but increases file size and processing time
-    -   150-250: Basic documents, low quality scans
-    -   300: Standard (recommended for most documents)
-    -   400-600: High quality, small text, or complex layouts
--   **llm_detail**: Controls OpenAI Vision API processing fidelity
-    -   `low`: Faster, cheaper, suitable for clean text
-    -   `high`: Better accuracy for complex layouts (recommended)
-    -   `auto`: Let the model decide based on image characteristics
--   **jpeg_quality**: Higher quality preserves text clarity
-    -   85-95: Good balance of quality and file size
-    -   95-100: Maximum quality for difficult documents
-
-### Text Cleaning Configuration
-
-**File**: `modules/config/image_processing.yaml` (`text_cleaning` section)
-
-Post-processing pipeline that polishes transcription text before summarization and TXT export. All stages are individually configurable. Loaded by `modules/text_cleaner.py`.
-
-```yaml
 text_cleaning:
   enabled: true  # Master switch for all text cleaning
-  
-  # NFC normalization, removes control chars, soft hyphens, zero-width spaces
   unicode_normalization: true
-  
-  # Repairs common OCR errors in mathematical notation
   latex_fixing:
     enabled: true
-    balance_dollar_signs: true   # Fix unbalanced $ and $$ delimiters
-    close_unclosed_braces: true  # Close orphan { in LaTeX commands
-    fix_common_commands: true    # Fix typos like "frac {" -> "frac{"
-  
-  # Rejoins words split at line breaks (disabled by default)
-  # WARNING: Can damage genuine compounds like "Jean-Baptiste"
-  merge_hyphenation: false
-  
+    balance_dollar_signs: true
+    close_unclosed_braces: true
+    fix_common_commands: true
+  merge_hyphenation: false  # WARNING: Can damage genuine compounds
   whitespace_normalization:
     enabled: true
-    collapse_internal_spaces: true  # 3+ spaces -> 2 spaces
-    max_blank_lines: 2              # Remove excess blank lines
-    tab_size: 4                     # Spaces per tab when expanding
-  
-  # Wrap excessively long lines (usually not needed for LLM output)
+    collapse_internal_spaces: true
+    max_blank_lines: 2
+    tab_size: 4
   line_wrapping:
     enabled: true
-    auto_width: true   # Compute width from text statistics
-    fixed_width: 80    # Used if auto_width is false
+    auto_width: true
+    fixed_width: 80
 ```
 
-**Capabilities:**
+### Summary Context
 
--   **Unicode normalization** removes soft hyphens, zero-width characters, BOMs, and other control characters while preserving semantic content.
--   **LaTeX fixing** balances `$`/`$$` delimiters, closes unpaired braces, and corrects common OCR spacing errors in math commands.
--   **Hyphenation merging** (disabled by default) rejoins words split across line breaks. Enable only for heavily hyphenated scans, as it can damage genuine hyphenated compounds.
--   **Whitespace normalization** trims trailing spaces, collapses long internal gaps, expands tabs, and limits consecutive blank lines for clean TXT output.
--   **Line wrapping** optionally reflows especially long lines using indentation-aware wrapping or automatically computed widths.
-
-These cleanups run immediately after each successful transcription so both the TXT output and downstream summarization benefit from the sanitized text.
-
-### Summary Context Configuration
-
-AutoExcerpter supports a hierarchical context system that allows you to guide the summarization model to pay special attention to specific topics. This is useful when you want more detailed summaries for content related to particular subjects.
+AutoExcerpter supports a hierarchical context system that allows you to guide the summarization model to pay special attention to specific topics.
 
 **Context Resolution Hierarchy (highest to lowest priority):**
 
@@ -974,8 +724,6 @@ AutoExcerpter supports a hierarchical context system that allows you to guide th
 2. **File-Specific Context**: `<filename>_summary_context.txt` next to the input file
 3. **Folder-Specific Context**: `<foldername>_summary_context.txt` in the parent directory
 4. **General Context**: `context/summary/general.txt` in the project root
-
-**Creating Context Files:**
 
 Create a plain text file with topics or keywords that you want the model to focus on during summarization:
 
@@ -986,31 +734,6 @@ Early Modern History
 Agricultural Trade
 ```
 
-**File Naming Examples:**
-
-```
-# For a single PDF: my_document.pdf
-my_document_summary_context.txt
-
-# For all files in a folder named "research_papers"
-research_papers_summary_context.txt
-
-# For all documents (global fallback)
-context/summary/general.txt
-```
-
-**Usage:**
-
-```bash
-# CLI mode: specify context directly
-python main.py "./documents" "./output" --all --context "Food History, Wages, Early Modern"
-
-# Interactive mode: prompted after item selection (if summarization enabled)
-# Or use context files for automatic resolution
-```
-
-**How It Works:**
-
 When context is provided (via any method), the summarization prompt includes an instruction like:
 > "Pay special attention to the following topics during summarization. Content related to these topics should be summarized in greater detail: Food History, Wages, Early Modern History."
 
@@ -1020,15 +743,11 @@ If no context is found through any of these methods, summarization proceeds norm
 
 **File**: `modules/config/app.yaml` (citation section)
 
-Configure the enhanced citation system with OpenAlex integration.
-
 ```yaml
 citation:
   openalex_email: 'your-email@example.com'  # Email for OpenAlex API polite pool
   max_api_requests: 300  # Maximum metadata enrichment calls per document
 ```
-
-**Citation Features:**
 
 The citation manager automatically:
 
@@ -1037,20 +756,14 @@ The citation manager automatically:
 3.  **Enriches metadata** via OpenAlex API: DOI, authors, publication year, venue
 4.  **Adds hyperlinks** to citations with DOIs for direct access to extended metadata
 5.  **Consolidates** all citations in a dedicated bibliography section
-6.  **Smart Matching**: Uses both text similarity and DOI extraction for accurate citation identification
 
-**Best Practices:**
+Replace `your-email@example.com` with your real email for faster OpenAlex response times (polite pool). The OpenAlex API is free and requires no API key.
 
--   Replace `your-email@example.com` with your real email for faster OpenAlex response times (polite pool)
--   Set `max_api_requests` based on expected citation count (300 handles large documents with many references)
--   OpenAlex API is free and requires no API key
--   Citation matching uses both text similarity and DOI extraction for accuracy
-
-### Daily Token Limit Tracking
+### Daily Token Limit
 
 **File**: `modules/config/app.yaml` (`daily_token_limit` section)
 
-AutoExcerpter enforces a configurable daily token budget to keep usage aligned with your OpenAI allowance. Tokens are counted after every OpenAI API response (including retried attempts) and persisted to `.autoexcerpter_token_state.json` so limits survive restarts.
+AutoExcerpter enforces a configurable daily token budget to keep usage aligned with your API allowance. Tokens are counted after every API response (including retried attempts) and persisted to `.autoexcerpter_token_state.json` so limits survive restarts.
 
 ```yaml
 daily_token_limit:
@@ -1060,273 +773,61 @@ daily_token_limit:
 
 **Behavior:**
 
--   **Accurate Accounting**: Tracks `usage.total_tokens` from each OpenAI Responses API call (transcription + summary).
+-   **Accurate Accounting**: Tracks `usage.total_tokens` from each API call (transcription + summary).
 -   **Daily Reset**: Counter resets automatically at local midnight; tokens persist across restarts until reset.
 -   **Wait Handling**: When the limit is reached, processing pauses and shows the reset ETA.
 -   **Interactive Cancellation**: During the wait, type `q` + Enter to cancel immediately (no need for Ctrl+C).
 -   **Manual Overrides**: Delete or edit `.autoexcerpter_token_state.json` to synchronize with official dashboard totals if required.
 
-## Usage
-
-### Basic Usage
-
-Run AutoExcerpter from the command line:
-
-```bash
-python main.py
-```
-
-The application will scan the configured input directory and present an interactive menu.
-
-### Command-Line Arguments (CLI Mode)
-
-When `cli_mode: true` is set in `app.yaml`, use positional arguments:
-
-```bash
-# Process a single PDF file
-python main.py "./documents/paper.pdf" "./output"
-
-# Process a specific folder of images
-python main.py "./ScannedBook" "./output"
-
-# Process all items in a directory
-python main.py "./documents" "./output" --all
-```
-
-See the [CLI Mode and Interactive Mode](#cli-mode-and-interactive-mode) section for detailed usage.
-
-### Interactive Selection
-
-When prompted, use flexible selection syntax:
-
-```
-Enter your choice(s) (e.g., 1; 3-5; all): 
-
-# Single item
-1
-
-# Range of items
-3-5
-
-# Multiple individual items
-1; 5; 8
-
-# Combined ranges and items
-2; 4-7; 10
-
-# Process all items
-all
-```
-
-### Processing Modes
-
-**Transcription-Only Mode:**
-
-For faster processing without summaries, set `summarize: false` in `modules/config/app.yaml`:
-
-```yaml
-summarize: false
-```
-
-This mode is ideal for:
-
--   Creating searchable text archives
--   Quick digitization projects
--   Cost-sensitive workflows
--   Building document databases for later analysis
-
-**Transcription + Summarization Mode:**
-
-Enable full processing with `summarize: true`:
-
-```yaml
-summarize: true
-```
-
-This mode provides:
-
--   Complete transcriptions
--   Structured summaries
--   Extracted and enriched citations
--   Professional DOCX output
-
-### Batch Processing
-
-Process multiple documents in sequence:
-
-1.  Place all PDFs and image folders in your input directory
-2.  Run `python main.py`
-3.  Select "all" when prompted
-4.  The system processes each item sequentially with progress tracking
-
-The application automatically skips items that have already been processed (output files exist).
-
 ## Output Files
 
-AutoExcerpter generates organized outputs for each processed document.
-
-### Main Output Files
-
-Located in the configured output directory:
+AutoExcerpter generates organized outputs for each processed document, located in the configured output directory.
 
 **1. `<document_name>.txt` - Complete Transcription**
 
-Plain text file containing:
-
--   Metadata header with processing information (source file, total time, page count, model used)
--   Full verbatim transcription with markdown formatting
--   Mathematical equations in LaTeX notation (e.g., `$E = mc^2$`)
--   Page numbers marked with XML-style tags: `<page_number>15</page_number>`
--   Footnotes in markdown format: `[^1]: Reference text here`
--   Preserved tables, headers, footers, and multi-column layouts
--   Descriptions of visual elements (images, diagrams, charts)
-
-Example snippet:
-
-```
-# Metadata
-Source: research_paper.pdf
-Total Processing Time: 00:05:32
-Total Pages: 42
-Model: gpt-5-mini
-
-# Transcription
-
-<page_number>1</page_number>
-
-# Quantum Computing Fundamentals
-
-**Abstract**
-
-This paper explores the mathematical foundations of quantum computing...
-
-The Schrödinger equation is represented as: $ihbarfrac{partial}{partial t}Psi = hat{H}Psi$
-```
+Plain text file containing a metadata header (source file, total time, page count, model used), full verbatim transcription with markdown formatting, mathematical equations in LaTeX notation, page numbers marked with XML-style tags (`<page_number>15</page_number>`), footnotes in markdown format, preserved tables and multi-column layouts, and descriptions of visual elements.
 
 **2. `<document_name>_summary.docx` - Formatted Summary** (if summarization and DOCX output enabled)
 
-Professional DOCX document containing:
-
--   Document title and metadata
--   Page-by-page structured summaries with clear headings (e.g., "Page 5 Summary")
--   Bullet-point extraction of main ideas and key findings
--   Automatic exclusion of non-semantic pages (title pages, blank pages, reference lists)
--   Consolidated bibliography section at the end
--   Deduplicated citations with page ranges (e.g., "Smith et al. (2023) - pp. 3, 7-9, 15")
--   Clickable hyperlinks to citations with DOI information
--   Professional formatting suitable for reports and documentation
--   LaTeX formulas converted to native Word equations (via MathML/OMML)
+Professional DOCX document with page-by-page structured summaries, bullet-point extraction of main ideas, automatic exclusion of non-semantic pages, consolidated bibliography with deduplicated citations and page ranges, clickable hyperlinks to citations with DOI information, and LaTeX formulas converted to native Word equations (via MathML/OMML).
 
 **3. `<document_name>_summary.md` - Markdown Summary** (if summarization and Markdown output enabled)
 
-Version-control friendly Markdown file containing:
+Version-control friendly Markdown file with the same content structure as the DOCX summary. LaTeX formulas are preserved as-is (`$...$` and `$$...$$`) for compatibility with MathJax/KaTeX. Compatible with Writage and other markdown-to-Word conversion tools.
 
--   Same content structure as the DOCX summary
--   Page-by-page summaries with Markdown headings (`## Page X`)
--   Bullet points in standard Markdown format
--   LaTeX formulas preserved as-is (`$...$` and `$$...$$`) for compatibility with MathJax/KaTeX
--   Consolidated references section with hyperlinks in Markdown format
--   Compatible with Writage and other markdown-to-Word conversion tools
--   Ideal for Git repositories, documentation systems, and static site generators
+**4. JSON Log Files** (in `<document_name>_working_files/`)
 
-### Working Files
-
-Located in `<document_name>_working_files/` subdirectory (automatically deleted if `delete_temp_working_dir: true`):
-
-**4. `images/` - Temporary Images** (PDF processing only)
-
-Directory containing extracted page images:
-
--   Named sequentially: `page_0001.jpg`, `page_0002.jpg`, etc.
--   Preprocessed format: grayscale JPEG at configured DPI
--   Used for API submission during transcription
-
-**5. `<document_name>_transcription_log.json` - Transcription Log**
-
-Detailed JSON log containing:
-
-```json
-{
-  "metadata": {
-    "input_path": "C:Users...research_paper.pdf",
-    "model": "gpt-5-mini",
-    "extraction_dpi": 300,
-    "total_pages": 42,
-    "start_time": "2025-09-30T18:30:00",
-    "end_time": "2025-09-30T18:35:32",
-    "total_duration_seconds": 332
-  },
-  "pages": [
-    {
-      "page_number": 1,
-      "status": "success",
-      "transcription": "...",
-      "processing_time_seconds": 3.2,
-      "timestamp": "2025-09-30T18:30:03"
-    }
-  ],
-  "errors": []
-}
-```
-
-Useful for:
-
--   Debugging transcription issues
--   Quality assurance and verification
--   Performance analysis and optimization
--   Audit trails and documentation
-
-**6. `<document_name>_summary_log.json` - Summary Log** (if summarization enabled)
-
-Detailed JSON log for summarization:
-
-```json
-{
-  "metadata": {
-    "transcription_log_path": "..._transcription_log.json",
-    "model": "gpt-5-mini",
-    "total_pages_summarized": 40,
-    "pages_excluded": 2
-  },
-  "summaries": [
-    {
-      "page_number": 5,
-      "summary_text": "...",
-      "citations": ["Smith et al. (2023)"],
-      "has_semantic_content": true,
-      "processing_time_seconds": 2.1
-    }
-  ]
-}
-```
+Detailed JSON logs for both transcription (`_transcription_log.json`) and summarization (`_summary_log.json`) phases, containing per-page processing metadata, timing, error information, and retry statistics. Useful for debugging, quality assurance, and audit trails. The working files directory is automatically deleted if `delete_temp_working_dir: true`.
 
 ## Project Structure
-
-AutoExcerpter follows a modular architecture with clear separation of concerns:
 
 ```
 AutoExcerpter/
 ├── api/                                # LangChain Multi-Provider API Layer
-│   ├── providers/                      # Provider-specific implementations
-│   │   ├── base.py                     # BaseProvider abstract class and TranscriptionResult
-│   │   ├── openai_provider.py          # OpenAI GPT-5/4/o-series
-│   │   ├── anthropic_provider.py       # Anthropic Claude models
-│   │   ├── google_provider.py          # Google Gemini models
-│   │   └── openrouter_provider.py      # OpenRouter multi-provider proxy
-│   ├── model_capabilities.py           # Unified capability registry (single source of truth)
+│   ├── model_capabilities.py           # Unified model capability registry
 │   ├── llm_client.py                   # Multi-provider LLM client and provider detection
 │   ├── base_llm_client.py              # Provider-agnostic base class with retry logic
 │   ├── transcribe_api.py               # TranscriptionManager for image-to-text
 │   ├── summary_api.py                  # SummaryManager for structured summaries
-│   └── rate_limiter.py                 # Sliding window rate limiter for API quotas
+│   └── rate_limiter.py                 # Sliding window rate limiter
+│
+├── cli/                                # Command-Line Interface
+│   ├── argument_parser.py              # CLI argument parsing and validation
+│   ├── display.py                      # Console output formatting
+│   └── processing.py                   # CLI processing orchestration
 │
 ├── core/                               # Core Processing Logic
-│   └── transcriber.py                  # Main ItemTranscriber orchestration class
+│   ├── transcriber.py                  # Main ItemTranscriber orchestration
+│   ├── page_numbering.py               # Page number extraction and adjustment
+│   └── resume.py                       # Processing resume/checkpoint logic
 │
-├── processors/                         # File I/O and Processing Utilities
+├── processors/                         # File I/O and Processing
 │   ├── citation_manager.py             # Citation deduplication and OpenAlex enrichment
-│   ├── file_manager.py                 # Output file management (TXT, DOCX, JSON)
-│   └── pdf_processor.py                # PDF page extraction and preprocessing
+│   ├── file_manager.py                 # Shared helpers and transcription text output
+│   ├── docx_writer.py                  # DOCX summary generation with LaTeX support
+│   ├── markdown_writer.py              # Markdown summary generation
+│   ├── log_manager.py                  # JSON log file management
+│   └── pdf_processor.py               # PDF page extraction and image preprocessing
 │
 ├── modules/                            # Configuration and Utilities
 │   ├── config/                         # YAML Configuration Files
@@ -1334,7 +835,7 @@ AutoExcerpter/
 │   │   ├── model.yaml                  # LLM provider and model settings
 │   │   ├── concurrency.yaml            # API concurrency, rate limits, retries
 │   │   └── image_processing.yaml       # Image preprocessing and text cleaning
-│   ├── prompts/                        # System Prompts for AI Models
+│   ├── prompts/                        # System Prompts
 │   │   ├── transcription_system_prompt.txt
 │   │   └── summary_system_prompt.txt
 │   ├── schemas/                        # JSON Schemas for Structured Outputs
@@ -1343,70 +844,34 @@ AutoExcerpter/
 │   ├── app_config.py                   # Configuration loader with validation
 │   ├── config_loader.py                # YAML/JSON parsing utilities
 │   ├── concurrency_helper.py           # Concurrency settings access
+│   ├── constants.py                    # Shared constants
+│   ├── context_resolver.py             # Hierarchical summary context resolution
+│   ├── error_handler.py                # Centralized error handling
 │   ├── image_utils.py                  # In-memory image preprocessing
+│   ├── item_scanner.py                 # Input directory scanning
+│   ├── logger.py                       # Logging configuration
+│   ├── model_utils.py                  # Model type detection utilities
+│   ├── path_utils.py                   # Path resolution helpers
+│   ├── prompt_utils.py                 # Prompt template rendering with schema injection
+│   ├── roman_numerals.py               # Roman numeral conversion
 │   ├── text_cleaner.py                 # Post-transcription text cleaning
 │   ├── token_tracker.py                # Daily token budget tracking
-│   └── logger.py                       # Logging configuration
+│   ├── types.py                        # Shared type definitions
+│   └── user_prompts.py                 # Interactive user prompt utilities
 │
-├── main.py                             # Entry point and CLI interface
-├── requirements.txt                    # Python runtime dependencies
-├── requirements-dev.txt                # Python development and testing dependencies
-└── README.md                           # This file
+├── context/summary/                    # Default Summary Context
+│   └── general.txt                     # Global summarization focus topics
+│
+├── main.py                             # Entry point
+├── requirements.txt                    # Runtime dependencies
+└── requirements-dev.txt                # Development dependencies
 ```
-
-**Module Responsibilities:**
-
-**`api/` - LangChain Multi-Provider API Layer**
-
--   Provides a unified interface for multiple LLM providers (OpenAI, Anthropic, Google, OpenRouter)
--   `model_capabilities.py`: Centralized registry of model capability profiles; the single source of truth for all providers. Implements a base-dict plus per-model override pattern so adding a new model requires a single line. Exposes `detect_capabilities()` and `detect_provider()` used by every provider and the base client.
--   `providers/`: Provider-specific implementations; each provider calls `detect_capabilities()` for parameter guarding instead of maintaining its own capability logic
--   `llm_client.py`: Multi-provider LangChain client with provider auto-detection; delegates capability queries to `model_capabilities.py`
--   `base_llm_client.py`: Provider-agnostic base class with rate limiting integration and schema retries
--   `transcribe_api.py`: TranscriptionManager for image-to-text processing with structured output
--   `summary_api.py`: SummaryManager for generating structured summaries with citation extraction
--   `rate_limiter.py`: Implements sliding window rate limiting to prevent quota violations
-
-**`core/` - Pipeline Orchestration**
-
--   Contains the main `ItemTranscriber` class that orchestrates the entire processing pipeline
--   Manages workflow from input selection through transcription, summarization, and output generation
--   Handles progress tracking, ETA calculation, and error recovery
--   Coordinates between API clients, file processors, and configuration modules
-
-**`processors/` - File Operations**
-
--   Handles all file I/O operations including reading, writing, and format conversion
--   `citation_manager.py`: Manages citation deduplication, page tracking, and OpenAlex API enrichment
--   `file_manager.py`: Creates output files (TXT transcriptions, DOCX summaries, JSON logs)
--   `pdf_processor.py`: Extracts PDF pages as images with preprocessing (grayscale, transparency, resizing)
-
-**`modules/` - Configuration and Utilities**
-
--   Provides configuration management, utility functions, and resources
--   `config/`: YAML configuration files for all aspects of the application
--   `prompts/`: System prompts that instruct the AI models on how to process content
--   `schemas/`: JSON schemas that enforce structured output from API responses
--   `app_config.py`: Loads and validates configuration with sensible defaults
--   `image_utils.py`: In-memory image preprocessing to eliminate disk I/O bottlenecks
--   `text_cleaner.py`: Post-transcription text cleaning (Unicode, LaTeX, whitespace)
--   `token_tracker.py`: Daily token budget tracking with midnight reset
--   `concurrency_helper.py`: Concurrency and rate limit settings access
-
-**`main.py` - Application Entry Point**
-
--   CLI interface with input scanning and user selection
--   High-level workflow coordination
--   Error handling and cleanup logic
--   Manages temporary working directories
 
 ## Advanced Topics
 
 ### Performance Optimization
 
 **Maximizing Throughput:**
-
-To achieve optimal processing speed:
 
 1.  Set `concurrency_limit` in `concurrency.yaml` based on your provider tier (OpenAI: 50-150, Anthropic: 5-10)
 2.  Use `service_tier: flex` for batch processing (slower but 50% cheaper)
@@ -1415,8 +880,6 @@ To achieve optimal processing speed:
 5.  Set appropriate `target_dpi` (300 is usually optimal)
 
 **Memory Management:**
-
-For large batch processing:
 
 -   Enable `delete_temp_working_dir: true` to clean up temporary files
 -   Process documents in batches rather than all at once
@@ -1435,11 +898,7 @@ For large batch processing:
 
 **Cost Tracking:**
 
-Monitor your OpenAI API usage at [https://platform.openai.com/usage](https://platform.openai.com/usage) to understand:
-
--   Cost per page for different document types
--   Impact of various configuration settings
--   Optimal settings for your use cases
+Monitor your API usage at your provider's dashboard (e.g., [https://platform.openai.com/usage](https://platform.openai.com/usage)) to understand cost per page, impact of configuration settings, and optimal settings for your use cases.
 
 ### Best Practices
 
@@ -1469,7 +928,6 @@ Monitor your OpenAI API usage at [https://platform.openai.com/usage](https://pla
 -   Never commit API keys to version control (use environment variables)
 -   Be mindful of sensitive information in documents
 -   Review data usage policies for your chosen AI provider
--   Consider using environment variables or secret management tools
 -   Keep temporary working directories secure during processing
 
 ## Troubleshooting
@@ -1535,7 +993,7 @@ Monitor your OpenAI API usage at [https://platform.openai.com/usage](https://pla
 If you encounter issues not covered here:
 
 1.  Check the log files in the `_working_files/` directory for detailed error messages
-2.  Review the OpenAI API status page for service disruptions
+2.  Review your provider's API status page for service disruptions
 3.  Enable debug logging by modifying `modules/logger.py`
 4.  Open an issue on the project repository with relevant log excerpts
 
@@ -1564,7 +1022,6 @@ Contributions to AutoExcerpter are welcome! Whether you are fixing bugs, adding 
 
 **Areas for Contribution:**
 
--   Support for additional output formats (Markdown, HTML, etc.)
 -   Support for additional LLM providers (AWS Bedrock, Cohere, Mistral, etc.)
 -   Enhanced image preprocessing algorithms
 -   Batch API integration for cost-optimized processing
@@ -1577,7 +1034,7 @@ Contributions to AutoExcerpter are welcome! Whether you are fixing bugs, adding 
 
 MIT License
 
-Copyright (c) 2025 Paul Goetz
+Copyright (c) 2026 Paul Goetz
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
