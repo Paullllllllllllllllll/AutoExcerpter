@@ -43,7 +43,7 @@ class Citation:
     doi: str | None = None
     url: str | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Generate normalized key for deduplication."""
         if not self.normalized_key:
             self.normalized_key = self._generate_normalized_key()
@@ -290,7 +290,8 @@ class CitationManager:
                     logger.debug("OpenAlex request URL: %s", response.url)
 
                 if response.status_code == 200:
-                    return response.json()
+                    result: dict[str, Any] = response.json()
+                    return result
                 elif response.status_code == 404:
                     # 404 is expected when resource not found
                     return None

@@ -16,6 +16,8 @@ import json
 import time
 from collections import deque
 from pathlib import Path
+from collections.abc import Generator
+from typing import Any
 from unittest.mock import MagicMock, mock_open, patch, PropertyMock
 
 import pytest
@@ -70,7 +72,7 @@ def _make_manager(**overrides) -> TranscriptionManager:
 
 
 @pytest.fixture
-def mock_all_init_deps():
+def mock_all_init_deps() -> Generator[MagicMock, None, None]:
     """Patch all dependencies needed by TranscriptionManager.__init__."""
     with (
         patch("api.base_llm_client.get_chat_model") as mock_gcm,
@@ -104,7 +106,7 @@ def mock_all_init_deps():
 class TestTranscriptionManagerInit:
     """Tests for TranscriptionManager.__init__()."""
 
-    def test_init_multimodal_model(self, mock_all_init_deps):
+    def test_init_multimodal_model(self, mock_all_init_deps) -> None:
         """Initializes without warning for multimodal model."""
         schema_data = json.dumps(_MOCK_SCHEMA)
         prompt_data = _MOCK_PROMPT
@@ -126,7 +128,7 @@ class TestTranscriptionManagerInit:
         "api.transcribe_api.get_model_capabilities",
         return_value={"multimodal": False, "max_tokens": True},
     )
-    def test_init_warns_for_non_multimodal(self, mock_caps, mock_timeout, mock_gcm):
+    def test_init_warns_for_non_multimodal(self, mock_caps, mock_timeout, mock_gcm) -> None:
         """Logs warning when model does not support multimodal input."""
         mock_gcm.return_value = MagicMock()
 
@@ -162,7 +164,7 @@ class TestTranscriptionManagerInit:
 class TestLoadSchemaAndPrompt:
     """Tests for _load_schema_and_prompt()."""
 
-    def test_successful_load(self, tmp_path):
+    def test_successful_load(self, tmp_path) -> None:
         """Loads schema and prompt files successfully."""
         mgr = _make_manager()
 
@@ -190,7 +192,7 @@ class TestLoadSchemaAndPrompt:
         assert mgr.transcription_schema == _MOCK_SCHEMA
         assert mgr.system_prompt == "rendered prompt"
 
-    def test_missing_schema_file_raises(self, tmp_path):
+    def test_missing_schema_file_raises(self, tmp_path) -> None:
         """Raises FileNotFoundError when schema file is missing."""
         mgr = _make_manager()
 
@@ -204,7 +206,7 @@ class TestLoadSchemaAndPrompt:
         ):
             mgr._load_schema_and_prompt()
 
-    def test_missing_prompt_file_raises(self, tmp_path):
+    def test_missing_prompt_file_raises(self, tmp_path) -> None:
         """Raises FileNotFoundError when prompt file is missing."""
         mgr = _make_manager()
 
@@ -231,32 +233,32 @@ class TestLoadSchemaAndPrompt:
 class TestExtractSequenceNumber:
     """Tests for _extract_sequence_number()."""
 
-    def test_page_0001(self):
+    def test_page_0001(self) -> None:
         """Extracts number from page_0001.jpg."""
         mgr = _make_manager()
         assert mgr._extract_sequence_number(Path("page_0001.jpg")) == 1
 
-    def test_image_42(self):
+    def test_image_42(self) -> None:
         """Extracts number from image_42.png."""
         mgr = _make_manager()
         assert mgr._extract_sequence_number(Path("image_42.png")) == 42
 
-    def test_no_numbers(self):
+    def test_no_numbers(self) -> None:
         """Returns 0 when no numbers in filename."""
         mgr = _make_manager()
         assert mgr._extract_sequence_number(Path("title_page.jpg")) == 0
 
-    def test_multiple_numbers_takes_last(self):
+    def test_multiple_numbers_takes_last(self) -> None:
         """Takes the last number from the stem."""
         mgr = _make_manager()
         assert mgr._extract_sequence_number(Path("doc_2024_page_005.jpg")) == 5
 
-    def test_number_only_stem(self):
+    def test_number_only_stem(self) -> None:
         """Handles filename that is only a number."""
         mgr = _make_manager()
         assert mgr._extract_sequence_number(Path("0010.jpg")) == 10
 
-    def test_complex_path(self):
+    def test_complex_path(self) -> None:
         """Works with full path objects."""
         mgr = _make_manager()
         p = Path("/some/deep/path/scan_page_0123.tiff")
@@ -269,11 +271,11 @@ class TestExtractSequenceNumber:
 class TestFormatImageNameExtended:
     """Additional tests for _format_image_name()."""
 
-    def test_whitespace_only(self):
+    def test_whitespace_only(self) -> None:
         """Whitespace-only string is truthy, returned as-is."""
         assert TranscriptionManager._format_image_name("  ") == "  "
 
-    def test_special_characters(self):
+    def test_special_characters(self) -> None:
         """Filenames with special characters are preserved."""
         assert TranscriptionManager._format_image_name("file (1).png") == "file (1).png"
 
@@ -284,13 +286,13 @@ class TestFormatImageNameExtended:
 class TestTruncateAnalysisExtended:
     """Additional tests for _truncate_analysis()."""
 
-    def test_exact_max_length(self):
+    def test_exact_max_length(self) -> None:
         """Text exactly at max_chars is returned as-is."""
         text = "A" * 100
         result = TranscriptionManager._truncate_analysis(text, max_chars=100)
         assert result == text  # No ellipsis needed
 
-    def test_strips_trailing_punctuation_before_ellipsis(self):
+    def test_strips_trailing_punctuation_before_ellipsis(self) -> None:
         """Trailing punctuation (.,;:) is stripped before adding ellipsis."""
         text = "Hello, this is a test sentence, and it continues here with more words."
         result = TranscriptionManager._truncate_analysis(text, max_chars=40)
@@ -305,25 +307,25 @@ class TestTruncateAnalysisExtended:
 class TestParseTranscriptionFromText:
     """Tests for _parse_transcription_from_text() — all branches."""
 
-    def test_empty_text(self):
+    def test_empty_text(self) -> None:
         """Empty text returns error message."""
         mgr = _make_manager()
         result = mgr._parse_transcription_from_text("", "page_001.png")
         assert "[transcription error: page_001.png]" == result
 
-    def test_empty_text_no_image_name(self):
+    def test_empty_text_no_image_name(self) -> None:
         """Empty text with no image name uses placeholder."""
         mgr = _make_manager()
         result = mgr._parse_transcription_from_text("")
         assert "[unknown image]" in result
 
-    def test_non_json_passthrough(self):
+    def test_non_json_passthrough(self) -> None:
         """Non-JSON text is returned as-is."""
         mgr = _make_manager()
         text = "This is plain transcription text without JSON."
         assert mgr._parse_transcription_from_text(text) == text
 
-    def test_no_transcribable_text_flag(self):
+    def test_no_transcribable_text_flag(self) -> None:
         """no_transcribable_text flag generates formatted message."""
         mgr = _make_manager()
         data = json.dumps(
@@ -338,7 +340,7 @@ class TestParseTranscriptionFromText:
         assert "no transcribable text" in result
         assert "Page is blank" in result
 
-    def test_transcription_not_possible_flag(self):
+    def test_transcription_not_possible_flag(self) -> None:
         """transcription_not_possible flag generates formatted message."""
         mgr = _make_manager()
         data = json.dumps(
@@ -353,7 +355,7 @@ class TestParseTranscriptionFromText:
         assert "transcription not possible" in result
         assert "Image too blurry" in result
 
-    def test_json_with_transcription_field(self):
+    def test_json_with_transcription_field(self) -> None:
         """JSON with transcription field extracts the text."""
         mgr = _make_manager()
         data = json.dumps(
@@ -366,7 +368,7 @@ class TestParseTranscriptionFromText:
         result = mgr._parse_transcription_from_text(data, "page_01.jpg")
         assert result == "This is the extracted text."
 
-    def test_invalid_json_salvage(self):
+    def test_invalid_json_salvage(self) -> None:
         """Invalid JSON starting with '{' triggers salvage attempt."""
         mgr = _make_manager()
         # Must start with '{' to enter JSON parsing, but be invalid overall
@@ -374,14 +376,14 @@ class TestParseTranscriptionFromText:
         result = mgr._parse_transcription_from_text(text)
         assert result == "salvaged text"
 
-    def test_completely_broken_json_returns_original(self):
+    def test_completely_broken_json_returns_original(self) -> None:
         """Totally broken JSON returns original text."""
         mgr = _make_manager()
         text = "{broken json without closing"
         result = mgr._parse_transcription_from_text(text)
         assert result == text
 
-    def test_markdown_wrapped_json(self):
+    def test_markdown_wrapped_json(self) -> None:
         """Strips markdown ```json blocks."""
         mgr = _make_manager()
         inner = json.dumps({"transcription": "markdown content"})
@@ -389,7 +391,7 @@ class TestParseTranscriptionFromText:
         result = mgr._parse_transcription_from_text(text)
         assert result == "markdown content"
 
-    def test_markdown_wrapped_plain_backticks(self):
+    def test_markdown_wrapped_plain_backticks(self) -> None:
         """Strips markdown ``` blocks without json tag."""
         mgr = _make_manager()
         inner = json.dumps({"transcription": "plain backtick"})
@@ -397,14 +399,14 @@ class TestParseTranscriptionFromText:
         result = mgr._parse_transcription_from_text(text)
         assert result == "plain backtick"
 
-    def test_json_without_known_flags_returns_original(self):
+    def test_json_without_known_flags_returns_original(self) -> None:
         """JSON without any known flags or transcription returns original."""
         mgr = _make_manager()
         data = json.dumps({"unknown_key": "value"})
         result = mgr._parse_transcription_from_text(data)
         assert result == data
 
-    def test_no_transcribable_text_without_analysis(self):
+    def test_no_transcribable_text_without_analysis(self) -> None:
         """no_transcribable_text without image_analysis still works."""
         mgr = _make_manager()
         data = json.dumps({"no_transcribable_text": True})
@@ -423,7 +425,7 @@ class TestBuildModelInputs:
         "api.base_llm_client.get_model_capabilities",
         return_value={"max_tokens": True, "reasoning": False, "text_verbosity": False},
     )
-    def test_openai_format(self, _):
+    def test_openai_format(self, _) -> None:
         """OpenAI provider uses image_url format."""
         mgr = _make_manager(
             provider="openai",
@@ -436,14 +438,15 @@ class TestBuildModelInputs:
         assert isinstance(messages[0], SystemMessage)
         assert isinstance(messages[1], HumanMessage)
         content = messages[1].content
-        assert content[0]["type"] == "image_url"
-        assert "data:image/jpeg;base64,base64data==" in content[0]["image_url"]["url"]
+        assert isinstance(content, list)
+        assert content[0]["type"] == "image_url"  # type: ignore[index]
+        assert "data:image/jpeg;base64,base64data==" in content[0]["image_url"]["url"]  # type: ignore[index]
 
     @patch(
         "api.base_llm_client.get_model_capabilities",
         return_value={"max_tokens": True, "reasoning": False, "text_verbosity": False},
     )
-    def test_anthropic_format(self, _):
+    def test_anthropic_format(self, _) -> None:
         """Anthropic provider uses image source format."""
         mgr = _make_manager(
             provider="anthropic",
@@ -463,7 +466,7 @@ class TestBuildModelInputs:
         "api.base_llm_client.get_model_capabilities",
         return_value={"max_tokens": True, "reasoning": False, "text_verbosity": False},
     )
-    def test_google_format(self, _):
+    def test_google_format(self, _) -> None:
         """Google provider uses image_url format."""
         mgr = _make_manager(
             provider="google",
@@ -484,7 +487,7 @@ class TestBuildModelInputs:
 class TestTranscribeImage:
     """Tests for transcribe_image()."""
 
-    def test_successful_transcription(self, tmp_path):
+    def test_successful_transcription(self, tmp_path) -> None:
         """Successful transcription returns expected result dict."""
         image_path = tmp_path / "images" / "page_0003.jpg"
         image_path.parent.mkdir(parents=True)
@@ -509,7 +512,7 @@ class TestTranscribeImage:
                 }
             )
         )
-        mock_response.usage_metadata = {"total_tokens": 100}
+        mock_response.usage_metadata = {"total_tokens": 100}  # type: ignore[assignment]
         mock_response.response_metadata = {}
 
         mock_structured = MagicMock()
@@ -540,7 +543,7 @@ class TestTranscribeImage:
         assert result["transcription"] == "Hello world."
         assert "processing_time" in result
 
-    def test_preprocessing_error(self, tmp_path):
+    def test_preprocessing_error(self, tmp_path) -> None:
         """Preprocessing error returns error result."""
         image_path = tmp_path / "broken_image.png"
         image_path.write_bytes(b"not an image")
@@ -556,7 +559,7 @@ class TestTranscribeImage:
         assert "preprocessing error" in result["transcription"]
         assert result["error_type"] == "preprocessing_failure"
 
-    def test_api_error(self, tmp_path):
+    def test_api_error(self, tmp_path) -> None:
         """API error after LangChain retries returns error result."""
         image_path = tmp_path / "page_0001.png"
         image_path.write_bytes(b"\x89PNG")
@@ -589,7 +592,7 @@ class TestTranscribeImage:
         assert result["error_type"] == "api_failure"
         assert mgr.failed_requests == 1
 
-    def test_schema_retry_loop_no_transcribable_text(self, tmp_path):
+    def test_schema_retry_loop_no_transcribable_text(self, tmp_path) -> None:
         """Schema retry when no_transcribable_text flag is detected."""
         image_path = tmp_path / "page_0001.png"
         image_path.write_bytes(b"\x89PNG")
@@ -657,7 +660,7 @@ class TestTranscribeImage:
 
         assert result["transcription"] == "Got it this time."
 
-    def test_direct_jpeg_in_working_files(self, tmp_path):
+    def test_direct_jpeg_in_working_files(self, tmp_path) -> None:
         """JPEG in images/ under *_working_files/ skips ImageProcessor."""
         working = tmp_path / "book_working_files" / "images"
         working.mkdir(parents=True)
@@ -695,7 +698,7 @@ class TestTranscribeImage:
 
         assert result["transcription"] == "Direct JPEG read."
 
-    def test_get_stats_includes_service_tier(self):
+    def test_get_stats_includes_service_tier(self) -> None:
         """get_stats() includes service_tier from transcription manager."""
         mgr = _make_manager(service_tier="flex", successful_requests=1)
         stats = mgr.get_stats()
@@ -710,22 +713,22 @@ class TestTranscribeImage:
 class TestExtractSequenceNumberEdgeCases:
     """Edge cases for _extract_sequence_number."""
 
-    def test_stem_with_underscores_only(self):
+    def test_stem_with_underscores_only(self) -> None:
         """Filename with underscores but no digits returns 0."""
         mgr = _make_manager()
         assert mgr._extract_sequence_number(Path("some_file_name.jpg")) == 0
 
-    def test_leading_zeros(self):
+    def test_leading_zeros(self) -> None:
         """Leading zeros are handled correctly."""
         mgr = _make_manager()
         assert mgr._extract_sequence_number(Path("page_0007.jpg")) == 7
 
-    def test_large_number(self):
+    def test_large_number(self) -> None:
         """Large sequence numbers work."""
         mgr = _make_manager()
         assert mgr._extract_sequence_number(Path("page_99999.jpg")) == 99999
 
-    def test_mixed_text_and_numbers(self):
+    def test_mixed_text_and_numbers(self) -> None:
         """Mixed text extracts last numeric segment."""
         mgr = _make_manager()
         result = mgr._extract_sequence_number(Path("vol2_ch3_page_15.png"))

@@ -229,7 +229,7 @@ def mock_openalex_response() -> dict[str, Any]:
 # Environment Fixtures
 # ============================================================================
 @pytest.fixture
-def mock_api_keys():
+def mock_api_keys() -> Generator[None, None, None]:
     """Set up mock API keys for testing."""
     with patch.dict(
         os.environ,

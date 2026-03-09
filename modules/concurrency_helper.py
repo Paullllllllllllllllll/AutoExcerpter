@@ -7,7 +7,7 @@ files, with sensible defaults and validation.
 from __future__ import annotations
 
 from modules.config_loader import get_config_loader
-from modules.constants import DEFAULT_CONCURRENT_REQUESTS
+from modules.constants import DEFAULT_CONCURRENT_REQUESTS as DEFAULT_CONCURRENT_REQUESTS
 from modules.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -64,7 +64,7 @@ def get_service_tier(api_type: str = "transcription") -> str:
         cfg_loader = get_config_loader()
         concurrency_cfg = cfg_loader.get_concurrency_config()
 
-        service_tier = (
+        service_tier: str | None = (
             concurrency_cfg.get("api_requests", {})
             .get(api_type, {})
             .get("service_tier")

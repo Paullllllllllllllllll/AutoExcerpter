@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from pathlib import Path
+from collections.abc import Generator
 from typing import Any
 from unittest.mock import patch, MagicMock, call
 
@@ -56,7 +57,7 @@ from processors.markdown_writer import create_markdown_summary
 # Fixtures
 # ---------------------------------------------------------------------------
 @pytest.fixture(autouse=True)
-def _clear_log_handles():
+def _clear_log_handles() -> Generator[None, None, None]:
     """Clear the module-level log handle cache before each test."""
     with _LOG_HANDLES_GUARD:
         for key, (handle, _lock) in list(_LOG_HANDLES.items()):
@@ -87,7 +88,7 @@ class TestInitializeLogFile:
     @patch("processors.log_manager.get_service_tier", return_value="flex")
     def test_creates_log_file_with_header(
         self, mock_tier, mock_timeout, mock_conc, tmp_path: Path
-    ):
+    ) -> None:
         """Creates a log file starting with a JSON array."""
         log_path = tmp_path / "test.log.json"
 
@@ -118,7 +119,7 @@ class TestInitializeLogFile:
     @patch("processors.log_manager.get_service_tier", return_value="flex")
     def test_non_openai_model_service_tier_na(
         self, mock_tier, mock_timeout, mock_conc, tmp_path: Path
-    ):
+    ) -> None:
         """Non-OpenAI models get 'N/A' as service_tier."""
         log_path = tmp_path / "test.log.json"
 
@@ -140,7 +141,7 @@ class TestInitializeLogFile:
     @patch("processors.log_manager.get_service_tier", return_value="flex")
     def test_returns_false_on_error(
         self, mock_tier, mock_timeout, mock_conc, tmp_path: Path
-    ):
+    ) -> None:
         """Returns False when the file cannot be written."""
         bad_path = tmp_path / "nonexistent_dir" / "sub" / "test.log.json"
 
@@ -167,7 +168,7 @@ class TestAppendToLog:
     @patch("processors.log_manager.get_service_tier", return_value="flex")
     def test_appends_entry_as_json(
         self, mock_tier, mock_timeout, mock_conc, tmp_path: Path
-    ):
+    ) -> None:
         """Appends a comma-separated JSON entry."""
         log_path = tmp_path / "test.log.json"
 
@@ -189,7 +190,7 @@ class TestAppendToLog:
         content = log_path.read_text(encoding="utf-8")
         assert '"page": 1' in content
 
-    def test_returns_false_on_error(self, tmp_path: Path):
+    def test_returns_false_on_error(self, tmp_path: Path) -> None:
         """Returns False when writing fails."""
         # Create a log handle pointing to an invalid path
         bad_path = tmp_path / "nonexistent_dir" / "log.json"
@@ -210,7 +211,7 @@ class TestFinalizeLogFile:
     @patch("processors.log_manager.get_service_tier", return_value="flex")
     def test_closes_json_array(
         self, mock_tier, mock_timeout, mock_conc, tmp_path: Path
-    ):
+    ) -> None:
         """Finalizes the log file by closing the JSON array."""
         log_path = tmp_path / "test.log.json"
 
@@ -236,7 +237,7 @@ class TestFinalizeLogFile:
     @patch("processors.log_manager.get_service_tier", return_value="flex")
     def test_full_lifecycle_produces_valid_json(
         self, mock_tier, mock_timeout, mock_conc, tmp_path: Path
-    ):
+    ) -> None:
         """Full init -> append -> finalize produces parseable JSON array."""
         log_path = tmp_path / "test.log.json"
 
@@ -265,7 +266,7 @@ class TestFinalizeLogFile:
 class TestWriteTranscriptionToText:
     """Tests for write_transcription_to_text()."""
 
-    def test_writes_transcription_file(self, tmp_path: Path):
+    def test_writes_transcription_file(self, tmp_path: Path) -> None:
         """Creates a text file with transcription content and metadata."""
         output_path = tmp_path / "output.txt"
         results = [
@@ -293,7 +294,7 @@ class TestWriteTranscriptionToText:
         assert "Page 1 content here." in content
         assert "Page 2 content here." in content
 
-    def test_counts_errors_in_results(self, tmp_path: Path):
+    def test_counts_errors_in_results(self, tmp_path: Path) -> None:
         """Error results are counted in the failure tally."""
         output_path = tmp_path / "output.txt"
         results = [
@@ -316,7 +317,7 @@ class TestWriteTranscriptionToText:
         assert "# Successfully transcribed: 2" in content
         assert "# Failed items: 1" in content
 
-    def test_missing_transcription_uses_error_placeholder(self, tmp_path: Path):
+    def test_missing_transcription_uses_error_placeholder(self, tmp_path: Path) -> None:
         """Results missing 'transcription' get an ERROR placeholder."""
         output_path = tmp_path / "output.txt"
         results = [{"no_transcription_key": True}]
@@ -333,7 +334,7 @@ class TestWriteTranscriptionToText:
         content = output_path.read_text(encoding="utf-8")
         assert "[ERROR] Transcription data missing" in content
 
-    def test_returns_false_on_write_error(self, tmp_path: Path):
+    def test_returns_false_on_write_error(self, tmp_path: Path) -> None:
         """Returns False when the file cannot be written."""
         bad_path = tmp_path / "no_dir" / "sub" / "output.txt"
 
@@ -348,7 +349,7 @@ class TestWriteTranscriptionToText:
 
         assert success is False
 
-    def test_empty_results(self, tmp_path: Path):
+    def test_empty_results(self, tmp_path: Path) -> None:
         """Empty results list produces a valid file with zero counts."""
         output_path = tmp_path / "output.txt"
 
@@ -372,29 +373,29 @@ class TestWriteTranscriptionToText:
 class TestFormatPageRange:
     """Tests for _format_page_range()."""
 
-    def test_single_page(self):
+    def test_single_page(self) -> None:
         """Single page uses 'p.' prefix."""
         assert _format_page_range([5]) == "p. 5"
 
-    def test_consecutive_pages(self):
+    def test_consecutive_pages(self) -> None:
         """Consecutive pages are collapsed into a range."""
         assert _format_page_range([1, 2, 3]) == "pp. 1-3"
 
-    def test_mixed_ranges(self):
+    def test_mixed_ranges(self) -> None:
         """Mixed consecutive and non-consecutive pages."""
         result = _format_page_range([1, 2, 3, 5, 7, 8, 9])
         assert result == "pp. 1-3, 5, 7-9"
 
-    def test_empty_list(self):
+    def test_empty_list(self) -> None:
         """Empty list returns empty string."""
         assert _format_page_range([]) == ""
 
-    def test_unsorted_input(self):
+    def test_unsorted_input(self) -> None:
         """Unsorted input is sorted before formatting."""
         result = _format_page_range([9, 1, 5, 2, 3])
         assert result == "pp. 1-3, 5, 9"
 
-    def test_duplicate_pages_deduplicated(self):
+    def test_duplicate_pages_deduplicated(self) -> None:
         """Duplicate page numbers are deduplicated."""
         result = _format_page_range([1, 1, 2, 2, 3])
         assert result == "pp. 1-3"
@@ -406,42 +407,42 @@ class TestFormatPageRange:
 class TestFormatPageHeadingDocx:
     """Tests for _format_page_heading_docx()."""
 
-    def test_arabic_content_page(self):
+    def test_arabic_content_page(self) -> None:
         """Standard Arabic-numbered content page."""
         result = _format_page_heading_docx(5, "arabic", ["content"], False)
         assert result == "Page 5"
 
-    def test_roman_page(self):
+    def test_roman_page(self) -> None:
         """Roman numeral page."""
         result = _format_page_heading_docx(3, "roman", ["content"], False)
         assert result == "Page iii"
 
-    def test_unnumbered_page(self):
+    def test_unnumbered_page(self) -> None:
         """Unnumbered page via page_number_type='none'."""
         result = _format_page_heading_docx("?", "none", ["content"], True)
         assert result == "[Unnumbered page]"
 
-    def test_preface_prefix(self):
+    def test_preface_prefix(self) -> None:
         """Preface page type adds [Preface] prefix."""
         result = _format_page_heading_docx(1, "roman", ["preface"], False)
         assert result == "[Preface] Page i"
 
-    def test_appendix_prefix(self):
+    def test_appendix_prefix(self) -> None:
         """Appendix page type adds [Appendix] prefix."""
         result = _format_page_heading_docx(100, "arabic", ["appendix"], False)
         assert result == "[Appendix] Page 100"
 
-    def test_abstract_prefix(self):
+    def test_abstract_prefix(self) -> None:
         """Abstract page type (without content) adds [Abstract] prefix."""
         result = _format_page_heading_docx(1, "arabic", ["abstract"], False)
         assert result == "[Abstract] Page 1"
 
-    def test_abstract_with_content_no_prefix(self):
+    def test_abstract_with_content_no_prefix(self) -> None:
         """Abstract combined with content does not add [Abstract] prefix."""
         result = _format_page_heading_docx(1, "arabic", ["abstract", "content"], False)
         assert "[Abstract]" not in result
 
-    def test_figures_tables_prefix(self):
+    def test_figures_tables_prefix(self) -> None:
         """Figures/tables page type adds prefix."""
         result = _format_page_heading_docx(
             50, "arabic", ["figures_tables_sources"], False
@@ -455,32 +456,32 @@ class TestFormatPageHeadingDocx:
 class TestShouldRenderBullets:
     """Tests for _should_render_bullets()."""
 
-    def test_content_page(self):
+    def test_content_page(self) -> None:
         assert _should_render_bullets(["content"]) is True
 
-    def test_bibliography_page(self):
+    def test_bibliography_page(self) -> None:
         assert _should_render_bullets(["bibliography"]) is False
 
-    def test_blank_page(self):
+    def test_blank_page(self) -> None:
         assert _should_render_bullets(["blank"]) is False
 
-    def test_mixed_types(self):
+    def test_mixed_types(self) -> None:
         assert _should_render_bullets(["bibliography", "content"]) is True
 
-    def test_appendix(self):
+    def test_appendix(self) -> None:
         assert _should_render_bullets(["appendix"]) is True
 
 
 class TestGetStructureTypes:
     """Tests for _get_structure_types()."""
 
-    def test_content_not_structure(self):
+    def test_content_not_structure(self) -> None:
         assert _get_structure_types(["content"]) == []
 
-    def test_bibliography_is_structure(self):
+    def test_bibliography_is_structure(self) -> None:
         assert _get_structure_types(["bibliography"]) == ["bibliography"]
 
-    def test_mixed_types(self):
+    def test_mixed_types(self) -> None:
         result = _get_structure_types(["content", "bibliography", "appendix"])
         assert "bibliography" in result
         assert "appendix" in result
@@ -495,7 +496,7 @@ class TestCreateDocxSummary:
 
     @patch("processors.docx_writer.CitationManager")
     @patch("processors.docx_writer.Document")
-    def test_creates_docx_file(self, mock_doc_class, mock_cm_class, tmp_path: Path):
+    def test_creates_docx_file(self, mock_doc_class, mock_cm_class, tmp_path: Path) -> None:
         """create_docx_summary calls Document and saves to output_path."""
         output_path = tmp_path / "summary.docx"
         mock_doc = MagicMock()
@@ -526,7 +527,7 @@ class TestCreateDocxSummary:
     @patch("processors.docx_writer.Document")
     def test_empty_results_creates_minimal_docx(
         self, mock_doc_class, mock_cm_class, tmp_path: Path
-    ):
+    ) -> None:
         """Empty results still produce a valid document."""
         output_path = tmp_path / "summary.docx"
         mock_doc = MagicMock()
@@ -552,7 +553,7 @@ class TestCreateDocxSummary:
         mock_config,
         mock_add_hyperlink,
         tmp_path: Path,
-    ):
+    ) -> None:
         """References section is added when citations are present."""
         output_path = tmp_path / "summary.docx"
         mock_doc = MagicMock()
@@ -597,7 +598,7 @@ class TestCreateDocxSummary:
     @patch("processors.docx_writer.Document")
     def test_structure_section_for_bibliography_pages(
         self, mock_doc_class, mock_cm_class, tmp_path: Path
-    ):
+    ) -> None:
         """Bibliography pages contribute to the Document Structure section."""
         output_path = tmp_path / "summary.docx"
         mock_doc = MagicMock()
@@ -638,7 +639,7 @@ class TestCreateMarkdownSummaryExtended:
     """Extended edge case tests for create_markdown_summary."""
 
     @patch("processors.markdown_writer.CitationManager")
-    def test_structure_section_for_toc_pages(self, mock_cm_class, tmp_path: Path):
+    def test_structure_section_for_toc_pages(self, mock_cm_class, tmp_path: Path) -> None:
         """Table of contents pages appear in the Document Structure section."""
         output_path = tmp_path / "summary.md"
 
@@ -674,7 +675,7 @@ class TestCreateMarkdownSummaryExtended:
         assert "Table of Contents" in content
 
     @patch("processors.markdown_writer.CitationManager")
-    def test_appendix_page_heading(self, mock_cm_class, tmp_path: Path):
+    def test_appendix_page_heading(self, mock_cm_class, tmp_path: Path) -> None:
         """Appendix pages get [Appendix] prefix in heading."""
         output_path = tmp_path / "summary.md"
 
@@ -700,7 +701,7 @@ class TestCreateMarkdownSummaryExtended:
         assert "## [Appendix] Page 100" in content
 
     @patch("processors.markdown_writer.CitationManager")
-    def test_figures_tables_page_heading(self, mock_cm_class, tmp_path: Path):
+    def test_figures_tables_page_heading(self, mock_cm_class, tmp_path: Path) -> None:
         """Figures/tables pages get [Figures/Tables] prefix."""
         output_path = tmp_path / "summary.md"
 
@@ -727,7 +728,7 @@ class TestCreateMarkdownSummaryExtended:
 
     @patch("processors.markdown_writer.config")
     @patch("processors.markdown_writer.CitationManager")
-    def test_references_with_metadata(self, mock_cm_class, mock_config, tmp_path: Path):
+    def test_references_with_metadata(self, mock_cm_class, mock_config, tmp_path: Path) -> None:
         """References with DOI and year metadata are rendered."""
         output_path = tmp_path / "summary.md"
 
@@ -766,7 +767,7 @@ class TestCreateMarkdownSummaryExtended:
         assert "Year: 2020" in content
 
     @patch("processors.markdown_writer.CitationManager")
-    def test_citation_without_url(self, mock_cm_class, tmp_path: Path):
+    def test_citation_without_url(self, mock_cm_class, tmp_path: Path) -> None:
         """Citations without URLs are rendered as plain text."""
         output_path = tmp_path / "summary.md"
 
@@ -805,13 +806,13 @@ class TestCreateMarkdownSummaryExtended:
 class TestSanitizeOmmlXml:
     """Tests for sanitize_omml_xml()."""
 
-    def test_valid_xml_unchanged(self):
+    def test_valid_xml_unchanged(self) -> None:
         """Valid XML is returned unchanged."""
         valid_xml = '<m:oMath xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"><m:r><m:t>x</m:t></m:r></m:oMath>'
         result = sanitize_omml_xml(valid_xml)
         assert result == valid_xml
 
-    def test_invalid_xml_returns_original(self):
+    def test_invalid_xml_returns_original(self) -> None:
         """Unfixable invalid XML returns the original string."""
         invalid_xml = "<unclosed><tags"
         result = sanitize_omml_xml(invalid_xml)
@@ -824,7 +825,7 @@ class TestSanitizeOmmlXml:
 class TestAddHyperlink:
     """Tests for add_hyperlink()."""
 
-    def test_adds_hyperlink_to_paragraph(self):
+    def test_adds_hyperlink_to_paragraph(self) -> None:
         """Adds a hyperlink element to a DOCX paragraph."""
         from docx import Document
 
@@ -844,7 +845,7 @@ class TestAddHyperlink:
 class TestAddFormattedTextToParagraph:
     """Tests for add_formatted_text_to_paragraph()."""
 
-    def test_plain_text_added(self):
+    def test_plain_text_added(self) -> None:
         """Plain text without LaTeX is added as a run."""
         from docx import Document
 
@@ -857,7 +858,7 @@ class TestAddFormattedTextToParagraph:
         full_text = paragraph.text
         assert "Hello world" in full_text
 
-    def test_text_with_inline_latex(self):
+    def test_text_with_inline_latex(self) -> None:
         """Text with inline LaTeX renders math or falls back to text."""
         from docx import Document
 
@@ -878,9 +879,9 @@ class TestAddFormattedTextToParagraph:
 class TestFilterEmptyPages:
     """Tests for filter_empty_pages()."""
 
-    def test_filters_blank_pages(self):
+    def test_filters_blank_pages(self) -> None:
         """Pages with blank type are filtered out."""
-        results = [
+        results: list[dict[str, Any]] = [
             {
                 "page_information": {
                     "page_number_integer": 1,
@@ -902,7 +903,7 @@ class TestFilterEmptyPages:
         filtered = filter_empty_pages(results)
         assert len(filtered) == 1
 
-    def test_keeps_structure_pages_without_bullets(self):
+    def test_keeps_structure_pages_without_bullets(self) -> None:
         """Pages with structure types are kept even without bullets."""
         results = [
             {
@@ -918,6 +919,6 @@ class TestFilterEmptyPages:
         filtered = filter_empty_pages(results)
         assert len(filtered) == 1
 
-    def test_empty_input(self):
+    def test_empty_input(self) -> None:
         """Empty input returns empty output."""
         assert filter_empty_pages([]) == []

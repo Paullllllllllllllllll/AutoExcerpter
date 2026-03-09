@@ -23,35 +23,35 @@ from modules.types import ItemSpec
 class TestIsPdfFile:
     """Tests for is_pdf_file()."""
 
-    def test_lowercase_pdf(self):
+    def test_lowercase_pdf(self) -> None:
         """Lowercase .pdf extension is recognized."""
         assert is_pdf_file(Path("document.pdf")) is True
 
-    def test_uppercase_pdf(self):
+    def test_uppercase_pdf(self) -> None:
         """Uppercase .PDF extension is recognized (case-insensitive)."""
         assert is_pdf_file(Path("DOCUMENT.PDF")) is True
 
-    def test_mixed_case_pdf(self):
+    def test_mixed_case_pdf(self) -> None:
         """Mixed-case .Pdf extension is recognized."""
         assert is_pdf_file(Path("file.Pdf")) is True
 
-    def test_non_pdf_txt(self):
+    def test_non_pdf_txt(self) -> None:
         """Text file is not recognized as PDF."""
         assert is_pdf_file(Path("notes.txt")) is False
 
-    def test_non_pdf_jpg(self):
+    def test_non_pdf_jpg(self) -> None:
         """JPEG file is not recognized as PDF."""
         assert is_pdf_file(Path("photo.jpg")) is False
 
-    def test_no_extension(self):
+    def test_no_extension(self) -> None:
         """File without extension is not recognized as PDF."""
         assert is_pdf_file(Path("document")) is False
 
-    def test_pdf_in_name_but_different_extension(self):
+    def test_pdf_in_name_but_different_extension(self) -> None:
         """File with 'pdf' in name but different extension is not PDF."""
         assert is_pdf_file(Path("pdf_backup.zip")) is False
 
-    def test_dotfile(self):
+    def test_dotfile(self) -> None:
         """Hidden dotfile is not recognized as PDF."""
         assert is_pdf_file(Path(".hidden")) is False
 
@@ -75,7 +75,7 @@ class TestIsSupportedImage:
             ".webp",
         ],
     )
-    def test_supported_extensions(self, ext: str):
+    def test_supported_extensions(self, ext: str) -> None:
         """All supported image extensions are recognized."""
         assert is_supported_image(Path(f"image{ext}")) is True
 
@@ -92,7 +92,7 @@ class TestIsSupportedImage:
             ".WEBP",
         ],
     )
-    def test_supported_uppercase(self, ext: str):
+    def test_supported_uppercase(self, ext: str) -> None:
         """Uppercase image extensions are recognized (case-insensitive)."""
         assert is_supported_image(Path(f"image{ext}")) is True
 
@@ -108,11 +108,11 @@ class TestIsSupportedImage:
             ".raw",
         ],
     )
-    def test_unsupported_extensions(self, ext: str):
+    def test_unsupported_extensions(self, ext: str) -> None:
         """Unsupported extensions are rejected."""
         assert is_supported_image(Path(f"file{ext}")) is False
 
-    def test_no_extension(self):
+    def test_no_extension(self) -> None:
         """File without extension is not a supported image."""
         assert is_supported_image(Path("image_file")) is False
 
@@ -123,7 +123,7 @@ class TestIsSupportedImage:
 class TestBuildPdfItem:
     """Tests for _build_pdf_item()."""
 
-    def test_creates_correct_item_spec(self, tmp_path: Path):
+    def test_creates_correct_item_spec(self, tmp_path: Path) -> None:
         """_build_pdf_item returns an ItemSpec with kind='pdf'."""
         pdf_path = tmp_path / "test.pdf"
         pdf_path.touch()
@@ -135,7 +135,7 @@ class TestBuildPdfItem:
         assert item.path == pdf_path
         assert item.image_count is None
 
-    def test_preserves_full_path(self, tmp_path: Path):
+    def test_preserves_full_path(self, tmp_path: Path) -> None:
         """The returned ItemSpec contains the full path."""
         deep_path = tmp_path / "a" / "b" / "c" / "doc.pdf"
         deep_path.parent.mkdir(parents=True)
@@ -152,7 +152,7 @@ class TestBuildPdfItem:
 class TestBuildImageFolderItems:
     """Tests for _build_image_folder_items()."""
 
-    def test_empty_images_list_is_skipped(self, tmp_path: Path):
+    def test_empty_images_list_is_skipped(self, tmp_path: Path) -> None:
         """Folder with an empty images list produces no items."""
         folder = tmp_path / "empty_folder"
         folder.mkdir()
@@ -160,7 +160,7 @@ class TestBuildImageFolderItems:
 
         assert result == []
 
-    def test_normal_images(self, tmp_path: Path):
+    def test_normal_images(self, tmp_path: Path) -> None:
         """Folder with images produces a single ItemSpec."""
         folder = tmp_path / "images"
         folder.mkdir()
@@ -177,7 +177,7 @@ class TestBuildImageFolderItems:
         assert item.path == folder
         assert item.image_count == 2
 
-    def test_sorting_does_not_affect_count(self, tmp_path: Path):
+    def test_sorting_does_not_affect_count(self, tmp_path: Path) -> None:
         """Image count is correct regardless of input order."""
         folder = tmp_path / "photos"
         folder.mkdir()
@@ -189,7 +189,7 @@ class TestBuildImageFolderItems:
 
         assert result[0].image_count == 5
 
-    def test_multiple_folders(self, tmp_path: Path):
+    def test_multiple_folders(self, tmp_path: Path) -> None:
         """Multiple folders each produce their own ItemSpec."""
         folder_a = tmp_path / "folder_a"
         folder_b = tmp_path / "folder_b"
@@ -220,7 +220,7 @@ class TestBuildImageFolderItems:
 class TestScanInputPath:
     """Tests for scan_input_path()."""
 
-    def test_single_pdf_file(self, tmp_path: Path):
+    def test_single_pdf_file(self, tmp_path: Path) -> None:
         """A single PDF file returns one ItemSpec."""
         pdf = tmp_path / "document.pdf"
         pdf.write_bytes(b"%PDF-1.4 fake content")
@@ -231,7 +231,7 @@ class TestScanInputPath:
         assert items[0].kind == "pdf"
         assert items[0].path == pdf
 
-    def test_non_pdf_file_returns_empty(self, tmp_path: Path):
+    def test_non_pdf_file_returns_empty(self, tmp_path: Path) -> None:
         """A non-PDF file returns an empty list."""
         txt = tmp_path / "notes.txt"
         txt.write_text("hello")
@@ -240,7 +240,7 @@ class TestScanInputPath:
 
         assert items == []
 
-    def test_non_existent_path_returns_empty(self, tmp_path: Path):
+    def test_non_existent_path_returns_empty(self, tmp_path: Path) -> None:
         """A non-existent path returns an empty list."""
         missing = tmp_path / "does_not_exist.pdf"
 
@@ -248,7 +248,7 @@ class TestScanInputPath:
 
         assert items == []
 
-    def test_directory_with_pdfs(self, tmp_path: Path):
+    def test_directory_with_pdfs(self, tmp_path: Path) -> None:
         """A directory containing PDF files returns ItemSpecs for each."""
         for name in ["a.pdf", "b.pdf", "c.pdf"]:
             (tmp_path / name).write_bytes(b"%PDF")
@@ -258,7 +258,7 @@ class TestScanInputPath:
         pdf_items = [i for i in items if i.kind == "pdf"]
         assert len(pdf_items) == 3
 
-    def test_directory_with_image_folders(self, tmp_path: Path):
+    def test_directory_with_image_folders(self, tmp_path: Path) -> None:
         """A directory containing subfolders with images returns image_folder items."""
         img_dir = tmp_path / "scan_001"
         img_dir.mkdir()
@@ -271,7 +271,7 @@ class TestScanInputPath:
         assert len(folder_items) == 1
         assert folder_items[0].image_count == 2
 
-    def test_directory_mixed_pdfs_and_images(self, tmp_path: Path):
+    def test_directory_mixed_pdfs_and_images(self, tmp_path: Path) -> None:
         """A directory with both PDFs and image folders returns both types."""
         (tmp_path / "doc.pdf").write_bytes(b"%PDF")
 
@@ -292,7 +292,7 @@ class TestScanInputPath:
 class TestCollectItemsFromDirectory:
     """Tests for _collect_items_from_directory()."""
 
-    def test_mixed_pdfs_and_image_folders(self, tmp_path: Path):
+    def test_mixed_pdfs_and_image_folders(self, tmp_path: Path) -> None:
         """Collects both PDF files and image folders."""
         (tmp_path / "report.pdf").write_bytes(b"%PDF")
 
@@ -309,7 +309,7 @@ class TestCollectItemsFromDirectory:
         assert len(folder_items) == 1
         assert folder_items[0].image_count == 2
 
-    def test_nested_directories(self, tmp_path: Path):
+    def test_nested_directories(self, tmp_path: Path) -> None:
         """Recursively discovers items in nested directories."""
         sub1 = tmp_path / "sub1"
         sub2 = tmp_path / "sub1" / "sub2"
@@ -324,7 +324,7 @@ class TestCollectItemsFromDirectory:
         assert "doc.pdf" in pdf_paths
         assert "deep.pdf" in pdf_paths
 
-    def test_empty_directory(self, tmp_path: Path):
+    def test_empty_directory(self, tmp_path: Path) -> None:
         """Empty directory returns no items."""
         empty = tmp_path / "empty"
         empty.mkdir()
@@ -333,7 +333,7 @@ class TestCollectItemsFromDirectory:
 
         assert items == []
 
-    def test_unsupported_files_ignored(self, tmp_path: Path):
+    def test_unsupported_files_ignored(self, tmp_path: Path) -> None:
         """Files that are neither PDF nor supported images are ignored."""
         (tmp_path / "readme.txt").write_text("hello")
         (tmp_path / "data.csv").write_text("a,b,c")
@@ -342,7 +342,7 @@ class TestCollectItemsFromDirectory:
 
         assert items == []
 
-    def test_image_folder_with_nested_content(self, tmp_path: Path):
+    def test_image_folder_with_nested_content(self, tmp_path: Path) -> None:
         """A directory with images is detected; its children are still walked.
 
         The ``dirs[:]`` filtering in ``_collect_items_from_directory``

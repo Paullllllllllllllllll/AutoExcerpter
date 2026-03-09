@@ -10,11 +10,11 @@ from api.base_llm_client import LLMClientBase
 
 
 class TestExtractOutputText:
-    def test_extract_output_text_from_ai_message_string(self):
+    def test_extract_output_text_from_ai_message_string(self) -> None:
         msg = AIMessage(content=" hello ")
         assert LLMClientBase._extract_output_text(msg) == "hello"
 
-    def test_extract_output_text_from_ai_message_blocks(self):
+    def test_extract_output_text_from_ai_message_blocks(self) -> None:
         msg = AIMessage(
             content=[
                 {"type": "text", "text": "hello"},
@@ -23,7 +23,7 @@ class TestExtractOutputText:
         )
         assert LLMClientBase._extract_output_text(msg) == "hello world"
 
-    def test_extract_output_text_from_output_text_attr(self):
+    def test_extract_output_text_from_output_text_attr(self) -> None:
         class Obj:
             output_text = "  hi  "
 
@@ -31,7 +31,7 @@ class TestExtractOutputText:
 
 
 class TestSchemaRetryDecision:
-    def test_should_retry_for_schema_flag_disabled(self):
+    def test_should_retry_for_schema_flag_disabled(self) -> None:
         client = LLMClientBase.__new__(LLMClientBase)
         client.schema_retry_config = {"flag": {"enabled": False, "max_attempts": 3}}
 
@@ -42,7 +42,7 @@ class TestSchemaRetryDecision:
         assert backoff == 0.0
         assert max_attempts == 0
 
-    def test_should_retry_for_schema_flag_enabled_with_backoff(self):
+    def test_should_retry_for_schema_flag_enabled_with_backoff(self) -> None:
         client = LLMClientBase.__new__(LLMClientBase)
         client.schema_retry_config = {
             "flag": {
@@ -64,7 +64,7 @@ class TestSchemaRetryDecision:
 
 
 class TestBuildInvokeKwargs:
-    def test_build_invoke_kwargs_openai_capability_guarding(self):
+    def test_build_invoke_kwargs_openai_capability_guarding(self) -> None:
         client = LLMClientBase.__new__(LLMClientBase)
         client.provider = "openai"
         client.model_name = "gpt-5-mini"
@@ -90,7 +90,7 @@ class TestBuildInvokeKwargs:
         assert kwargs["reasoning"] == {"effort": "low"}
         assert kwargs["text"] == {"verbosity": "low"}
 
-    def test_build_invoke_kwargs_skips_unsupported_reasoning_and_text(self):
+    def test_build_invoke_kwargs_skips_unsupported_reasoning_and_text(self) -> None:
         client = LLMClientBase.__new__(LLMClientBase)
         client.provider = "openai"
         client.model_name = "gpt-4o"
@@ -116,7 +116,7 @@ class TestBuildInvokeKwargs:
         assert "reasoning" not in kwargs
         assert "text" not in kwargs
 
-    def test_build_invoke_kwargs_anthropic_uses_max_tokens_key(self):
+    def test_build_invoke_kwargs_anthropic_uses_max_tokens_key(self) -> None:
         client = LLMClientBase.__new__(LLMClientBase)
         client.provider = "anthropic"
         client.model_name = "claude-sonnet-4-5"

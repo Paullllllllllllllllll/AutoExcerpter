@@ -10,7 +10,7 @@ import modules.token_tracker as token_tracker
 
 
 class TestDailyTokenTracker:
-    def test_add_tokens_persists_state(self, tmp_path: Path):
+    def test_add_tokens_persists_state(self, tmp_path: Path) -> None:
         state_file = tmp_path / "state.json"
         tracker = token_tracker.DailyTokenTracker(
             daily_limit=100,
@@ -30,7 +30,7 @@ class TestDailyTokenTracker:
         )
         assert tracker2.get_tokens_used_today() == 10
 
-    def test_add_tokens_ignored_when_disabled_or_non_positive(self, tmp_path: Path):
+    def test_add_tokens_ignored_when_disabled_or_non_positive(self, tmp_path: Path) -> None:
         tracker = token_tracker.DailyTokenTracker(
             daily_limit=100,
             enabled=False,
@@ -48,7 +48,7 @@ class TestDailyTokenTracker:
         tracker_enabled.add_tokens(-5)
         assert tracker_enabled.get_tokens_used_today() == 0
 
-    def test_new_day_resets_counter(self, tmp_path: Path, monkeypatch):
+    def test_new_day_resets_counter(self, tmp_path: Path, monkeypatch) -> None:
         tracker = token_tracker.DailyTokenTracker(
             daily_limit=100,
             enabled=True,
@@ -66,7 +66,7 @@ class TestDailyTokenTracker:
         assert tracker.get_tokens_used_today() == 0
         assert tracker.get_tokens_remaining() == 100
 
-    def test_can_use_tokens_logic(self, tmp_path: Path):
+    def test_can_use_tokens_logic(self, tmp_path: Path) -> None:
         tracker = token_tracker.DailyTokenTracker(
             daily_limit=10,
             enabled=True,
@@ -80,7 +80,7 @@ class TestDailyTokenTracker:
         assert tracker.can_use_tokens(estimated_tokens=3) is True
         assert tracker.can_use_tokens(estimated_tokens=4) is False
 
-    def test_get_seconds_until_reset_is_reasonable(self, tmp_path: Path):
+    def test_get_seconds_until_reset_is_reasonable(self, tmp_path: Path) -> None:
         tracker = token_tracker.DailyTokenTracker(
             daily_limit=10,
             enabled=True,
@@ -93,7 +93,7 @@ class TestDailyTokenTracker:
 class TestGetTokenTrackerSingleton:
     def test_get_token_tracker_returns_singleton_and_uses_config(
         self, tmp_path: Path, monkeypatch
-    ):
+    ) -> None:
         # Reset singleton state
         monkeypatch.setattr(token_tracker, "_tracker_instance", None)
 

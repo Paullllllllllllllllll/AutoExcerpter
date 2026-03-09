@@ -41,7 +41,7 @@ class TestApplyImagePreprocessing:
 
     def test_applies_grayscale_when_enabled(
         self, sample_pil_image: Image.Image, default_config: dict[str, Any]
-    ):
+    ) -> None:
         """Grayscale conversion is applied when enabled."""
         result = _apply_image_preprocessing(sample_pil_image, default_config, "openai")
 
@@ -51,7 +51,7 @@ class TestApplyImagePreprocessing:
 
     def test_skips_grayscale_when_disabled(
         self, sample_pil_image: Image.Image, default_config: dict[str, Any]
-    ):
+    ) -> None:
         """Grayscale conversion is skipped when disabled."""
         default_config["grayscale_conversion"] = False
 
@@ -61,7 +61,7 @@ class TestApplyImagePreprocessing:
 
     def test_handles_transparency(
         self, rgba_pil_image: Image.Image, default_config: dict[str, Any]
-    ):
+    ) -> None:
         """Transparency is handled by pasting on white background."""
         default_config["grayscale_conversion"] = False
 
@@ -72,7 +72,7 @@ class TestApplyImagePreprocessing:
 
     def test_skips_transparency_when_disabled(
         self, rgba_pil_image: Image.Image, default_config: dict[str, Any]
-    ):
+    ) -> None:
         """Transparency handling is skipped when disabled."""
         default_config["handle_transparency"] = False
         default_config["grayscale_conversion"] = False
@@ -84,7 +84,7 @@ class TestApplyImagePreprocessing:
 
     def test_openai_resize_strategy(
         self, sample_pil_image: Image.Image, default_config: dict[str, Any]
-    ):
+    ) -> None:
         """OpenAI uses box fit resize strategy."""
         default_config["grayscale_conversion"] = False
 
@@ -93,7 +93,7 @@ class TestApplyImagePreprocessing:
         # Should fit into target box
         assert result.size == (768, 1536)
 
-    def test_google_resize_strategy(self, sample_pil_image: Image.Image):
+    def test_google_resize_strategy(self, sample_pil_image: Image.Image) -> None:
         """Google uses its own resize strategy."""
         google_config = {
             "grayscale_conversion": False,
@@ -108,7 +108,7 @@ class TestApplyImagePreprocessing:
         # Should fit into Google's target box
         assert max(result.size) <= 768 or result.size == (768, 768)
 
-    def test_anthropic_resize_strategy(self, sample_pil_image: Image.Image):
+    def test_anthropic_resize_strategy(self, sample_pil_image: Image.Image) -> None:
         """Anthropic uses max-side capping without padding."""
         anthropic_config = {
             "grayscale_conversion": False,
@@ -129,7 +129,7 @@ class TestApplyImagePreprocessing:
 class TestGetImagePathsFromFolder:
     """Tests for get_image_paths_from_folder function."""
 
-    def test_finds_jpg_files(self, temp_dir: Path):
+    def test_finds_jpg_files(self, temp_dir: Path) -> None:
         """Finds JPG files in folder."""
         (temp_dir / "image1.jpg").touch()
         (temp_dir / "image2.jpg").touch()
@@ -139,7 +139,7 @@ class TestGetImagePathsFromFolder:
         assert len(paths) == 2
         assert all(p.suffix == ".jpg" for p in paths)
 
-    def test_finds_multiple_formats(self, temp_dir: Path):
+    def test_finds_multiple_formats(self, temp_dir: Path) -> None:
         """Finds images of multiple formats."""
         (temp_dir / "image.jpg").touch()
         (temp_dir / "image.png").touch()
@@ -149,7 +149,7 @@ class TestGetImagePathsFromFolder:
 
         assert len(paths) == 3
 
-    def test_ignores_non_image_files(self, temp_dir: Path):
+    def test_ignores_non_image_files(self, temp_dir: Path) -> None:
         """Non-image files are ignored."""
         (temp_dir / "image.jpg").touch()
         (temp_dir / "document.txt").touch()
@@ -159,7 +159,7 @@ class TestGetImagePathsFromFolder:
 
         assert len(paths) == 1
 
-    def test_returns_sorted_paths(self, temp_dir: Path):
+    def test_returns_sorted_paths(self, temp_dir: Path) -> None:
         """Returns paths sorted by filename."""
         (temp_dir / "c_image.jpg").touch()
         (temp_dir / "a_image.jpg").touch()
@@ -171,13 +171,13 @@ class TestGetImagePathsFromFolder:
         assert paths[1].name == "b_image.jpg"
         assert paths[2].name == "c_image.jpg"
 
-    def test_empty_folder(self, temp_dir: Path):
+    def test_empty_folder(self, temp_dir: Path) -> None:
         """Empty folder returns empty list."""
         paths = get_image_paths_from_folder(temp_dir)
 
         assert paths == []
 
-    def test_case_insensitive_extensions(self, temp_dir: Path):
+    def test_case_insensitive_extensions(self, temp_dir: Path) -> None:
         """Extension matching is case-insensitive."""
         (temp_dir / "image.JPG").touch()
         (temp_dir / "image.PNG").touch()
@@ -190,13 +190,13 @@ class TestGetImagePathsFromFolder:
 class TestExtractPdfPagesToImages:
     """Tests for extract_pdf_pages_to_images function (mocked)."""
 
-    def test_function_exists(self):
+    def test_function_exists(self) -> None:
         """Function exists and is importable."""
         from processors.pdf_processor import extract_pdf_pages_to_images
 
         assert callable(extract_pdf_pages_to_images)
 
-    def test_with_mock_pdf(self, temp_dir: Path):
+    def test_with_mock_pdf(self, temp_dir: Path) -> None:
         """Test with mocked PDF document."""
         from processors.pdf_processor import extract_pdf_pages_to_images
 
@@ -247,7 +247,7 @@ class TestExtractPdfPagesToImages:
 class TestPdfProcessorProviderDetection:
     """Tests for provider detection in PDF processor."""
 
-    def test_openai_provider_uses_correct_config(self):
+    def test_openai_provider_uses_correct_config(self) -> None:
         """OpenAI provider uses api_image_processing config."""
         from modules.model_utils import detect_model_type, get_image_config_section_name
 
@@ -256,7 +256,7 @@ class TestPdfProcessorProviderDetection:
 
         assert section == "api_image_processing"
 
-    def test_google_provider_uses_correct_config(self):
+    def test_google_provider_uses_correct_config(self) -> None:
         """Google provider uses google_image_processing config."""
         from modules.model_utils import detect_model_type, get_image_config_section_name
 
@@ -265,7 +265,7 @@ class TestPdfProcessorProviderDetection:
 
         assert section == "google_image_processing"
 
-    def test_anthropic_provider_uses_correct_config(self):
+    def test_anthropic_provider_uses_correct_config(self) -> None:
         """Anthropic provider uses anthropic_image_processing config."""
         from modules.model_utils import detect_model_type, get_image_config_section_name
 
@@ -274,7 +274,7 @@ class TestPdfProcessorProviderDetection:
 
         assert section == "anthropic_image_processing"
 
-    def test_openrouter_passthrough_detection(self):
+    def test_openrouter_passthrough_detection(self) -> None:
         """OpenRouter correctly detects underlying model type."""
         from modules.model_utils import detect_model_type, get_image_config_section_name
 

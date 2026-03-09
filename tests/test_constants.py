@@ -55,28 +55,28 @@ from modules.constants import (
 class TestAPIConfigurationDefaults:
     """Tests for API configuration defaults."""
 
-    def test_default_model_is_string(self):
+    def test_default_model_is_string(self) -> None:
         """DEFAULT_MODEL is a non-empty string."""
         assert isinstance(DEFAULT_MODEL, str)
         assert len(DEFAULT_MODEL) > 0
 
-    def test_default_concurrent_requests_positive(self):
+    def test_default_concurrent_requests_positive(self) -> None:
         """DEFAULT_CONCURRENT_REQUESTS is positive integer."""
         assert isinstance(DEFAULT_CONCURRENT_REQUESTS, int)
         assert DEFAULT_CONCURRENT_REQUESTS > 0
 
-    def test_default_api_timeout_positive(self):
+    def test_default_api_timeout_positive(self) -> None:
         """DEFAULT_API_TIMEOUT is positive integer."""
         assert isinstance(DEFAULT_API_TIMEOUT, int)
         assert DEFAULT_API_TIMEOUT > 0
 
-    def test_default_openai_timeout_positive(self):
+    def test_default_openai_timeout_positive(self) -> None:
         """DEFAULT_OPENAI_TIMEOUT is positive integer."""
         assert isinstance(DEFAULT_OPENAI_TIMEOUT, int)
         assert DEFAULT_OPENAI_TIMEOUT > 0
         assert DEFAULT_OPENAI_TIMEOUT >= DEFAULT_API_TIMEOUT
 
-    def test_default_rate_limits_structure(self):
+    def test_default_rate_limits_structure(self) -> None:
         """DEFAULT_RATE_LIMITS has correct structure."""
         assert isinstance(DEFAULT_RATE_LIMITS, list)
         assert len(DEFAULT_RATE_LIMITS) > 0
@@ -91,56 +91,56 @@ class TestAPIConfigurationDefaults:
 class TestImageProcessingDefaults:
     """Tests for image processing defaults."""
 
-    def test_default_target_dpi_reasonable(self):
+    def test_default_target_dpi_reasonable(self) -> None:
         """DEFAULT_TARGET_DPI is reasonable value."""
         assert isinstance(DEFAULT_TARGET_DPI, int)
         assert 72 <= DEFAULT_TARGET_DPI <= 600
 
-    def test_default_jpeg_quality_in_range(self):
+    def test_default_jpeg_quality_in_range(self) -> None:
         """DEFAULT_JPEG_QUALITY is in valid range."""
         assert isinstance(DEFAULT_JPEG_QUALITY, int)
         assert 1 <= DEFAULT_JPEG_QUALITY <= 100
 
-    def test_default_low_max_side_positive(self):
+    def test_default_low_max_side_positive(self) -> None:
         """DEFAULT_LOW_MAX_SIDE_PX is positive."""
         assert isinstance(DEFAULT_LOW_MAX_SIDE_PX, int)
         assert DEFAULT_LOW_MAX_SIDE_PX > 0
 
-    def test_default_high_dimensions_positive(self):
+    def test_default_high_dimensions_positive(self) -> None:
         """High detail target dimensions are positive."""
         assert isinstance(DEFAULT_HIGH_TARGET_WIDTH, int)
         assert isinstance(DEFAULT_HIGH_TARGET_HEIGHT, int)
         assert DEFAULT_HIGH_TARGET_WIDTH > 0
         assert DEFAULT_HIGH_TARGET_HEIGHT > 0
 
-    def test_white_background_color_valid(self):
+    def test_white_background_color_valid(self) -> None:
         """WHITE_BACKGROUND_COLOR is valid RGB tuple."""
         assert isinstance(WHITE_BACKGROUND_COLOR, tuple)
         assert len(WHITE_BACKGROUND_COLOR) == 3
         assert all(0 <= c <= 255 for c in WHITE_BACKGROUND_COLOR)
 
-    def test_max_extraction_workers_positive(self):
+    def test_max_extraction_workers_positive(self) -> None:
         """MAX_EXTRACTION_WORKERS is positive."""
         assert isinstance(MAX_EXTRACTION_WORKERS, int)
         assert MAX_EXTRACTION_WORKERS > 0
 
-    def test_pdf_dpi_conversion_factor_positive(self):
+    def test_pdf_dpi_conversion_factor_positive(self) -> None:
         """PDF_DPI_CONVERSION_FACTOR is positive."""
         assert isinstance(PDF_DPI_CONVERSION_FACTOR, float)
         assert PDF_DPI_CONVERSION_FACTOR > 0
 
-    def test_supported_image_extensions_non_empty(self):
+    def test_supported_image_extensions_non_empty(self) -> None:
         """SUPPORTED_IMAGE_EXTENSIONS is non-empty set."""
         assert isinstance(SUPPORTED_IMAGE_EXTENSIONS, frozenset)
         assert len(SUPPORTED_IMAGE_EXTENSIONS) > 0
 
-    def test_supported_extensions_are_lowercase(self):
+    def test_supported_extensions_are_lowercase(self) -> None:
         """All supported extensions are lowercase with dot prefix."""
         for ext in SUPPORTED_IMAGE_EXTENSIONS:
             assert ext.startswith(".")
             assert ext == ext.lower()
 
-    def test_common_formats_supported(self):
+    def test_common_formats_supported(self) -> None:
         """Common image formats are supported."""
         assert ".jpg" in SUPPORTED_IMAGE_EXTENSIONS
         assert ".jpeg" in SUPPORTED_IMAGE_EXTENSIONS
@@ -150,26 +150,26 @@ class TestImageProcessingDefaults:
 class TestRateLimiterConstants:
     """Tests for rate limiter constants."""
 
-    def test_min_sleep_time_positive(self):
+    def test_min_sleep_time_positive(self) -> None:
         """MIN_SLEEP_TIME is positive."""
         assert isinstance(MIN_SLEEP_TIME, float)
         assert MIN_SLEEP_TIME > 0
 
-    def test_max_sleep_time_greater_than_min(self):
+    def test_max_sleep_time_greater_than_min(self) -> None:
         """MAX_SLEEP_TIME is greater than MIN_SLEEP_TIME."""
         assert MAX_SLEEP_TIME > MIN_SLEEP_TIME
 
-    def test_error_multiplier_decrease_rate(self):
+    def test_error_multiplier_decrease_rate(self) -> None:
         """ERROR_MULTIPLIER_DECREASE_RATE is less than 1."""
         assert isinstance(ERROR_MULTIPLIER_DECREASE_RATE, float)
         assert 0 < ERROR_MULTIPLIER_DECREASE_RATE < 1
 
-    def test_error_multiplier_increase_rates(self):
+    def test_error_multiplier_increase_rates(self) -> None:
         """Error multiplier increase rates are greater than 1."""
         assert ERROR_MULTIPLIER_INCREASE_RATE_LIMIT > 1
         assert ERROR_MULTIPLIER_INCREASE_OTHER > 1
 
-    def test_consecutive_errors_threshold_positive(self):
+    def test_consecutive_errors_threshold_positive(self) -> None:
         """CONSECUTIVE_ERRORS_THRESHOLD is positive."""
         assert isinstance(CONSECUTIVE_ERRORS_THRESHOLD, int)
         assert CONSECUTIVE_ERRORS_THRESHOLD > 0
@@ -178,12 +178,12 @@ class TestRateLimiterConstants:
 class TestDocumentFormattingConstants:
     """Tests for document formatting constants."""
 
-    def test_heading_levels_ordered(self):
+    def test_heading_levels_ordered(self) -> None:
         """Heading levels are in correct order."""
         assert TITLE_HEADING_LEVEL <= PAGE_HEADING_LEVEL
         assert PAGE_HEADING_LEVEL <= REFERENCES_HEADING_LEVEL
 
-    def test_spacing_values_non_negative(self):
+    def test_spacing_values_non_negative(self) -> None:
         """Spacing values are non-negative."""
         assert TITLE_SPACE_AFTER_PT >= 0
         assert PAGE_HEADING_SPACE_BEFORE_PT >= 0
@@ -191,7 +191,7 @@ class TestDocumentFormattingConstants:
         assert REF_HEADING_SPACE_BEFORE_PT >= 0
         assert BULLET_SPACE_AFTER_PT >= 0
 
-    def test_indent_values_non_negative(self):
+    def test_indent_values_non_negative(self) -> None:
         """Indent values are non-negative."""
         assert REF_INDENT_PT >= 0
         assert BULLET_INDENT_PT >= 0
@@ -200,16 +200,16 @@ class TestDocumentFormattingConstants:
 class TestErrorDetectionConstants:
     """Tests for error detection constants."""
 
-    def test_error_markers_non_empty(self):
+    def test_error_markers_non_empty(self) -> None:
         """ERROR_MARKERS is non-empty list."""
         assert isinstance(ERROR_MARKERS, list)
         assert len(ERROR_MARKERS) > 0
 
-    def test_error_markers_are_strings(self):
+    def test_error_markers_are_strings(self) -> None:
         """All error markers are strings."""
         assert all(isinstance(m, str) for m in ERROR_MARKERS)
 
-    def test_common_error_markers_present(self):
+    def test_common_error_markers_present(self) -> None:
         """Common error markers are present."""
         markers_lower = [m.lower() for m in ERROR_MARKERS]
         assert any("empty" in m for m in markers_lower)
@@ -219,7 +219,7 @@ class TestErrorDetectionConstants:
 class TestMathConversionConstants:
     """Tests for math conversion constants."""
 
-    def test_math_namespace_is_url(self):
+    def test_math_namespace_is_url(self) -> None:
         """MATH_NAMESPACE is a valid URL."""
         assert isinstance(MATH_NAMESPACE, str)
         assert MATH_NAMESPACE.startswith("http")
@@ -228,31 +228,31 @@ class TestMathConversionConstants:
 class TestCLIConstants:
     """Tests for CLI constants."""
 
-    def test_exit_commands_non_empty(self):
+    def test_exit_commands_non_empty(self) -> None:
         """EXIT_COMMANDS is non-empty set."""
         assert isinstance(EXIT_COMMANDS, frozenset)
         assert len(EXIT_COMMANDS) > 0
 
-    def test_back_commands_non_empty(self):
+    def test_back_commands_non_empty(self) -> None:
         """BACK_COMMANDS is non-empty set."""
         assert isinstance(BACK_COMMANDS, frozenset)
         assert len(BACK_COMMANDS) > 0
 
-    def test_all_commands_non_empty(self):
+    def test_all_commands_non_empty(self) -> None:
         """ALL_COMMANDS is non-empty set."""
         assert isinstance(ALL_COMMANDS, frozenset)
         assert len(ALL_COMMANDS) > 0
 
-    def test_common_exit_commands(self):
+    def test_common_exit_commands(self) -> None:
         """Common exit commands are present."""
         assert "exit" in EXIT_COMMANDS or "quit" in EXIT_COMMANDS
 
-    def test_divider_char_single(self):
+    def test_divider_char_single(self) -> None:
         """DIVIDER_CHAR is a single character."""
         assert isinstance(DIVIDER_CHAR, str)
         assert len(DIVIDER_CHAR) == 1
 
-    def test_divider_length_positive(self):
+    def test_divider_length_positive(self) -> None:
         """DIVIDER_LENGTH is positive."""
         assert isinstance(DIVIDER_LENGTH, int)
         assert DIVIDER_LENGTH > 0

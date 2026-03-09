@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import statistics
 from collections import deque
+from typing import Any
 from unittest.mock import MagicMock, patch, PropertyMock
 
 import pytest
@@ -62,7 +63,7 @@ class TestInit:
 
     @patch("api.base_llm_client.get_chat_model")
     @patch("api.base_llm_client.get_api_timeout", return_value=600)
-    def test_init_defaults(self, mock_timeout, mock_get_chat):
+    def test_init_defaults(self, mock_timeout, mock_get_chat) -> None:
         """Initialization stores resolved provider, model, and stats defaults."""
         mock_model = MagicMock()
         mock_get_chat.return_value = mock_model
@@ -84,7 +85,7 @@ class TestInit:
 
     @patch("api.base_llm_client.get_chat_model")
     @patch("api.base_llm_client.get_api_timeout", return_value=600)
-    def test_init_explicit_timeout(self, mock_timeout, mock_get_chat):
+    def test_init_explicit_timeout(self, mock_timeout, mock_get_chat) -> None:
         """Explicit timeout overrides the config-loaded default."""
         mock_get_chat.return_value = MagicMock()
         client = LLMClientBase(
@@ -97,7 +98,7 @@ class TestInit:
 
     @patch("api.base_llm_client.get_chat_model")
     @patch("api.base_llm_client.get_api_timeout", return_value=600)
-    def test_init_none_timeout_uses_config(self, mock_timeout, mock_get_chat):
+    def test_init_none_timeout_uses_config(self, mock_timeout, mock_get_chat) -> None:
         """When timeout is None, get_api_timeout() is used."""
         mock_get_chat.return_value = MagicMock()
         client = LLMClientBase(
@@ -109,7 +110,7 @@ class TestInit:
 
     @patch("api.base_llm_client.get_chat_model")
     @patch("api.base_llm_client.get_api_timeout", return_value=600)
-    def test_init_with_rate_limiter(self, mock_timeout, mock_get_chat):
+    def test_init_with_rate_limiter(self, mock_timeout, mock_get_chat) -> None:
         """Rate limiter is stored correctly."""
         mock_get_chat.return_value = MagicMock()
         limiter = MagicMock()
@@ -123,7 +124,7 @@ class TestInit:
 
     @patch("api.base_llm_client.get_chat_model")
     @patch("api.base_llm_client.get_api_timeout", return_value=600)
-    def test_init_custom_service_tier(self, mock_timeout, mock_get_chat):
+    def test_init_custom_service_tier(self, mock_timeout, mock_get_chat) -> None:
         """Explicit service_tier overrides default 'auto'."""
         mock_get_chat.return_value = MagicMock()
         client = LLMClientBase(
@@ -136,7 +137,7 @@ class TestInit:
 
     @patch("api.base_llm_client.get_chat_model")
     @patch("api.base_llm_client.get_api_timeout", return_value=600)
-    def test_init_provider_resolved_from_llm_config(self, mock_timeout, mock_get_chat):
+    def test_init_provider_resolved_from_llm_config(self, mock_timeout, mock_get_chat) -> None:
         """When provider is None, it is resolved via LLMConfig."""
         mock_get_chat.return_value = MagicMock()
         client = LLMClientBase(
@@ -154,7 +155,7 @@ class TestInit:
 class TestLoadModelConfig:
     """Tests for _load_model_config()."""
 
-    def test_loads_successfully(self):
+    def test_loads_successfully(self) -> None:
         """Returns config dict when key exists."""
         client = _make_client()
         mock_loader = MagicMock()
@@ -167,7 +168,7 @@ class TestLoadModelConfig:
 
         assert result == {"name": "gpt-5", "max_output_tokens": 4096}
 
-    def test_returns_empty_dict_for_missing_key(self):
+    def test_returns_empty_dict_for_missing_key(self) -> None:
         """Returns empty dict when config key is absent."""
         client = _make_client()
         mock_loader = MagicMock()
@@ -178,7 +179,7 @@ class TestLoadModelConfig:
 
         assert result == {}
 
-    def test_returns_empty_dict_on_exception(self):
+    def test_returns_empty_dict_on_exception(self) -> None:
         """Returns empty dict and logs warning on exception."""
         client = _make_client()
 
@@ -197,14 +198,14 @@ class TestLoadModelConfig:
 class TestDetermineServiceTier:
     """Tests for _determine_service_tier()."""
 
-    def test_non_openai_returns_auto(self):
+    def test_non_openai_returns_auto(self) -> None:
         """Non-OpenAI providers always return 'auto'."""
         for provider in ("anthropic", "google", "openrouter"):
             client = _make_client(provider=provider)
             assert client._determine_service_tier("transcription") == "auto"
 
     @patch("api.base_llm_client.get_service_tier", return_value="flex")
-    def test_openai_delegates_to_get_service_tier(self, mock_tier):
+    def test_openai_delegates_to_get_service_tier(self, mock_tier) -> None:
         """OpenAI provider delegates to get_service_tier()."""
         client = _make_client(provider="openai")
         result = client._determine_service_tier("summary")
@@ -218,19 +219,19 @@ class TestDetermineServiceTier:
 class TestRateLimiterDelegation:
     """Tests for rate limiter helper methods."""
 
-    def test_wait_for_rate_limit_calls_limiter(self):
+    def test_wait_for_rate_limit_calls_limiter(self) -> None:
         """Calls wait_for_capacity when limiter is set."""
         limiter = MagicMock()
         client = _make_client(rate_limiter=limiter)
         client._wait_for_rate_limit()
         limiter.wait_for_capacity.assert_called_once()
 
-    def test_wait_for_rate_limit_noop_without_limiter(self):
+    def test_wait_for_rate_limit_noop_without_limiter(self) -> None:
         """No-op when rate_limiter is None."""
         client = _make_client(rate_limiter=None)
         client._wait_for_rate_limit()  # Should not raise
 
-    def test_report_success_increments_and_delegates(self):
+    def test_report_success_increments_and_delegates(self) -> None:
         """Increments counter and calls rate_limiter.report_success."""
         limiter = MagicMock()
         client = _make_client(rate_limiter=limiter, successful_requests=2)
@@ -238,27 +239,27 @@ class TestRateLimiterDelegation:
         assert client.successful_requests == 3
         limiter.report_success.assert_called_once()
 
-    def test_report_success_without_limiter(self):
+    def test_report_success_without_limiter(self) -> None:
         """Increments counter even without limiter."""
         client = _make_client(rate_limiter=None, successful_requests=0)
         client._report_success()
         assert client.successful_requests == 1
 
-    def test_report_error_delegates_to_limiter(self):
+    def test_report_error_delegates_to_limiter(self) -> None:
         """Calls rate_limiter.report_error with correct flag."""
         limiter = MagicMock()
         client = _make_client(rate_limiter=limiter)
         client._report_error(True)
         limiter.report_error.assert_called_once_with(True)
 
-    def test_report_error_false_flag(self):
+    def test_report_error_false_flag(self) -> None:
         """Passes False flag through to limiter."""
         limiter = MagicMock()
         client = _make_client(rate_limiter=limiter)
         client._report_error(False)
         limiter.report_error.assert_called_once_with(False)
 
-    def test_report_error_noop_without_limiter(self):
+    def test_report_error_noop_without_limiter(self) -> None:
         """No-op when rate_limiter is None."""
         client = _make_client(rate_limiter=None)
         client._report_error(True)  # Should not raise
@@ -270,22 +271,22 @@ class TestRateLimiterDelegation:
 class TestExtractOutputTextExtended:
     """Additional tests for _extract_output_text beyond existing coverage."""
 
-    def test_dict_style_access(self):
+    def test_dict_style_access(self) -> None:
         """Extracts from dict with 'output_text' key."""
         data = {"output_text": "  hello from dict  "}
         assert LLMClientBase._extract_output_text(data) == "hello from dict"
 
-    def test_dict_empty_output_text(self):
+    def test_dict_empty_output_text(self) -> None:
         """Empty dict output_text returns empty string with warning."""
         data = {"output_text": "   "}
         result = LLMClientBase._extract_output_text(data)
         assert result == ""
 
-    def test_fallback_output_list_parsing(self):
+    def test_fallback_output_list_parsing(self) -> None:
         """Extracts text from output list structure."""
 
         class FakeResponse:
-            def model_dump(self):
+            def model_dump(self) -> dict[str, Any]:
                 return {
                     "output": [
                         {
@@ -300,38 +301,38 @@ class TestExtractOutputTextExtended:
         result = LLMClientBase._extract_output_text(FakeResponse())
         assert result == "part1 part2"
 
-    def test_fallback_output_list_empty_content(self):
+    def test_fallback_output_list_empty_content(self) -> None:
         """Handles output list with empty content gracefully."""
 
         class FakeResponse:
-            def model_dump(self):
+            def model_dump(self) -> dict[str, Any]:
                 return {"output": [{"content": []}]}
 
         result = LLMClientBase._extract_output_text(FakeResponse())
         assert result == ""
 
-    def test_fallback_no_output_key(self):
+    def test_fallback_no_output_key(self) -> None:
         """Returns empty string when output key is missing."""
 
         class FakeResponse:
-            def model_dump(self):
+            def model_dump(self) -> dict[str, Any]:
                 return {"other_key": "value"}
 
         result = LLMClientBase._extract_output_text(FakeResponse())
         assert result == ""
 
-    def test_aimessage_list_with_string_blocks(self):
+    def test_aimessage_list_with_string_blocks(self) -> None:
         """AIMessage with string blocks in content list."""
         msg = AIMessage(content=["hello", " world"])
         assert LLMClientBase._extract_output_text(msg) == "hello world"
 
-    def test_aimessage_empty_content_warns(self):
+    def test_aimessage_empty_content_warns(self) -> None:
         """AIMessage with empty content returns empty string."""
         msg = AIMessage(content="   ")
         result = LLMClientBase._extract_output_text(msg)
         assert result == ""
 
-    def test_aimessage_mixed_blocks(self):
+    def test_aimessage_mixed_blocks(self) -> None:
         """AIMessage with mixed block types — non-text blocks are skipped."""
         msg = AIMessage(
             content=[
@@ -342,11 +343,11 @@ class TestExtractOutputTextExtended:
         )
         assert LLMClientBase._extract_output_text(msg) == "helloraw_string"
 
-    def test_fallback_to_dict_with_non_text_content_items(self):
+    def test_fallback_to_dict_with_non_text_content_items(self) -> None:
         """Non-dict content items in output list are skipped."""
 
         class FakeResponse:
-            def model_dump(self):
+            def model_dump(self) -> dict[str, Any]:
                 return {
                     "output": [
                         {
@@ -361,7 +362,7 @@ class TestExtractOutputTextExtended:
         result = LLMClientBase._extract_output_text(FakeResponse())
         assert result == "valid"
 
-    def test_exception_during_extraction_returns_empty(self):
+    def test_exception_during_extraction_returns_empty(self) -> None:
         """Returns empty string when extraction raises an exception."""
 
         class Broken:
@@ -377,7 +378,7 @@ class TestExtractOutputTextExtended:
 class TestBuildTextFormat:
     """Tests for _build_text_format()."""
 
-    def test_valid_schema(self):
+    def test_valid_schema(self) -> None:
         """Returns properly structured format dict for a valid schema."""
         client = _make_client(
             _output_schema={
@@ -393,28 +394,29 @@ class TestBuildTextFormat:
         assert result["strict"] is True
         assert result["schema"] == {"type": "object", "properties": {}}
 
-    def test_schema_without_name_uses_default(self):
+    def test_schema_without_name_uses_default(self) -> None:
         """Uses default_name when schema has no 'name' key."""
         client = _make_client(_output_schema={"schema": {"type": "object"}})
         result = client._build_text_format(default_name="custom_default")
+        assert result is not None
         assert result["name"] == "custom_default"
 
-    def test_none_schema_returns_none(self):
+    def test_none_schema_returns_none(self) -> None:
         """Returns None when _output_schema is None."""
         client = _make_client(_output_schema=None)
         assert client._build_text_format() is None
 
-    def test_non_dict_schema_returns_none(self):
+    def test_non_dict_schema_returns_none(self) -> None:
         """Returns None when _output_schema is not a dict."""
         client = _make_client(_output_schema="not a dict")
         assert client._build_text_format() is None
 
-    def test_empty_inner_schema_returns_none(self):
+    def test_empty_inner_schema_returns_none(self) -> None:
         """Returns None when inner 'schema' is empty dict."""
         client = _make_client(_output_schema={"schema": {}})
         assert client._build_text_format() is None
 
-    def test_schema_uses_self_as_schema_obj_when_no_inner_key(self):
+    def test_schema_uses_self_as_schema_obj_when_no_inner_key(self) -> None:
         """When 'schema' key is missing, uses the dict itself as schema."""
         client = _make_client(
             _output_schema={"type": "object", "properties": {"a": {}}}
@@ -423,7 +425,7 @@ class TestBuildTextFormat:
         assert result is not None
         assert result["schema"] == {"type": "object", "properties": {"a": {}}}
 
-    def test_strict_defaults_to_true(self):
+    def test_strict_defaults_to_true(self) -> None:
         """Strict defaults to True when not specified."""
         client = _make_client(
             _output_schema={"schema": {"type": "object"}, "properties": {"a": {}}}
@@ -441,25 +443,25 @@ class TestBuildTextFormat:
 class TestGetStructuredChatModel:
     """Tests for _get_structured_chat_model()."""
 
-    def test_openai_returns_base_model(self):
+    def test_openai_returns_base_model(self) -> None:
         """OpenAI provider returns the base chat model."""
         base_model = MagicMock()
         client = _make_client(provider="openai", chat_model=base_model)
         assert client._get_structured_chat_model() is base_model
 
-    def test_anthropic_returns_base_model(self):
+    def test_anthropic_returns_base_model(self) -> None:
         """Anthropic provider returns the base chat model."""
         base_model = MagicMock()
         client = _make_client(provider="anthropic", chat_model=base_model)
         assert client._get_structured_chat_model() is base_model
 
-    def test_google_returns_base_model(self):
+    def test_google_returns_base_model(self) -> None:
         """Google provider returns the base chat model."""
         base_model = MagicMock()
         client = _make_client(provider="google", chat_model=base_model)
         assert client._get_structured_chat_model() is base_model
 
-    def test_openrouter_with_schema_uses_structured_output(self):
+    def test_openrouter_with_schema_uses_structured_output(self) -> None:
         """OpenRouter with schema calls with_structured_output."""
         base_model = MagicMock()
         structured = MagicMock()
@@ -477,7 +479,7 @@ class TestGetStructuredChatModel:
         )
         assert result is structured
 
-    def test_openrouter_without_schema_returns_base(self):
+    def test_openrouter_without_schema_returns_base(self) -> None:
         """OpenRouter without schema returns base model."""
         base_model = MagicMock()
         client = _make_client(
@@ -487,7 +489,7 @@ class TestGetStructuredChatModel:
         )
         assert client._get_structured_chat_model() is base_model
 
-    def test_openrouter_with_empty_inner_schema_returns_base(self):
+    def test_openrouter_with_empty_inner_schema_returns_base(self) -> None:
         """OpenRouter with empty inner schema returns base model."""
         base_model = MagicMock()
         client = _make_client(
@@ -504,18 +506,18 @@ class TestGetStructuredChatModel:
 class TestApplyStructuredOutputKwargs:
     """Tests for _apply_structured_output_kwargs()."""
 
-    def test_openai_adds_response_format(self):
+    def test_openai_adds_response_format(self) -> None:
         """OpenAI provider adds response_format to kwargs."""
         client = _make_client(
             provider="openai",
             _output_schema={"schema": {"type": "object"}},
         )
-        kwargs = {}
+        kwargs: dict[str, Any] = {}
         client._apply_structured_output_kwargs(kwargs)
         assert "response_format" in kwargs
         assert kwargs["response_format"]["type"] == "json_schema"
 
-    def test_openai_with_text_key_adds_format_inside(self):
+    def test_openai_with_text_key_adds_format_inside(self) -> None:
         """When 'text' key exists, format is nested inside it."""
         client = _make_client(
             provider="openai",
@@ -526,32 +528,32 @@ class TestApplyStructuredOutputKwargs:
         assert "format" in kwargs["text"]
         assert "response_format" not in kwargs
 
-    def test_openai_no_schema_no_format(self):
+    def test_openai_no_schema_no_format(self) -> None:
         """OpenAI without schema adds nothing."""
         client = _make_client(provider="openai", _output_schema=None)
-        kwargs = {}
+        kwargs: dict[str, Any] = {}
         client._apply_structured_output_kwargs(kwargs)
         assert "response_format" not in kwargs
 
-    def test_google_adds_response_mime_and_schema(self):
+    def test_google_adds_response_mime_and_schema(self) -> None:
         """Google provider adds response_mime_type and response_schema."""
         client = _make_client(
             provider="google",
             _output_schema={"schema": {"type": "object", "properties": {}}},
         )
-        kwargs = {}
+        kwargs: dict[str, Any] = {}
         client._apply_structured_output_kwargs(kwargs)
         assert kwargs["response_mime_type"] == "application/json"
         assert kwargs["response_schema"] == {"type": "object", "properties": {}}
 
-    def test_google_no_schema_no_additions(self):
+    def test_google_no_schema_no_additions(self) -> None:
         """Google without schema adds nothing."""
         client = _make_client(provider="google", _output_schema=None)
-        kwargs = {}
+        kwargs: dict[str, Any] = {}
         client._apply_structured_output_kwargs(kwargs)
         assert "response_mime_type" not in kwargs
 
-    def test_google_does_not_overwrite_existing(self):
+    def test_google_does_not_overwrite_existing(self) -> None:
         """Google respects existing response_mime_type."""
         client = _make_client(
             provider="google",
@@ -561,23 +563,23 @@ class TestApplyStructuredOutputKwargs:
         client._apply_structured_output_kwargs(kwargs)
         assert kwargs["response_mime_type"] == "text/plain"
 
-    def test_anthropic_adds_nothing(self):
+    def test_anthropic_adds_nothing(self) -> None:
         """Anthropic provider does not modify kwargs."""
         client = _make_client(
             provider="anthropic",
             _output_schema={"schema": {"type": "object"}},
         )
-        kwargs = {}
+        kwargs: dict[str, Any] = {}
         client._apply_structured_output_kwargs(kwargs)
         assert kwargs == {}
 
-    def test_openrouter_adds_nothing(self):
+    def test_openrouter_adds_nothing(self) -> None:
         """OpenRouter provider does not modify kwargs (uses with_structured_output)."""
         client = _make_client(
             provider="openrouter",
             _output_schema={"schema": {"type": "object"}},
         )
-        kwargs = {}
+        kwargs: dict[str, Any] = {}
         client._apply_structured_output_kwargs(kwargs)
         assert kwargs == {}
 
@@ -588,7 +590,7 @@ class TestApplyStructuredOutputKwargs:
 class TestGetStats:
     """Tests for get_stats()."""
 
-    def test_stats_no_requests(self):
+    def test_stats_no_requests(self) -> None:
         """Stats with zero requests."""
         client = _make_client()
         stats = client.get_stats()
@@ -599,7 +601,7 @@ class TestGetStats:
         assert stats["average_processing_time"] == 0
         assert stats["recent_success_rate"] == 0.0
 
-    def test_stats_with_requests(self):
+    def test_stats_with_requests(self) -> None:
         """Stats reflect actual request counts and timings."""
         client = _make_client(successful_requests=8, failed_requests=2)
         client.processing_times.extend([1.0, 2.0, 3.0])
@@ -610,13 +612,13 @@ class TestGetStats:
         assert stats["average_processing_time"] == 2.0
         assert stats["recent_success_rate"] == 80.0
 
-    def test_stats_all_successful(self):
+    def test_stats_all_successful(self) -> None:
         """100% success rate."""
         client = _make_client(successful_requests=5, failed_requests=0)
         stats = client.get_stats()
         assert stats["recent_success_rate"] == 100.0
 
-    def test_stats_all_failed(self):
+    def test_stats_all_failed(self) -> None:
         """0% success rate."""
         client = _make_client(successful_requests=0, failed_requests=3)
         stats = client.get_stats()
@@ -629,7 +631,7 @@ class TestGetStats:
 class TestLoadSchemaRetryConfig:
     """Tests for _load_schema_retry_config()."""
 
-    def test_loads_successfully(self):
+    def test_loads_successfully(self) -> None:
         """Returns schema retry config for the given api_type."""
         mock_loader = MagicMock()
         mock_loader.get_concurrency_config.return_value = {
@@ -648,7 +650,7 @@ class TestLoadSchemaRetryConfig:
         assert "no_transcribable_text" in result
         assert result["no_transcribable_text"]["enabled"] is True
 
-    def test_missing_api_type_returns_empty(self):
+    def test_missing_api_type_returns_empty(self) -> None:
         """Returns empty dict when api_type is not in config."""
         mock_loader = MagicMock()
         mock_loader.get_concurrency_config.return_value = {
@@ -660,7 +662,7 @@ class TestLoadSchemaRetryConfig:
 
         assert result == {}
 
-    def test_missing_retry_key_returns_empty(self):
+    def test_missing_retry_key_returns_empty(self) -> None:
         """Returns empty dict when 'retry' key is absent."""
         mock_loader = MagicMock()
         mock_loader.get_concurrency_config.return_value = {}
@@ -670,7 +672,7 @@ class TestLoadSchemaRetryConfig:
 
         assert result == {}
 
-    def test_exception_returns_empty(self):
+    def test_exception_returns_empty(self) -> None:
         """Returns empty dict on exception."""
         client = _make_client()
         with patch(
@@ -688,7 +690,7 @@ class TestLoadSchemaRetryConfig:
 class TestShouldRetryForSchemaFlagExtended:
     """Extended tests for _should_retry_for_schema_flag()."""
 
-    def test_exceeded_max_attempts(self):
+    def test_exceeded_max_attempts(self) -> None:
         """Returns False when current_attempt >= max_attempts."""
         client = _make_client(
             schema_retry_config={
@@ -700,7 +702,7 @@ class TestShouldRetryForSchemaFlagExtended:
         assert backoff == 0.0
         assert max_att == 2
 
-    def test_flag_not_truthy(self):
+    def test_flag_not_truthy(self) -> None:
         """Returns False when flag_value is falsy."""
         client = _make_client(
             schema_retry_config={
@@ -712,7 +714,7 @@ class TestShouldRetryForSchemaFlagExtended:
         )
         assert should is False
 
-    def test_flag_none_value(self):
+    def test_flag_none_value(self) -> None:
         """Returns False when flag_value is None."""
         client = _make_client(
             schema_retry_config={
@@ -722,7 +724,7 @@ class TestShouldRetryForSchemaFlagExtended:
         should, backoff, max_att = client._should_retry_for_schema_flag("flag", None, 0)
         assert should is False
 
-    def test_unknown_flag_name(self):
+    def test_unknown_flag_name(self) -> None:
         """Returns False when flag name is not in config."""
         client = _make_client(schema_retry_config={})
         should, backoff, max_att = client._should_retry_for_schema_flag(
@@ -730,7 +732,7 @@ class TestShouldRetryForSchemaFlagExtended:
         )
         assert should is False
 
-    def test_enabled_first_attempt(self):
+    def test_enabled_first_attempt(self) -> None:
         """Returns True with correct backoff for first attempt."""
         client = _make_client(
             schema_retry_config={
@@ -762,7 +764,7 @@ class TestBuildInvokeKwargsExtended:
         "api.base_llm_client.get_model_capabilities",
         return_value={"max_tokens": True, "reasoning": False, "text_verbosity": False},
     )
-    def test_google_uses_max_output_tokens(self, _):
+    def test_google_uses_max_output_tokens(self, _) -> None:
         """Google provider uses max_output_tokens key."""
         client = _make_client(
             provider="google",
@@ -778,7 +780,7 @@ class TestBuildInvokeKwargsExtended:
         "api.base_llm_client.get_model_capabilities",
         return_value={"max_tokens": True, "reasoning": False, "text_verbosity": False},
     )
-    def test_openrouter_uses_max_tokens(self, _):
+    def test_openrouter_uses_max_tokens(self, _) -> None:
         """OpenRouter (else branch) uses max_tokens key."""
         client = _make_client(
             provider="openrouter",
@@ -793,7 +795,7 @@ class TestBuildInvokeKwargsExtended:
         "api.base_llm_client.get_model_capabilities",
         return_value={"max_tokens": True, "reasoning": False, "text_verbosity": False},
     )
-    def test_no_max_output_tokens_in_config(self, _):
+    def test_no_max_output_tokens_in_config(self, _) -> None:
         """No max_output_tokens in model_config produces no token key."""
         client = _make_client(
             provider="openai",
@@ -808,7 +810,7 @@ class TestBuildInvokeKwargsExtended:
         "api.base_llm_client.get_model_capabilities",
         return_value={"max_tokens": False, "reasoning": False, "text_verbosity": False},
     )
-    def test_max_tokens_capability_disabled(self, _):
+    def test_max_tokens_capability_disabled(self, _) -> None:
         """When max_tokens capability is False, token params are skipped."""
         client = _make_client(
             provider="openai",
@@ -822,7 +824,7 @@ class TestBuildInvokeKwargsExtended:
         "api.base_llm_client.get_model_capabilities",
         return_value={"max_tokens": True, "reasoning": True, "text_verbosity": False},
     )
-    def test_reasoning_config_non_dict_ignored(self, _):
+    def test_reasoning_config_non_dict_ignored(self, _) -> None:
         """Non-dict reasoning config is ignored."""
         client = _make_client(
             provider="openai",
@@ -836,7 +838,7 @@ class TestBuildInvokeKwargsExtended:
         "api.base_llm_client.get_model_capabilities",
         return_value={"max_tokens": True, "reasoning": True, "text_verbosity": False},
     )
-    def test_reasoning_dict_without_effort_ignored(self, _):
+    def test_reasoning_dict_without_effort_ignored(self, _) -> None:
         """Reasoning dict without 'effort' key adds nothing."""
         client = _make_client(
             provider="openai",
@@ -850,7 +852,7 @@ class TestBuildInvokeKwargsExtended:
         "api.base_llm_client.get_model_capabilities",
         return_value={"max_tokens": True, "reasoning": False, "text_verbosity": True},
     )
-    def test_text_verbosity_config(self, _):
+    def test_text_verbosity_config(self, _) -> None:
         """Text verbosity is added for supported models."""
         client = _make_client(
             provider="openai",
@@ -864,7 +866,7 @@ class TestBuildInvokeKwargsExtended:
         "api.base_llm_client.get_model_capabilities",
         return_value={"max_tokens": True, "reasoning": False, "text_verbosity": True},
     )
-    def test_text_non_dict_ignored(self, _):
+    def test_text_non_dict_ignored(self, _) -> None:
         """Non-dict text config is ignored."""
         client = _make_client(
             provider="openai",
@@ -878,7 +880,7 @@ class TestBuildInvokeKwargsExtended:
         "api.base_llm_client.get_model_capabilities",
         return_value={"max_tokens": True, "reasoning": False, "text_verbosity": True},
     )
-    def test_text_dict_without_verbosity_ignored(self, _):
+    def test_text_dict_without_verbosity_ignored(self, _) -> None:
         """Text dict without 'verbosity' key adds nothing."""
         client = _make_client(
             provider="openai",
@@ -892,7 +894,7 @@ class TestBuildInvokeKwargsExtended:
         "api.base_llm_client.get_model_capabilities",
         return_value={"max_tokens": True, "reasoning": False, "text_verbosity": False},
     )
-    def test_non_openai_no_service_tier(self, _):
+    def test_non_openai_no_service_tier(self, _) -> None:
         """Non-OpenAI providers do not get service_tier."""
         client = _make_client(
             provider="anthropic",
@@ -907,7 +909,7 @@ class TestBuildInvokeKwargsExtended:
         "api.base_llm_client.get_model_capabilities",
         return_value={"max_tokens": True, "reasoning": False, "text_verbosity": False},
     )
-    def test_openai_empty_service_tier_omitted(self, _):
+    def test_openai_empty_service_tier_omitted(self, _) -> None:
         """OpenAI with empty service_tier string does not add it."""
         client = _make_client(
             provider="openai",

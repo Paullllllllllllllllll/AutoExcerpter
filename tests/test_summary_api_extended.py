@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 from collections import deque
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
@@ -87,7 +88,7 @@ class TestSummaryManagerInit:
         mock_timeout_base,
         mock_gcm,
         tmp_path,
-    ):
+    ) -> None:
         """Initialization sets schema, prompt, model_config, and service_tier."""
         mock_gcm.return_value = MagicMock()
         mock_rl_cls.return_value = MagicMock()
@@ -142,7 +143,7 @@ class TestSummaryManagerInit:
         mock_timeout_base,
         mock_gcm,
         tmp_path,
-    ):
+    ) -> None:
         """Initialization without summary_context stores None."""
         mock_gcm.return_value = MagicMock()
         mock_rl_cls.return_value = MagicMock()
@@ -187,7 +188,7 @@ class TestSummaryManagerInit:
 class TestLoadSchemaAndPrompt:
     """Tests for _load_schema_and_prompt()."""
 
-    def test_successful_load(self, tmp_path):
+    def test_successful_load(self, tmp_path) -> None:
         """Loads schema and prompt files successfully."""
         mgr = _make_manager()
 
@@ -212,7 +213,7 @@ class TestLoadSchemaAndPrompt:
         assert mgr.summary_schema == _MOCK_SCHEMA
         assert mgr.summary_system_prompt_text == "prompt text"
 
-    def test_missing_schema_raises(self, tmp_path):
+    def test_missing_schema_raises(self, tmp_path) -> None:
         """Raises FileNotFoundError when schema file is missing."""
         mgr = _make_manager()
 
@@ -226,7 +227,7 @@ class TestLoadSchemaAndPrompt:
         ):
             mgr._load_schema_and_prompt()
 
-    def test_missing_prompt_raises(self, tmp_path):
+    def test_missing_prompt_raises(self, tmp_path) -> None:
         """Raises FileNotFoundError when prompt file is missing."""
         mgr = _make_manager()
 
@@ -254,7 +255,7 @@ class TestLoadSchemaAndPrompt:
 class TestCreatePlaceholderSummary:
     """Tests for _create_placeholder_summary()."""
 
-    def test_with_error_message(self):
+    def test_with_error_message(self) -> None:
         """Placeholder includes error message in bullet_points."""
         mgr = _make_manager()
         result = mgr._create_placeholder_summary(5, "API timeout")
@@ -266,7 +267,7 @@ class TestCreatePlaceholderSummary:
         assert result["error"] == "API timeout"
         assert result["references"] is None
 
-    def test_without_error_message(self):
+    def test_without_error_message(self) -> None:
         """Placeholder without error uses default failure text."""
         mgr = _make_manager()
         result = mgr._create_placeholder_summary(3)
@@ -274,14 +275,14 @@ class TestCreatePlaceholderSummary:
         assert "[Summary generation failed]" in result["bullet_points"]
         assert "error" not in result
 
-    def test_empty_error_message(self):
+    def test_empty_error_message(self) -> None:
         """Empty error string uses default failure text."""
         mgr = _make_manager()
         result = mgr._create_placeholder_summary(1, "")
 
         assert "[Summary generation failed]" in result["bullet_points"]
 
-    def test_custom_page_types(self):
+    def test_custom_page_types(self) -> None:
         """Custom page_types override default."""
         mgr = _make_manager()
         result = mgr._create_placeholder_summary(
@@ -293,7 +294,7 @@ class TestCreatePlaceholderSummary:
             "illustration",
         ]
 
-    def test_default_page_types(self):
+    def test_default_page_types(self) -> None:
         """Default page_types is ['other']."""
         mgr = _make_manager()
         result = mgr._create_placeholder_summary(1)
@@ -310,7 +311,7 @@ class TestBuildModelInputs:
         "api.base_llm_client.get_model_capabilities",
         return_value={"max_tokens": True, "reasoning": False, "text_verbosity": False},
     )
-    def test_openai_format(self, _):
+    def test_openai_format(self, _) -> None:
         """OpenAI uses text content list in HumanMessage."""
         mgr = _make_manager(
             provider="openai",
@@ -328,14 +329,14 @@ class TestBuildModelInputs:
         assert isinstance(messages[1], HumanMessage)
         content = messages[1].content
         assert isinstance(content, list)
-        assert content[0]["type"] == "text"
-        assert content[0]["text"] == "Some transcription text."
+        assert content[0]["type"] == "text"  # type: ignore[index]
+        assert content[0]["text"] == "Some transcription text."  # type: ignore[index]
 
     @patch(
         "api.base_llm_client.get_model_capabilities",
         return_value={"max_tokens": True, "reasoning": False, "text_verbosity": False},
     )
-    def test_anthropic_format(self, _):
+    def test_anthropic_format(self, _) -> None:
         """Anthropic uses plain string in HumanMessage."""
         mgr = _make_manager(
             provider="anthropic",
@@ -357,7 +358,7 @@ class TestBuildModelInputs:
         "api.base_llm_client.get_model_capabilities",
         return_value={"max_tokens": True, "reasoning": False, "text_verbosity": False},
     )
-    def test_google_format(self, _):
+    def test_google_format(self, _) -> None:
         """Google uses plain string in HumanMessage."""
         mgr = _make_manager(
             provider="google",
@@ -379,7 +380,7 @@ class TestBuildModelInputs:
         "api.base_llm_client.get_model_capabilities",
         return_value={"max_tokens": True, "reasoning": False, "text_verbosity": False},
     )
-    def test_context_injection(self, _):
+    def test_context_injection(self, _) -> None:
         """Summary context is passed to render_prompt_with_schema."""
         mgr = _make_manager(
             provider="openai",
@@ -404,7 +405,7 @@ class TestBuildModelInputs:
         "api.base_llm_client.get_model_capabilities",
         return_value={"max_tokens": True, "reasoning": False, "text_verbosity": False},
     )
-    def test_openrouter_uses_text_list_format(self, _):
+    def test_openrouter_uses_text_list_format(self, _) -> None:
         """OpenRouter uses same format as OpenAI."""
         mgr = _make_manager(
             provider="openrouter",
@@ -429,17 +430,17 @@ class TestBuildModelInputs:
 class TestEnsurePageInformationStructure:
     """Tests for _ensure_page_information_structure()."""
 
-    def test_missing_page_information(self):
+    def test_missing_page_information(self) -> None:
         """Creates page_information when missing."""
         mgr = _make_manager()
-        summary = {"bullet_points": ["Some text."]}
+        summary: dict[str, Any] = {"bullet_points": ["Some text."]}
         mgr._ensure_page_information_structure(summary, 5)
 
         assert summary["page_information"]["page_number_integer"] == 5
         assert summary["page_information"]["page_number_type"] == "arabic"
         assert summary["page_information"]["page_types"] == ["content"]
 
-    def test_non_dict_page_information(self):
+    def test_non_dict_page_information(self) -> None:
         """Replaces non-dict page_information with correct structure."""
         mgr = _make_manager()
         summary = {"page_information": "invalid"}
@@ -448,10 +449,10 @@ class TestEnsurePageInformationStructure:
         assert isinstance(summary["page_information"], dict)
         assert summary["page_information"]["page_number_integer"] == 3
 
-    def test_missing_page_number_integer(self):
+    def test_missing_page_number_integer(self) -> None:
         """Fills in missing page_number_integer."""
         mgr = _make_manager()
-        summary = {
+        summary: dict[str, Any] = {
             "page_information": {
                 "page_number_type": "roman",
                 "page_types": ["preface"],
@@ -462,7 +463,7 @@ class TestEnsurePageInformationStructure:
         assert summary["page_information"]["page_number_integer"] == 2
         assert summary["page_information"]["page_number_type"] == "roman"
 
-    def test_missing_page_number_type_with_integer(self):
+    def test_missing_page_number_type_with_integer(self) -> None:
         """Infers 'arabic' when page_number_integer exists."""
         mgr = _make_manager()
         summary = {
@@ -475,10 +476,10 @@ class TestEnsurePageInformationStructure:
 
         assert summary["page_information"]["page_number_type"] == "arabic"
 
-    def test_missing_page_number_type_without_integer(self):
+    def test_missing_page_number_type_without_integer(self) -> None:
         """Infers 'none' when page_number_integer is absent before fixup."""
         mgr = _make_manager()
-        summary = {
+        summary: dict[str, Any] = {
             "page_information": {
                 "page_types": ["content"],
             }
@@ -492,7 +493,7 @@ class TestEnsurePageInformationStructure:
         # sees page_number_integer == 7 (truthy) => "arabic"
         assert summary["page_information"]["page_number_type"] == "arabic"
 
-    def test_missing_page_types_no_legacy(self):
+    def test_missing_page_types_no_legacy(self) -> None:
         """Missing page_types without legacy page_type defaults to ['content']."""
         mgr = _make_manager()
         summary = {
@@ -505,7 +506,7 @@ class TestEnsurePageInformationStructure:
 
         assert summary["page_information"]["page_types"] == ["content"]
 
-    def test_existing_page_types_preserved(self):
+    def test_existing_page_types_preserved(self) -> None:
         """Existing page_types array is not modified."""
         mgr = _make_manager()
         summary = {
@@ -522,7 +523,7 @@ class TestEnsurePageInformationStructure:
             "content",
         ]
 
-    def test_complete_page_information_unchanged(self):
+    def test_complete_page_information_unchanged(self) -> None:
         """Complete page_information is not modified."""
         mgr = _make_manager()
         original = {
@@ -545,14 +546,14 @@ class TestEnsurePageInformationStructure:
 class TestGenerateSummary:
     """Tests for generate_summary()."""
 
-    def _mock_successful_response(self, summary_json: dict) -> AIMessage:
+    def _mock_successful_response(self, summary_json: dict[str, Any]) -> AIMessage:
         """Helper to create a mock AIMessage with summary JSON."""
         msg = AIMessage(content=json.dumps(summary_json))
         msg.usage_metadata = None
         msg.response_metadata = {"model": "gpt-5-mini"}
         return msg
 
-    def test_successful_generation(self):
+    def test_successful_generation(self) -> None:
         """Successful summary generation returns well-formed result."""
         mgr = _make_manager(provider="openai")
 
@@ -584,7 +585,7 @@ class TestGenerateSummary:
         assert "processing_time" in result
         assert result["provider"] == "openai"
 
-    def test_json_parse_error_returns_placeholder(self):
+    def test_json_parse_error_returns_placeholder(self) -> None:
         """Invalid JSON in response returns placeholder summary."""
         mgr = _make_manager(provider="openai")
 
@@ -606,7 +607,7 @@ class TestGenerateSummary:
         assert "Error generating summary" in result["bullet_points"][0]
         assert result["error_type"] == "api_failure"
 
-    def test_empty_response_returns_placeholder(self):
+    def test_empty_response_returns_placeholder(self) -> None:
         """Empty LLM response returns placeholder."""
         mgr = _make_manager(provider="openai")
 
@@ -627,7 +628,7 @@ class TestGenerateSummary:
 
         assert "Error generating summary" in result["bullet_points"][0]
 
-    def test_api_error_returns_placeholder(self):
+    def test_api_error_returns_placeholder(self) -> None:
         """API exception returns placeholder with error info."""
         mgr = _make_manager(provider="openai")
 
@@ -647,7 +648,7 @@ class TestGenerateSummary:
         assert result["error_type"] == "api_failure"
         assert mgr.failed_requests == 1
 
-    def test_markdown_wrapped_json_stripped(self):
+    def test_markdown_wrapped_json_stripped(self) -> None:
         """JSON wrapped in markdown code blocks is handled."""
         mgr = _make_manager(provider="openai")
 
@@ -679,7 +680,7 @@ class TestGenerateSummary:
 
         assert result["bullet_points"] == ["Extracted point."]
 
-    def test_token_usage_reported(self):
+    def test_token_usage_reported(self) -> None:
         """Token usage is reported to the tracker when available."""
         mgr = _make_manager(provider="openai")
 
@@ -693,7 +694,7 @@ class TestGenerateSummary:
             "references": None,
         }
         response = self._mock_successful_response(summary_data)
-        response.usage_metadata = {"total_tokens": 500}
+        response.usage_metadata = {"total_tokens": 500}  # type: ignore[assignment]
 
         mock_structured = MagicMock()
         mock_structured.invoke.return_value = response
@@ -713,7 +714,7 @@ class TestGenerateSummary:
 
         mock_tracker.add_tokens.assert_called_once_with(500)
 
-    def test_response_metadata_included(self):
+    def test_response_metadata_included(self) -> None:
         """Response metadata from LLM is included in result."""
         mgr = _make_manager(provider="openai")
 
@@ -749,13 +750,13 @@ class TestGenerateSummary:
 class TestGetStats:
     """Tests for get_stats()."""
 
-    def test_includes_service_tier(self):
+    def test_includes_service_tier(self) -> None:
         """Stats include service_tier field."""
         mgr = _make_manager(service_tier="flex", successful_requests=3)
         stats = mgr.get_stats()
         assert stats["service_tier"] == "flex"
 
-    def test_inherits_base_stats(self):
+    def test_inherits_base_stats(self) -> None:
         """Stats include all base class fields."""
         mgr = _make_manager(
             service_tier="auto",

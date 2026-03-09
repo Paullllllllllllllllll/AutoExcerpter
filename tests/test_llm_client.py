@@ -24,20 +24,20 @@ from api.model_capabilities import detect_capabilities
 class TestLLMConfig:
     """Tests for LLMConfig dataclass."""
 
-    def test_basic_init(self):
+    def test_basic_init(self) -> None:
         """Basic initialization with model name."""
         config = LLMConfig(model="gpt-5-mini")
 
         assert config.model == "gpt-5-mini"
         assert config.provider == "openai"  # Auto-inferred
 
-    def test_explicit_provider(self):
+    def test_explicit_provider(self) -> None:
         """Explicit provider is used."""
         config = LLMConfig(model="gpt-5-mini", provider="openai")
 
         assert config.provider == "openai"
 
-    def test_provider_inferred_from_model(self):
+    def test_provider_inferred_from_model(self) -> None:
         """Provider is inferred from model name."""
         openai_config = LLMConfig(model="gpt-4o")
         assert openai_config.provider == "openai"
@@ -48,7 +48,7 @@ class TestLLMConfig:
         google_config = LLMConfig(model="gemini-2.5-flash")
         assert google_config.provider == "google"
 
-    def test_default_values(self):
+    def test_default_values(self) -> None:
         """Default values are set correctly."""
         config = LLMConfig(model="gpt-5")
 
@@ -59,7 +59,7 @@ class TestLLMConfig:
         assert config.service_tier is None
         assert config.extra_kwargs == {}
 
-    def test_custom_values(self):
+    def test_custom_values(self) -> None:
         """Custom values are set correctly."""
         config = LLMConfig(
             model="gpt-5",
@@ -78,43 +78,43 @@ class TestLLMConfig:
 class TestInferProvider:
     """Tests for _infer_provider function."""
 
-    def test_explicit_prefix_openai(self):
+    def test_explicit_prefix_openai(self) -> None:
         """Explicit openai: prefix is detected."""
         assert _infer_provider("openai:gpt-5") == "openai"
 
-    def test_explicit_prefix_anthropic(self):
+    def test_explicit_prefix_anthropic(self) -> None:
         """Explicit anthropic: prefix is detected."""
         assert _infer_provider("anthropic:claude-3-opus") == "anthropic"
 
-    def test_explicit_prefix_google(self):
+    def test_explicit_prefix_google(self) -> None:
         """Explicit google: prefix is detected."""
         assert _infer_provider("google:gemini-2.5-flash") == "google"
 
-    def test_gpt_models(self):
+    def test_gpt_models(self) -> None:
         """GPT models inferred as OpenAI."""
         assert _infer_provider("gpt-5-mini") == "openai"
         assert _infer_provider("gpt-4o") == "openai"
         assert _infer_provider("gpt-4.1-nano") == "openai"
 
-    def test_o_series_models(self):
+    def test_o_series_models(self) -> None:
         """O-series models inferred as OpenAI."""
         assert _infer_provider("o1-mini") == "openai"
         assert _infer_provider("o3") == "openai"
         assert _infer_provider("o4-mini") == "openai"
 
-    def test_claude_models(self):
+    def test_claude_models(self) -> None:
         """Claude models inferred as Anthropic."""
         assert _infer_provider("claude-sonnet-4-5") == "anthropic"
         assert _infer_provider("claude-3-opus") == "anthropic"
         assert _infer_provider("claude-3-5-haiku") == "anthropic"
 
-    def test_gemini_models(self):
+    def test_gemini_models(self) -> None:
         """Gemini models inferred as Google."""
         assert _infer_provider("gemini-2.5-flash") == "google"
         assert _infer_provider("gemini-1.5-pro") == "google"
         assert _infer_provider("gemini-3-pro") == "google"
 
-    def test_unknown_defaults_to_openai(self):
+    def test_unknown_defaults_to_openai(self) -> None:
         """Unknown models default to OpenAI."""
         assert _infer_provider("unknown-model") == "openai"
         assert _infer_provider("custom-model-v1") == "openai"
@@ -123,7 +123,7 @@ class TestInferProvider:
 class TestGetModelCapabilities:
     """Tests for get_model_capabilities function."""
 
-    def test_gpt5_capabilities(self):
+    def test_gpt5_capabilities(self) -> None:
         """GPT-5 models have reasoning and multimodal."""
         caps = get_model_capabilities("gpt-5-mini")
 
@@ -132,21 +132,21 @@ class TestGetModelCapabilities:
         # GPT-5 is a reasoning model; temperature is not supported
         assert caps.get("temperature") is False
 
-    def test_o_series_no_temperature(self):
+    def test_o_series_no_temperature(self) -> None:
         """O-series models don't support temperature."""
         caps = get_model_capabilities("o3-mini")
 
         assert caps.get("reasoning") is True
         assert caps.get("temperature") is False
 
-    def test_gpt4o_no_reasoning(self):
+    def test_gpt4o_no_reasoning(self) -> None:
         """GPT-4o models don't support reasoning."""
         caps = get_model_capabilities("gpt-4o")
 
         assert caps.get("reasoning") is False
         assert caps.get("multimodal") is True
 
-    def test_claude_extended_thinking(self):
+    def test_claude_extended_thinking(self) -> None:
         """Claude 4.5 opus/sonnet/haiku have extended thinking (all are reasoning models)."""
         opus_caps = get_model_capabilities("claude-opus-4-5")
         sonnet_caps = get_model_capabilities("claude-sonnet-4-5")
@@ -157,19 +157,19 @@ class TestGetModelCapabilities:
         # Haiku 4.5 is also a reasoning Anthropic model
         assert haiku_caps.get("extended_thinking") is True
 
-    def test_gemini_thinking(self):
+    def test_gemini_thinking(self) -> None:
         """Gemini 2.5+ models have thinking capability."""
         caps = get_model_capabilities("gemini-2.5-flash")
 
         assert caps.get("thinking") is True
 
-    def test_gemini_2_no_thinking(self):
+    def test_gemini_2_no_thinking(self) -> None:
         """Gemini 2.0 models don't have thinking."""
         caps = get_model_capabilities("gemini-2.0-flash")
 
         assert caps.get("thinking") is False
 
-    def test_unknown_model_defaults(self):
+    def test_unknown_model_defaults(self) -> None:
         """Unknown models get conservative defaults."""
         caps = get_model_capabilities("unknown-model")
 
@@ -177,7 +177,7 @@ class TestGetModelCapabilities:
         assert caps.get("multimodal") is False
         assert caps.get("temperature") is True
 
-    def test_versioned_model_names(self):
+    def test_versioned_model_names(self) -> None:
         """Versioned model names are matched correctly."""
         # Claude with date suffix
         caps = get_model_capabilities("claude-sonnet-4-5-20250929")
@@ -187,17 +187,17 @@ class TestGetModelCapabilities:
 class TestGetApiKey:
     """Tests for _get_api_key function."""
 
-    def test_uses_provided_key(self, mock_api_keys):
+    def test_uses_provided_key(self, mock_api_keys) -> None:
         """Uses provided API key when given."""
         result = _get_api_key("openai", "custom-key")
         assert result == "custom-key"
 
-    def test_uses_env_variable(self, mock_api_keys):
+    def test_uses_env_variable(self, mock_api_keys) -> None:
         """Uses environment variable when no key provided."""
         result = _get_api_key("openai", None)
         assert result == "test-openai-key"
 
-    def test_raises_on_missing_key(self):
+    def test_raises_on_missing_key(self) -> None:
         """Raises EnvironmentError when key not found."""
         with patch.dict(os.environ, {}, clear=True):
             with pytest.raises(EnvironmentError, match="API key not found"):
@@ -207,7 +207,7 @@ class TestGetApiKey:
 class TestGetChatModel:
     """Tests for get_chat_model function."""
 
-    def test_creates_openai_model(self, mock_api_keys):
+    def test_creates_openai_model(self, mock_api_keys) -> None:
         """Creates OpenAI model with correct class."""
         with patch("langchain_openai.ChatOpenAI") as mock_class:
             mock_class.return_value = MagicMock()
@@ -220,7 +220,7 @@ class TestGetChatModel:
             assert call_kwargs["model"] == "gpt-5-mini"
             assert call_kwargs["api_key"] == "test-openai-key"
 
-    def test_creates_anthropic_model(self, mock_api_keys):
+    def test_creates_anthropic_model(self, mock_api_keys) -> None:
         """Creates Anthropic model with correct class."""
         with patch("langchain_anthropic.ChatAnthropic") as mock_class:
             mock_class.return_value = MagicMock()
@@ -230,7 +230,7 @@ class TestGetChatModel:
 
             mock_class.assert_called_once()
 
-    def test_creates_google_model(self, mock_api_keys):
+    def test_creates_google_model(self, mock_api_keys) -> None:
         """Creates Google model with correct class."""
         with patch("langchain_google_genai.ChatGoogleGenerativeAI") as mock_class:
             mock_class.return_value = MagicMock()
@@ -240,7 +240,7 @@ class TestGetChatModel:
 
             mock_class.assert_called_once()
 
-    def test_creates_openrouter_model(self, mock_api_keys):
+    def test_creates_openrouter_model(self, mock_api_keys) -> None:
         """Creates OpenRouter model with correct base URL."""
         with patch("langchain_openai.ChatOpenAI") as mock_class:
             mock_class.return_value = MagicMock()
@@ -251,7 +251,7 @@ class TestGetChatModel:
             call_kwargs = mock_class.call_args[1]
             assert call_kwargs["base_url"] == "https://openrouter.ai/api/v1"
 
-    def test_includes_service_tier_for_openai(self, mock_api_keys):
+    def test_includes_service_tier_for_openai(self, mock_api_keys) -> None:
         """Includes service_tier parameter for OpenAI."""
         with patch("langchain_openai.ChatOpenAI") as mock_class:
             mock_class.return_value = MagicMock()
@@ -264,14 +264,14 @@ class TestGetChatModel:
             call_kwargs = mock_class.call_args[1]
             assert call_kwargs["service_tier"] == "flex"
 
-    def test_unsupported_provider_raises(self, mock_api_keys):
+    def test_unsupported_provider_raises(self, mock_api_keys) -> None:
         """Unsupported provider raises ValueError."""
         config = LLMConfig(model="test", provider="unsupported")  # type: ignore
 
         with pytest.raises(ValueError, match="Unsupported provider"):
             get_chat_model(config)
 
-    def test_removes_provider_prefix_from_model(self, mock_api_keys):
+    def test_removes_provider_prefix_from_model(self, mock_api_keys) -> None:
         """Provider prefix is removed from model name."""
         with patch("langchain_openai.ChatOpenAI") as mock_class:
             mock_class.return_value = MagicMock()
@@ -286,7 +286,7 @@ class TestGetChatModel:
 class TestGetProviderForModel:
     """Tests for get_provider_for_model function."""
 
-    def test_returns_provider(self):
+    def test_returns_provider(self) -> None:
         """Returns correct provider for model."""
         assert get_provider_for_model("gpt-5") == "openai"
         assert get_provider_for_model("claude-3-opus") == "anthropic"
@@ -296,13 +296,13 @@ class TestGetProviderForModel:
 class TestIsProviderAvailable:
     """Tests for is_provider_available function."""
 
-    def test_returns_true_when_key_set(self, mock_api_keys):
+    def test_returns_true_when_key_set(self, mock_api_keys) -> None:
         """Returns True when API key is available."""
         assert is_provider_available("openai") is True
         assert is_provider_available("anthropic") is True
         assert is_provider_available("google") is True
 
-    def test_returns_false_when_key_not_set(self):
+    def test_returns_false_when_key_not_set(self) -> None:
         """Returns False when API key is not available."""
         with patch.dict(os.environ, {}, clear=True):
             assert is_provider_available("openai") is False
@@ -311,7 +311,7 @@ class TestIsProviderAvailable:
 class TestGetAvailableProviders:
     """Tests for get_available_providers function."""
 
-    def test_returns_available_providers(self, mock_api_keys):
+    def test_returns_available_providers(self, mock_api_keys) -> None:
         """Returns list of providers with available keys."""
         providers = get_available_providers()
 
@@ -320,7 +320,7 @@ class TestGetAvailableProviders:
         assert "google" in providers
         assert "openrouter" in providers
 
-    def test_returns_empty_when_no_keys(self):
+    def test_returns_empty_when_no_keys(self) -> None:
         """Returns empty list when no API keys set."""
         with patch.dict(os.environ, {}, clear=True):
             providers = get_available_providers()
@@ -330,14 +330,14 @@ class TestGetAvailableProviders:
 class TestSupportedProviders:
     """Tests for SUPPORTED_PROVIDERS constant."""
 
-    def test_has_required_providers(self):
+    def test_has_required_providers(self) -> None:
         """Contains all required providers."""
         assert "openai" in SUPPORTED_PROVIDERS
         assert "anthropic" in SUPPORTED_PROVIDERS
         assert "google" in SUPPORTED_PROVIDERS
         assert "openrouter" in SUPPORTED_PROVIDERS
 
-    def test_provider_has_required_keys(self):
+    def test_provider_has_required_keys(self) -> None:
         """Each provider has required configuration keys."""
         for provider, config in SUPPORTED_PROVIDERS.items():
             assert "package" in config
@@ -348,7 +348,7 @@ class TestSupportedProviders:
 class TestModelCapabilities:
     """Tests for detect_capabilities (replaces MODEL_CAPABILITIES dict)."""
 
-    def test_has_openai_models(self):
+    def test_has_openai_models(self) -> None:
         """detect_capabilities returns valid results for OpenAI models."""
         caps = detect_capabilities("gpt-5-mini")
         assert caps.provider_name == "openai"
@@ -357,14 +357,14 @@ class TestModelCapabilities:
         caps = detect_capabilities("o3-mini")
         assert caps.is_reasoning_model is True
 
-    def test_has_anthropic_models(self):
+    def test_has_anthropic_models(self) -> None:
         """detect_capabilities returns valid results for Anthropic models."""
         caps = detect_capabilities("claude-sonnet-4-5")
         assert caps.provider_name == "anthropic"
         caps = detect_capabilities("claude-3-opus")
         assert caps.provider_name == "anthropic"
 
-    def test_has_google_models(self):
+    def test_has_google_models(self) -> None:
         """detect_capabilities returns valid results for Google models."""
         caps = detect_capabilities("gemini-2.5-flash")
         assert caps.provider_name == "google"

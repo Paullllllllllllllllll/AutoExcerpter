@@ -21,7 +21,7 @@ from modules.path_utils import (
 class TestCreateSafeLogFilename:
     """Tests for create_safe_log_filename()."""
 
-    def test_short_name_preserved(self):
+    def test_short_name_preserved(self) -> None:
         """Short base name is included in full without truncation."""
         result = create_safe_log_filename("short_doc", "transcription")
 
@@ -29,7 +29,7 @@ class TestCreateSafeLogFilename:
         assert result.endswith("_transcription_log.json")
         assert len(result) <= MAX_SAFE_NAME_LENGTH
 
-    def test_long_name_gets_truncated(self):
+    def test_long_name_gets_truncated(self) -> None:
         """Long base name is truncated to fit within MAX_SAFE_NAME_LENGTH."""
         long_name = "A" * 200
         result = create_safe_log_filename(long_name, "summary")
@@ -39,7 +39,7 @@ class TestCreateSafeLogFilename:
         # The full 200-char name should not appear
         assert long_name not in result
 
-    def test_hash_present_for_uniqueness(self):
+    def test_hash_present_for_uniqueness(self) -> None:
         """Result includes a hash segment for uniqueness."""
         result = create_safe_log_filename("my_document", "transcription")
 
@@ -51,21 +51,21 @@ class TestCreateSafeLogFilename:
         # The hash is the first HASH_LENGTH characters of the suffix portion
         assert len(hash_and_suffix) >= HASH_LENGTH
 
-    def test_different_names_produce_different_hashes(self):
+    def test_different_names_produce_different_hashes(self) -> None:
         """Different base names produce different filenames."""
         result_a = create_safe_log_filename("document_alpha", "transcription")
         result_b = create_safe_log_filename("document_beta", "transcription")
 
         assert result_a != result_b
 
-    def test_same_name_produces_same_hash(self):
+    def test_same_name_produces_same_hash(self) -> None:
         """Same base name always produces the same filename (deterministic)."""
         result_1 = create_safe_log_filename("consistent_name", "summary")
         result_2 = create_safe_log_filename("consistent_name", "summary")
 
         assert result_1 == result_2
 
-    def test_different_log_types_produce_different_filenames(self):
+    def test_different_log_types_produce_different_filenames(self) -> None:
         """Same base name with different log types produces different filenames."""
         result_trans = create_safe_log_filename("doc", "transcription")
         result_summ = create_safe_log_filename("doc", "summary")
@@ -74,7 +74,7 @@ class TestCreateSafeLogFilename:
         assert "_transcription_log.json" in result_trans
         assert "_summary_log.json" in result_summ
 
-    def test_truncation_strips_trailing_punctuation(self):
+    def test_truncation_strips_trailing_punctuation(self) -> None:
         """Truncated name has trailing punctuation stripped."""
         # Build a name where the truncation point falls on a period or dash
         suffix = "_transcription_log.json"
@@ -94,7 +94,7 @@ class TestCreateSafeLogFilename:
         assert not name_part.endswith("-")
         assert not name_part.endswith("_")
 
-    def test_result_always_within_limit(self):
+    def test_result_always_within_limit(self) -> None:
         """Result length never exceeds MAX_SAFE_NAME_LENGTH, regardless of input."""
         names = [
             "x",
@@ -121,7 +121,7 @@ class TestEnsurePathSafe:
     """
 
     @patch("platform.system", return_value="Windows")
-    def test_windows_returns_resolved_path(self, mock_system, tmp_path: Path):
+    def test_windows_returns_resolved_path(self, mock_system, tmp_path: Path) -> None:
         """On Windows, returns a resolved (absolute) path."""
         test_file = tmp_path / "test.txt"
         test_file.write_text("content")
@@ -132,7 +132,7 @@ class TestEnsurePathSafe:
         assert result == test_file.resolve()
 
     @patch("platform.system", return_value="Windows")
-    def test_windows_resolve_failure_returns_original(self, mock_system):
+    def test_windows_resolve_failure_returns_original(self, mock_system) -> None:
         """On Windows, if resolve() fails, returns the original path."""
         bad_path = Path("\\\\?\\impossible\\path\\that\\wont\\resolve")
 
@@ -142,7 +142,7 @@ class TestEnsurePathSafe:
         assert result == bad_path
 
     @patch("platform.system", return_value="Linux")
-    def test_linux_returns_path_unchanged(self, mock_system, tmp_path: Path):
+    def test_linux_returns_path_unchanged(self, mock_system, tmp_path: Path) -> None:
         """On Linux, the path is returned without modification."""
         test_path = tmp_path / "document.pdf"
 
@@ -151,7 +151,7 @@ class TestEnsurePathSafe:
         assert result == test_path
 
     @patch("platform.system", return_value="Darwin")
-    def test_macos_returns_path_unchanged(self, mock_system, tmp_path: Path):
+    def test_macos_returns_path_unchanged(self, mock_system, tmp_path: Path) -> None:
         """On macOS, the path is returned without modification."""
         test_path = tmp_path / "document.pdf"
 
@@ -160,14 +160,14 @@ class TestEnsurePathSafe:
         assert result == test_path
 
     @patch("platform.system", return_value="Windows")
-    def test_windows_directory_path(self, mock_system, tmp_path: Path):
+    def test_windows_directory_path(self, mock_system, tmp_path: Path) -> None:
         """On Windows, directory paths are also resolved."""
         result = ensure_path_safe(tmp_path)
 
         assert result.is_absolute()
         assert result == tmp_path.resolve()
 
-    def test_returns_path_object(self, tmp_path: Path):
+    def test_returns_path_object(self, tmp_path: Path) -> None:
         """Return value is always a Path object."""
         result = ensure_path_safe(tmp_path / "something")
 

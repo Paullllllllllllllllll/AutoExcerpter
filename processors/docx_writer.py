@@ -665,7 +665,7 @@ def create_docx_summary(
         else:
             logger.info("OpenAlex enrichment disabled - skipping metadata lookup")
 
-        document.add_page_break()
+        document.add_page_break()  # type: ignore[no-untyped-call]
         ref_main_heading = document.add_heading(
             "Consolidated References", TITLE_HEADING_LEVEL
         )

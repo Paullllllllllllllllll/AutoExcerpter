@@ -125,13 +125,13 @@ def _create_log_with_entries(
 # ProcessingState Tests
 # ============================================================================
 class TestProcessingState:
-    def test_enum_values(self):
+    def test_enum_values(self) -> None:
         assert ProcessingState.COMPLETE.value == "complete"
         assert ProcessingState.TRANSCRIPTION_ONLY.value == "transcription_only"
         assert ProcessingState.PARTIAL.value == "partial"
         assert ProcessingState.NONE.value == "none"
 
-    def test_enum_members(self):
+    def test_enum_members(self) -> None:
         assert len(ProcessingState) == 4
 
 
@@ -139,7 +139,7 @@ class TestProcessingState:
 # ResumeResult Tests
 # ============================================================================
 class TestResumeResult:
-    def test_default_fields(self):
+    def test_default_fields(self) -> None:
         result = ResumeResult(item_name="test", state=ProcessingState.NONE)
         assert result.item_name == "test"
         assert result.state == ProcessingState.NONE
@@ -149,7 +149,7 @@ class TestResumeResult:
         assert result.reason == ""
         assert result.completed_page_indices is None
 
-    def test_with_completed_pages(self):
+    def test_with_completed_pages(self) -> None:
         pages = {0, 1, 5}
         result = ResumeResult(
             item_name="test",
@@ -165,7 +165,7 @@ class TestResumeResult:
 class TestResumeCheckerOverwrite:
     def test_should_skip_always_returns_none(
         self, checker_overwrite: ResumeChecker, output_dir: Path, item_name: str
-    ):
+    ) -> None:
         """In overwrite mode, should_skip always returns NONE regardless of existing files."""
         # Create all output files
         _create_file(output_dir / f"{item_name}.txt")
@@ -178,7 +178,7 @@ class TestResumeCheckerOverwrite:
 
     def test_filter_items_returns_all(
         self, checker_overwrite: ResumeChecker, output_dir: Path
-    ):
+    ) -> None:
         """In overwrite mode, filter_items returns all items."""
         items = ["a", "b", "c"]
         to_process, skipped = checker_overwrite.filter_items(
@@ -196,7 +196,7 @@ class TestResumeCheckerOverwrite:
 class TestResumeCheckerComplete:
     def test_all_outputs_exist_with_summaries(
         self, checker_skip: ResumeChecker, output_dir: Path, item_name: str
-    ):
+    ) -> None:
         """Item is COMPLETE when .txt, .docx, and .md all exist."""
         _create_file(output_dir / f"{item_name}.txt")
         _create_file(output_dir / f"{item_name}.docx")
@@ -209,7 +209,7 @@ class TestResumeCheckerComplete:
 
     def test_all_outputs_exist_no_summary(
         self, checker_no_summary: ResumeChecker, output_dir: Path, item_name: str
-    ):
+    ) -> None:
         """Item is COMPLETE when only .txt exists and summarize is disabled."""
         _create_file(output_dir / f"{item_name}.txt")
 
@@ -217,7 +217,7 @@ class TestResumeCheckerComplete:
         assert result.state == ProcessingState.COMPLETE
         assert len(result.existing_outputs) == 1
 
-    def test_docx_only_mode(self, output_dir: Path, item_name: str):
+    def test_docx_only_mode(self, output_dir: Path, item_name: str) -> None:
         """Item is COMPLETE when .txt and .docx exist (markdown disabled)."""
         checker = ResumeChecker(
             resume_mode="skip", summarize=True, output_docx=True, output_markdown=False
@@ -228,7 +228,7 @@ class TestResumeCheckerComplete:
         result = checker.should_skip(item_name, output_dir)
         assert result.state == ProcessingState.COMPLETE
 
-    def test_markdown_only_mode(self, output_dir: Path, item_name: str):
+    def test_markdown_only_mode(self, output_dir: Path, item_name: str) -> None:
         """Item is COMPLETE when .txt and .md exist (docx disabled)."""
         checker = ResumeChecker(
             resume_mode="skip", summarize=True, output_docx=False, output_markdown=True
@@ -241,7 +241,7 @@ class TestResumeCheckerComplete:
 
     def test_empty_txt_not_complete(
         self, checker_skip: ResumeChecker, output_dir: Path, item_name: str
-    ):
+    ) -> None:
         """An empty .txt file does not count as complete."""
         _create_file(output_dir / f"{item_name}.txt", content="")
         _create_file(output_dir / f"{item_name}.docx")
@@ -257,7 +257,7 @@ class TestResumeCheckerComplete:
 class TestResumeCheckerTranscriptionOnly:
     def test_txt_exists_but_summaries_missing(
         self, checker_skip: ResumeChecker, output_dir: Path, item_name: str
-    ):
+    ) -> None:
         """State is TRANSCRIPTION_ONLY when .txt exists but summary files are missing."""
         _create_file(output_dir / f"{item_name}.txt")
 
@@ -267,7 +267,7 @@ class TestResumeCheckerTranscriptionOnly:
 
     def test_txt_and_docx_exist_md_missing(
         self, checker_skip: ResumeChecker, output_dir: Path, item_name: str
-    ):
+    ) -> None:
         """State is TRANSCRIPTION_ONLY when .txt and .docx exist but .md is missing."""
         _create_file(output_dir / f"{item_name}.txt")
         _create_file(output_dir / f"{item_name}.docx")
@@ -283,7 +283,7 @@ class TestResumeCheckerTranscriptionOnly:
 class TestResumeCheckerPartial:
     def test_partial_log_detected(
         self, checker_skip: ResumeChecker, output_dir: Path, item_name: str
-    ):
+    ) -> None:
         """State is PARTIAL when a transcription log with completed entries exists."""
         entries = [
             {"original_input_order_index": 0, "page": 1, "transcription": "text"},
@@ -297,7 +297,7 @@ class TestResumeCheckerPartial:
 
     def test_partial_log_with_errors(
         self, checker_skip: ResumeChecker, output_dir: Path, item_name: str
-    ):
+    ) -> None:
         """Entries with errors are excluded from completed page indices."""
         entries = [
             {"original_input_order_index": 0, "page": 1, "transcription": "text"},
@@ -312,7 +312,7 @@ class TestResumeCheckerPartial:
 
     def test_incomplete_log_recovered(
         self, checker_skip: ResumeChecker, output_dir: Path, item_name: str
-    ):
+    ) -> None:
         """Incomplete JSON array (no closing bracket) is still parsed for page-level resume."""
         entries = [
             {"original_input_order_index": 0, "page": 1, "transcription": "text"},
@@ -330,14 +330,14 @@ class TestResumeCheckerPartial:
 class TestResumeCheckerNone:
     def test_no_outputs_at_all(
         self, checker_skip: ResumeChecker, output_dir: Path, item_name: str
-    ):
+    ) -> None:
         """State is NONE when no output files and no log exist."""
         result = checker_skip.should_skip(item_name, output_dir)
         assert result.state == ProcessingState.NONE
 
     def test_empty_log_returns_none(
         self, checker_skip: ResumeChecker, output_dir: Path, item_name: str
-    ):
+    ) -> None:
         """An empty log file means NONE state."""
         safe_working_dir_name = create_safe_directory_name(item_name, "_working_files")
         working_dir = output_dir / safe_working_dir_name
@@ -351,7 +351,7 @@ class TestResumeCheckerNone:
 
     def test_log_with_only_header_returns_none(
         self, checker_skip: ResumeChecker, output_dir: Path, item_name: str
-    ):
+    ) -> None:
         """A log with only the header entry (no page results) means NONE state."""
         _create_log_with_entries(output_dir, item_name, entries=[])
 
@@ -360,7 +360,7 @@ class TestResumeCheckerNone:
 
     def test_log_with_only_errors_returns_none(
         self, checker_skip: ResumeChecker, output_dir: Path, item_name: str
-    ):
+    ) -> None:
         """A log where all entries have errors means NONE state (no completed pages)."""
         entries = [
             {"original_input_order_index": 0, "page": 1, "error": "timeout"},
@@ -378,7 +378,7 @@ class TestResumeCheckerNone:
 class TestResumeCheckerFilterItems:
     def test_complete_items_are_skipped(
         self, checker_skip: ResumeChecker, output_dir: Path
-    ):
+    ) -> None:
         """Complete items are moved to skipped list."""
         # Create complete outputs for item "A"
         _create_file(output_dir / "A.txt")
@@ -398,7 +398,7 @@ class TestResumeCheckerFilterItems:
 
     def test_partial_items_are_not_skipped(
         self, checker_skip: ResumeChecker, output_dir: Path
-    ):
+    ) -> None:
         """Partial items remain in the to_process list (they need processing)."""
         entries = [
             {"original_input_order_index": 0, "page": 1, "transcription": "text"},
@@ -414,7 +414,7 @@ class TestResumeCheckerFilterItems:
         assert to_process == ["PartialDoc"]
         assert skipped == []
 
-    def test_mixed_states(self, checker_skip: ResumeChecker, output_dir: Path):
+    def test_mixed_states(self, checker_skip: ResumeChecker, output_dir: Path) -> None:
         """Mix of COMPLETE, PARTIAL, and NONE items are correctly partitioned."""
         # Complete: "Done"
         _create_file(output_dir / "Done.txt")
@@ -443,7 +443,7 @@ class TestResumeCheckerFilterItems:
 # load_completed_pages Tests
 # ============================================================================
 class TestLoadCompletedPages:
-    def test_valid_complete_log(self, tmp_path: Path):
+    def test_valid_complete_log(self, tmp_path: Path) -> None:
         """Parse a valid, finalized JSON log."""
         header = {"input_item_name": "test"}
         entries = [
@@ -457,7 +457,7 @@ class TestLoadCompletedPages:
         result = load_completed_pages(log_path)
         assert result == {0, 1}  # index 2 has error, excluded
 
-    def test_incomplete_json_array(self, tmp_path: Path):
+    def test_incomplete_json_array(self, tmp_path: Path) -> None:
         """Recover from incomplete JSON array (no closing bracket)."""
         header = {"input_item_name": "test"}
         e1 = {"original_input_order_index": 0, "page": 1, "transcription": "a"}
@@ -470,7 +470,7 @@ class TestLoadCompletedPages:
         result = load_completed_pages(log_path)
         assert result == {0}
 
-    def test_incomplete_with_trailing_comma(self, tmp_path: Path):
+    def test_incomplete_with_trailing_comma(self, tmp_path: Path) -> None:
         """Recover from incomplete JSON array with trailing comma."""
         header = {"input_item_name": "test"}
         e1 = {"original_input_order_index": 0, "page": 1, "transcription": "a"}
@@ -483,25 +483,25 @@ class TestLoadCompletedPages:
         result = load_completed_pages(log_path)
         assert result == {0}
 
-    def test_empty_file(self, tmp_path: Path):
+    def test_empty_file(self, tmp_path: Path) -> None:
         """Empty file returns None."""
         log_path = tmp_path / "empty.json"
         log_path.write_text("", encoding="utf-8")
         assert load_completed_pages(log_path) is None
 
-    def test_header_only(self, tmp_path: Path):
+    def test_header_only(self, tmp_path: Path) -> None:
         """Log with only a header (no page entries) returns None."""
         header = {"input_item_name": "test"}
         log_path = tmp_path / "header_only.json"
         log_path.write_text(json.dumps([header]), encoding="utf-8")
         assert load_completed_pages(log_path) is None
 
-    def test_nonexistent_file(self, tmp_path: Path):
+    def test_nonexistent_file(self, tmp_path: Path) -> None:
         """Nonexistent file returns None."""
         log_path = tmp_path / "does_not_exist.json"
         assert load_completed_pages(log_path) is None
 
-    def test_all_errors_returns_none(self, tmp_path: Path):
+    def test_all_errors_returns_none(self, tmp_path: Path) -> None:
         """Log where all entries have errors returns None."""
         header = {"input_item_name": "test"}
         entries = [
@@ -511,7 +511,7 @@ class TestLoadCompletedPages:
         log_path.write_text(json.dumps([header] + entries), encoding="utf-8")
         assert load_completed_pages(log_path) is None
 
-    def test_corrupted_json(self, tmp_path: Path):
+    def test_corrupted_json(self, tmp_path: Path) -> None:
         """Completely corrupted file returns None."""
         log_path = tmp_path / "corrupt.json"
         log_path.write_text("not valid json at all {{{", encoding="utf-8")
@@ -522,7 +522,7 @@ class TestLoadCompletedPages:
 # load_transcription_results_from_log Tests
 # ============================================================================
 class TestLoadTranscriptionResultsFromLog:
-    def test_returns_entries_excluding_header(self, tmp_path: Path):
+    def test_returns_entries_excluding_header(self, tmp_path: Path) -> None:
         """Returns only entries with original_input_order_index (not header)."""
         header = {"input_item_name": "test"}
         entries = [
@@ -538,7 +538,7 @@ class TestLoadTranscriptionResultsFromLog:
         assert result[0]["transcription"] == "a"
         assert result[1]["transcription"] == "b"
 
-    def test_includes_error_entries(self, tmp_path: Path):
+    def test_includes_error_entries(self, tmp_path: Path) -> None:
         """Error entries are included (they are page results, just failed)."""
         header = {"input_item_name": "test"}
         entries = [
@@ -552,18 +552,18 @@ class TestLoadTranscriptionResultsFromLog:
         assert len(result) == 1
         assert "error" in result[0]
 
-    def test_empty_file_returns_none(self, tmp_path: Path):
+    def test_empty_file_returns_none(self, tmp_path: Path) -> None:
         log_path = tmp_path / "empty.json"
         log_path.write_text("", encoding="utf-8")
         assert load_transcription_results_from_log(log_path) is None
 
-    def test_header_only_returns_none(self, tmp_path: Path):
+    def test_header_only_returns_none(self, tmp_path: Path) -> None:
         header = {"input_item_name": "test"}
         log_path = tmp_path / "header_only.json"
         log_path.write_text(json.dumps([header]), encoding="utf-8")
         assert load_transcription_results_from_log(log_path) is None
 
-    def test_incomplete_log(self, tmp_path: Path):
+    def test_incomplete_log(self, tmp_path: Path) -> None:
         """Can recover entries from an incomplete log."""
         header = {"input_item_name": "test"}
         e1 = {"original_input_order_index": 0, "page": 1, "transcription": "a"}
@@ -582,34 +582,34 @@ class TestLoadTranscriptionResultsFromLog:
 # _parse_log_entries Tests
 # ============================================================================
 class TestParseLogEntries:
-    def test_valid_json_array(self):
+    def test_valid_json_array(self) -> None:
         raw = json.dumps([{"a": 1}, {"b": 2}])
         result = _parse_log_entries(raw)
         assert result is not None
         assert len(result) == 2
 
-    def test_not_a_list(self):
+    def test_not_a_list(self) -> None:
         raw = json.dumps({"key": "value"})
         result = _parse_log_entries(raw)
         assert result is None
 
-    def test_empty_string(self):
+    def test_empty_string(self) -> None:
         result = _parse_log_entries("")
         assert result is None
 
-    def test_missing_closing_bracket(self):
+    def test_missing_closing_bracket(self) -> None:
         raw = '[{"a": 1},{"b": 2}'
         result = _parse_log_entries(raw)
         assert result is not None
         assert len(result) == 2
 
-    def test_trailing_comma_and_missing_bracket(self):
+    def test_trailing_comma_and_missing_bracket(self) -> None:
         raw = '[{"a": 1},'
         result = _parse_log_entries(raw)
         assert result is not None
         assert len(result) == 1
 
-    def test_completely_invalid(self):
+    def test_completely_invalid(self) -> None:
         result = _parse_log_entries("{{not json}}")
         assert result is None
 
@@ -620,7 +620,7 @@ class TestParseLogEntries:
 class TestMainIntegration:
     """Test main.py functions that interact with the resume system."""
 
-    def test_parse_execution_mode_default_resume(self):
+    def test_parse_execution_mode_default_resume(self) -> None:
         """Default resume mode is 'skip'."""
         from cli.argument_parser import _parse_execution_mode
 
@@ -641,7 +641,7 @@ class TestMainIntegration:
 
         assert result[-1] == "skip"  # resume_mode is last element
 
-    def test_parse_execution_mode_force(self):
+    def test_parse_execution_mode_force(self) -> None:
         """--force flag sets resume_mode to 'overwrite'."""
         from cli.argument_parser import _parse_execution_mode
 
@@ -662,7 +662,7 @@ class TestMainIntegration:
 
         assert result[-1] == "overwrite"
 
-    def test_parse_execution_mode_named_paths_override_positional(self):
+    def test_parse_execution_mode_named_paths_override_positional(self) -> None:
         """Named --input-path/--output-path values override positional paths."""
         from cli.argument_parser import _parse_execution_mode
 
@@ -684,7 +684,7 @@ class TestMainIntegration:
         assert str(input_path).endswith("named_input")
         assert str(output_path).endswith("named_output")
 
-    def test_build_cli_model_overrides_shared_and_specific(self):
+    def test_build_cli_model_overrides_shared_and_specific(self) -> None:
         """CLI model override builder applies shared values and specific overrides."""
         from cli.argument_parser import _build_cli_model_overrides
 
@@ -715,7 +715,7 @@ class TestMainIntegration:
         assert overrides["transcription_model"]["max_output_tokens"] == 6000
         assert overrides["summary_model"]["max_output_tokens"] == 7000
 
-    def test_positive_int_validator(self):
+    def test_positive_int_validator(self) -> None:
         """_positive_int accepts valid positive integers and rejects non-positive values."""
         from cli.argument_parser import _positive_int
 
@@ -723,7 +723,7 @@ class TestMainIntegration:
         with pytest.raises(Exception):
             _positive_int("0")
 
-    def test_setup_argparse_cli_supports_named_paths_without_positionals(self):
+    def test_setup_argparse_cli_supports_named_paths_without_positionals(self) -> None:
         """setup_argparse accepts named --input-path/--output-path without positional args."""
         from cli.argument_parser import setup_argparse
 
@@ -746,7 +746,7 @@ class TestMainIntegration:
         assert args.output_path == "out_dir"
         assert args.all is True
 
-    def test_setup_argparse_cli_requires_paths(self):
+    def test_setup_argparse_cli_requires_paths(self) -> None:
         """setup_argparse raises SystemExit when CLI mode has no input/output path."""
         from cli.argument_parser import setup_argparse
 
@@ -756,19 +756,19 @@ class TestMainIntegration:
                 with pytest.raises(SystemExit):
                     setup_argparse()
 
-    def test_display_resume_info_no_skipped(self):
+    def test_display_resume_info_no_skipped(self) -> None:
         """_display_resume_info returns True when no items are skipped."""
         from cli.display import _display_resume_info
 
         result = _display_resume_info("skip", [], [], [])
         assert result is True
 
-    def test_display_resume_info_all_skipped_cli(self):
+    def test_display_resume_info_all_skipped_cli(self) -> None:
         """_display_resume_info returns False in CLI mode when all items are skipped."""
         from cli.display import _display_resume_info
 
         skipped = [ResumeResult(item_name="A", state=ProcessingState.COMPLETE)]
-        items = [MagicMock()]
+        items: list[Any] = [MagicMock()]
 
         with patch("cli.display.config") as mock_config:
             mock_config.CLI_MODE = True
@@ -776,7 +776,7 @@ class TestMainIntegration:
 
         assert result is False
 
-    def test_resolve_item_output_dir_colocated(self, tmp_path: Path):
+    def test_resolve_item_output_dir_colocated(self, tmp_path: Path) -> None:
         """_resolve_item_output_dir returns input parent when INPUT_PATHS_IS_OUTPUT_PATH is True."""
         from main import _resolve_item_output_dir
 
@@ -790,7 +790,7 @@ class TestMainIntegration:
 
         assert result == tmp_path / "subdir"
 
-    def test_resolve_item_output_dir_separate(self, tmp_path: Path):
+    def test_resolve_item_output_dir_separate(self, tmp_path: Path) -> None:
         """_resolve_item_output_dir returns base_output_dir when INPUT_PATHS_IS_OUTPUT_PATH is False."""
         from main import _resolve_item_output_dir
 
@@ -809,7 +809,7 @@ class TestMainIntegration:
 # Edge Cases
 # ============================================================================
 class TestEdgeCases:
-    def test_long_item_name(self, checker_skip: ResumeChecker, output_dir: Path):
+    def test_long_item_name(self, checker_skip: ResumeChecker, output_dir: Path) -> None:
         """Resume checker works with long item names that trigger safe-name truncation."""
         long_name = "A" * 100
         _create_file(output_dir / f"{long_name}.txt")
@@ -821,7 +821,7 @@ class TestEdgeCases:
 
     def test_special_characters_in_name(
         self, checker_skip: ResumeChecker, output_dir: Path
-    ):
+    ) -> None:
         """Resume checker works with special characters in item names."""
         name = "Test (Doc) [2024] — v1.0"
         _create_file(output_dir / f"{name}.txt")
@@ -833,7 +833,7 @@ class TestEdgeCases:
 
     def test_partial_log_with_long_name(
         self, checker_skip: ResumeChecker, output_dir: Path
-    ):
+    ) -> None:
         """Partial log detection works with long item names."""
         long_name = "B" * 30
         entries = [
@@ -847,7 +847,7 @@ class TestEdgeCases:
 
     def test_filter_items_with_custom_objects(
         self, checker_skip: ResumeChecker, output_dir: Path
-    ):
+    ) -> None:
         """filter_items works with arbitrary objects via name_func and output_dir_func."""
         # Create complete output for item with stem "Alpha"
         _create_file(output_dir / "Alpha.txt")
@@ -855,7 +855,7 @@ class TestEdgeCases:
         _create_file(output_dir / "Alpha.md")
 
         class FakeItem:
-            def __init__(self, stem: str):
+            def __init__(self, stem: str) -> None:
                 self.stem = stem
 
         items = [FakeItem("Alpha"), FakeItem("Beta")]

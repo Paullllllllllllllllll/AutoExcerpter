@@ -45,7 +45,7 @@ def _load_retry_config() -> dict[str, Any]:
     """Load retry and backoff configuration from concurrency.yaml."""
     try:
         config_loader = get_config_loader()
-        retry_cfg = config_loader.get_concurrency_config().get("retry", {})
+        retry_cfg: dict[str, Any] = config_loader.get_concurrency_config().get("retry", {})
 
         if not retry_cfg:
             logger.debug("No retry config found in concurrency.yaml, using defaults")
@@ -152,7 +152,7 @@ class LLMClientBase:
         try:
             config_loader = get_config_loader()
             model_cfg = config_loader.get_model_config()
-            config_dict = model_cfg.get(config_key, {})
+            config_dict: dict[str, Any] = model_cfg.get(config_key, {})
 
             if config_dict:
                 logger.debug(
@@ -255,7 +255,7 @@ class LLMClientBase:
 
         # Try dict-style access
         if isinstance(data, dict) and isinstance(data.get("output_text"), str):
-            output_text = data["output_text"].strip()
+            output_text: str = data["output_text"].strip()
             if output_text:
                 return output_text
 
@@ -415,7 +415,7 @@ class LLMClientBase:
             config_loader = get_config_loader()
             concurrency_cfg = config_loader.get_concurrency_config()
 
-            schema_retries = (
+            schema_retries: dict[str, Any] = (
                 concurrency_cfg.get("retry", {})
                 .get("schema_retries", {})
                 .get(api_type, {})

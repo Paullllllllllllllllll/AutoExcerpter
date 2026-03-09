@@ -8,6 +8,7 @@ import stat
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 from cli.display import _log_token_limit_reached
 from core.transcriber import ItemTranscriber
@@ -121,7 +122,7 @@ def _cleanup_working_directory(working_dir: Path) -> None:
         working_dir: Path to working directory to remove.
     """
 
-    def _on_remove_error(func, path_to_fix, _exc_info):
+    def _on_remove_error(func: Any, path_to_fix: Any, _exc_info: Any) -> None:
         """Handle permission errors during directory removal."""
         try:
             os.chmod(path_to_fix, stat.S_IWRITE)
@@ -200,7 +201,7 @@ def _user_requested_cancel() -> bool:
     """Check if the user requested cancellation by pressing 'q'."""
     try:
         if os.name == "nt":
-            import msvcrt  # type: ignore
+            import msvcrt
 
             cancelled = False
             while msvcrt.kbhit():

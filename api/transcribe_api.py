@@ -177,7 +177,7 @@ class TranscriptionManager(LLMClientBase):
             return 0
 
     @staticmethod
-    def _format_image_name(image_name: str) -> str:
+    def _format_image_name(image_name: str | None) -> str:
         """Format image name for display in failure messages.
 
         Args:
@@ -191,7 +191,7 @@ class TranscriptionManager(LLMClientBase):
         return image_name
 
     @staticmethod
-    def _truncate_analysis(text: str, max_chars: int = 100) -> str:
+    def _truncate_analysis(text: str | None, max_chars: int = 100) -> str:
         """Truncate image analysis text to a reasonable length.
 
         Args:
@@ -285,7 +285,7 @@ class TranscriptionManager(LLMClientBase):
         # Fallback: return original text
         return text
 
-    def _build_model_inputs(self, base64_image: str) -> tuple[list, dict[str, Any]]:
+    def _build_model_inputs(self, base64_image: str) -> tuple[list[Any], dict[str, Any]]:
         """Build messages and invocation kwargs for the chat model."""
         system_msg = SystemMessage(content=self.system_prompt)
 

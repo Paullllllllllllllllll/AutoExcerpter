@@ -20,7 +20,7 @@ from modules.context_resolver import (
 class TestResolveSummaryContext:
     """Tests for resolve_summary_context function."""
 
-    def test_returns_none_when_no_context_files_exist(self, tmp_path):
+    def test_returns_none_when_no_context_files_exist(self, tmp_path) -> None:
         """Should return (None, None) when no context files exist."""
         input_file = tmp_path / "test.pdf"
         input_file.touch()
@@ -32,7 +32,7 @@ class TestResolveSummaryContext:
         assert content is None
         assert path is None
 
-    def test_file_specific_context_takes_priority(self, tmp_path):
+    def test_file_specific_context_takes_priority(self, tmp_path) -> None:
         """File-specific context should take priority over folder and general."""
         # Create input file
         input_file = tmp_path / "document.pdf"
@@ -58,7 +58,7 @@ class TestResolveSummaryContext:
         assert content == "File-specific topics"
         assert path == file_context
 
-    def test_folder_specific_context_fallback(self, tmp_path):
+    def test_folder_specific_context_fallback(self, tmp_path) -> None:
         """Folder-specific context should be used when file-specific doesn't exist."""
         # Create subdirectory structure
         subdir = tmp_path / "project_folder"
@@ -83,7 +83,7 @@ class TestResolveSummaryContext:
         assert content == "Folder-specific topics"
         assert path == folder_context
 
-    def test_general_context_fallback(self, tmp_path):
+    def test_general_context_fallback(self, tmp_path) -> None:
         """General context should be used when no specific context exists."""
         input_file = tmp_path / "document.pdf"
         input_file.touch()
@@ -101,7 +101,7 @@ class TestResolveSummaryContext:
         assert content == "General topics"
         assert path == general_context
 
-    def test_no_input_file_uses_general_context(self, tmp_path):
+    def test_no_input_file_uses_general_context(self, tmp_path) -> None:
         """When no input file is provided, should fall back to general context."""
         context_dir = tmp_path / "context" / "summary"
         context_dir.mkdir(parents=True)
@@ -115,7 +115,7 @@ class TestResolveSummaryContext:
         assert content == "General topics"
         assert path == general_context
 
-    def test_empty_context_file_returns_none(self, tmp_path):
+    def test_empty_context_file_returns_none(self, tmp_path) -> None:
         """Empty context files should be treated as non-existent."""
         input_file = tmp_path / "document.pdf"
         input_file.touch()
@@ -138,7 +138,7 @@ class TestResolveSummaryContext:
         assert content == "General topics"
         assert path == general_context
 
-    def test_whitespace_only_context_file_returns_none(self, tmp_path):
+    def test_whitespace_only_context_file_returns_none(self, tmp_path) -> None:
         """Whitespace-only context files should be treated as non-existent."""
         input_file = tmp_path / "document.pdf"
         input_file.touch()
@@ -158,7 +158,7 @@ class TestResolveSummaryContext:
 class TestReadAndValidateContext:
     """Tests for _read_and_validate_context function."""
 
-    def test_reads_valid_context_file(self, tmp_path):
+    def test_reads_valid_context_file(self, tmp_path) -> None:
         """Should read and return content from valid context file."""
         context_file = tmp_path / "context.txt"
         context_file.write_text("Food History, Wages, Early Modern")
@@ -167,7 +167,7 @@ class TestReadAndValidateContext:
 
         assert content == "Food History, Wages, Early Modern"
 
-    def test_strips_whitespace(self, tmp_path):
+    def test_strips_whitespace(self, tmp_path) -> None:
         """Should strip leading and trailing whitespace."""
         context_file = tmp_path / "context.txt"
         context_file.write_text("  Food History  \n")
@@ -176,7 +176,7 @@ class TestReadAndValidateContext:
 
         assert content == "Food History"
 
-    def test_returns_none_for_empty_file(self, tmp_path):
+    def test_returns_none_for_empty_file(self, tmp_path) -> None:
         """Should return None for empty files."""
         context_file = tmp_path / "context.txt"
         context_file.write_text("")
@@ -185,7 +185,7 @@ class TestReadAndValidateContext:
 
         assert content is None
 
-    def test_returns_none_for_nonexistent_file(self, tmp_path):
+    def test_returns_none_for_nonexistent_file(self, tmp_path) -> None:
         """Should return None for non-existent files."""
         context_file = tmp_path / "nonexistent.txt"
 
@@ -193,7 +193,7 @@ class TestReadAndValidateContext:
 
         assert content is None
 
-    def test_warns_for_large_context_file(self, tmp_path, caplog):
+    def test_warns_for_large_context_file(self, tmp_path, caplog) -> None:
         """Should log warning for context files exceeding threshold."""
         import logging
 
@@ -215,7 +215,7 @@ class TestReadAndValidateContext:
         finally:
             context_logger.propagate = original_propagate
 
-    def test_custom_size_threshold(self, tmp_path):
+    def test_custom_size_threshold(self, tmp_path) -> None:
         """Should respect custom size threshold."""
         context_file = tmp_path / "context.txt"
         context_file.write_text("x" * 100)
@@ -229,7 +229,7 @@ class TestReadAndValidateContext:
 class TestFormatContextForPrompt:
     """Tests for format_context_for_prompt function."""
 
-    def test_single_line_context(self):
+    def test_single_line_context(self) -> None:
         """Should handle single line context."""
         context = "Food History"
 
@@ -237,7 +237,7 @@ class TestFormatContextForPrompt:
 
         assert result == "Food History"
 
-    def test_multiline_context_joined_with_commas(self):
+    def test_multiline_context_joined_with_commas(self) -> None:
         """Should join multiple lines with commas."""
         context = "Food History\nWages\nEarly Modern History"
 
@@ -245,7 +245,7 @@ class TestFormatContextForPrompt:
 
         assert result == "Food History, Wages, Early Modern History"
 
-    def test_strips_whitespace_from_lines(self):
+    def test_strips_whitespace_from_lines(self) -> None:
         """Should strip whitespace from each line."""
         context = "  Food History  \n  Wages  \n  Early Modern  "
 
@@ -253,7 +253,7 @@ class TestFormatContextForPrompt:
 
         assert result == "Food History, Wages, Early Modern"
 
-    def test_skips_empty_lines(self):
+    def test_skips_empty_lines(self) -> None:
         """Should skip empty lines."""
         context = "Food History\n\nWages\n\n\nEarly Modern"
 
@@ -261,13 +261,13 @@ class TestFormatContextForPrompt:
 
         assert result == "Food History, Wages, Early Modern"
 
-    def test_handles_empty_string(self):
+    def test_handles_empty_string(self) -> None:
         """Should handle empty string gracefully."""
         result = format_context_for_prompt("")
 
         assert result == ""
 
-    def test_handles_whitespace_only_string(self):
+    def test_handles_whitespace_only_string(self) -> None:
         """Should handle whitespace-only string."""
         result = format_context_for_prompt("   \n\t  \n  ")
 
@@ -277,11 +277,11 @@ class TestFormatContextForPrompt:
 class TestContextSuffix:
     """Tests for context file naming convention."""
 
-    def test_context_suffix_value(self):
+    def test_context_suffix_value(self) -> None:
         """CONTEXT_SUFFIX should match expected value."""
         assert CONTEXT_SUFFIX == "_summary_context.txt"
 
-    def test_file_specific_naming(self, tmp_path):
+    def test_file_specific_naming(self, tmp_path) -> None:
         """File-specific context should use correct naming pattern."""
         input_file = tmp_path / "my_document.pdf"
         input_file.touch()
@@ -296,13 +296,14 @@ class TestContextSuffix:
         )
 
         assert content == "Test context"
+        assert path is not None
         assert path.name == expected_context_name
 
 
 class TestIntegrationWithPromptUtils:
     """Integration tests with prompt_utils module."""
 
-    def test_context_injection_in_prompt(self):
+    def test_context_injection_in_prompt(self) -> None:
         """Context should be properly injected into prompts."""
         from modules.prompt_utils import render_prompt_with_schema
 
@@ -315,7 +316,7 @@ class TestIntegrationWithPromptUtils:
         assert "Food History, Wages" in result
         assert "{{CONTEXT}}" not in result
 
-    def test_context_line_removed_when_no_context(self):
+    def test_context_line_removed_when_no_context(self) -> None:
         """Context placeholder line should be removed when no context provided."""
         from modules.prompt_utils import render_prompt_with_schema
 
@@ -327,7 +328,7 @@ class TestIntegrationWithPromptUtils:
         assert "{{CONTEXT}}" not in result
         assert "Pay attention to:" not in result
 
-    def test_context_line_removed_when_empty_context(self):
+    def test_context_line_removed_when_empty_context(self) -> None:
         """Context placeholder line should be removed when context is empty string."""
         from modules.prompt_utils import render_prompt_with_schema
 

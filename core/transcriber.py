@@ -307,7 +307,7 @@ class ItemTranscriber:
                 concurrency_limit=max_workers,
             )
 
-        def submit_task(args_tuple):
+        def submit_task(args_tuple: tuple[int, Any]) -> dict[str, Any] | None:
             original_input_order_index, img_path = args_tuple
             nonlocal processed_count
             try:
@@ -354,7 +354,7 @@ class ItemTranscriber:
                         )
                     else:
                         summary_data = self.summary_manager.generate_summary(
-                            transcription_text, page_num_to_use
+                            transcription_text, page_num_to_use  # type: ignore[arg-type]
                         )
                     summary_error = (
                         summary_data.get("error")

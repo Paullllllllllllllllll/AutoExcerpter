@@ -27,16 +27,16 @@ from modules.error_handler import (
 class TestProcessingError:
     """Tests for ProcessingError exception."""
 
-    def test_instantiation(self):
+    def test_instantiation(self) -> None:
         """ProcessingError can be instantiated with a message."""
         err = ProcessingError("something broke")
         assert str(err) == "something broke"
 
-    def test_inherits_from_exception(self):
+    def test_inherits_from_exception(self) -> None:
         """ProcessingError inherits from Exception."""
         assert issubclass(ProcessingError, Exception)
 
-    def test_can_be_raised_and_caught(self):
+    def test_can_be_raised_and_caught(self) -> None:
         """ProcessingError can be raised and caught."""
         with pytest.raises(ProcessingError, match="test"):
             raise ProcessingError("test")
@@ -45,16 +45,16 @@ class TestProcessingError:
 class TestConfigurationError:
     """Tests for ConfigurationError exception."""
 
-    def test_instantiation(self):
+    def test_instantiation(self) -> None:
         """ConfigurationError can be instantiated."""
         err = ConfigurationError("bad config")
         assert str(err) == "bad config"
 
-    def test_inherits_from_processing_error(self):
+    def test_inherits_from_processing_error(self) -> None:
         """ConfigurationError is a subclass of ProcessingError."""
         assert issubclass(ConfigurationError, ProcessingError)
 
-    def test_caught_as_processing_error(self):
+    def test_caught_as_processing_error(self) -> None:
         """ConfigurationError can be caught as ProcessingError."""
         with pytest.raises(ProcessingError):
             raise ConfigurationError("bad config")
@@ -63,16 +63,16 @@ class TestConfigurationError:
 class TestAPIError:
     """Tests for APIError exception."""
 
-    def test_instantiation(self):
+    def test_instantiation(self) -> None:
         """APIError can be instantiated."""
         err = APIError("api failure")
         assert str(err) == "api failure"
 
-    def test_inherits_from_processing_error(self):
+    def test_inherits_from_processing_error(self) -> None:
         """APIError is a subclass of ProcessingError."""
         assert issubclass(APIError, ProcessingError)
 
-    def test_caught_as_processing_error(self):
+    def test_caught_as_processing_error(self) -> None:
         """APIError can be caught as ProcessingError."""
         with pytest.raises(ProcessingError):
             raise APIError("timeout")
@@ -81,12 +81,12 @@ class TestAPIError:
 class TestFileProcessingError:
     """Tests for FileProcessingError exception."""
 
-    def test_instantiation(self):
+    def test_instantiation(self) -> None:
         """FileProcessingError can be instantiated."""
         err = FileProcessingError("file broken")
         assert str(err) == "file broken"
 
-    def test_inherits_from_processing_error(self):
+    def test_inherits_from_processing_error(self) -> None:
         """FileProcessingError is a subclass of ProcessingError."""
         assert issubclass(FileProcessingError, ProcessingError)
 
@@ -98,7 +98,7 @@ class TestHandleCriticalError:
     """Tests for handle_critical_error()."""
 
     @patch("modules.error_handler.print_error")
-    def test_shows_user_message_when_enabled(self, mock_print_error: MagicMock):
+    def test_shows_user_message_when_enabled(self, mock_print_error: MagicMock) -> None:
         """User message is printed when show_user_message is True."""
         err = RuntimeError("boom")
         handle_critical_error(err, context="test_op", show_user_message=True)
@@ -108,7 +108,7 @@ class TestHandleCriticalError:
         assert "test_op" in call_arg
 
     @patch("modules.error_handler.print_error")
-    def test_no_user_message_when_disabled(self, mock_print_error: MagicMock):
+    def test_no_user_message_when_disabled(self, mock_print_error: MagicMock) -> None:
         """No user message is printed when show_user_message is False."""
         err = RuntimeError("boom")
         handle_critical_error(err, context="test_op", show_user_message=False)
@@ -119,7 +119,7 @@ class TestHandleCriticalError:
     @patch("modules.error_handler.sys.exit")
     def test_exits_when_exit_on_error_true(
         self, mock_exit: MagicMock, mock_print_error: MagicMock
-    ):
+    ) -> None:
         """sys.exit(1) is called when exit_on_error is True."""
         err = RuntimeError("fatal")
         handle_critical_error(
@@ -132,7 +132,7 @@ class TestHandleCriticalError:
     @patch("modules.error_handler.sys.exit")
     def test_does_not_exit_when_exit_on_error_false(
         self, mock_exit: MagicMock, mock_print_error: MagicMock
-    ):
+    ) -> None:
         """sys.exit is not called when exit_on_error is False."""
         err = RuntimeError("non-fatal")
         handle_critical_error(
@@ -145,7 +145,7 @@ class TestHandleCriticalError:
     @patch("modules.error_handler.sys.exit")
     def test_default_does_not_exit(
         self, mock_exit: MagicMock, mock_print_error: MagicMock
-    ):
+    ) -> None:
         """Default behavior does not exit."""
         handle_critical_error(ValueError("oops"), context="default_test")
         mock_exit.assert_not_called()
@@ -158,7 +158,7 @@ class TestHandleRecoverableError:
     """Tests for handle_recoverable_error()."""
 
     @patch("modules.error_handler.print_warning")
-    def test_shows_user_message_when_enabled(self, mock_print_warning: MagicMock):
+    def test_shows_user_message_when_enabled(self, mock_print_warning: MagicMock) -> None:
         """Warning is printed when show_user_message is True."""
         err = ValueError("minor issue")
         handle_recoverable_error(err, context="parsing", show_user_message=True)
@@ -168,7 +168,7 @@ class TestHandleRecoverableError:
         assert "parsing" in call_arg
 
     @patch("modules.error_handler.print_warning")
-    def test_no_user_message_when_disabled(self, mock_print_warning: MagicMock):
+    def test_no_user_message_when_disabled(self, mock_print_warning: MagicMock) -> None:
         """No warning is printed when show_user_message is False."""
         err = ValueError("minor issue")
         handle_recoverable_error(err, context="parsing", show_user_message=False)
@@ -176,7 +176,7 @@ class TestHandleRecoverableError:
         mock_print_warning.assert_not_called()
 
     @patch("modules.error_handler.print_warning")
-    def test_default_shows_user_message(self, mock_print_warning: MagicMock):
+    def test_default_shows_user_message(self, mock_print_warning: MagicMock) -> None:
         """Default behavior shows user message."""
         handle_recoverable_error(RuntimeError("err"), context="op")
         mock_print_warning.assert_called_once()
@@ -188,43 +188,43 @@ class TestHandleRecoverableError:
 class TestSafeExecute:
     """Tests for safe_execute()."""
 
-    def test_successful_function_call(self):
+    def test_successful_function_call(self) -> None:
         """Returns the function result on success."""
         result = safe_execute(lambda x, y: x + y, 3, 4, context="addition")
         assert result == 7
 
-    def test_function_that_raises_returns_none(self):
+    def test_function_that_raises_returns_none(self) -> None:
         """Returns None when function raises and no default is given."""
 
-        def failing():
+        def failing() -> None:
             raise ValueError("fail")
 
         result = safe_execute(failing, context="failing_op")
         assert result is None
 
-    def test_function_that_raises_returns_default(self):
+    def test_function_that_raises_returns_default(self) -> None:
         """Returns the default value when function raises."""
 
-        def failing():
+        def failing() -> str:
             raise ValueError("fail")
 
         result = safe_execute(failing, default="fallback", context="failing_op")
         assert result == "fallback"
 
-    def test_default_zero_returned(self):
+    def test_default_zero_returned(self) -> None:
         """Falsy default value (0) is correctly returned on failure."""
 
-        def failing():
+        def failing() -> int:
             raise RuntimeError("boom")
 
         result = safe_execute(failing, default=0, context="test")
         assert result == 0
 
     @patch("modules.error_handler.logger")
-    def test_log_errors_true_logs_warning(self, mock_logger: MagicMock):
+    def test_log_errors_true_logs_warning(self, mock_logger: MagicMock) -> None:
         """Warning is logged when log_errors is True (default)."""
 
-        def failing():
+        def failing() -> None:
             raise RuntimeError("logged error")
 
         safe_execute(failing, context="logged_op", log_errors=True)
@@ -234,10 +234,10 @@ class TestSafeExecute:
         assert "logged_op" in logged_msg
 
     @patch("modules.error_handler.logger")
-    def test_log_errors_false_no_logging(self, mock_logger: MagicMock):
+    def test_log_errors_false_no_logging(self, mock_logger: MagicMock) -> None:
         """No logging occurs when log_errors is False."""
 
-        def failing():
+        def failing() -> None:
             raise RuntimeError("silent error")
 
         safe_execute(failing, context="silent_op", log_errors=False)
@@ -245,10 +245,10 @@ class TestSafeExecute:
         mock_logger.warning.assert_not_called()
         mock_logger.debug.assert_not_called()
 
-    def test_passes_kwargs_through(self):
+    def test_passes_kwargs_through(self) -> None:
         """Keyword arguments are forwarded to the function."""
 
-        def greet(name, greeting="Hello"):
+        def greet(name: str, greeting: str = "Hello") -> str:
             return f"{greeting}, {name}!"
 
         result = safe_execute(greet, "Alice", greeting="Hi", context="greet")
@@ -261,21 +261,21 @@ class TestSafeExecute:
 class TestValidateFileExists:
     """Tests for validate_file_exists()."""
 
-    def test_existing_file_passes(self, tmp_path: Path):
+    def test_existing_file_passes(self, tmp_path: Path) -> None:
         """No exception raised for an existing file."""
         f = tmp_path / "real_file.txt"
         f.write_text("content")
 
         validate_file_exists(f, context="test_file")  # should not raise
 
-    def test_non_existent_path_raises(self, tmp_path: Path):
+    def test_non_existent_path_raises(self, tmp_path: Path) -> None:
         """FileProcessingError raised for a non-existent path."""
         missing = tmp_path / "ghost.txt"
 
         with pytest.raises(FileProcessingError, match="not found"):
             validate_file_exists(missing, context="test_file")
 
-    def test_directory_instead_of_file_raises(self, tmp_path: Path):
+    def test_directory_instead_of_file_raises(self, tmp_path: Path) -> None:
         """FileProcessingError raised when path is a directory, not a file."""
         d = tmp_path / "a_directory"
         d.mkdir()
@@ -283,7 +283,7 @@ class TestValidateFileExists:
         with pytest.raises(FileProcessingError, match="not a file"):
             validate_file_exists(d, context="test_file")
 
-    def test_accepts_string_path(self, tmp_path: Path):
+    def test_accepts_string_path(self, tmp_path: Path) -> None:
         """Accepts a string path and converts it internally."""
         f = tmp_path / "string_test.txt"
         f.write_text("data")
@@ -297,21 +297,21 @@ class TestValidateFileExists:
 class TestValidateDirectoryExists:
     """Tests for validate_directory_exists()."""
 
-    def test_existing_directory_passes(self, tmp_path: Path):
+    def test_existing_directory_passes(self, tmp_path: Path) -> None:
         """No exception raised for an existing directory."""
         d = tmp_path / "real_dir"
         d.mkdir()
 
         validate_directory_exists(d, context="test_dir")  # should not raise
 
-    def test_non_existent_path_raises(self, tmp_path: Path):
+    def test_non_existent_path_raises(self, tmp_path: Path) -> None:
         """FileProcessingError raised for a non-existent path."""
         missing = tmp_path / "nowhere"
 
         with pytest.raises(FileProcessingError, match="not found"):
             validate_directory_exists(missing, context="test_dir")
 
-    def test_file_instead_of_directory_raises(self, tmp_path: Path):
+    def test_file_instead_of_directory_raises(self, tmp_path: Path) -> None:
         """FileProcessingError raised when path is a file, not a directory."""
         f = tmp_path / "a_file.txt"
         f.write_text("content")
@@ -319,7 +319,7 @@ class TestValidateDirectoryExists:
         with pytest.raises(FileProcessingError, match="not a directory"):
             validate_directory_exists(f, context="test_dir")
 
-    def test_accepts_string_path(self, tmp_path: Path):
+    def test_accepts_string_path(self, tmp_path: Path) -> None:
         """Accepts a string path and converts it internally."""
         d = tmp_path / "str_dir"
         d.mkdir()
@@ -333,44 +333,44 @@ class TestValidateDirectoryExists:
 class TestValidateConfigValue:
     """Tests for validate_config_value()."""
 
-    def test_valid_type_passes(self):
+    def test_valid_type_passes(self) -> None:
         """No exception raised when value matches expected type."""
         validate_config_value(42, int, "port")  # should not raise
 
-    def test_valid_string_type(self):
+    def test_valid_string_type(self) -> None:
         """No exception raised for valid string value."""
         validate_config_value("hello", str, "greeting")  # should not raise
 
-    def test_invalid_type_raises(self):
+    def test_invalid_type_raises(self) -> None:
         """ConfigurationError raised when value does not match expected type."""
         with pytest.raises(ConfigurationError, match="expected int"):
             validate_config_value("not_an_int", int, "port")
 
-    def test_none_with_allow_none_true(self):
+    def test_none_with_allow_none_true(self) -> None:
         """No exception raised when value is None and allow_none is True."""
         validate_config_value(None, str, "optional_field", allow_none=True)
 
-    def test_none_with_allow_none_false(self):
+    def test_none_with_allow_none_false(self) -> None:
         """ConfigurationError raised when value is None and allow_none is False."""
         with pytest.raises(ConfigurationError, match="expected str"):
             validate_config_value(None, str, "required_field", allow_none=False)
 
-    def test_none_default_allow_none_is_false(self):
+    def test_none_default_allow_none_is_false(self) -> None:
         """Default allow_none is False, so None raises."""
         with pytest.raises(ConfigurationError):
             validate_config_value(None, int, "test_field")
 
-    def test_error_message_includes_field_name(self):
+    def test_error_message_includes_field_name(self) -> None:
         """The error message includes the configuration field name."""
         with pytest.raises(ConfigurationError, match="my_setting"):
             validate_config_value(3.14, int, "my_setting")
 
-    def test_bool_is_not_accepted_as_int(self):
+    def test_bool_is_not_accepted_as_int(self) -> None:
         """bool is a subclass of int in Python, so it passes isinstance check."""
         # This documents actual Python behavior: isinstance(True, int) is True.
         validate_config_value(True, int, "flag")  # should not raise
 
-    def test_list_type_validation(self):
+    def test_list_type_validation(self) -> None:
         """List type validation works correctly."""
         validate_config_value([1, 2, 3], list, "items")  # should not raise
 

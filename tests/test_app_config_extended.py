@@ -15,6 +15,7 @@ handles via mock_api_keys or the real environment).
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch, MagicMock
 
 import pytest
@@ -40,7 +41,7 @@ from modules.app_config import (
 class TestLoadYamlAppConfig:
     """Tests for _load_yaml_app_config()."""
 
-    def test_file_exists_valid_yaml(self, tmp_path: Path, monkeypatch):
+    def test_file_exists_valid_yaml(self, tmp_path: Path, monkeypatch) -> None:
         """Returns parsed dict when a valid YAML file exists."""
         yaml_content = {"cli_mode": True, "summarize": False}
         config_file = tmp_path / "app.yaml"
@@ -55,7 +56,7 @@ class TestLoadYamlAppConfig:
         assert result["cli_mode"] is True
         assert result["summarize"] is False
 
-    def test_file_missing_returns_empty_dict(self, tmp_path: Path, monkeypatch):
+    def test_file_missing_returns_empty_dict(self, tmp_path: Path, monkeypatch) -> None:
         """Returns empty dict when the config file does not exist."""
         nonexistent = tmp_path / "does_not_exist.yaml"
 
@@ -66,7 +67,7 @@ class TestLoadYamlAppConfig:
         result = _load_yaml_app_config()
         assert result == {}
 
-    def test_invalid_yaml_returns_empty_dict(self, tmp_path: Path, monkeypatch):
+    def test_invalid_yaml_returns_empty_dict(self, tmp_path: Path, monkeypatch) -> None:
         """Returns empty dict when the YAML is malformed."""
         bad_yaml = tmp_path / "bad.yaml"
         bad_yaml.write_text(":::not: valid: yaml: [[[", encoding="utf-8")
@@ -78,7 +79,7 @@ class TestLoadYamlAppConfig:
         result = _load_yaml_app_config()
         assert result == {}
 
-    def test_non_dict_yaml_returns_empty_dict(self, tmp_path: Path, monkeypatch):
+    def test_non_dict_yaml_returns_empty_dict(self, tmp_path: Path, monkeypatch) -> None:
         """Returns empty dict when the YAML root is a list instead of a dict."""
         list_yaml = tmp_path / "list.yaml"
         list_yaml.write_text("- item1\n- item2\n", encoding="utf-8")
@@ -97,27 +98,27 @@ class TestLoadYamlAppConfig:
 class TestGetStr:
     """Tests for _get_str()."""
 
-    def test_normal_value(self):
+    def test_normal_value(self) -> None:
         """Returns the value as a string when key is present."""
         data = {"key": "hello"}
         assert _get_str(data, "key", "default") == "hello"
 
-    def test_none_value_returns_default(self):
+    def test_none_value_returns_default(self) -> None:
         """Returns default when value is None."""
         data = {"key": None}
         assert _get_str(data, "key", "fallback") == "fallback"
 
-    def test_missing_key_returns_default(self):
+    def test_missing_key_returns_default(self) -> None:
         """Returns default when key is absent."""
-        data = {}
+        data: dict[str, Any] = {}
         assert _get_str(data, "missing", "fallback") == "fallback"
 
-    def test_integer_value_converted_to_string(self):
+    def test_integer_value_converted_to_string(self) -> None:
         """Non-string values are converted via str()."""
         data = {"key": 42}
         assert _get_str(data, "key", "default") == "42"
 
-    def test_empty_string_value(self):
+    def test_empty_string_value(self) -> None:
         """Empty string is returned as is (not replaced by default)."""
         data = {"key": ""}
         assert _get_str(data, "key", "default") == ""
@@ -129,32 +130,32 @@ class TestGetStr:
 class TestGetInt:
     """Tests for _get_int()."""
 
-    def test_normal_int(self):
+    def test_normal_int(self) -> None:
         """Returns the integer when key holds a valid int."""
         data = {"key": 10}
         assert _get_int(data, "key", 99) == 10
 
-    def test_string_int(self):
+    def test_string_int(self) -> None:
         """Returns parsed int when key holds a numeric string."""
         data = {"key": "42"}
         assert _get_int(data, "key", 0) == 42
 
-    def test_invalid_value_returns_default(self):
+    def test_invalid_value_returns_default(self) -> None:
         """Returns default when value cannot be converted to int."""
         data = {"key": "not_a_number"}
         assert _get_int(data, "key", 77) == 77
 
-    def test_none_value_returns_default(self):
+    def test_none_value_returns_default(self) -> None:
         """Returns default when value is None (TypeError)."""
         data = {"key": None}
         assert _get_int(data, "key", 5) == 5
 
-    def test_missing_key_returns_default(self):
+    def test_missing_key_returns_default(self) -> None:
         """Returns default when key is absent."""
-        data = {}
+        data: dict[str, Any] = {}
         assert _get_int(data, "missing", 123) == 123
 
-    def test_float_truncated_to_int(self):
+    def test_float_truncated_to_int(self) -> None:
         """Float values are truncated to int."""
         data = {"key": 3.9}
         assert _get_int(data, "key", 0) == 3
@@ -166,47 +167,47 @@ class TestGetInt:
 class TestGetBool:
     """Tests for _get_bool()."""
 
-    def test_true_value(self):
+    def test_true_value(self) -> None:
         """Returns True for True value."""
         data = {"key": True}
         assert _get_bool(data, "key", False) is True
 
-    def test_false_value(self):
+    def test_false_value(self) -> None:
         """Returns False for False value."""
         data = {"key": False}
         assert _get_bool(data, "key", True) is False
 
-    def test_truthy_string(self):
+    def test_truthy_string(self) -> None:
         """Non-empty strings are truthy."""
         data = {"key": "yes"}
         assert _get_bool(data, "key", False) is True
 
-    def test_falsy_empty_string(self):
+    def test_falsy_empty_string(self) -> None:
         """Empty string is falsy."""
         data = {"key": ""}
         assert _get_bool(data, "key", True) is False
 
-    def test_truthy_int(self):
+    def test_truthy_int(self) -> None:
         """Non-zero int is truthy."""
         data = {"key": 1}
         assert _get_bool(data, "key", False) is True
 
-    def test_falsy_zero(self):
+    def test_falsy_zero(self) -> None:
         """Zero is falsy."""
         data = {"key": 0}
         assert _get_bool(data, "key", True) is False
 
-    def test_none_value_is_falsy(self):
+    def test_none_value_is_falsy(self) -> None:
         """None is falsy."""
         data = {"key": None}
         assert _get_bool(data, "key", True) is False
 
-    def test_missing_key_returns_default_true(self):
+    def test_missing_key_returns_default_true(self) -> None:
         """Missing key returns the default value (True)."""
-        data = {}
+        data: dict[str, Any] = {}
         assert _get_bool(data, "missing", True) is True
 
-    def test_missing_key_returns_default_false(self):
+    def test_missing_key_returns_default_false(self) -> None:
         """Missing key returns the default value (False)."""
-        data = {}
+        data: dict[str, Any] = {}
         assert _get_bool(data, "missing", False) is False

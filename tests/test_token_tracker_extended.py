@@ -31,7 +31,7 @@ from modules.token_tracker import DailyTokenTracker
 # Fixtures
 # ---------------------------------------------------------------------------
 @pytest.fixture(autouse=True)
-def _reset_singleton(monkeypatch):
+def _reset_singleton(monkeypatch) -> None:
     """Reset the module-level singleton before every test."""
     monkeypatch.setattr(token_tracker, "_tracker_instance", None)
 
@@ -61,13 +61,13 @@ def _make_tracker(
 class TestLoadState:
     """Tests for DailyTokenTracker._load_state()."""
 
-    def test_no_state_file_initializes_fresh(self, state_file: Path):
+    def test_no_state_file_initializes_fresh(self, state_file: Path) -> None:
         """When no state file exists, tracker starts with zero usage."""
         tracker = _make_tracker(state_file)
         assert tracker._tokens_used_today == 0
         assert tracker._current_date == datetime.now().strftime("%Y-%m-%d")
 
-    def test_same_day_restores_tokens(self, state_file: Path):
+    def test_same_day_restores_tokens(self, state_file: Path) -> None:
         """State file from the same day restores the token count."""
         today = datetime.now().strftime("%Y-%m-%d")
         state = {
@@ -81,7 +81,7 @@ class TestLoadState:
         assert tracker._tokens_used_today == 42_000
         assert tracker._current_date == today
 
-    def test_different_day_resets_counter(self, state_file: Path):
+    def test_different_day_resets_counter(self, state_file: Path) -> None:
         """State file from a previous day resets the token count to zero."""
         yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
         state = {
@@ -95,14 +95,14 @@ class TestLoadState:
         assert tracker._tokens_used_today == 0
         assert tracker._current_date == datetime.now().strftime("%Y-%m-%d")
 
-    def test_corrupted_json_initializes_fresh(self, state_file: Path):
+    def test_corrupted_json_initializes_fresh(self, state_file: Path) -> None:
         """Corrupted (non-JSON) state file falls back to fresh state."""
         state_file.write_text("{{{NOT VALID JSON", encoding="utf-8")
 
         tracker = _make_tracker(state_file)
         assert tracker._tokens_used_today == 0
 
-    def test_missing_fields_treated_as_defaults(self, state_file: Path):
+    def test_missing_fields_treated_as_defaults(self, state_file: Path) -> None:
         """State file missing 'date' or 'tokens_used' uses defaults."""
         # Write JSON with no expected keys
         state_file.write_text(json.dumps({"extra_key": "value"}), encoding="utf-8")
@@ -118,7 +118,7 @@ class TestLoadState:
 class TestSaveState:
     """Tests for DailyTokenTracker._save_state()."""
 
-    def test_normal_save_writes_valid_json(self, state_file: Path):
+    def test_normal_save_writes_valid_json(self, state_file: Path) -> None:
         """_save_state writes a valid JSON file with expected keys."""
         tracker = _make_tracker(state_file)
         tracker._tokens_used_today = 500
@@ -129,7 +129,7 @@ class TestSaveState:
         assert "date" in data
         assert "last_updated" in data
 
-    def test_save_state_handles_write_error(self, tmp_path: Path):
+    def test_save_state_handles_write_error(self, tmp_path: Path) -> None:
         """_save_state logs an error but does not crash on write failure."""
         # Use a directory path as the state file so that writing fails
         bad_path = tmp_path / "nonexistent_dir" / "subdir" / "state.json"
@@ -148,7 +148,7 @@ class TestSaveState:
 class TestCheckAndResetIfNewDay:
     """Tests for DailyTokenTracker._check_and_reset_if_new_day()."""
 
-    def test_same_day_no_reset(self, state_file: Path, monkeypatch):
+    def test_same_day_no_reset(self, state_file: Path, monkeypatch) -> None:
         """No reset occurs when the date has not changed."""
         tracker = _make_tracker(state_file)
         tracker._current_date = "2026-02-26"
@@ -159,7 +159,7 @@ class TestCheckAndResetIfNewDay:
 
         assert tracker._tokens_used_today == 200
 
-    def test_different_day_resets(self, state_file: Path, monkeypatch):
+    def test_different_day_resets(self, state_file: Path, monkeypatch) -> None:
         """Counter resets to zero when a new day is detected."""
         tracker = _make_tracker(state_file)
         tracker._current_date = "2026-02-25"
@@ -178,18 +178,18 @@ class TestCheckAndResetIfNewDay:
 class TestGetTokensRemaining:
     """Tests for DailyTokenTracker.get_tokens_remaining()."""
 
-    def test_disabled_returns_full_limit(self, state_file: Path):
+    def test_disabled_returns_full_limit(self, state_file: Path) -> None:
         """When disabled, remaining equals the daily limit (unlimited)."""
         tracker = _make_tracker(state_file, daily_limit=5_000, enabled=False)
         assert tracker.get_tokens_remaining() == 5_000
 
-    def test_enabled_with_usage(self, state_file: Path):
+    def test_enabled_with_usage(self, state_file: Path) -> None:
         """When enabled, remaining is limit minus usage."""
         tracker = _make_tracker(state_file, daily_limit=1_000, enabled=True)
         tracker.add_tokens(300)
         assert tracker.get_tokens_remaining() == 700
 
-    def test_over_limit_returns_zero(self, state_file: Path):
+    def test_over_limit_returns_zero(self, state_file: Path) -> None:
         """When usage exceeds limit, remaining is clamped to zero."""
         tracker = _make_tracker(state_file, daily_limit=100, enabled=True)
         # Bypass the enabled guard by directly mutating internal state
@@ -203,24 +203,24 @@ class TestGetTokensRemaining:
 class TestIsLimitReached:
     """Tests for DailyTokenTracker.is_limit_reached()."""
 
-    def test_disabled_never_reached(self, state_file: Path):
+    def test_disabled_never_reached(self, state_file: Path) -> None:
         """When disabled, limit is never reached."""
         tracker = _make_tracker(state_file, daily_limit=0, enabled=False)
         assert tracker.is_limit_reached() is False
 
-    def test_under_limit(self, state_file: Path):
+    def test_under_limit(self, state_file: Path) -> None:
         """Under the limit returns False."""
         tracker = _make_tracker(state_file, daily_limit=100, enabled=True)
         tracker.add_tokens(50)
         assert tracker.is_limit_reached() is False
 
-    def test_at_limit(self, state_file: Path):
+    def test_at_limit(self, state_file: Path) -> None:
         """Exactly at the limit returns True."""
         tracker = _make_tracker(state_file, daily_limit=100, enabled=True)
         tracker.add_tokens(100)
         assert tracker.is_limit_reached() is True
 
-    def test_over_limit(self, state_file: Path):
+    def test_over_limit(self, state_file: Path) -> None:
         """Over the limit returns True."""
         tracker = _make_tracker(state_file, daily_limit=100, enabled=True)
         tracker._tokens_used_today = 200
@@ -233,25 +233,25 @@ class TestIsLimitReached:
 class TestCanUseTokens:
     """Tests for DailyTokenTracker.can_use_tokens()."""
 
-    def test_disabled_always_true(self, state_file: Path):
+    def test_disabled_always_true(self, state_file: Path) -> None:
         """When disabled, can_use_tokens always returns True."""
         tracker = _make_tracker(state_file, daily_limit=0, enabled=False)
         assert tracker.can_use_tokens() is True
         assert tracker.can_use_tokens(estimated_tokens=999_999) is True
 
-    def test_enough_tokens_available(self, state_file: Path):
+    def test_enough_tokens_available(self, state_file: Path) -> None:
         """Returns True when enough tokens remain."""
         tracker = _make_tracker(state_file, daily_limit=1_000, enabled=True)
         tracker.add_tokens(500)
         assert tracker.can_use_tokens(estimated_tokens=500) is True
 
-    def test_not_enough_tokens(self, state_file: Path):
+    def test_not_enough_tokens(self, state_file: Path) -> None:
         """Returns False when estimated tokens exceed remaining."""
         tracker = _make_tracker(state_file, daily_limit=1_000, enabled=True)
         tracker.add_tokens(900)
         assert tracker.can_use_tokens(estimated_tokens=200) is False
 
-    def test_zero_estimated_checks_any_remaining(self, state_file: Path):
+    def test_zero_estimated_checks_any_remaining(self, state_file: Path) -> None:
         """With estimated_tokens=0, checks that any tokens remain."""
         tracker = _make_tracker(state_file, daily_limit=10, enabled=True)
         assert tracker.can_use_tokens() is True
@@ -266,14 +266,14 @@ class TestCanUseTokens:
 class TestGetSecondsUntilReset:
     """Tests for DailyTokenTracker.get_seconds_until_reset()."""
 
-    def test_returns_positive_integer(self, state_file: Path):
+    def test_returns_positive_integer(self, state_file: Path) -> None:
         """Value is a positive integer no greater than 86400."""
         tracker = _make_tracker(state_file)
         secs = tracker.get_seconds_until_reset()
         assert isinstance(secs, int)
         assert 0 < secs <= 86_400
 
-    def test_consistent_with_mocked_time(self, state_file: Path):
+    def test_consistent_with_mocked_time(self, state_file: Path) -> None:
         """With a fixed time, seconds until reset is predictable."""
         fake_now = datetime(2026, 2, 26, 22, 0, 0)
         with patch("modules.token_tracker.datetime") as mock_dt:
@@ -295,7 +295,7 @@ class TestGetSecondsUntilReset:
 class TestGetResetTime:
     """Tests for DailyTokenTracker.get_reset_time()."""
 
-    def test_returns_tomorrow_midnight(self, state_file: Path):
+    def test_returns_tomorrow_midnight(self, state_file: Path) -> None:
         """Reset time is midnight of the next day."""
         fake_now = datetime(2026, 2, 26, 15, 30, 0)
         with patch("modules.token_tracker.datetime") as mock_dt:
@@ -314,23 +314,23 @@ class TestGetResetTime:
 class TestGetUsagePercentage:
     """Tests for DailyTokenTracker.get_usage_percentage()."""
 
-    def test_disabled_returns_zero(self, state_file: Path):
+    def test_disabled_returns_zero(self, state_file: Path) -> None:
         """When disabled, usage percentage is 0.0."""
         tracker = _make_tracker(state_file, enabled=False)
         assert tracker.get_usage_percentage() == 0.0
 
-    def test_zero_limit_returns_zero(self, state_file: Path):
+    def test_zero_limit_returns_zero(self, state_file: Path) -> None:
         """When daily_limit is zero, usage percentage is 0.0."""
         tracker = _make_tracker(state_file, daily_limit=0, enabled=True)
         assert tracker.get_usage_percentage() == 0.0
 
-    def test_normal_usage(self, state_file: Path):
+    def test_normal_usage(self, state_file: Path) -> None:
         """50% usage returns 50.0."""
         tracker = _make_tracker(state_file, daily_limit=1_000, enabled=True)
         tracker.add_tokens(500)
         assert tracker.get_usage_percentage() == pytest.approx(50.0)
 
-    def test_over_100_percent(self, state_file: Path):
+    def test_over_100_percent(self, state_file: Path) -> None:
         """Usage exceeding the limit yields > 100%."""
         tracker = _make_tracker(state_file, daily_limit=100, enabled=True)
         tracker._tokens_used_today = 150
@@ -343,7 +343,7 @@ class TestGetUsagePercentage:
 class TestGetStats:
     """Tests for DailyTokenTracker.get_stats()."""
 
-    def test_returns_comprehensive_dict(self, state_file: Path):
+    def test_returns_comprehensive_dict(self, state_file: Path) -> None:
         """get_stats returns a dict with all expected keys."""
         tracker = _make_tracker(state_file, daily_limit=10_000, enabled=True)
         tracker.add_tokens(2_500)
@@ -360,7 +360,7 @@ class TestGetStats:
         assert "reset_time" in stats
         assert "current_date" in stats
 
-    def test_disabled_stats(self, state_file: Path):
+    def test_disabled_stats(self, state_file: Path) -> None:
         """get_stats reflects disabled state correctly."""
         tracker = _make_tracker(state_file, daily_limit=10_000, enabled=False)
 
@@ -377,7 +377,7 @@ class TestGetStats:
 class TestGetTokenTrackerSingleton:
     """Tests for the module-level get_token_tracker() singleton."""
 
-    def test_first_call_creates_instance(self, monkeypatch, tmp_path: Path):
+    def test_first_call_creates_instance(self, monkeypatch, tmp_path: Path) -> None:
         """First call creates a new DailyTokenTracker instance."""
         monkeypatch.setattr(token_tracker, "_TOKEN_TRACKER_FILE", tmp_path / "s.json")
         monkeypatch.setattr(
@@ -392,7 +392,7 @@ class TestGetTokenTrackerSingleton:
         assert t.daily_limit == 500
         assert t.enabled is True
 
-    def test_second_call_returns_same_instance(self, monkeypatch, tmp_path: Path):
+    def test_second_call_returns_same_instance(self, monkeypatch, tmp_path: Path) -> None:
         """Second call returns the same singleton instance."""
         monkeypatch.setattr(token_tracker, "_TOKEN_TRACKER_FILE", tmp_path / "s.json")
         monkeypatch.setattr(

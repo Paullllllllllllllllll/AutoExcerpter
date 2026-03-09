@@ -155,7 +155,7 @@ class SummaryManager(LLMClientBase):
 
         return result
 
-    def _build_model_inputs(self, transcription: str) -> tuple[list, dict[str, Any]]:
+    def _build_model_inputs(self, transcription: str) -> tuple[list[Any], dict[str, Any]]:
         """Build messages and invocation kwargs for summary generation."""
         # Prepare system prompt with schema
         schema_obj = (

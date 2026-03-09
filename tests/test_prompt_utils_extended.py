@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 from unittest.mock import patch, MagicMock
 
 import pytest
@@ -22,7 +23,7 @@ from modules.prompt_utils import (
 class TestRenderPromptStrategy3MarkerReplacement:
     """Tests for render_prompt_with_schema() using marker-based replacement."""
 
-    def test_marker_present_replaces_existing_schema(self):
+    def test_marker_present_replaces_existing_schema(self) -> None:
         """When marker and existing JSON block are present, replaces the block."""
         schema = {"type": "object", "properties": {"name": {"type": "string"}}}
         prompt = "Transcribe this document.\n" "The JSON schema:\n" '{"old": "schema"}'
@@ -33,7 +34,7 @@ class TestRenderPromptStrategy3MarkerReplacement:
         assert '"type": "object"' in result
         assert SCHEMA_MARKER in result
 
-    def test_marker_present_no_existing_json(self):
+    def test_marker_present_no_existing_json(self) -> None:
         """When marker is present but no JSON follows, schema is appended."""
         schema = {"key": "value"}
         prompt = "Process this.\nThe JSON schema:\nPlease follow it."
@@ -42,7 +43,7 @@ class TestRenderPromptStrategy3MarkerReplacement:
 
         assert '"key": "value"' in result
 
-    def test_marker_not_confused_with_token(self):
+    def test_marker_not_confused_with_token(self) -> None:
         """Marker strategy is used only when no token is present."""
         schema = {"a": 1}
         prompt = f"Do something.\n{SCHEMA_MARKER}\nold json here {{}}"
@@ -58,7 +59,7 @@ class TestRenderPromptStrategy3MarkerReplacement:
 class TestRenderPromptStrategy4Append:
     """Tests for render_prompt_with_schema() append strategy."""
 
-    def test_no_token_or_marker_appends(self):
+    def test_no_token_or_marker_appends(self) -> None:
         """Schema is appended when neither token nor marker exists."""
         schema = {"type": "string"}
         prompt = "Transcribe the following image."
@@ -69,7 +70,7 @@ class TestRenderPromptStrategy4Append:
         assert SCHEMA_MARKER in result
         assert '"type": "string"' in result
 
-    def test_appended_schema_is_valid_json(self):
+    def test_appended_schema_is_valid_json(self) -> None:
         """The appended schema portion is valid JSON."""
         schema = {"items": [1, 2, 3]}
         prompt = "Simple prompt."
@@ -89,32 +90,32 @@ class TestRenderPromptStrategy4Append:
 class TestRenderPromptValidation:
     """Tests for render_prompt_with_schema() input validation."""
 
-    def test_empty_prompt_raises_value_error(self):
+    def test_empty_prompt_raises_value_error(self) -> None:
         """Empty prompt text raises ValueError."""
         with pytest.raises(ValueError, match="cannot be empty"):
             render_prompt_with_schema("", {"type": "object"})
 
-    def test_none_prompt_raises_value_error(self):
+    def test_none_prompt_raises_value_error(self) -> None:
         """None prompt text (falsy) raises ValueError."""
         with pytest.raises(ValueError, match="cannot be empty"):
             render_prompt_with_schema(None, {"type": "object"})  # type: ignore
 
-    def test_invalid_schema_type_raises_value_error(self):
+    def test_invalid_schema_type_raises_value_error(self) -> None:
         """Non-dict schema raises ValueError."""
         with pytest.raises(ValueError, match="must be a dictionary"):
             render_prompt_with_schema("prompt text", "not a dict")  # type: ignore
 
-    def test_list_schema_raises_value_error(self):
+    def test_list_schema_raises_value_error(self) -> None:
         """List schema raises ValueError."""
         with pytest.raises(ValueError, match="must be a dictionary"):
             render_prompt_with_schema("prompt text", [1, 2, 3])  # type: ignore
 
-    def test_json_serialization_failure_falls_back_to_str(self):
+    def test_json_serialization_failure_falls_back_to_str(self) -> None:
         """When JSON serialization fails, falls back to str() representation."""
 
         # Create a dict with a non-serializable value
         class NonSerializable:
-            def __repr__(self):
+            def __repr__(self) -> str:
                 return "NON_SERIALIZABLE_REPR"
 
         schema = {"key": NonSerializable()}
@@ -122,7 +123,7 @@ class TestRenderPromptValidation:
         # Patch json.dumps to raise for this specific call
         original_dumps = json.dumps
 
-        def patched_dumps(obj, **kwargs):
+        def patched_dumps(obj: Any, **kwargs: Any) -> str:
             if any(isinstance(v, NonSerializable) for v in obj.values()):
                 raise TypeError("Object of type NonSerializable is not serializable")
             return original_dumps(obj, **kwargs)
@@ -142,7 +143,7 @@ class TestRenderPromptValidation:
 class TestRenderPromptContextInjection:
     """Tests for context parameter in render_prompt_with_schema()."""
 
-    def test_context_replaces_placeholder(self):
+    def test_context_replaces_placeholder(self) -> None:
         """Context string replaces {{CONTEXT}} placeholder."""
         schema = {"type": "object"}
         prompt = "Focus on: {{CONTEXT}}\n{{SCHEMA}}"
@@ -152,7 +153,7 @@ class TestRenderPromptContextInjection:
         assert "medieval recipes" in result
         assert "{{CONTEXT}}" not in result
 
-    def test_none_context_removes_placeholder_line(self):
+    def test_none_context_removes_placeholder_line(self) -> None:
         """None context removes the line containing {{CONTEXT}}."""
         schema = {"type": "object"}
         prompt = "Line one.\nFocus on: {{CONTEXT}}\nLine three.\n{{SCHEMA}}"
@@ -164,7 +165,7 @@ class TestRenderPromptContextInjection:
         assert "Line one." in result
         assert "Line three." in result
 
-    def test_empty_context_removes_placeholder_line(self):
+    def test_empty_context_removes_placeholder_line(self) -> None:
         """Empty string context removes the line containing {{CONTEXT}}."""
         schema = {"type": "object"}
         prompt = "Header.\nTopics: {{CONTEXT}}\nBody.\n{{SCHEMA}}"
@@ -174,7 +175,7 @@ class TestRenderPromptContextInjection:
         assert "{{CONTEXT}}" not in result
         assert "Topics:" not in result
 
-    def test_no_context_placeholder_prompt_unchanged(self):
+    def test_no_context_placeholder_prompt_unchanged(self) -> None:
         """Prompt without {{CONTEXT}} is unchanged regardless of context value."""
         schema = {"type": "object"}
         prompt = "Simple prompt.\n{{SCHEMA}}"
@@ -193,7 +194,7 @@ class TestRenderPromptContextInjection:
 class TestReplaceSchemaAtMarker:
     """Tests for _replace_schema_at_marker()."""
 
-    def test_marker_with_existing_schema_replaces(self):
+    def test_marker_with_existing_schema_replaces(self) -> None:
         """Existing schema block after marker is replaced."""
         prompt = (
             "Instructions here.\n"
@@ -209,7 +210,7 @@ class TestReplaceSchemaAtMarker:
         assert '"new": "schema"' in result
         assert "End." in result
 
-    def test_marker_no_opening_brace_appends(self):
+    def test_marker_no_opening_brace_appends(self) -> None:
         """Schema is appended when no opening brace follows marker."""
         prompt = "Instructions.\nThe JSON schema:\nNo braces here."
 
@@ -218,7 +219,7 @@ class TestReplaceSchemaAtMarker:
 
         assert '{"appended": true}' in result
 
-    def test_marker_no_closing_brace_appends(self):
+    def test_marker_no_closing_brace_appends(self) -> None:
         """Schema is appended when opening brace exists but no closing brace after it."""
         # This scenario: rfind("}") returns -1 or <= start_brace
         # We need a case where there's an opening brace but the only closing
@@ -231,7 +232,7 @@ class TestReplaceSchemaAtMarker:
 
         assert '{"complete": true}' in result
 
-    def test_marker_not_found_appends_gracefully(self):
+    def test_marker_not_found_appends_gracefully(self) -> None:
         """If marker is somehow not found, gracefully appends."""
         # This should not normally happen since the caller checks,
         # but test the defensive code path.
@@ -250,14 +251,14 @@ class TestReplaceSchemaAtMarker:
 class TestInjectContext:
     """Tests for _inject_context()."""
 
-    def test_placeholder_with_valid_context(self):
+    def test_placeholder_with_valid_context(self) -> None:
         """{{CONTEXT}} is replaced with the provided context string."""
         prompt = "Focus on the following: {{CONTEXT}}\nContinue."
         result = _inject_context(prompt, "culinary history")
 
         assert result == "Focus on the following: culinary history\nContinue."
 
-    def test_placeholder_with_none_context_removes_line(self):
+    def test_placeholder_with_none_context_removes_line(self) -> None:
         """Line containing {{CONTEXT}} is removed when context is None."""
         prompt = "Line 1.\nTopics: {{CONTEXT}}\nLine 3."
         result = _inject_context(prompt, None)
@@ -267,7 +268,7 @@ class TestInjectContext:
         assert "Line 1." in result
         assert "Line 3." in result
 
-    def test_placeholder_with_empty_context_removes_line(self):
+    def test_placeholder_with_empty_context_removes_line(self) -> None:
         """Line containing {{CONTEXT}} is removed when context is empty."""
         prompt = "Header.\nContext: {{CONTEXT}}\nBody."
         result = _inject_context(prompt, "")
@@ -275,7 +276,7 @@ class TestInjectContext:
         assert "{{CONTEXT}}" not in result
         assert "Context:" not in result
 
-    def test_placeholder_with_whitespace_only_context_removes_line(self):
+    def test_placeholder_with_whitespace_only_context_removes_line(self) -> None:
         """Whitespace-only context is treated as empty and line is removed."""
         prompt = "Start.\nFocus: {{CONTEXT}}\nEnd."
         result = _inject_context(prompt, "   ")
@@ -283,21 +284,21 @@ class TestInjectContext:
         assert "{{CONTEXT}}" not in result
         assert "Focus:" not in result
 
-    def test_no_placeholder_prompt_unchanged(self):
+    def test_no_placeholder_prompt_unchanged(self) -> None:
         """Prompt without {{CONTEXT}} is returned unchanged."""
         prompt = "A simple prompt with no placeholders."
         result = _inject_context(prompt, "some context")
 
         assert result == prompt
 
-    def test_no_placeholder_none_context_unchanged(self):
+    def test_no_placeholder_none_context_unchanged(self) -> None:
         """Prompt without {{CONTEXT}} is unchanged even with None context."""
         prompt = "Unchanged prompt."
         result = _inject_context(prompt, None)
 
         assert result == "Unchanged prompt."
 
-    def test_context_is_stripped(self):
+    def test_context_is_stripped(self) -> None:
         """Leading/trailing whitespace in context is stripped."""
         prompt = "Focus: {{CONTEXT}}\nDone."
         result = _inject_context(prompt, "  spice trade  ")
@@ -305,7 +306,7 @@ class TestInjectContext:
         assert "spice trade" in result
         assert "  spice trade  " not in result
 
-    def test_multiple_context_placeholders(self):
+    def test_multiple_context_placeholders(self) -> None:
         """All {{CONTEXT}} placeholders on different lines are handled."""
         prompt = "A: {{CONTEXT}}\nB: {{CONTEXT}}\nC."
         result = _inject_context(prompt, "recipes")

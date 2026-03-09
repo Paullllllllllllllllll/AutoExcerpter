@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Any
 import base64
 import io
 from pathlib import Path
@@ -24,7 +25,7 @@ class TestImageProcessorInit:
 
     def test_init_with_valid_image(
         self, sample_image_file: Path, mock_config_loader: MagicMock
-    ):
+    ) -> None:
         """ImageProcessor initializes with valid image path."""
         with patch(
             "modules.image_utils.get_config_loader", return_value=mock_config_loader
@@ -35,7 +36,7 @@ class TestImageProcessorInit:
 
     def test_init_with_openai_provider(
         self, sample_image_file: Path, mock_config_loader: MagicMock
-    ):
+    ) -> None:
         """OpenAI provider is detected correctly."""
         with patch(
             "modules.image_utils.get_config_loader", return_value=mock_config_loader
@@ -47,7 +48,7 @@ class TestImageProcessorInit:
 
     def test_init_with_google_provider(
         self, sample_image_file: Path, mock_config_loader: MagicMock
-    ):
+    ) -> None:
         """Google provider is detected correctly."""
         with patch(
             "modules.image_utils.get_config_loader", return_value=mock_config_loader
@@ -59,7 +60,7 @@ class TestImageProcessorInit:
 
     def test_init_with_anthropic_provider(
         self, sample_image_file: Path, mock_config_loader: MagicMock
-    ):
+    ) -> None:
         """Anthropic provider is detected correctly."""
         with patch(
             "modules.image_utils.get_config_loader", return_value=mock_config_loader
@@ -71,7 +72,7 @@ class TestImageProcessorInit:
 
     def test_init_with_openrouter_google_model(
         self, sample_image_file: Path, mock_config_loader: MagicMock
-    ):
+    ) -> None:
         """OpenRouter with Google model uses Google config."""
         with patch(
             "modules.image_utils.get_config_loader", return_value=mock_config_loader
@@ -85,7 +86,7 @@ class TestImageProcessorInit:
 
     def test_init_unsupported_format_raises(
         self, temp_dir: Path, mock_config_loader: MagicMock
-    ):
+    ) -> None:
         """Unsupported image format raises ValueError."""
         unsupported_file = temp_dir / "test.xyz"
         unsupported_file.write_text("fake image")
@@ -102,7 +103,7 @@ class TestConvertToGrayscale:
 
     def test_rgb_to_grayscale(
         self, sample_image_file: Path, mock_config_loader: MagicMock
-    ):
+    ) -> None:
         """RGB image is converted to grayscale when enabled."""
         with patch(
             "modules.image_utils.get_config_loader", return_value=mock_config_loader
@@ -113,7 +114,7 @@ class TestConvertToGrayscale:
             result = processor.convert_to_grayscale(rgb_image)
             assert result.mode == "L"
 
-    def test_grayscale_disabled(self, sample_image_file: Path):
+    def test_grayscale_disabled(self, sample_image_file: Path) -> None:
         """Grayscale conversion skipped when disabled."""
         mock_loader = MagicMock()
         mock_loader.get_image_processing_config.return_value = {
@@ -131,7 +132,7 @@ class TestConvertToGrayscale:
 class TestHandleTransparency:
     """Tests for transparency handling."""
 
-    def test_rgba_to_rgb(self, sample_image_file: Path, mock_config_loader: MagicMock):
+    def test_rgba_to_rgb(self, sample_image_file: Path, mock_config_loader: MagicMock) -> None:
         """RGBA image is converted to RGB with white background."""
         with patch(
             "modules.image_utils.get_config_loader", return_value=mock_config_loader
@@ -144,7 +145,7 @@ class TestHandleTransparency:
 
     def test_rgb_unchanged(
         self, sample_image_file: Path, mock_config_loader: MagicMock
-    ):
+    ) -> None:
         """RGB image without transparency is unchanged."""
         with patch(
             "modules.image_utils.get_config_loader", return_value=mock_config_loader
@@ -155,7 +156,7 @@ class TestHandleTransparency:
             result = processor.handle_transparency(rgb_image)
             assert result.mode == "RGB"
 
-    def test_transparency_handling_disabled(self, sample_image_file: Path):
+    def test_transparency_handling_disabled(self, sample_image_file: Path) -> None:
         """Transparency handling skipped when disabled."""
         mock_loader = MagicMock()
         mock_loader.get_image_processing_config.return_value = {
@@ -174,7 +175,7 @@ class TestResizeForDetail:
     """Tests for detail-based resizing."""
 
     @pytest.fixture
-    def openai_config(self) -> dict:
+    def openai_config(self) -> dict[str, Any]:
         """OpenAI image config for testing."""
         return {
             "low_max_side_px": 512,
@@ -183,7 +184,7 @@ class TestResizeForDetail:
         }
 
     @pytest.fixture
-    def anthropic_config(self) -> dict:
+    def anthropic_config(self) -> dict[str, Any]:
         """Anthropic image config for testing."""
         return {
             "low_max_side_px": 512,
@@ -191,7 +192,7 @@ class TestResizeForDetail:
             "resize_profile": "auto",
         }
 
-    def test_low_detail_caps_size(self, openai_config: dict):
+    def test_low_detail_caps_size(self, openai_config: dict[str, Any]) -> None:
         """Low detail caps longest side to max_side_px."""
         large_image = Image.new("RGB", (2000, 1500))
         result = ImageProcessor.resize_for_detail(
@@ -200,7 +201,7 @@ class TestResizeForDetail:
 
         assert max(result.size) <= 512
 
-    def test_low_detail_small_image_unchanged(self, openai_config: dict):
+    def test_low_detail_small_image_unchanged(self, openai_config: dict[str, Any]) -> None:
         """Small images in low detail mode are unchanged."""
         small_image = Image.new("RGB", (300, 200))
         result = ImageProcessor.resize_for_detail(
@@ -209,7 +210,7 @@ class TestResizeForDetail:
 
         assert result.size == (300, 200)
 
-    def test_high_detail_openai_box_fit(self, openai_config: dict):
+    def test_high_detail_openai_box_fit(self, openai_config: dict[str, Any]) -> None:
         """OpenAI high detail uses box fitting with padding."""
         image = Image.new("RGB", (2000, 1500))
         result = ImageProcessor.resize_for_detail(
@@ -219,7 +220,7 @@ class TestResizeForDetail:
         # Should fit within box and be padded to exact size
         assert result.size == (768, 1536)
 
-    def test_high_detail_anthropic_max_side(self, anthropic_config: dict):
+    def test_high_detail_anthropic_max_side(self, anthropic_config: dict[str, Any]) -> None:
         """Anthropic high detail caps longest side without padding."""
         image = Image.new("RGB", (3000, 2000))
         result = ImageProcessor.resize_for_detail(
@@ -231,7 +232,7 @@ class TestResizeForDetail:
         # Should NOT be padded to a specific size
         assert result.size != (768, 1536)
 
-    def test_resize_profile_none_skips_resize(self):
+    def test_resize_profile_none_skips_resize(self) -> None:
         """resize_profile='none' skips resizing entirely."""
         config = {"resize_profile": "none"}
         image = Image.new("RGB", (5000, 4000))
@@ -239,7 +240,7 @@ class TestResizeForDetail:
 
         assert result.size == (5000, 4000)
 
-    def test_auto_detail_treated_as_high(self, openai_config: dict):
+    def test_auto_detail_treated_as_high(self, openai_config: dict[str, Any]) -> None:
         """Auto detail is treated as high."""
         image = Image.new("RGB", (2000, 1500))
         result = ImageProcessor.resize_for_detail(
@@ -254,7 +255,7 @@ class TestProcessImageToMemory:
 
     def test_returns_pil_image(
         self, sample_image_file: Path, mock_config_loader: MagicMock
-    ):
+    ) -> None:
         """process_image_to_memory returns a PIL Image."""
         with patch(
             "modules.image_utils.get_config_loader", return_value=mock_config_loader
@@ -266,7 +267,7 @@ class TestProcessImageToMemory:
 
     def test_applies_grayscale(
         self, sample_image_file: Path, mock_config_loader: MagicMock
-    ):
+    ) -> None:
         """In-memory processing applies grayscale conversion."""
         with patch(
             "modules.image_utils.get_config_loader", return_value=mock_config_loader
@@ -279,7 +280,7 @@ class TestProcessImageToMemory:
 
     def test_handles_transparency(
         self, sample_png_with_transparency: Path, mock_config_loader: MagicMock
-    ):
+    ) -> None:
         """In-memory processing handles transparency."""
         with patch(
             "modules.image_utils.get_config_loader", return_value=mock_config_loader
@@ -294,7 +295,7 @@ class TestProcessImageToMemory:
 class TestPilImageToBase64:
     """Tests for PIL to base64 conversion."""
 
-    def test_returns_valid_base64(self, sample_rgb_image: Image.Image):
+    def test_returns_valid_base64(self, sample_rgb_image: Image.Image) -> None:
         """Conversion returns valid base64 string."""
         result = ImageProcessor.pil_image_to_base64(sample_rgb_image)
 
@@ -303,7 +304,7 @@ class TestPilImageToBase64:
         decoded = base64.b64decode(result)
         assert len(decoded) > 0
 
-    def test_output_is_jpeg(self, sample_rgb_image: Image.Image):
+    def test_output_is_jpeg(self, sample_rgb_image: Image.Image) -> None:
         """Output is JPEG format."""
         result = ImageProcessor.pil_image_to_base64(sample_rgb_image)
         decoded = base64.b64decode(result)
@@ -311,7 +312,7 @@ class TestPilImageToBase64:
         # JPEG magic bytes
         assert decoded[:2] == b"\xff\xd8"
 
-    def test_quality_parameter_affects_size(self, sample_rgb_image: Image.Image):
+    def test_quality_parameter_affects_size(self, sample_rgb_image: Image.Image) -> None:
         """Different quality settings produce different sizes."""
         low_quality = ImageProcessor.pil_image_to_base64(
             sample_rgb_image, jpeg_quality=10
@@ -327,7 +328,7 @@ class TestPilImageToBase64:
         # Lower quality should generally be smaller or equal
         assert len(low_quality) <= len(high_quality)
 
-    def test_converts_mode_if_needed(self):
+    def test_converts_mode_if_needed(self) -> None:
         """RGBA images are converted to RGB for JPEG."""
         rgba_image = Image.new("RGBA", (100, 100), color=(128, 64, 192, 128))
         result = ImageProcessor.pil_image_to_base64(rgba_image)
@@ -341,7 +342,7 @@ class TestProcessImage:
 
     def test_saves_to_jpg(
         self, sample_image_file: Path, temp_dir: Path, mock_config_loader: MagicMock
-    ):
+    ) -> None:
         """process_image saves output as JPEG."""
         with patch(
             "modules.image_utils.get_config_loader", return_value=mock_config_loader
@@ -356,7 +357,7 @@ class TestProcessImage:
 
     def test_creates_jpg_even_if_png_requested(
         self, sample_image_file: Path, temp_dir: Path, mock_config_loader: MagicMock
-    ):
+    ) -> None:
         """Output is always JPEG regardless of requested extension."""
         with patch(
             "modules.image_utils.get_config_loader", return_value=mock_config_loader
@@ -372,7 +373,7 @@ class TestProcessImage:
 
     def test_handles_processing_error(
         self, temp_dir: Path, mock_config_loader: MagicMock
-    ):
+    ) -> None:
         """Handles errors during image processing gracefully."""
         fake_image_path = temp_dir / "fake.jpg"
         fake_image_path.write_bytes(b"not an image")
@@ -393,7 +394,7 @@ class TestGetDetailParam:
 
     def test_openai_returns_llm_detail(
         self, sample_image_file: Path, mock_config_loader: MagicMock
-    ):
+    ) -> None:
         """OpenAI provider returns llm_detail config value."""
         with patch(
             "modules.image_utils.get_config_loader", return_value=mock_config_loader
@@ -405,7 +406,7 @@ class TestGetDetailParam:
 
     def test_google_returns_media_resolution(
         self, sample_image_file: Path, mock_config_loader: MagicMock
-    ):
+    ) -> None:
         """Google provider returns media_resolution config value."""
         with patch(
             "modules.image_utils.get_config_loader", return_value=mock_config_loader
@@ -419,7 +420,7 @@ class TestGetDetailParam:
 
     def test_anthropic_returns_resize_profile(
         self, sample_image_file: Path, mock_config_loader: MagicMock
-    ):
+    ) -> None:
         """Anthropic provider returns resize_profile config value."""
         with patch(
             "modules.image_utils.get_config_loader", return_value=mock_config_loader

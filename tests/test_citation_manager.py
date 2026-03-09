@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import patch, MagicMock
 import pytest
 
@@ -14,7 +15,7 @@ from processors.citation_manager import (
 class TestCitation:
     """Tests for Citation dataclass."""
 
-    def test_init_basic(self):
+    def test_init_basic(self) -> None:
         """Basic initialization with raw text."""
         citation = Citation(raw_text="Smith, J. (2020). Test Paper. Journal, 10, 1-10.")
 
@@ -22,21 +23,21 @@ class TestCitation:
         assert citation.normalized_key != ""
         assert len(citation.pages) == 0
 
-    def test_normalized_key_generated(self):
+    def test_normalized_key_generated(self) -> None:
         """Normalized key is automatically generated."""
         citation = Citation(raw_text="Smith (2020). A Title.")
 
         assert citation.normalized_key != ""
         assert len(citation.normalized_key) == 32  # MD5 hash length
 
-    def test_same_citations_same_key(self):
+    def test_same_citations_same_key(self) -> None:
         """Equivalent citations produce same normalized key."""
         citation1 = Citation(raw_text="Smith, J. (2020). Test Title. Publisher.")
         citation2 = Citation(raw_text="Smith, J. (2020). Test Title. Publisher.")
 
         assert citation1.normalized_key == citation2.normalized_key
 
-    def test_normalized_key_removes_years(self):
+    def test_normalized_key_removes_years(self) -> None:
         """Years are removed from normalization."""
         citation1 = Citation(raw_text="Smith. Test Title. Publisher.")
         citation2 = Citation(raw_text="Smith (2020). Test Title. Publisher.")
@@ -45,7 +46,7 @@ class TestCitation:
         # Note: exact equality depends on normalization algorithm
         assert citation1.normalized_key != "" and citation2.normalized_key != ""
 
-    def test_normalized_key_removes_page_numbers(self):
+    def test_normalized_key_removes_page_numbers(self) -> None:
         """Page numbers are removed from normalization."""
         citation1 = Citation(raw_text="Smith. Test. pp. 10-20.")
         citation2 = Citation(raw_text="Smith. Test.")
@@ -54,7 +55,7 @@ class TestCitation:
         assert citation1.normalized_key != ""
         assert citation2.normalized_key != ""
 
-    def test_add_page(self):
+    def test_add_page(self) -> None:
         """Pages can be added to citation."""
         citation = Citation(raw_text="Test citation")
 
@@ -66,7 +67,7 @@ class TestCitation:
         assert 10 in citation.pages
         assert len(citation.pages) == 2  # No duplicate
 
-    def test_get_sorted_pages(self):
+    def test_get_sorted_pages(self) -> None:
         """Pages are returned sorted."""
         citation = Citation(raw_text="Test citation")
         citation.add_page(10)
@@ -75,20 +76,20 @@ class TestCitation:
 
         assert citation.get_sorted_pages() == [5, 10, 15]
 
-    def test_get_page_range_str_empty(self):
+    def test_get_page_range_str_empty(self) -> None:
         """Empty pages returns empty string."""
         citation = Citation(raw_text="Test citation")
 
         assert citation.get_page_range_str() == ""
 
-    def test_get_page_range_str_single(self):
+    def test_get_page_range_str_single(self) -> None:
         """Single page returns 'p. X' format."""
         citation = Citation(raw_text="Test citation")
         citation.add_page(5)
 
         assert citation.get_page_range_str() == "p. 5"
 
-    def test_get_page_range_str_multiple(self):
+    def test_get_page_range_str_multiple(self) -> None:
         """Multiple pages returns 'pp. X, Y' format."""
         citation = Citation(raw_text="Test citation")
         citation.add_page(5)
@@ -96,7 +97,7 @@ class TestCitation:
 
         assert "pp." in citation.get_page_range_str()
 
-    def test_get_page_range_str_consecutive(self):
+    def test_get_page_range_str_consecutive(self) -> None:
         """Consecutive pages are shown as ranges."""
         citation = Citation(raw_text="Test citation")
         citation.add_page(5)
@@ -112,20 +113,20 @@ class TestCitation:
 class TestCitationManager:
     """Tests for CitationManager class."""
 
-    def test_init_default(self):
+    def test_init_default(self) -> None:
         """Default initialization."""
         manager = CitationManager()
 
         assert manager.citations == {}
         assert manager.polite_pool_email is not None
 
-    def test_init_custom_email(self):
+    def test_init_custom_email(self) -> None:
         """Custom email initialization."""
         manager = CitationManager(polite_pool_email="test@example.com")
 
         assert manager.polite_pool_email == "test@example.com"
 
-    def test_add_citations_basic(self):
+    def test_add_citations_basic(self) -> None:
         """Basic citation addition."""
         manager = CitationManager()
 
@@ -133,7 +134,7 @@ class TestCitationManager:
 
         assert len(manager.citations) == 2
 
-    def test_add_citations_deduplication(self, sample_citations: list[str]):
+    def test_add_citations_deduplication(self, sample_citations: list[str]) -> None:
         """Duplicate citations are deduplicated."""
         manager = CitationManager()
 
@@ -142,7 +143,7 @@ class TestCitationManager:
         # Should have 3 unique citations (one duplicate in sample)
         assert len(manager.citations) == 3
 
-    def test_add_citations_tracks_pages(self):
+    def test_add_citations_tracks_pages(self) -> None:
         """Page numbers are tracked correctly."""
         manager = CitationManager()
 
@@ -154,7 +155,7 @@ class TestCitationManager:
         citation = list(manager.citations.values())[0]
         assert citation.pages == {1, 5, 10}
 
-    def test_add_citations_skips_empty(self):
+    def test_add_citations_skips_empty(self) -> None:
         """Empty citation strings are skipped."""
         manager = CitationManager()
 
@@ -162,7 +163,7 @@ class TestCitationManager:
 
         assert len(manager.citations) == 1
 
-    def test_get_sorted_citations(self, sample_citations: list[str]):
+    def test_get_sorted_citations(self, sample_citations: list[str]) -> None:
         """Citations are sorted alphabetically."""
         manager = CitationManager()
         manager.add_citations(sample_citations, page_number=1)
@@ -173,7 +174,7 @@ class TestCitationManager:
         texts = [c.raw_text.lower() for c in sorted_citations]
         assert texts == sorted(texts)
 
-    def test_get_citations_with_pages(self, sample_citations: list[str]):
+    def test_get_citations_with_pages(self, sample_citations: list[str]) -> None:
         """Returns citations with page range strings."""
         manager = CitationManager()
         manager.add_citations(sample_citations, page_number=5)
@@ -189,7 +190,7 @@ class TestCitationManager:
 class TestCitationManagerDOI:
     """Tests for DOI extraction and API queries."""
 
-    def test_extract_doi_from_text(self):
+    def test_extract_doi_from_text(self) -> None:
         """DOI is extracted from citation text."""
         manager = CitationManager()
 
@@ -198,13 +199,13 @@ class TestCitationManagerDOI:
         assert manager._extract_doi("https://doi.org/10.1234/test") is not None
         assert manager._extract_doi("10.1234/test.paper") is not None
 
-    def test_extract_doi_none_when_missing(self):
+    def test_extract_doi_none_when_missing(self) -> None:
         """Returns None when no DOI in text."""
         manager = CitationManager()
 
         assert manager._extract_doi("Smith, J. (2020). Title.") is None
 
-    def test_extract_search_terms(self):
+    def test_extract_search_terms(self) -> None:
         """Search terms are extracted from citation."""
         manager = CitationManager()
 
@@ -214,7 +215,7 @@ class TestCitationManagerDOI:
         assert len(result) > 0
         assert len(result) <= 100  # Max length enforced
 
-    def test_verify_citation_match_true(self):
+    def test_verify_citation_match_true(self) -> None:
         """Matching citation returns True."""
         manager = CitationManager()
 
@@ -223,7 +224,7 @@ class TestCitationManagerDOI:
 
         assert manager._verify_citation_match(citation, work_data) is True
 
-    def test_verify_citation_match_false(self):
+    def test_verify_citation_match_false(self) -> None:
         """Non-matching citation returns False."""
         manager = CitationManager()
 
@@ -236,7 +237,7 @@ class TestCitationManagerDOI:
 class TestCitationManagerEnrichment:
     """Tests for metadata enrichment."""
 
-    def test_enrich_with_metadata_calls_api(self, sample_citations: list[str]):
+    def test_enrich_with_metadata_calls_api(self, sample_citations: list[str]) -> None:
         """Enrichment calls OpenAlex API."""
         manager = CitationManager()
         manager.add_citations(sample_citations[:1], page_number=1)
@@ -248,14 +249,14 @@ class TestCitationManagerEnrichment:
 
             mock_fetch.assert_called()
 
-    def test_enrich_with_metadata_respects_limit(self, sample_citations: list[str]):
+    def test_enrich_with_metadata_respects_limit(self, sample_citations: list[str]) -> None:
         """Enrichment respects max_requests limit."""
         manager = CitationManager()
         manager.add_citations(sample_citations, page_number=1)
 
         call_count = 0
 
-        def mock_fetch(text):
+        def mock_fetch(text: str) -> dict[str, Any]:
             nonlocal call_count
             call_count += 1
             return {"doi": "10.1234/test", "url": "https://doi.org/10.1234/test"}
@@ -267,7 +268,7 @@ class TestCitationManagerEnrichment:
 
         assert call_count == 1
 
-    def test_extract_metadata_from_response(self, mock_openalex_response: dict):
+    def test_extract_metadata_from_response(self, mock_openalex_response: dict[str, Any]) -> None:
         """Metadata is extracted correctly from API response."""
         manager = CitationManager()
 
@@ -278,7 +279,7 @@ class TestCitationManagerEnrichment:
         assert "10.1234/test.2020.001" in result["doi"]
         assert len(result["authors"]) > 0
 
-    def test_enrichment_updates_citation(self):
+    def test_enrichment_updates_citation(self) -> None:
         """Enrichment updates citation metadata."""
         manager = CitationManager()
         manager.add_citations(["Test citation with DOI 10.1234/test"], page_number=1)
@@ -305,7 +306,7 @@ class TestCitationManagerEnrichment:
 class TestCitationManagerAPIRequest:
     """Tests for API request handling."""
 
-    def test_make_openalex_request_success(self):
+    def test_make_openalex_request_success(self) -> None:
         """Successful API request returns data."""
         manager = CitationManager()
 
@@ -322,7 +323,7 @@ class TestCitationManagerAPIRequest:
 
             assert result == {"results": []}
 
-    def test_make_openalex_request_404_returns_none(self):
+    def test_make_openalex_request_404_returns_none(self) -> None:
         """404 response returns None."""
         manager = CitationManager()
 
@@ -338,7 +339,7 @@ class TestCitationManagerAPIRequest:
 
             assert result is None
 
-    def test_make_openalex_request_retries_on_error(self):
+    def test_make_openalex_request_retries_on_error(self) -> None:
         """Request is retried on network error."""
         manager = CitationManager()
 
@@ -346,7 +347,7 @@ class TestCitationManagerAPIRequest:
 
         call_count = 0
 
-        def mock_get(*args, **kwargs):
+        def mock_get(*args: Any, **kwargs: Any) -> MagicMock:
             nonlocal call_count
             call_count += 1
             if call_count < 3:
@@ -364,7 +365,7 @@ class TestCitationManagerAPIRequest:
 
         assert call_count >= 2  # At least one retry
 
-    def test_cache_prevents_duplicate_requests(self):
+    def test_cache_prevents_duplicate_requests(self) -> None:
         """Cache prevents duplicate API requests."""
         manager = CitationManager()
 

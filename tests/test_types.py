@@ -19,7 +19,7 @@ from modules.types import (
 class TestTranscriptionResult:
     """Tests for TranscriptionResult TypedDict."""
 
-    def test_basic_structure(self):
+    def test_basic_structure(self) -> None:
         """TranscriptionResult can hold basic fields."""
         result: TranscriptionResult = {
             "page": 1,
@@ -31,7 +31,7 @@ class TestTranscriptionResult:
         assert result["page"] == 1
         assert result["transcription"] == "Sample text"
 
-    def test_optional_fields(self):
+    def test_optional_fields(self) -> None:
         """TranscriptionResult allows optional fields."""
         result: TranscriptionResult = {
             "page": 1,
@@ -42,7 +42,7 @@ class TestTranscriptionResult:
         # Optional fields should not be required
         assert "error" not in result
 
-    def test_error_field(self):
+    def test_error_field(self) -> None:
         """TranscriptionResult can hold error information."""
         result: TranscriptionResult = {
             "page": 1,
@@ -57,7 +57,7 @@ class TestTranscriptionResult:
 class TestPageInformation:
     """Tests for PageInformation TypedDict."""
 
-    def test_basic_structure(self):
+    def test_basic_structure(self) -> None:
         """PageInformation holds page metadata including page_types."""
         info: PageInformation = {
             "page_number_integer": 5,
@@ -69,7 +69,7 @@ class TestPageInformation:
         assert info["page_number_type"] == "arabic"
         assert info["page_types"] == ["content"]
 
-    def test_unnumbered_page(self):
+    def test_unnumbered_page(self) -> None:
         """PageInformation can represent unnumbered pages."""
         info: PageInformation = {
             "page_number_integer": None,
@@ -84,7 +84,7 @@ class TestPageInformation:
 class TestSummaryContent:
     """Tests for SummaryContent TypedDict."""
 
-    def test_full_structure(self):
+    def test_full_structure(self) -> None:
         """SummaryContent holds all summary fields."""
         content: SummaryContent = {
             "page_information": {
@@ -96,10 +96,12 @@ class TestSummaryContent:
             "references": ["Ref 1"],
         }
 
+        assert content["bullet_points"] is not None
         assert len(content["bullet_points"]) == 2
+        assert content["references"] is not None
         assert len(content["references"]) == 1
 
-    def test_empty_content(self):
+    def test_empty_content(self) -> None:
         """SummaryContent can represent blank pages."""
         content: SummaryContent = {
             "page_information": {
@@ -117,7 +119,7 @@ class TestSummaryContent:
 class TestSummaryResult:
     """Tests for SummaryResult TypedDict."""
 
-    def test_full_structure(self):
+    def test_full_structure(self) -> None:
         """SummaryResult holds complete summary result (flat structure)."""
         result: SummaryResult = {
             "page": 1,
@@ -144,7 +146,7 @@ class TestSummaryResult:
 class TestConcurrencyConfig:
     """Tests for ConcurrencyConfig dataclass."""
 
-    def test_default_values(self):
+    def test_default_values(self) -> None:
         """ConcurrencyConfig has sensible defaults."""
         config = ConcurrencyConfig()
 
@@ -156,7 +158,7 @@ class TestConcurrencyConfig:
         assert config.transcription_service_tier == "flex"
         assert config.summary_service_tier == "flex"
 
-    def test_custom_values(self):
+    def test_custom_values(self) -> None:
         """ConcurrencyConfig accepts custom values."""
         config = ConcurrencyConfig(
             image_processing_limit=16,
@@ -171,7 +173,7 @@ class TestConcurrencyConfig:
         assert config.image_processing_limit == 16
         assert config.transcription_limit == 100
 
-    def test_from_dict(self):
+    def test_from_dict(self) -> None:
         """ConcurrencyConfig can be created from dictionary."""
         config_dict = {
             "image_processing": {
@@ -198,7 +200,7 @@ class TestConcurrencyConfig:
         assert config.transcription_delay == 0.1
         assert config.transcription_service_tier == "default"
 
-    def test_from_dict_with_missing_keys(self):
+    def test_from_dict_with_missing_keys(self) -> None:
         """ConcurrencyConfig.from_dict handles missing keys."""
         config = ConcurrencyConfig.from_dict({})
 
@@ -206,7 +208,7 @@ class TestConcurrencyConfig:
         assert config.image_processing_limit == 24
         assert config.transcription_limit == 150
 
-    def test_frozen(self):
+    def test_frozen(self) -> None:
         """ConcurrencyConfig is immutable."""
         config = ConcurrencyConfig()
 
@@ -217,7 +219,7 @@ class TestConcurrencyConfig:
 class TestItemSpec:
     """Tests for ItemSpec dataclass."""
 
-    def test_pdf_item(self, temp_dir: Path):
+    def test_pdf_item(self, temp_dir: Path) -> None:
         """ItemSpec represents PDF items correctly."""
         pdf_path = temp_dir / "test.pdf"
         pdf_path.touch()
@@ -227,7 +229,7 @@ class TestItemSpec:
         assert item.path == pdf_path
         assert item.kind == "pdf"
 
-    def test_image_folder_item(self, temp_dir: Path):
+    def test_image_folder_item(self, temp_dir: Path) -> None:
         """ItemSpec represents image folder items correctly."""
         folder_path = temp_dir / "images"
         folder_path.mkdir()
@@ -238,7 +240,7 @@ class TestItemSpec:
         assert item.kind == "image_folder"
         assert item.image_count == 10
 
-    def test_display_label(self, temp_dir: Path):
+    def test_display_label(self, temp_dir: Path) -> None:
         """ItemSpec.display_label returns readable string."""
         pdf_path = temp_dir / "my_document.pdf"
         pdf_path.touch()
@@ -249,7 +251,7 @@ class TestItemSpec:
         assert "my_document" in label or str(pdf_path) in label
         assert "PDF" in label
 
-    def test_output_stem_property(self, temp_dir: Path):
+    def test_output_stem_property(self, temp_dir: Path) -> None:
         """ItemSpec provides output_stem property."""
         pdf_path = temp_dir / "test_file.pdf"
         pdf_path.touch()
@@ -258,7 +260,7 @@ class TestItemSpec:
 
         assert item.output_stem == "test_file"
 
-    def test_display_label_with_image_count(self, temp_dir: Path):
+    def test_display_label_with_image_count(self, temp_dir: Path) -> None:
         """Display label includes image count for image folders."""
         folder_path = temp_dir / "images"
         folder_path.mkdir()

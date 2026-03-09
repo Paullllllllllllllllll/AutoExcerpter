@@ -62,7 +62,7 @@ def _build_mock_pixmap(width: int, height: int, mode: str = "RGB") -> MagicMock:
 
 def _build_mock_pdf_document(
     num_pages: int, pix_width: int = 100, pix_height: int = 150, grayscale: bool = True
-):
+) -> MagicMock:
     """Build a mock fitz.Document with the given number of pages."""
     mock_doc = MagicMock()
     mock_doc.__len__ = MagicMock(return_value=num_pages)
@@ -89,7 +89,7 @@ class TestExtractPdfPagesToImages:
     @patch("processors.pdf_processor.fitz")
     def test_extracts_all_pages(
         self, mock_fitz, mock_loader, mock_preprocess, output_dir: Path, mock_img_cfg
-    ):
+    ) -> None:
         """Extracts all pages from a multi-page PDF."""
         num_pages = 3
         mock_doc = _build_mock_pdf_document(num_pages)
@@ -126,7 +126,7 @@ class TestExtractPdfPagesToImages:
     @patch("processors.pdf_processor.fitz")
     def test_empty_pdf_returns_empty_list(
         self, mock_fitz, mock_loader, output_dir: Path
-    ):
+    ) -> None:
         """Empty PDF (0 pages) returns an empty list."""
         mock_doc = _build_mock_pdf_document(0)
         mock_fitz.open.return_value = mock_doc
@@ -150,7 +150,7 @@ class TestExtractPdfPagesToImages:
     @patch("processors.pdf_processor.fitz")
     def test_single_page_pdf(
         self, mock_fitz, mock_loader, mock_preprocess, output_dir: Path, mock_img_cfg
-    ):
+    ) -> None:
         """Single-page PDF produces one output image."""
         mock_doc = _build_mock_pdf_document(1)
         mock_fitz.open.return_value = mock_doc
@@ -179,7 +179,7 @@ class TestExtractPdfPagesToImages:
     @patch("processors.pdf_processor.fitz")
     def test_fitz_open_error_returns_empty_list(
         self, mock_fitz, mock_loader, output_dir: Path
-    ):
+    ) -> None:
         """If fitz.open raises an exception, returns an empty list."""
         mock_fitz.open.side_effect = RuntimeError("Cannot open PDF")
 
@@ -199,7 +199,7 @@ class TestExtractPdfPagesToImages:
     @patch("processors.pdf_processor.fitz")
     def test_page_extraction_error_skips_page(
         self, mock_fitz, mock_loader, mock_preprocess, output_dir: Path, mock_img_cfg
-    ):
+    ) -> None:
         """If a single page fails, it is skipped but other pages succeed."""
         # Build a 2-page document where page 0 fails
         mock_doc = MagicMock()
@@ -212,7 +212,7 @@ class TestExtractPdfPagesToImages:
         bad_page = MagicMock()
         bad_page.get_pixmap.side_effect = RuntimeError("Page corrupt")
 
-        def getitem(idx):
+        def getitem(idx: int) -> MagicMock:
             if idx == 0:
                 return bad_page
             return good_page
@@ -246,7 +246,7 @@ class TestExtractPdfPagesToImages:
     @patch("processors.pdf_processor.fitz")
     def test_grayscale_disabled_uses_rgb(
         self, mock_fitz, mock_loader, mock_preprocess, output_dir: Path
-    ):
+    ) -> None:
         """When grayscale_conversion is False, RGB pixmap is requested."""
         mock_doc = _build_mock_pdf_document(1, grayscale=False)
         mock_fitz.open.return_value = mock_doc
@@ -289,7 +289,7 @@ class TestExtractPdfPagesToImages:
     @patch("processors.pdf_processor.fitz")
     def test_google_provider_config_section(
         self, mock_fitz, mock_loader, mock_preprocess, output_dir: Path
-    ):
+    ) -> None:
         """Google provider reads from google_image_processing section."""
         mock_doc = _build_mock_pdf_document(1)
         mock_fitz.open.return_value = mock_doc
@@ -329,7 +329,7 @@ class TestExtractPdfPagesToImages:
     @patch("processors.pdf_processor.fitz")
     def test_anthropic_provider_config_section(
         self, mock_fitz, mock_loader, mock_preprocess, output_dir: Path
-    ):
+    ) -> None:
         """Anthropic provider reads from anthropic_image_processing section."""
         mock_doc = _build_mock_pdf_document(1)
         mock_fitz.open.return_value = mock_doc
@@ -371,12 +371,12 @@ class TestExtractPdfPagesToImages:
 class TestGetImagePathsFromFolderExtended:
     """Extended tests for get_image_paths_from_folder()."""
 
-    def test_empty_folder_returns_empty(self, tmp_path: Path):
+    def test_empty_folder_returns_empty(self, tmp_path: Path) -> None:
         """Empty folder returns an empty list."""
         paths = get_image_paths_from_folder(tmp_path)
         assert paths == []
 
-    def test_all_supported_extensions(self, tmp_path: Path):
+    def test_all_supported_extensions(self, tmp_path: Path) -> None:
         """All supported image extensions are found."""
         supported = [".jpg", ".jpeg", ".png", ".tiff", ".tif", ".bmp", ".gif", ".webp"]
         for ext in supported:
@@ -385,7 +385,7 @@ class TestGetImagePathsFromFolderExtended:
         paths = get_image_paths_from_folder(tmp_path)
         assert len(paths) == len(supported)
 
-    def test_unsupported_extensions_ignored(self, tmp_path: Path):
+    def test_unsupported_extensions_ignored(self, tmp_path: Path) -> None:
         """Non-image files are ignored."""
         (tmp_path / "document.pdf").touch()
         (tmp_path / "script.py").touch()
@@ -397,7 +397,7 @@ class TestGetImagePathsFromFolderExtended:
         assert len(paths) == 1
         assert paths[0].name == "image.jpg"
 
-    def test_mixed_supported_and_unsupported(self, tmp_path: Path):
+    def test_mixed_supported_and_unsupported(self, tmp_path: Path) -> None:
         """Only supported files are returned from a mixed folder."""
         (tmp_path / "a.jpg").touch()
         (tmp_path / "b.png").touch()
@@ -412,7 +412,7 @@ class TestGetImagePathsFromFolderExtended:
         assert "b.png" in names
         assert "e.tiff" in names
 
-    def test_case_insensitive_extensions(self, tmp_path: Path):
+    def test_case_insensitive_extensions(self, tmp_path: Path) -> None:
         """Upper and mixed case extensions are matched."""
         (tmp_path / "img1.JPG").touch()
         (tmp_path / "img2.Png").touch()
@@ -421,7 +421,7 @@ class TestGetImagePathsFromFolderExtended:
         paths = get_image_paths_from_folder(tmp_path)
         assert len(paths) == 3
 
-    def test_results_sorted_by_name(self, tmp_path: Path):
+    def test_results_sorted_by_name(self, tmp_path: Path) -> None:
         """Results are sorted alphabetically by filename."""
         (tmp_path / "z_image.jpg").touch()
         (tmp_path / "a_image.jpg").touch()
@@ -431,7 +431,7 @@ class TestGetImagePathsFromFolderExtended:
         names = [p.name for p in paths]
         assert names == sorted(names)
 
-    def test_subdirectories_not_included(self, tmp_path: Path):
+    def test_subdirectories_not_included(self, tmp_path: Path) -> None:
         """Subdirectories are not included in results (glob('*') is non-recursive)."""
         sub = tmp_path / "subdir"
         sub.mkdir()
@@ -442,7 +442,7 @@ class TestGetImagePathsFromFolderExtended:
         assert len(paths) == 1
         assert paths[0].name == "top_level.jpg"
 
-    def test_folder_with_only_unsupported_files(self, tmp_path: Path):
+    def test_folder_with_only_unsupported_files(self, tmp_path: Path) -> None:
         """Folder containing only unsupported files returns empty list."""
         (tmp_path / "readme.txt").touch()
         (tmp_path / "notes.md").touch()
@@ -458,7 +458,7 @@ class TestGetImagePathsFromFolderExtended:
 class TestApplyImagePreprocessingExtended:
     """Extended tests for _apply_image_preprocessing with different model types."""
 
-    def test_palette_mode_with_transparency(self):
+    def test_palette_mode_with_transparency(self) -> None:
         """Palette mode image with transparency info is handled."""
         img = Image.new("P", (100, 100))
         img.info["transparency"] = 0
@@ -474,7 +474,7 @@ class TestApplyImagePreprocessingExtended:
         result = _apply_image_preprocessing(img, cfg, "openai")
         assert result.mode == "RGB"
 
-    def test_la_mode_transparency(self):
+    def test_la_mode_transparency(self) -> None:
         """LA (grayscale with alpha) mode transparency is handled."""
         img = Image.new("LA", (100, 100))
 
@@ -489,7 +489,7 @@ class TestApplyImagePreprocessingExtended:
         result = _apply_image_preprocessing(img, cfg, "openai")
         assert result.mode == "RGB"
 
-    def test_google_uses_media_resolution(self):
+    def test_google_uses_media_resolution(self) -> None:
         """Google model type reads media_resolution config key."""
         img = Image.new("RGB", (500, 500))
 
@@ -504,7 +504,7 @@ class TestApplyImagePreprocessingExtended:
         result = _apply_image_preprocessing(img, cfg, "google")
         assert result.size is not None
 
-    def test_anthropic_uses_resize_profile(self):
+    def test_anthropic_uses_resize_profile(self) -> None:
         """Anthropic model type reads resize_profile config key."""
         img = Image.new("RGB", (2000, 3000))
 
@@ -520,7 +520,7 @@ class TestApplyImagePreprocessingExtended:
         # Max side should be capped
         assert max(result.size) <= 1568
 
-    def test_grayscale_already_grayscale(self):
+    def test_grayscale_already_grayscale(self) -> None:
         """Grayscale conversion on an already grayscale image is a no-op."""
         img = Image.new("L", (100, 100))
 
