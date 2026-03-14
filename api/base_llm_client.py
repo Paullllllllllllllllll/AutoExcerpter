@@ -22,7 +22,9 @@ This module provides the foundational LLM client implementation with:
 from __future__ import annotations
 
 import random
+import statistics
 from collections import deque
+from collections.abc import Callable
 from typing import Any
 
 from langchain_core.language_models import BaseChatModel
@@ -37,6 +39,7 @@ from api.llm_client import (
 from modules.concurrency_helper import get_api_timeout, get_service_tier
 from modules.config_loader import get_config_loader
 from modules.logger import setup_logger
+from modules.token_tracker import get_token_tracker
 
 logger = setup_logger(__name__)
 
@@ -65,6 +68,107 @@ DEFAULT_MAX_RETRIES = _RETRY_CONFIG.get("max_attempts", 5)
 _JITTER = _RETRY_CONFIG.get("jitter", {})
 JITTER_MIN = _JITTER.get("min", 0.5)
 JITTER_MAX = _JITTER.get("max", 1.0)
+
+
+# ============================================================================
+# Output Text Extraction Chain
+# ============================================================================
+def _extract_from_aimessage(data: Any) -> str | None:
+    """Extract text from a LangChain AIMessage response."""
+    if not isinstance(data, AIMessage):
+        return None
+    parts: list[str] = []
+    content = data.content
+    if isinstance(content, list):
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict):
+                text = block.get("text") or block.get("output_text")
+                if isinstance(text, str) and text.strip():
+                    parts.append(text)
+    elif isinstance(content, str) and content.strip():
+        parts.append(content)
+
+    result = "".join(parts).strip()
+    if not result:
+        logger.warning(
+            "Empty content extracted from LangChain AIMessage response."
+        )
+    return result
+
+
+def _extract_from_output_attribute(data: Any) -> str | None:
+    """Try SDK convenience ``output_text`` attribute."""
+    try:
+        text_attr = getattr(data, "output_text", None)
+        if isinstance(text_attr, str) and text_attr.strip():
+            return text_attr.strip()
+    except Exception:
+        pass
+    return None
+
+
+def _extract_from_dict(data: Any) -> str | None:
+    """Try dict-style ``output_text`` key access."""
+    if isinstance(data, dict) and isinstance(data.get("output_text"), str):
+        output_text: str = data["output_text"].strip()
+        if output_text:
+            return output_text
+    return None
+
+
+def _extract_from_nested_output(data: Any) -> str | None:
+    """Reconstruct text from nested ``output`` list structure."""
+    try:
+        obj = data
+        if not isinstance(obj, dict):
+            conv = getattr(data, "to_dict", None) or getattr(
+                data, "model_dump", None
+            )
+            if callable(conv):
+                obj = conv()
+
+        output = obj.get("output") if isinstance(obj, dict) else None
+        parts: list[str] = []
+        if isinstance(output, list):
+            for item in output:
+                if not isinstance(item, dict):
+                    continue
+                item_content = item.get("content", [])
+                if not item_content:
+                    continue
+                for content_item in item_content:
+                    if not isinstance(content_item, dict):
+                        continue
+                    content_type = content_item.get("type")
+                    if content_type in ["output_text", "text"]:
+                        text = content_item.get("text")
+                        if isinstance(text, str) and text.strip():
+                            parts.append(text)
+
+        result = "".join(parts).strip()
+
+        if not result:
+            logger.warning(
+                "Empty content extracted from API response. "
+                f"Response structure: output={'list' if isinstance(output, list) else type(output).__name__}, "
+                f"items={len(output) if isinstance(output, list) else 0}"
+            )
+
+        return result
+    except Exception as e:
+        logger.warning(f"Error extracting output text: {e}")
+        return None
+
+
+# Ordered extraction chain: first non-None result wins
+_EXTRACTORS: list[Callable[[Any], str | None]] = [
+    _extract_from_aimessage,
+    _extract_from_output_attribute,
+    _extract_from_dict,
+    _extract_from_nested_output,
+]
 
 
 class LLMClientBase:
@@ -214,8 +318,13 @@ class LLMClientBase:
 
     @staticmethod
     def _extract_output_text(data: Any) -> str:
-        """
-        Normalize LLM response output into a single text string.
+        """Normalize LLM response output into a single text string.
+
+        Tries a chain of extraction strategies in order:
+        1. LangChain AIMessage
+        2. SDK ``output_text`` attribute
+        3. Dict-style ``output_text`` key
+        4. Nested ``output`` list reconstruction
 
         Args:
             data: Response data from LLM API.
@@ -223,86 +332,12 @@ class LLMClientBase:
         Returns:
             Extracted text content.
         """
-        # Handle LangChain AIMessage responses directly
-        if isinstance(data, AIMessage):
-            parts: list[str] = []
-            content = data.content
-            if isinstance(content, list):
-                for block in content:
-                    if isinstance(block, str):
-                        parts.append(block)
-                    elif isinstance(block, dict):
-                        text = block.get("text") or block.get("output_text")
-                        if isinstance(text, str) and text.strip():
-                            parts.append(text)
-            elif isinstance(content, str) and content.strip():
-                parts.append(content)
-
-            result = "".join(parts).strip()
-            if not result:
-                logger.warning(
-                    "Empty content extracted from LangChain AIMessage response."
-                )
-            return result
-
-        # Try SDK convenience attribute
-        try:
-            text_attr = getattr(data, "output_text", None)
-            if isinstance(text_attr, str) and text_attr.strip():
-                return text_attr.strip()
-        except Exception:
-            pass
-
-        # Try dict-style access
-        if isinstance(data, dict) and isinstance(data.get("output_text"), str):
-            output_text: str = data["output_text"].strip()
-            if output_text:
-                return output_text
-
-        # Fallback: reconstruct from output list
-        try:
-            obj = data
-            if not isinstance(obj, dict):
-                conv = getattr(data, "to_dict", None) or getattr(
-                    data, "model_dump", None
-                )
-                if callable(conv):
-                    obj = conv()
-
-            output = obj.get("output") if isinstance(obj, dict) else None
-            parts = []
-            if isinstance(output, list):
-                for item in output:
-                    if not isinstance(item, dict):
-                        continue
-
-                    item_content = item.get("content", [])
-                    if not item_content:
-                        continue
-
-                    for content_item in item_content:
-                        if not isinstance(content_item, dict):
-                            continue
-
-                        content_type = content_item.get("type")
-                        if content_type in ["output_text", "text"]:
-                            text = content_item.get("text")
-                            if isinstance(text, str) and text.strip():
-                                parts.append(text)
-
-            result = "".join(parts).strip()
-
-            if not result:
-                logger.warning(
-                    "Empty content extracted from API response. "
-                    f"Response structure: output={'list' if isinstance(output, list) else type(output).__name__}, "
-                    f"items={len(output) if isinstance(output, list) else 0}"
-                )
-
-            return result
-        except Exception as e:
-            logger.warning(f"Error extracting output text: {e}")
-            return ""
+        for extractor in _EXTRACTORS:
+            result = extractor(data)
+            if result is not None:
+                return result
+        logger.warning("Could not extract output text from response")
+        return ""
 
     def _build_text_format(
         self, default_name: str = "json_schema"
@@ -390,10 +425,31 @@ class LLMClientBase:
                 invoke_kwargs.setdefault("response_mime_type", "application/json")
                 invoke_kwargs.setdefault("response_schema", schema_obj)
 
+    def _report_token_usage(self, response: Any, context_label: str) -> None:
+        """Report token usage from a LangChain response to the token tracker.
+
+        Args:
+            response: LangChain model response with usage_metadata.
+            context_label: Description for the log message (e.g. "Transcription for page_001.png").
+        """
+        try:
+            usage_meta = getattr(response, "usage_metadata", None)
+            if usage_meta and isinstance(usage_meta, dict):
+                total_tokens = usage_meta.get("total_tokens")
+                if total_tokens and isinstance(total_tokens, int):
+                    token_tracker = get_token_tracker()
+                    token_tracker.add_tokens(total_tokens)
+                    logger.debug(
+                        f"[TOKEN] {context_label}: "
+                        f"added {total_tokens} tokens (total now: {token_tracker.get_tokens_used_today():,})"
+                    )
+        except (AttributeError, TypeError, ValueError) as e:
+            logger.warning(
+                f"Error reporting token usage for {context_label}: {e}"
+            )
+
     def get_stats(self) -> dict[str, Any]:
         """Get statistics about API usage."""
-        import statistics
-
         avg_time = (
             statistics.mean(self.processing_times) if self.processing_times else 0
         )

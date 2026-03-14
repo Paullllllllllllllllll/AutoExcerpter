@@ -13,6 +13,7 @@ from modules.concurrency_helper import (
     get_api_timeout,
     get_service_tier,
 )
+from modules.constants import OPENAI_MODEL_PREFIXES
 from modules.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -58,7 +59,7 @@ def initialize_log_file(
 ) -> bool:
     """Create the per-item log file header as the start of a JSON array."""
     # Determine if this is an OpenAI model for flex processing metadata
-    is_openai_model = model_name.startswith(("gpt-", "o1", "o3", "o4"))
+    is_openai_model = model_name.startswith(OPENAI_MODEL_PREFIXES)
     default_concurrency, _ = get_api_concurrency()
     service_tier = get_service_tier() if is_openai_model else "N/A"
     configuration = {

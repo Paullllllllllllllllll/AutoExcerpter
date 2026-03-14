@@ -13,6 +13,7 @@ from modules.text_cleaner import (
     fix_latex_formulas,
     merge_hyphenation,
     normalize_whitespace,
+    strip_markdown_code_block,
     wrap_long_lines,
     compute_auto_wrap_width,
     clean_transcription,
@@ -452,3 +453,29 @@ class TestGetTextCleaningConfig:
             assert "merge_hyphenation" in result
             assert "whitespace_normalization" in result
             assert "line_wrapping" in result
+
+
+class TestStripMarkdownCodeBlock:
+    """Tests for strip_markdown_code_block."""
+
+    def test_no_fencing(self) -> None:
+        assert strip_markdown_code_block('{"key": "value"}') == '{"key": "value"}'
+
+    def test_json_fencing(self) -> None:
+        assert strip_markdown_code_block('```json\n{"key": "value"}\n```') == '{"key": "value"}'
+
+    def test_plain_fencing(self) -> None:
+        assert strip_markdown_code_block('```\n{"key": "value"}\n```') == '{"key": "value"}'
+
+    def test_empty_string(self) -> None:
+        assert strip_markdown_code_block("") == ""
+
+    def test_whitespace_around_fencing(self) -> None:
+        assert strip_markdown_code_block('  ```json\n{"k": 1}\n```  ') == '{"k": 1}'
+
+    def test_no_closing_fence(self) -> None:
+        result = strip_markdown_code_block('```json\n{"key": "value"}')
+        assert result == '{"key": "value"}'
+
+    def test_plain_text_unchanged(self) -> None:
+        assert strip_markdown_code_block("hello world") == "hello world"

@@ -177,9 +177,10 @@ class ImageProcessor:
             return ImageProcessor._resize_box_fit(image, img_cfg)
 
     @staticmethod
-    def _resize_low_detail(image: Image.Image, img_cfg: dict[str, Any]) -> Image.Image:
-        """Downscale image to max side length for low detail (all providers)."""
-        max_side = int(img_cfg.get("low_max_side_px", DEFAULT_LOW_MAX_SIDE_PX))
+    def _resize_max_side(
+        image: Image.Image, max_side: int
+    ) -> Image.Image:
+        """Cap longest side, preserving aspect ratio (shared by low-detail and Anthropic)."""
         w, h = image.size
         longest = max(w, h)
 
@@ -189,6 +190,12 @@ class ImageProcessor:
         scale = max_side / float(longest)
         new_size = (max(1, int(w * scale)), max(1, int(h * scale)))
         return image.resize(new_size, _get_resampling_filter())
+
+    @staticmethod
+    def _resize_low_detail(image: Image.Image, img_cfg: dict[str, Any]) -> Image.Image:
+        """Downscale image to max side length for low detail (all providers)."""
+        max_side = int(img_cfg.get("low_max_side_px", DEFAULT_LOW_MAX_SIDE_PX))
+        return ImageProcessor._resize_max_side(image, max_side)
 
     @staticmethod
     def _resize_box_fit(image: Image.Image, img_cfg: dict[str, Any]) -> Image.Image:
@@ -228,15 +235,7 @@ class ImageProcessor:
     ) -> Image.Image:
         """Cap longest side for Anthropic (no padding, preserves aspect ratio)."""
         max_side = int(img_cfg.get("high_max_side_px", DEFAULT_ANTHROPIC_HIGH_MAX_SIDE))
-        w, h = image.size
-        longest = max(w, h)
-
-        if longest <= max_side:
-            return image
-
-        scale = max_side / float(longest)
-        new_size = (max(1, int(w * scale)), max(1, int(h * scale)))
-        return image.resize(new_size, _get_resampling_filter())
+        return ImageProcessor._resize_max_side(image, max_side)
 
     def handle_transparency(self, image: Image.Image) -> Image.Image:
         """Handle transparency by pasting the image onto a white background."""

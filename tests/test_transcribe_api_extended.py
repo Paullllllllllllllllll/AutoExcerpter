@@ -524,7 +524,7 @@ class TestTranscribeImage:
             ),
             patch.object(mgr, "_build_model_inputs", return_value=([], {})),
             patch("api.transcribe_api.ImageProcessor") as mock_ip_cls,
-            patch("api.transcribe_api.get_token_tracker") as mock_tt,
+            patch("api.base_llm_client.get_token_tracker") as mock_tt,
         ):
             mock_processor = MagicMock()
             mock_processor.process_image_to_memory.return_value = img

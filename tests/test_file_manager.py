@@ -26,8 +26,8 @@ from processors.file_manager import (
     PAGE_TYPES_WITH_BULLETS,
     STRUCTURE_PAGE_TYPE_ORDER,
 )
+from processors.file_manager import format_page_heading
 from processors.markdown_writer import (
-    _format_page_heading_md,
     create_markdown_summary,
 )
 from modules.roman_numerals import int_to_roman
@@ -575,41 +575,41 @@ class TestFileManagerIntegration:
 
 
 class TestFormatPageHeadingMd:
-    """Tests for _format_page_heading_md function."""
+    """Tests for format_page_heading (used by markdown writer with ## prefix)."""
 
     def test_arabic_page_number(self) -> None:
         """Arabic page numbers format correctly."""
-        result = _format_page_heading_md(5, "arabic", ["content"], False)
+        result = f"## {format_page_heading(5, 'arabic', ['content'], False)}"
         assert result == "## Page 5"
 
     def test_roman_page_number(self) -> None:
         """Roman numeral pages format with Page prefix and roman numeral."""
-        result = _format_page_heading_md(3, "roman", ["content"], False)
+        result = f"## {format_page_heading(3, 'roman', ['content'], False)}"
         assert result == "## Page iii"
 
     def test_unnumbered_page_via_type(self) -> None:
         """Unnumbered pages via page_number_type='none' format correctly."""
-        result = _format_page_heading_md("?", "none", ["content"], False)
+        result = f"## {format_page_heading('?', 'none', ['content'], False)}"
         assert result == "## [Unnumbered page]"
 
     def test_unnumbered_page_via_flag(self) -> None:
         """Unnumbered pages via is_unnumbered flag format correctly."""
-        result = _format_page_heading_md("?", "arabic", ["content"], True)
+        result = f"## {format_page_heading('?', 'arabic', ['content'], True)}"
         assert result == "## [Unnumbered page]"
 
     def test_string_page_number(self) -> None:
         """String page numbers are handled."""
-        result = _format_page_heading_md("42", "arabic", ["content"], False)
+        result = f"## {format_page_heading('42', 'arabic', ['content'], False)}"
         assert result == "## Page 42"
 
     def test_preface_page_type(self) -> None:
         """Preface page type adds prefix."""
-        result = _format_page_heading_md(1, "roman", ["preface"], False)
+        result = f"## {format_page_heading(1, 'roman', ['preface'], False)}"
         assert result == "## [Preface] Page i"
 
     def test_appendix_page_type(self) -> None:
         """Appendix page type adds prefix."""
-        result = _format_page_heading_md(100, "arabic", ["appendix"], False)
+        result = f"## {format_page_heading(100, 'arabic', ['appendix'], False)}"
         assert result == "## [Appendix] Page 100"
 
 

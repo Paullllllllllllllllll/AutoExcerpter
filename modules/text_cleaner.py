@@ -616,6 +616,33 @@ def wrap_long_lines(text: str, width: int) -> str:
 
 
 # ============================================================================
+# Markdown Code Block Stripping
+# ============================================================================
+
+
+def strip_markdown_code_block(text: str) -> str:
+    """Strip markdown code block fencing from API responses.
+
+    Handles ```json and ``` fencing commonly returned by LLM providers
+    for structured JSON output.
+
+    Args:
+        text: Text potentially wrapped in markdown code block fencing.
+
+    Returns:
+        Text with code block fencing removed.
+    """
+    stripped = text.strip()
+    if stripped.startswith("```json"):
+        stripped = stripped[7:]
+    elif stripped.startswith("```"):
+        stripped = stripped[3:]
+    if stripped.endswith("```"):
+        stripped = stripped[:-3]
+    return stripped.strip()
+
+
+# ============================================================================
 # Main Cleaning Pipeline
 # ============================================================================
 
@@ -694,5 +721,6 @@ __all__ = [
     "fix_latex_formulas",
     "merge_hyphenation",
     "normalize_whitespace",
+    "strip_markdown_code_block",
     "wrap_long_lines",
 ]

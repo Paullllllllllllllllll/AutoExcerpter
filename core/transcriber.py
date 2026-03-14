@@ -15,6 +15,8 @@ from modules.config_loader import get_config_loader
 from modules import app_config as config
 from modules.constants import (
     DEFAULT_MODEL,
+    EMPTY_PAGE_MARKER,
+    NO_TRANSCRIPTION_MARKER,
     MIN_SAMPLES_FOR_ETA,
     RECENT_SAMPLES_FOR_ETA,
     ETA_BLEND_WEIGHT_OVERALL,
@@ -243,20 +245,160 @@ class ItemTranscriber:
             payload["error"] = error_message
         return payload
 
+    @staticmethod
+    def _compute_page_num(
+        page_num_model: Any, fallback_index: int
+    ) -> tuple[bool, int]:
+        """Return (has_valid_model_page_num, page_num_to_use)."""
+        has_valid = isinstance(page_num_model, int)
+        return has_valid, page_num_model if has_valid else fallback_index + 1
+
+    def _summarize_transcription(
+        self,
+        transcription_result: dict[str, Any],
+        original_index: int,
+        img_name: str,
+    ) -> dict[str, Any] | None:
+        """Generate or create placeholder summary for a single transcription.
+
+        Returns the summary result dict, or None if summarization is disabled.
+        """
+        if not config.SUMMARIZE or not self.summary_manager:
+            return None
+
+        page_num_model = transcription_result.get("page")
+        has_valid, page_num_to_use = self._compute_page_num(
+            page_num_model, original_index
+        )
+
+        if "error" not in transcription_result:
+            transcription_text = transcription_result.get("transcription", "")
+
+            if (
+                EMPTY_PAGE_MARKER in transcription_text
+                or NO_TRANSCRIPTION_MARKER in transcription_text
+            ):
+                summary_data = self._create_placeholder_summary(
+                    page_num_to_use if has_valid else None,
+                    "arabic" if has_valid else "none",
+                    None,
+                    references=None,
+                    page_types=["blank"],
+                )
+            else:
+                summary_data = self.summary_manager.generate_summary(
+                    transcription_text, page_num_to_use
+                )
+            summary_error = (
+                summary_data.get("error")
+                if isinstance(summary_data, dict)
+                else None
+            )
+        else:
+            error_msg = transcription_result.get("error", "Unknown error")
+            summary_data = self._create_placeholder_summary(
+                page_num_to_use if has_valid else None,
+                "arabic" if has_valid else "none",
+                [f"[Transcription failed: {error_msg}]"],
+                references=None,
+                page_types=["other"],
+                error_message=error_msg,
+            )
+            summary_error = None
+
+        return self._build_summary_result(
+            original_index,
+            img_name,
+            summary_data,
+            page_num_to_use,
+            page_num_model,
+            summary_error,
+        )
+
+    def _process_single_page(
+        self,
+        args_tuple: tuple[int, Any],
+        transcription_results: list[dict[str, Any]],
+        summary_results: list[dict[str, Any]],
+        total_images: int,
+        processed_count_ref: list[int],
+    ) -> dict[str, Any] | None:
+        """Transcribe and optionally summarize a single page image.
+
+        Appends results to the shared lists and increments the processed counter.
+        """
+        original_input_order_index, img_path = args_tuple
+        try:
+            transcription_result_raw = self.transcribe_manager.transcribe_image(
+                img_path
+            )
+            transcription_result = {
+                **transcription_result_raw,
+                "original_input_order_index": original_input_order_index,
+            }
+
+            if "error" not in transcription_result:
+                raw_text = transcription_result.get("transcription", "")
+                transcription_result["transcription"] = clean_transcription(raw_text)
+
+            summary_result = self._summarize_transcription(
+                transcription_result, original_input_order_index, img_path.name
+            )
+            if summary_result is not None:
+                append_to_log(self.summary_log_path, summary_result)
+                summary_results.append(summary_result)
+
+            append_to_log(self.log_path, transcription_result)
+            processed_count_ref[0] += 1
+
+            if (
+                "processing_time" in transcription_result
+                and "error" not in transcription_result
+            ):
+                self.transcription_times.append(
+                    transcription_result["processing_time"]
+                )
+
+            status = (
+                "SUCCESS"
+                if "error" not in transcription_result
+                else f"FAILED ({transcription_result.get('retries', 0)} retries)"
+            )
+            item_num_str = transcription_result.get("page", "?")
+            eta_str = self._calculate_eta(processed_count_ref[0], total_images)
+
+            logger.debug(
+                f"Processed {processed_count_ref[0]}/{total_images} - Item {item_num_str} - Status: {status} - {eta_str}"
+            )
+            transcription_results.append(transcription_result)
+            return transcription_result
+
+        except Exception as e:
+            logger.exception(f"Critical error during task for {img_path.name}: {e}")
+            seq_num = original_input_order_index + 1
+            error_result: dict[str, Any] = {
+                "page": seq_num,
+                "image": img_path.name,
+                "transcription": f"[CRITICAL ERROR] Unhandled in task: {e}",
+                "error": str(e),
+                "original_input_order_index": original_input_order_index,
+            }
+            transcription_results.append(error_result)
+            processed_count_ref[0] += 1
+            return error_result
+
     def _transcribe_and_summarize(
         self, image_paths: list[Path]
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         transcription_results: list[dict[str, Any]] = []
         summary_results: list[dict[str, Any]] = []
         total_images = len(image_paths)
-        processed_count = 0
 
         # --- Page-level resume: pre-load completed results and filter ---
         image_paths_with_indices = list(enumerate(image_paths))
         skipped_page_count = 0
 
         if self.completed_page_indices:
-            # Load previously completed transcription results from log
             prior_results = load_transcription_results_from_log(self.log_path)
             if prior_results:
                 for entry in prior_results:
@@ -264,7 +406,6 @@ class ItemTranscriber:
                     if isinstance(idx, int) and idx in self.completed_page_indices:
                         transcription_results.append(entry)
 
-            # Filter out already-completed pages
             pending = [
                 (idx, path)
                 for idx, path in image_paths_with_indices
@@ -287,7 +428,6 @@ class ItemTranscriber:
                 key=lambda x: x.get("original_input_order_index", 0)
             )
             return transcription_results, summary_results
-        # --- End page-level resume ---
 
         logger.info(
             f"Starting transcription{' and summarization' if config.SUMMARIZE else ''} of "
@@ -307,142 +447,9 @@ class ItemTranscriber:
                 concurrency_limit=max_workers,
             )
 
-        def submit_task(args_tuple: tuple[int, Any]) -> dict[str, Any] | None:
-            original_input_order_index, img_path = args_tuple
-            nonlocal processed_count
-            try:
-                transcription_result_raw = self.transcribe_manager.transcribe_image(
-                    img_path
-                )
-                transcription_result = {
-                    **transcription_result_raw,
-                    "original_input_order_index": original_input_order_index,
-                }
+        # Mutable counter shared across threads (replaces nonlocal)
+        processed_count_ref = [0]
 
-                # Clean transcription text (for both TXT output and summarization)
-                if "error" not in transcription_result:
-                    raw_text = transcription_result.get("transcription", "")
-                    transcription_result["transcription"] = clean_transcription(
-                        raw_text
-                    )
-
-                if (
-                    config.SUMMARIZE
-                    and self.summary_manager
-                    and "error" not in transcription_result
-                ):
-                    page_num_model = transcription_result.get("page")
-                    transcription_text = transcription_result.get("transcription", "")
-
-                    has_valid_model_page_num = isinstance(page_num_model, int)
-                    page_num_to_use = (
-                        page_num_model
-                        if has_valid_model_page_num
-                        else original_input_order_index + 1
-                    )
-
-                    if (
-                        "[empty page]" in transcription_text
-                        or "[no transcription possible]" in transcription_text
-                    ):
-                        summary_data = self._create_placeholder_summary(
-                            page_num_to_use if has_valid_model_page_num else None,
-                            "arabic" if has_valid_model_page_num else "none",
-                            None,  # null bullet_points for blank pages
-                            references=None,
-                            page_types=["blank"],
-                        )
-                    else:
-                        summary_data = self.summary_manager.generate_summary(
-                            transcription_text, page_num_to_use  # type: ignore[arg-type]
-                        )
-                    summary_error = (
-                        summary_data.get("error")
-                        if isinstance(summary_data, dict)
-                        else None
-                    )
-                    summary_result = self._build_summary_result(
-                        original_input_order_index,
-                        img_path.name,
-                        summary_data,
-                        page_num_to_use,
-                        page_num_model,
-                        summary_error,
-                    )
-                    append_to_log(self.summary_log_path, summary_result)
-                    summary_results.append(summary_result)
-                elif (
-                    config.SUMMARIZE and self.summary_manager
-                ):  # Handles transcription error case
-                    page_num_model = transcription_result.get("page")
-                    has_valid_model_page_num = isinstance(page_num_model, int)
-                    page_num_to_use = (
-                        page_num_model
-                        if has_valid_model_page_num
-                        else original_input_order_index + 1
-                    )
-                    error_msg = transcription_result.get("error", "Unknown error")
-                    summary_data = self._create_placeholder_summary(
-                        page_num_to_use if has_valid_model_page_num else None,
-                        "arabic" if has_valid_model_page_num else "none",
-                        [f"[Transcription failed: {error_msg}]"],
-                        references=None,
-                        page_types=["other"],
-                        error_message=error_msg,
-                    )
-                    summary_result = self._build_summary_result(
-                        original_input_order_index,
-                        img_path.name,
-                        summary_data,
-                        page_num_to_use,
-                        page_num_model,
-                    )
-                    append_to_log(self.summary_log_path, summary_result)
-                    summary_results.append(summary_result)
-
-                append_to_log(self.log_path, transcription_result)
-                processed_count += 1
-
-                if (
-                    "processing_time" in transcription_result
-                    and "error" not in transcription_result
-                ):
-                    self.transcription_times.append(
-                        transcription_result["processing_time"]
-                    )
-
-                status = (
-                    "SUCCESS"
-                    if "error" not in transcription_result
-                    else f"FAILED ({transcription_result.get('retries', 0)} retries)"
-                )
-                item_num_str = transcription_result.get("page", "?")
-
-                eta_str = self._calculate_eta(processed_count, total_images)
-
-                logger.debug(
-                    f"Processed {processed_count}/{total_images} - Item {item_num_str} - Status: {status} - {eta_str}"
-                )
-                transcription_results.append(transcription_result)
-
-                return transcription_result
-
-            except Exception as e:
-                logger.exception(f"Critical error during task for {img_path.name}: {e}")
-                # Fallback to original order index + 1 for page numbering on error
-                seq_num = original_input_order_index + 1
-                error_result = {
-                    "page": seq_num,
-                    "image": img_path.name,
-                    "transcription": f"[CRITICAL ERROR] Unhandled in task: {e}",
-                    "error": str(e),
-                    "original_input_order_index": original_input_order_index,
-                }
-                transcription_results.append(error_result)
-                processed_count += 1
-                return error_result
-
-        # Load concurrency settings from concurrency.yaml
         max_workers, _ = get_transcription_concurrency()
         max_workers = min(max_workers, len(image_paths))
         if max_workers <= 0:
@@ -452,7 +459,16 @@ class ItemTranscriber:
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             list(
                 tqdm(
-                    executor.map(submit_task, image_paths_with_indices),
+                    executor.map(
+                        lambda args: self._process_single_page(
+                            args,
+                            transcription_results,
+                            summary_results,
+                            total_images,
+                            processed_count_ref,
+                        ),
+                        image_paths_with_indices,
+                    ),
                     total=total_images,
                     desc="Processing images",
                 )

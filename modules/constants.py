@@ -56,6 +56,17 @@ REF_INDENT_PT = 18
 BULLET_INDENT_PT = 18
 
 # ============================================================================
+# Transcription Markers
+# ============================================================================
+EMPTY_PAGE_MARKER = "[empty page]"
+NO_TRANSCRIPTION_MARKER = "[no transcription possible]"
+
+# ============================================================================
+# Model Provider Prefixes
+# ============================================================================
+OPENAI_MODEL_PREFIXES = ("gpt-", "o1", "o3", "o4")
+
+# ============================================================================
 # Error Detection Constants
 # ============================================================================
 ERROR_MARKERS = ["[empty page", "no transcription possible", "empty page", "error"]
@@ -120,6 +131,11 @@ __all__ = [
     "BULLET_SPACE_AFTER_PT",
     "REF_INDENT_PT",
     "BULLET_INDENT_PT",
+    # Transcription markers
+    "EMPTY_PAGE_MARKER",
+    "NO_TRANSCRIPTION_MARKER",
+    # Model provider prefixes
+    "OPENAI_MODEL_PREFIXES",
     # Error detection
     "ERROR_MARKERS",
     # Math conversion

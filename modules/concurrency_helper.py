@@ -6,11 +6,36 @@ files, with sensible defaults and validation.
 
 from __future__ import annotations
 
+from typing import Any
+
 from modules.config_loader import get_config_loader
 from modules.constants import DEFAULT_CONCURRENT_REQUESTS as DEFAULT_CONCURRENT_REQUESTS
 from modules.logger import setup_logger
 
 logger = setup_logger(__name__)
+
+
+# ============================================================================
+# Private Helper
+# ============================================================================
+def _get_config_value(
+    config_method: str,
+    path: list[str],
+    default: Any,
+    log_context: str = "",
+) -> Any:
+    """Navigate nested config dicts along *path*, returning *default* on any failure."""
+    try:
+        cfg_loader = get_config_loader()
+        getter = getattr(cfg_loader, config_method)
+        result: Any = getter()
+        for key in path:
+            result = result.get(key, {}) if isinstance(result, dict) else {}
+        return result if result != {} else default
+    except Exception as e:
+        if log_context:
+            logger.debug(f"Error loading {log_context}: {e}")
+        return default
 
 
 # ============================================================================
@@ -60,35 +85,26 @@ def get_image_processing_concurrency() -> tuple[int, float]:
 
 def get_service_tier(api_type: str = "transcription") -> str:
     """Get OpenAI service tier for the specified API type."""
-    try:
-        cfg_loader = get_config_loader()
-        concurrency_cfg = cfg_loader.get_concurrency_config()
-
-        service_tier: str | None = (
-            concurrency_cfg.get("api_requests", {})
-            .get(api_type, {})
-            .get("service_tier")
-        )
-
-        if service_tier:
-            return service_tier
-
-        return "flex"  # Default to flex for cost savings
-    except Exception as e:
-        logger.debug(f"Error determining service tier: {e}")
-        return "flex"
+    tier: Any = _get_config_value(
+        "get_concurrency_config",
+        ["api_requests", api_type, "service_tier"],
+        default=None,
+        log_context="service tier",
+    )
+    if isinstance(tier, str) and tier:
+        return tier
+    return "flex"
 
 
 def get_api_timeout() -> int:
     """Get API request timeout in seconds from concurrency.yaml."""
-    try:
-        cfg_loader = get_config_loader()
-        concurrency_cfg = cfg_loader.get_concurrency_config()
-        timeout = concurrency_cfg.get("api_requests", {}).get("api_timeout", 900)
-        return int(timeout)
-    except Exception as e:
-        logger.debug(f"Error loading API timeout: {e}")
-        return 900  # Default: 15 minutes
+    timeout: Any = _get_config_value(
+        "get_concurrency_config",
+        ["api_requests", "api_timeout"],
+        default=900,
+        log_context="API timeout",
+    )
+    return int(timeout)
 
 
 def get_rate_limits() -> list[tuple[int, int]]:
@@ -122,14 +138,13 @@ def get_rate_limits() -> list[tuple[int, int]]:
 
 def get_target_dpi() -> int:
     """Get target DPI for PDF page extraction."""
-    try:
-        cfg_loader = get_config_loader()
-        img_cfg = cfg_loader.get_image_processing_config()
-        dpi = img_cfg.get("api_image_processing", {}).get("target_dpi", 300)
-        return int(dpi)
-    except Exception as e:
-        logger.debug(f"Error loading target DPI: {e}")
-        return 300
+    dpi: Any = _get_config_value(
+        "get_image_processing_config",
+        ["api_image_processing", "target_dpi"],
+        default=300,
+        log_context="target DPI",
+    )
+    return int(dpi)
 
 
 # ============================================================================

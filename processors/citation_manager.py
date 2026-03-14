@@ -11,6 +11,7 @@ from typing import Any
 import requests
 
 from modules.logger import setup_logger
+from processors.file_manager import _format_page_range
 
 logger = setup_logger(__name__)
 
@@ -112,36 +113,7 @@ class Citation:
 
     def get_page_range_str(self) -> str:
         """Return a formatted string of page numbers/ranges."""
-        if not self.pages:
-            return ""
-
-        pages = self.get_sorted_pages()
-        if len(pages) == 1:
-            return f"p. {pages[0]}"
-
-        # Group consecutive pages into ranges
-        ranges = []
-        start = pages[0]
-        end = pages[0]
-
-        for i in range(1, len(pages)):
-            if pages[i] == end + 1:
-                end = pages[i]
-            else:
-                if start == end:
-                    ranges.append(f"{start}")
-                else:
-                    ranges.append(f"{start}-{end}")
-                start = pages[i]
-                end = pages[i]
-
-        # Add the last range
-        if start == end:
-            ranges.append(f"{start}")
-        else:
-            ranges.append(f"{start}-{end}")
-
-        return f"pp. {', '.join(ranges)}"
+        return _format_page_range(self.get_sorted_pages())
 
 
 class CitationManager:

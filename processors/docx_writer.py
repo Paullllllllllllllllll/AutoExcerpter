@@ -35,16 +35,11 @@ from modules.constants import (
     REF_INDENT_PT,
 )
 from modules.logger import setup_logger
-from modules.roman_numerals import int_to_roman
 from processors.citation_manager import CitationManager
 from processors.file_manager import (
+    prepare_summary_data,
     sanitize_for_xml,
-    _extract_summary_payload,
-    _page_information,
-    _should_render_bullets,
-    _get_structure_types,
     _format_page_range,
-    filter_empty_pages,
     STRUCTURE_PAGE_TYPE_ORDER,
     PAGE_TYPE_LABELS,
 )
@@ -139,6 +134,161 @@ def normalize_latex_whitespace(latex_code: str) -> str:
     return normalized
 
 
+def _regex_rule(
+    pattern: str, replacement: str, desc: str, flags: int = 0
+) -> tuple[
+    "Callable[[str], bool]",
+    "Callable[[str], str]",
+    str,
+]:
+    """Create a (should_apply, transform, description) tuple for regex-based rules."""
+    compiled = re.compile(pattern, flags)
+
+    def should_apply(text: str) -> bool:
+        return bool(compiled.search(text))
+
+    def transform(text: str) -> str:
+        return compiled.sub(replacement, text)
+
+    return should_apply, transform, desc
+
+
+def _literal_rule(
+    old: str, new: str, desc: str
+) -> tuple[
+    "Callable[[str], bool]",
+    "Callable[[str], str]",
+    str,
+]:
+    """Create a (should_apply, transform, description) tuple for literal string rules."""
+
+    def should_apply(text: str) -> bool:
+        return old in text
+
+    def transform(text: str) -> str:
+        return text.replace(old, new)
+
+    return should_apply, transform, desc
+
+
+def _simplify_delimiter_sizing(text: str) -> str:
+    """Replace all delimiter size commands with plain delimiters."""
+    sizes = [
+        "\\Big", "\\big", "\\bigg", "\\Bigg",
+        "\\Bigl", "\\Bigr", "\\bigl", "\\bigr",
+        "\\biggl", "\\biggr", "\\Biggl", "\\Biggr",
+        "\\bigm", "\\Bigm",
+    ]
+    delims = ["(", ")", "[", "]", "|", "\\{", "\\}", "\\|", "."]
+    for size in sizes:
+        for delim in delims:
+            target = f"{size}{delim}"
+            if target in text:
+                plain = delim if delim not in ("\\{", "\\}", "\\|") else delim[1:]
+                text = text.replace(target, plain if delim != "." else "")
+    return text
+
+
+def _simplify_auto_sizing(text: str) -> str:
+    """Replace \\left/\\right auto-sizing delimiters."""
+    text = text.replace("\\left.", "")
+    text = text.replace("\\right.", "")
+    text = re.sub(r"\\left\s*([(\[|])", r"\1", text)
+    text = re.sub(r"\\right\s*([)\]|])", r"\1", text)
+    text = re.sub(r"\\left\s*\\([{|}])", r"\\\1", text)
+    text = re.sub(r"\\right\s*\\([{|}])", r"\\\1", text)
+    text = text.replace("\\middle|", "|")
+    text = text.replace("\\middle", "")
+    return text
+
+
+# Type alias for transform rules
+from typing import Callable
+
+_LaTeXRule = tuple[Callable[[str], bool], Callable[[str], str], str]
+
+# Module-level list: each entry is (should_apply, transform, description)
+_LATEX_SIMPLIFICATIONS: list[_LaTeXRule] = [
+    # Logical operators
+    _literal_rule("\\land", "\\wedge", "logical operator (\\land -> \\wedge)"),
+    _literal_rule("\\lor", "\\vee", "logical operator (\\lor -> \\vee)"),
+    _literal_rule("\\lnot", "\\neg", "logical operator (\\lnot -> \\neg)"),
+    _literal_rule("\\iff", "\\Leftrightarrow", "logical operator (\\iff -> \\Leftrightarrow)"),
+    _literal_rule("\\implies", "\\Rightarrow", "logical operator (\\implies -> \\Rightarrow)"),
+    # Text commands
+    _regex_rule(r"\\text\{([^}]*)\}", r"\\mathrm{\1}", "text -> mathrm"),
+    _regex_rule(r"\\textrm\{([^}]*)\}", r"\\mathrm{\1}", "textrm -> mathrm"),
+    _regex_rule(r"\\textit\{([^}]*)\}", r"\\mathit{\1}", "textit -> mathit"),
+    _regex_rule(r"\\textbf\{([^}]*)\}", r"\\mathbf{\1}", "textbf -> mathbf"),
+    # Accent macros
+    _regex_rule(r"\\bar\{([^}]+)\}", r"\\overline{\1}", "accent (bar -> overline)"),
+    _regex_rule(r"\\tilde\{([^}]+)\}", r"\\widetilde{\1}", "accent (tilde -> widetilde)"),
+    _regex_rule(r"\\hat\{([^}]+)\}", r"\\widehat{\1}", "accent (hat -> widehat)"),
+    _regex_rule(r"\\vec\{([^}]+)\}", r"\\overrightarrow{\1}", "accent (vec -> overrightarrow)"),
+    _regex_rule(r"\\dot\{([^}]+)\}", r"\1", "accent (dot removed)"),
+    _regex_rule(r"\\ddot\{([^}]+)\}", r"\1", "accent (ddot removed)"),
+    # Delimiter sizing (complex transform)
+    (
+        lambda text: any(
+            f"{s}{d}" in text
+            for s in ["\\Big", "\\big", "\\bigg", "\\Bigg", "\\Bigl", "\\Bigr",
+                       "\\bigl", "\\bigr", "\\biggl", "\\biggr", "\\Biggl",
+                       "\\Biggr", "\\bigm", "\\Bigm"]
+            for d in ["(", ")", "[", "]", "|", "\\{", "\\}", "\\|", "."]
+        ),
+        _simplify_delimiter_sizing,
+        "delimiter sizing removed",
+    ),
+    # Auto-sizing delimiters
+    (
+        lambda text: "\\left" in text or "\\right" in text,
+        _simplify_auto_sizing,
+        "auto-sizing delimiters (left/right) removed",
+    ),
+    # Overbrace/underbrace
+    _regex_rule(r"\\overbrace\{([^}]+)\}\^?\{?[^}]*\}?", r"\1", "overbrace simplified"),
+    _regex_rule(r"\\underbrace\{([^}]+)\}_?\{?[^}]*\}?", r"\1", "underbrace simplified"),
+    _regex_rule(r"\\overleftarrow\{([^}]+)\}", r"\1", "overleftarrow simplified"),
+    _regex_rule(r"\\overrightarrow\{([^}]+)\}", r"\\vec{\1}", "overrightarrow simplified"),
+    _regex_rule(r"\\underleftarrow\{([^}]+)\}", r"\1", "underleftarrow simplified"),
+    _regex_rule(r"\\underrightarrow\{([^}]+)\}", r"\1", "underrightarrow simplified"),
+    # Phantoms
+    _regex_rule(r"\\phantom\{[^}]*\}", "", "phantom removed"),
+    _regex_rule(r"\\hphantom\{[^}]*\}", "", "hphantom removed"),
+    _regex_rule(r"\\vphantom\{[^}]*\}", "", "vphantom removed"),
+    # Spacing literals
+    _literal_rule("\\,", " ", "thin space normalized"),
+    _literal_rule("\\;", " ", "thick space normalized"),
+    _literal_rule("\\!", "", "negative thin space normalized"),
+    _literal_rule("\\quad", " ", "quad normalized"),
+    _literal_rule("\\qquad", "  ", "qquad normalized"),
+    # Spacing patterns
+    _regex_rule(r"\\hspace\{[^}]*\}", " ", "hspace normalized"),
+    _regex_rule(r"\\vspace\{[^}]*\}", "", "vspace normalized"),
+    _regex_rule(r"\\mspace\{[^}]*\}", " ", "mspace normalized"),
+    # Operatorname
+    _regex_rule(r"\\operatorname\{([^}]+)\}", r"\\mathrm{\1}", "operatorname -> mathrm"),
+    # Environments
+    _regex_rule(r"\\begin\{align\*?\}(.+?)\\end\{align\*?\}", r"\1", "align env unwrapped", re.DOTALL),
+    _regex_rule(r"\\begin\{gather\*?\}(.+?)\\end\{gather\*?\}", r"\1", "gather env unwrapped", re.DOTALL),
+    _regex_rule(r"\\begin\{equation\*?\}(.+?)\\end\{equation\*?\}", r"\1", "equation env unwrapped", re.DOTALL),
+    _regex_rule(r"\\begin\{split\}(.+?)\\end\{split\}", r"\1", "split env unwrapped", re.DOTALL),
+    _regex_rule(r"\\begin\{cases\}(.+?)\\end\{cases\}", r"\1", "cases env unwrapped", re.DOTALL),
+    # Alignment markers
+    (
+        lambda text: "&" in text or "\\\\" in text,
+        lambda text: text.replace("&", " ").replace("\\\\", " "),
+        "alignment markers cleaned",
+    ),
+    # Limits modifiers
+    (
+        lambda text: "\\limits" in text or "\\nolimits" in text,
+        lambda text: text.replace("\\limits", "").replace("\\nolimits", ""),
+        "limits modifiers removed",
+    ),
+]
+
+
 def simplify_problematic_latex(latex_code: str) -> tuple[str, list[str]]:
     """Simplify LaTeX code by removing constructs known to cause mathml2omml issues.
 
@@ -146,178 +296,21 @@ def simplify_problematic_latex(latex_code: str) -> tuple[str, list[str]]:
         Tuple of (simplified_latex, list_of_applied_simplifications)
     """
     simplified = latex_code
-    applied = []
+    applied: list[str] = []
 
-    # 1. Normalize whitespace first
+    # Normalize whitespace first
     original_len = len(simplified)
     simplified = normalize_latex_whitespace(simplified)
     if len(simplified) != original_len:
         applied.append("whitespace normalization")
 
-    # 2. Replace logical operators (not supported by latex2mathml)
-    logical_ops = [
-        ("\\land", "\\wedge"),
-        ("\\lor", "\\vee"),
-        ("\\lnot", "\\neg"),
-        ("\\iff", "\\Leftrightarrow"),
-        ("\\implies", "\\Rightarrow"),
-    ]
-    for old, new in logical_ops:
-        if old in simplified:
-            simplified = simplified.replace(old, new)
-            applied.append(f"logical operator ({old} -> {new})")
-
-    # 3. Replace text commands that cause issues
-    text_commands = [
-        (r"\\text\{([^}]*)\}", r"\\mathrm{\1}", "text -> mathrm"),
-        (r"\\textrm\{([^}]*)\}", r"\\mathrm{\1}", "textrm -> mathrm"),
-        (r"\\textit\{([^}]*)\}", r"\\mathit{\1}", "textit -> mathit"),
-        (r"\\textbf\{([^}]*)\}", r"\\mathbf{\1}", "textbf -> mathbf"),
-    ]
-    for pattern, replacement, desc in text_commands:
-        if re.search(pattern, simplified):
-            simplified = re.sub(pattern, replacement, simplified)
+    # Apply data-driven rules
+    for should_apply, transform, desc in _LATEX_SIMPLIFICATIONS:
+        if should_apply(simplified):
+            simplified = transform(simplified)
             applied.append(desc)
 
-    # 4. Replace accent macros that cause groupChr issues
-    accent_replacements = [
-        (r"\\bar\{([^}]+)\}", r"\\overline{\1}", "bar -> overline"),
-        (r"\\tilde\{([^}]+)\}", r"\\widetilde{\1}", "tilde -> widetilde"),
-        (r"\\hat\{([^}]+)\}", r"\\widehat{\1}", "hat -> widehat"),
-        (r"\\vec\{([^}]+)\}", r"\\overrightarrow{\1}", "vec -> overrightarrow"),
-        (r"\\dot\{([^}]+)\}", r"\1", "dot removed"),
-        (r"\\ddot\{([^}]+)\}", r"\1", "ddot removed"),
-    ]
-    for pattern, replacement, desc in accent_replacements:
-        if re.search(pattern, simplified):
-            simplified = re.sub(pattern, replacement, simplified)
-            applied.append(f"accent ({desc})")
-
-    # 5. Replace delimiter size commands
-    delimiter_sizes = [
-        "\\Big",
-        "\\big",
-        "\\bigg",
-        "\\Bigg",
-        "\\Bigl",
-        "\\Bigr",
-        "\\bigl",
-        "\\bigr",
-        "\\biggl",
-        "\\biggr",
-        "\\Biggl",
-        "\\Biggr",
-        "\\bigm",
-        "\\Bigm",
-    ]
-    delimiter_chars = ["(", ")", "[", "]", "|", "\\{", "\\}", "\\|", "."]
-
-    delimiter_simplified = False
-    for size in delimiter_sizes:
-        for delim in delimiter_chars:
-            target = f"{size}{delim}"
-            if target in simplified:
-                plain_delim = delim if delim not in ["\\{", "\\}", "\\|"] else delim[1:]
-                simplified = simplified.replace(
-                    target, plain_delim if delim != "." else ""
-                )
-                delimiter_simplified = True
-
-    if delimiter_simplified:
-        applied.append("delimiter sizing removed")
-
-    # 6. Replace auto-sizing delimiters
-    if "\\left" in simplified or "\\right" in simplified:
-        simplified = simplified.replace("\\left.", "")
-        simplified = simplified.replace("\\right.", "")
-        simplified = re.sub(r"\\left\s*([(\[|])", r"\1", simplified)
-        simplified = re.sub(r"\\right\s*([)\]|])", r"\1", simplified)
-        simplified = re.sub(r"\\left\s*\\([{|}])", r"\\\1", simplified)
-        simplified = re.sub(r"\\right\s*\\([{|}])", r"\\\1", simplified)
-        simplified = simplified.replace("\\middle|", "|")
-        simplified = simplified.replace("\\middle", "")
-        applied.append("auto-sizing delimiters (left/right) removed")
-
-    # 7. Replace overbrace/underbrace (complex structures)
-    brace_patterns = [
-        (r"\\overbrace\{([^}]+)\}\^?\{?[^}]*\}?", r"\1", "overbrace"),
-        (r"\\underbrace\{([^}]+)\}_?\{?[^}]*\}?", r"\1", "underbrace"),
-        (r"\\overleftarrow\{([^}]+)\}", r"\1", "overleftarrow"),
-        (r"\\overrightarrow\{([^}]+)\}", r"\\vec{\1}", "overrightarrow"),
-        (r"\\underleftarrow\{([^}]+)\}", r"\1", "underleftarrow"),
-        (r"\\underrightarrow\{([^}]+)\}", r"\1", "underrightarrow"),
-    ]
-    for pattern, replacement, desc in brace_patterns:
-        if re.search(pattern, simplified):
-            simplified = re.sub(pattern, replacement, simplified)
-            applied.append(f"{desc} simplified")
-
-    # 8. Replace \phantom and \hphantom (invisible spacing)
-    phantom_patterns = [
-        (r"\\phantom\{[^}]*\}", "", "phantom"),
-        (r"\\hphantom\{[^}]*\}", "", "hphantom"),
-        (r"\\vphantom\{[^}]*\}", "", "vphantom"),
-    ]
-    for pattern, replacement, desc in phantom_patterns:
-        if re.search(pattern, simplified):
-            simplified = re.sub(pattern, replacement, simplified)
-            applied.append(f"{desc} removed")
-
-    # 9. Replace problematic spacing commands (literal strings)
-    spacing_literals = [
-        ("\\,", " ", "thin space"),
-        ("\\;", " ", "thick space"),
-        ("\\!", "", "negative thin space"),
-        ("\\quad", " ", "quad"),
-        ("\\qquad", "  ", "qquad"),
-    ]
-    for old, new, desc in spacing_literals:
-        if old in simplified:
-            simplified = simplified.replace(old, new)
-            applied.append(f"{desc} normalized")
-
-    # Spacing commands with arguments (regex patterns)
-    spacing_patterns = [
-        (r"\\hspace\{[^}]*\}", " ", "hspace"),
-        (r"\\vspace\{[^}]*\}", "", "vspace"),
-        (r"\\mspace\{[^}]*\}", " ", "mspace"),
-    ]
-    for pattern, replacement, desc in spacing_patterns:
-        if re.search(pattern, simplified):
-            simplified = re.sub(pattern, replacement, simplified)
-            applied.append(f"{desc} normalized")
-
-    # 10. Handle \operatorname (convert to mathrm for compatibility)
-    if "\\operatorname" in simplified:
-        simplified = re.sub(r"\\operatorname\{([^}]+)\}", r"\\mathrm{\1}", simplified)
-        applied.append("operatorname -> mathrm")
-
-    # 11. Handle common unsupported environments
-    env_patterns = [
-        (r"\\begin\{align\*?\}(.+?)\\end\{align\*?\}", r"\1", "align env"),
-        (r"\\begin\{gather\*?\}(.+?)\\end\{gather\*?\}", r"\1", "gather env"),
-        (r"\\begin\{equation\*?\}(.+?)\\end\{equation\*?\}", r"\1", "equation env"),
-        (r"\\begin\{split\}(.+?)\\end\{split\}", r"\1", "split env"),
-        (r"\\begin\{cases\}(.+?)\\end\{cases\}", r"\1", "cases env"),
-    ]
-    for pattern, replacement, desc in env_patterns:
-        if re.search(pattern, simplified, re.DOTALL):
-            simplified = re.sub(pattern, replacement, simplified, flags=re.DOTALL)
-            applied.append(f"{desc} unwrapped")
-
-    # 12. Clean up alignment markers from environments
-    if "&" in simplified or "\\\\" in simplified:
-        simplified = simplified.replace("&", " ")
-        simplified = simplified.replace("\\\\", " ")
-        applied.append("alignment markers cleaned")
-
-    # 13. Handle \limits and \nolimits
-    if "\\limits" in simplified or "\\nolimits" in simplified:
-        simplified = simplified.replace("\\limits", "")
-        simplified = simplified.replace("\\nolimits", "")
-        applied.append("limits modifiers removed")
-
-    # 14. Final whitespace cleanup
+    # Final whitespace cleanup
     simplified = re.sub(r"\s+", " ", simplified).strip()
 
     return simplified, applied
@@ -517,29 +510,6 @@ def add_hyperlink(paragraph: Any, url: str, text: str) -> None:
     paragraph._p.append(hyperlink)
 
 
-def _format_page_heading_docx(
-    page_number: Any, page_number_type: str, page_types: list[str], is_unnumbered: bool
-) -> str:
-    """Format page heading for DOCX output based on page_types and numbering."""
-    type_prefix = ""
-    if "abstract" in page_types and "content" not in page_types:
-        type_prefix = "[Abstract] "
-    elif "preface" in page_types:
-        type_prefix = "[Preface] "
-    elif "appendix" in page_types:
-        type_prefix = "[Appendix] "
-    elif "figures_tables_sources" in page_types:
-        type_prefix = "[Figures/Tables] "
-
-    if page_number_type == "roman" and isinstance(page_number, int):
-        roman_str = int_to_roman(page_number)
-        return f"{type_prefix}Page {roman_str}"
-    elif page_number_type == "none" or is_unnumbered:
-        return f"{type_prefix}[Unnumbered page]"
-    else:
-        return f"{type_prefix}Page {page_number}"
-
-
 def create_docx_summary(
     summary_results: list[dict[str, Any]], output_path: Path, document_name: str
 ) -> None:
@@ -551,30 +521,10 @@ def create_docx_summary(
     3. Content Summaries (in document order)
     4. Consolidated References
     """
-    filtered_results = filter_empty_pages(summary_results)
-    if len(filtered_results) < len(summary_results):
-        logger.info(
-            "Filtered out %s pages with no useful content",
-            len(summary_results) - len(filtered_results),
-        )
-
     citation_manager = CitationManager(polite_pool_email=config.CITATION_OPENALEX_EMAIL)
-
-    page_type_pages: dict[str, list[int]] = {pt: [] for pt in STRUCTURE_PAGE_TYPE_ORDER}
-
-    for result in filtered_results:
-        summary_payload = _extract_summary_payload(result)
-        page_info = _page_information(summary_payload)
-        page_number = page_info["page_number_integer"]
-        page_types = page_info["page_types"]
-        references = summary_payload.get("references") or []
-
-        if references and isinstance(page_number, int):
-            citation_manager.add_citations(references, page_number)
-
-        if isinstance(page_number, int):
-            for pt in _get_structure_types(page_types):
-                page_type_pages[pt].append(page_number)
+    data = prepare_summary_data(summary_results, citation_manager)
+    filtered_results = data.filtered_results
+    page_type_pages = data.page_type_pages
 
     document = Document()
 
@@ -589,18 +539,9 @@ def create_docx_summary(
     title.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
     title.paragraph_format.space_after = Pt(TITLE_SPACE_AFTER_PT)
 
-    content_pages = sum(
-        1
-        for r in filtered_results
-        if _should_render_bullets(
-            _page_information(_extract_summary_payload(r)).get(
-                "page_types", ["content"]
-            )
-        )
-    )
     metadata = "Processed: %s | Content pages: %s | Total pages: %s" % (
         datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        content_pages,
+        data.content_page_count,
         len(filtered_results),
     )
     meta_paragraph = document.add_paragraph(metadata)
@@ -627,25 +568,14 @@ def create_docx_summary(
                 struct_para.add_run(page_range)
 
     # === SECTION 3: Content Summaries ===
-    for result in filtered_results:
-        summary_payload = _extract_summary_payload(result)
-        page_info = _page_information(summary_payload)
-        page_number = page_info["page_number_integer"]
-        page_number_type = page_info["page_number_type"]
-        page_types = page_info["page_types"]
-        bullet_points = summary_payload.get("bullet_points") or []
-
-        if _should_render_bullets(page_types) and bullet_points:
-            heading_text = _format_page_heading_docx(
-                page_number, page_number_type, page_types, page_info["is_unnumbered"]
-            )
-            page_heading = document.add_heading(heading_text, PAGE_HEADING_LEVEL)
+    for page_item in data.page_render_items:
+            page_heading = document.add_heading(page_item.heading_text, PAGE_HEADING_LEVEL)
             page_heading.paragraph_format.space_before = Pt(
                 PAGE_HEADING_SPACE_BEFORE_PT
             )
             page_heading.paragraph_format.space_after = Pt(PAGE_HEADING_SPACE_AFTER_PT)
 
-            for point in bullet_points:
+            for point in page_item.bullet_points:
                 paragraph = document.add_paragraph(style="List Bullet")
                 paragraph.paragraph_format.space_before = Pt(0)
                 paragraph.paragraph_format.space_after = Pt(BULLET_SPACE_AFTER_PT)

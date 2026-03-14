@@ -8,44 +8,16 @@ from typing import Any
 
 from modules import app_config as config
 from modules.logger import setup_logger
-from modules.roman_numerals import int_to_roman
 from processors.citation_manager import CitationManager
 from processors.file_manager import (
+    prepare_summary_data,
     sanitize_for_xml,
-    _extract_summary_payload,
-    _page_information,
-    _should_render_bullets,
-    _get_structure_types,
     _format_page_range,
-    filter_empty_pages,
     STRUCTURE_PAGE_TYPE_ORDER,
     PAGE_TYPE_LABELS,
 )
 
 logger = setup_logger(__name__)
-
-
-def _format_page_heading_md(
-    page_number: Any, page_number_type: str, page_types: list[str], is_unnumbered: bool
-) -> str:
-    """Format page heading for markdown output based on page_types and numbering."""
-    type_prefix = ""
-    if "abstract" in page_types and "content" not in page_types:
-        type_prefix = "[Abstract] "
-    elif "preface" in page_types:
-        type_prefix = "[Preface] "
-    elif "appendix" in page_types:
-        type_prefix = "[Appendix] "
-    elif "figures_tables_sources" in page_types:
-        type_prefix = "[Figures/Tables] "
-
-    if page_number_type == "roman" and isinstance(page_number, int):
-        roman_str = int_to_roman(page_number)
-        return f"## {type_prefix}Page {roman_str}"
-    elif page_number_type == "none" or is_unnumbered:
-        return f"## {type_prefix}[Unnumbered page]"
-    else:
-        return f"## {type_prefix}Page {page_number}"
 
 
 def create_markdown_summary(
@@ -64,30 +36,10 @@ def create_markdown_summary(
         output_path: Path where the markdown file will be written.
         document_name: Name of the source document for the title.
     """
-    filtered_results = filter_empty_pages(summary_results)
-    if len(filtered_results) < len(summary_results):
-        logger.info(
-            "Filtered out %s pages with no useful content",
-            len(summary_results) - len(filtered_results),
-        )
-
     citation_manager = CitationManager(polite_pool_email=config.CITATION_OPENALEX_EMAIL)
-
-    page_type_pages: dict[str, list[int]] = {pt: [] for pt in STRUCTURE_PAGE_TYPE_ORDER}
-
-    for result in filtered_results:
-        summary_payload = _extract_summary_payload(result)
-        page_info = _page_information(summary_payload)
-        page_number = page_info["page_number_integer"]
-        page_types = page_info["page_types"]
-        references = summary_payload.get("references") or []
-
-        if references and isinstance(page_number, int):
-            citation_manager.add_citations(references, page_number)
-
-        if isinstance(page_number, int):
-            for pt in _get_structure_types(page_types):
-                page_type_pages[pt].append(page_number)
+    data = prepare_summary_data(summary_results, citation_manager)
+    filtered_results = data.filtered_results
+    page_type_pages = data.page_type_pages
 
     lines: list[str] = []
 
@@ -95,18 +47,9 @@ def create_markdown_summary(
     lines.append(f"# Summary of {sanitize_for_xml(document_name)}")
     lines.append("")
 
-    content_pages = sum(
-        1
-        for r in filtered_results
-        if _should_render_bullets(
-            _page_information(_extract_summary_payload(r)).get(
-                "page_types", ["content"]
-            )
-        )
-    )
     lines.append(
         f"*Processed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | "
-        f"Content pages: {content_pages} | Total pages: {len(filtered_results)}*"
+        f"Content pages: {data.content_page_count} | Total pages: {len(filtered_results)}*"
     )
     lines.append("")
 
@@ -128,30 +71,15 @@ def create_markdown_summary(
         lines.append("")
 
     # === SECTION 3: Content Summaries ===
-    for result in filtered_results:
-        summary_payload = _extract_summary_payload(result)
-        page_info = _page_information(summary_payload)
-        page_number = page_info["page_number_integer"]
-        page_number_type = page_info["page_number_type"]
-        page_types = page_info["page_types"]
-        bullet_points = summary_payload.get("bullet_points") or []
+    for page_item in data.page_render_items:
+        lines.append(f"## {page_item.heading_text}")
+        lines.append("")
 
-        if _should_render_bullets(page_types) and bullet_points:
-            lines.append(
-                _format_page_heading_md(
-                    page_number,
-                    page_number_type,
-                    page_types,
-                    page_info["is_unnumbered"],
-                )
-            )
-            lines.append("")
+        for point in page_item.bullet_points:
+            sanitized_point = sanitize_for_xml(point)
+            lines.append(f"- {sanitized_point}")
 
-            for point in bullet_points:
-                sanitized_point = sanitize_for_xml(point)
-                lines.append(f"- {sanitized_point}")
-
-            lines.append("")
+        lines.append("")
 
     # === Consolidated References ===
     if citation_manager.citations:

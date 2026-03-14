@@ -29,7 +29,7 @@ from modules.concurrency_helper import get_api_timeout, get_rate_limits
 from modules.prompt_utils import render_prompt_with_schema
 from modules.config_loader import PROMPTS_DIR, SCHEMAS_DIR
 from modules.logger import setup_logger
-from modules.token_tracker import get_token_tracker
+from modules.text_cleaner import strip_markdown_code_block
 
 logger = setup_logger(__name__)
 
@@ -216,10 +216,6 @@ class SummaryManager(LLMClientBase):
         """Generate a structured summary from transcription text."""
         start_time = time.time()
 
-        schema_retry_attempts = {
-            "page_type_null_bullets": 0,
-        }
-
         summary_json = None
 
         # Schema retry loop (API retries handled by LangChain)
@@ -242,35 +238,14 @@ class SummaryManager(LLMClientBase):
                 self._report_success()
 
                 # Report token usage (built into LangChain's response metadata)
-                try:
-                    usage_meta = getattr(response, "usage_metadata", None)
-                    if usage_meta and isinstance(usage_meta, dict):
-                        total_tokens = usage_meta.get("total_tokens")
-                        if total_tokens and isinstance(total_tokens, int):
-                            token_tracker = get_token_tracker()
-                            token_tracker.add_tokens(total_tokens)
-                            logger.debug(
-                                f"[TOKEN] Summary for page {page_num}: "
-                                f"added {total_tokens} tokens (total now: {token_tracker.get_tokens_used_today():,})"
-                            )
-                except (AttributeError, TypeError, ValueError) as e:
-                    logger.warning(
-                        f"Error reporting token usage for page {page_num}: {e}"
-                    )
+                self._report_token_usage(response, f"Summary for page {page_num}")
 
                 summary_json_str = self._extract_output_text(response)
                 if not summary_json_str:
                     raise ValueError("LLM API returned empty content for summary.")
 
                 # Strip markdown code blocks if present
-                summary_json_str = summary_json_str.strip()
-                if summary_json_str.startswith("```json"):
-                    summary_json_str = summary_json_str[7:]  # Remove ```json
-                elif summary_json_str.startswith("```"):
-                    summary_json_str = summary_json_str[3:]  # Remove ```
-                if summary_json_str.endswith("```"):
-                    summary_json_str = summary_json_str[:-3]  # Remove ```
-                summary_json_str = summary_json_str.strip()
+                summary_json_str = strip_markdown_code_block(summary_json_str)
 
                 # Parse JSON with better error handling
                 try:
@@ -294,11 +269,6 @@ class SummaryManager(LLMClientBase):
                     "processing_time": round(processing_time, 2),
                     "provider": self.provider,
                 }
-
-                # Include schema retry statistics if any occurred
-                total_schema_retries = sum(schema_retry_attempts.values())
-                if total_schema_retries > 0:
-                    result["schema_retries"] = schema_retry_attempts.copy()
 
                 # Add response metadata for logging
                 response_meta = getattr(response, "response_metadata", {})
@@ -332,7 +302,6 @@ class SummaryManager(LLMClientBase):
             ),
             "references": summary_json.get("references") if summary_json else None,
             "processing_time": round(time.time() - start_time, 2),
-            "schema_retries": schema_retry_attempts.copy(),
             "provider": self.provider,
         }
         return result

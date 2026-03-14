@@ -10,12 +10,14 @@ Re-exports from submodules are provided for backward compatibility.
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from modules.constants import ERROR_MARKERS
 from modules.logger import setup_logger
+from modules.roman_numerals import int_to_roman
 
 logger = setup_logger(__name__)
 
@@ -200,6 +202,139 @@ def _format_page_range(pages: list[int]) -> str:
         ranges.append(f"{start}-{end}")
 
     return f"pp. {', '.join(ranges)}"
+
+
+# ============================================================================
+# Shared Summary Preparation (used by DOCX and Markdown writers)
+# ============================================================================
+@dataclass
+class PageRenderData:
+    """Pre-computed rendering data for a single summary page."""
+
+    page_number: Any
+    page_number_type: str
+    page_types: list[str]
+    is_unnumbered: bool
+    bullet_points: list[str]
+    heading_text: str
+
+
+@dataclass
+class SummaryData:
+    """Aggregated data produced by :func:`prepare_summary_data`.
+
+    Attributes:
+        filtered_results: Summary results after filtering empty pages.
+        page_type_pages: Mapping from structure page type to list of page numbers.
+        content_page_count: Number of pages with bullet-renderable content.
+        page_render_items: Per-page rendering data (only pages with bullets).
+    """
+
+    filtered_results: list[dict[str, Any]]
+    page_type_pages: dict[str, list[int]]
+    content_page_count: int
+    page_render_items: list[PageRenderData] = field(default_factory=list)
+
+
+def prepare_summary_data(
+    summary_results: list[dict[str, Any]],
+    citation_manager: Any,
+) -> SummaryData:
+    """Shared preparation logic for DOCX and Markdown summary writers.
+
+    Filters empty pages, collects citations, builds page-type mapping,
+    and pre-computes per-page rendering data.
+
+    Args:
+        summary_results: Raw summary results from the API.
+        citation_manager: A :class:`CitationManager` instance (passed in for testability).
+
+    Returns:
+        A :class:`SummaryData` instance with all prepared data.
+    """
+    filtered_results = filter_empty_pages(summary_results)
+    if len(filtered_results) < len(summary_results):
+        logger.info(
+            "Filtered out %s pages with no useful content",
+            len(summary_results) - len(filtered_results),
+        )
+
+    page_type_pages: dict[str, list[int]] = {pt: [] for pt in STRUCTURE_PAGE_TYPE_ORDER}
+    page_render_items: list[PageRenderData] = []
+    content_page_count = 0
+
+    for result in filtered_results:
+        summary_payload = _extract_summary_payload(result)
+        page_info = _page_information(summary_payload)
+        page_number = page_info["page_number_integer"]
+        page_types = page_info["page_types"]
+        references = summary_payload.get("references") or []
+
+        if references and isinstance(page_number, int):
+            citation_manager.add_citations(references, page_number)
+
+        if isinstance(page_number, int):
+            for pt in _get_structure_types(page_types):
+                page_type_pages[pt].append(page_number)
+
+        # Track content pages and build render data
+        if _should_render_bullets(page_types):
+            content_page_count += 1
+            bullet_points = summary_payload.get("bullet_points") or []
+            if bullet_points:
+                heading = format_page_heading(
+                    page_number,
+                    page_info["page_number_type"],
+                    page_types,
+                    page_info["is_unnumbered"],
+                )
+                page_render_items.append(
+                    PageRenderData(
+                        page_number=page_number,
+                        page_number_type=page_info["page_number_type"],
+                        page_types=page_types,
+                        is_unnumbered=page_info["is_unnumbered"],
+                        bullet_points=bullet_points,
+                        heading_text=heading,
+                    )
+                )
+
+    return SummaryData(
+        filtered_results=filtered_results,
+        page_type_pages=page_type_pages,
+        content_page_count=content_page_count,
+        page_render_items=page_render_items,
+    )
+
+
+# ============================================================================
+# Page Heading Formatting (shared by DOCX and Markdown writers)
+# ============================================================================
+def format_page_heading(
+    page_number: Any, page_number_type: str, page_types: list[str], is_unnumbered: bool
+) -> str:
+    """Format page heading text based on page_types and numbering.
+
+    Returns bare heading text (no markdown prefix). Writers add their own
+    format-specific prefix (e.g. ``## `` for Markdown).
+    """
+    type_prefix = ""
+    if "abstract" in page_types and "content" not in page_types:
+        type_prefix = "[Abstract] "
+    elif "preface" in page_types:
+        type_prefix = "[Preface] "
+    elif "appendix" in page_types:
+        type_prefix = "[Appendix] "
+    elif "figures_tables_sources" in page_types:
+        type_prefix = "[Figures/Tables] "
+
+    if page_number_type == "roman" and isinstance(page_number, int):
+        roman_str = int_to_roman(page_number)
+        return f"{type_prefix}Page {roman_str}"
+    elif page_number_type == "none" or is_unnumbered:
+        return f"{type_prefix}[Unnumbered page]"
+    else:
+        return f"{type_prefix}Page {page_number}"
 
 
 # ============================================================================

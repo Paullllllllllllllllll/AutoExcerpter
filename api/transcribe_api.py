@@ -33,7 +33,7 @@ from modules.prompt_utils import render_prompt_with_schema
 from modules.image_utils import ImageProcessor
 from modules.config_loader import PROMPTS_DIR, SCHEMAS_DIR
 from modules.logger import setup_logger
-from modules.token_tracker import get_token_tracker
+from modules.text_cleaner import strip_markdown_code_block
 
 logger = setup_logger(__name__)
 
@@ -227,16 +227,7 @@ class TranscriptionManager(LLMClientBase):
         if not text:
             return f"[transcription error: {image_name or '[unknown image]'}]"
 
-        stripped = text.lstrip()
-
-        # Strip markdown code blocks if present
-        if stripped.startswith("```json"):
-            stripped = stripped[7:]  # Remove ```json
-        elif stripped.startswith("```"):
-            stripped = stripped[3:]  # Remove ```
-        if stripped.endswith("```"):
-            stripped = stripped[:-3]  # Remove ```
-        stripped = stripped.strip()
+        stripped = strip_markdown_code_block(text)
 
         if not stripped.startswith("{"):
             return text
@@ -397,21 +388,9 @@ class TranscriptionManager(LLMClientBase):
                 self._report_success()
 
                 # Report token usage (built into LangChain's response metadata)
-                try:
-                    usage_meta = getattr(response, "usage_metadata", None)
-                    if usage_meta and isinstance(usage_meta, dict):
-                        total_tokens = usage_meta.get("total_tokens")
-                        if total_tokens and isinstance(total_tokens, int):
-                            token_tracker = get_token_tracker()
-                            token_tracker.add_tokens(total_tokens)
-                            logger.debug(
-                                f"[TOKEN] Transcription for {image_path.name}: "
-                                f"added {total_tokens} tokens (total now: {token_tracker.get_tokens_used_today():,})"
-                            )
-                except (AttributeError, TypeError, ValueError) as e:
-                    logger.warning(
-                        f"Error reporting token usage for {image_path.name}: {e}"
-                    )
+                self._report_token_usage(
+                    response, f"Transcription for {image_path.name}"
+                )
 
                 raw_text = self._extract_output_text(response)
                 transcription = self._parse_transcription_from_text(

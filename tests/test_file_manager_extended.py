@@ -8,7 +8,7 @@ Covers:
 - create_docx_summary: DOCX file creation (python-docx mocked)
 - create_markdown_summary: additional edge cases
 - _format_page_range: compact range formatting
-- _format_page_heading_docx: DOCX-specific heading formatting
+- format_page_heading: DOCX-specific heading formatting
 - add_hyperlink: adds hyperlink elements to paragraph
 - sanitize_omml_xml: XML sanitization
 - add_math_to_paragraph: math rendering with fallback
@@ -32,9 +32,9 @@ from processors.docx_writer import (
     add_math_to_paragraph,
     add_formatted_text_to_paragraph,
     add_hyperlink,
-    _format_page_heading_docx,
 )
 from processors.file_manager import (
+    format_page_heading,
     write_transcription_to_text,
     sanitize_for_xml,
     _format_page_range,
@@ -402,49 +402,49 @@ class TestFormatPageRange:
 
 
 # ============================================================================
-# _format_page_heading_docx
+# format_page_heading
 # ============================================================================
 class TestFormatPageHeadingDocx:
-    """Tests for _format_page_heading_docx()."""
+    """Tests for format_page_heading()."""
 
     def test_arabic_content_page(self) -> None:
         """Standard Arabic-numbered content page."""
-        result = _format_page_heading_docx(5, "arabic", ["content"], False)
+        result = format_page_heading(5, "arabic", ["content"], False)
         assert result == "Page 5"
 
     def test_roman_page(self) -> None:
         """Roman numeral page."""
-        result = _format_page_heading_docx(3, "roman", ["content"], False)
+        result = format_page_heading(3, "roman", ["content"], False)
         assert result == "Page iii"
 
     def test_unnumbered_page(self) -> None:
         """Unnumbered page via page_number_type='none'."""
-        result = _format_page_heading_docx("?", "none", ["content"], True)
+        result = format_page_heading("?", "none", ["content"], True)
         assert result == "[Unnumbered page]"
 
     def test_preface_prefix(self) -> None:
         """Preface page type adds [Preface] prefix."""
-        result = _format_page_heading_docx(1, "roman", ["preface"], False)
+        result = format_page_heading(1, "roman", ["preface"], False)
         assert result == "[Preface] Page i"
 
     def test_appendix_prefix(self) -> None:
         """Appendix page type adds [Appendix] prefix."""
-        result = _format_page_heading_docx(100, "arabic", ["appendix"], False)
+        result = format_page_heading(100, "arabic", ["appendix"], False)
         assert result == "[Appendix] Page 100"
 
     def test_abstract_prefix(self) -> None:
         """Abstract page type (without content) adds [Abstract] prefix."""
-        result = _format_page_heading_docx(1, "arabic", ["abstract"], False)
+        result = format_page_heading(1, "arabic", ["abstract"], False)
         assert result == "[Abstract] Page 1"
 
     def test_abstract_with_content_no_prefix(self) -> None:
         """Abstract combined with content does not add [Abstract] prefix."""
-        result = _format_page_heading_docx(1, "arabic", ["abstract", "content"], False)
+        result = format_page_heading(1, "arabic", ["abstract", "content"], False)
         assert "[Abstract]" not in result
 
     def test_figures_tables_prefix(self) -> None:
         """Figures/tables page type adds prefix."""
-        result = _format_page_heading_docx(
+        result = format_page_heading(
             50, "arabic", ["figures_tables_sources"], False
         )
         assert result == "[Figures/Tables] Page 50"

@@ -704,7 +704,7 @@ class TestGenerateSummary:
                 mgr, "_get_structured_chat_model", return_value=mock_structured
             ),
             patch.object(mgr, "_build_model_inputs", return_value=([], {})),
-            patch("api.summary_api.get_token_tracker") as mock_tt,
+            patch("api.base_llm_client.get_token_tracker") as mock_tt,
         ):
             mock_tracker = MagicMock()
             mock_tracker.get_tokens_used_today.return_value = 500
