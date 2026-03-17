@@ -368,19 +368,20 @@ class TranscriptionManager(LLMClientBase):
             "transcription_not_possible": 0,
         }
 
-        # Schema retry loop (API retries handled by LangChain)
+        # Schema retry loop (API retries handled by _invoke_with_retry)
         for _ in range(max_schema_retries + 1):
             try:
-                self._wait_for_rate_limit()
-
                 # Build messages and invocation kwargs
                 messages, invoke_kwargs = self._build_model_inputs(base64_image)
 
                 # Get structured chat model (uses with_structured_output for non-OpenAI providers)
                 structured_model = self._get_structured_chat_model()
 
-                # LangChain handles API retries with exponential backoff internally
-                response = structured_model.invoke(messages, **invoke_kwargs)
+                # Application-level retry with per-attempt token tracking
+                response = self._invoke_with_retry(
+                    structured_model, messages, invoke_kwargs,
+                    f"Transcription for {image_path.name}",
+                )
 
                 # Success - extract and parse response
                 processing_time = time.time() - start_time
@@ -462,11 +463,10 @@ class TranscriptionManager(LLMClientBase):
                 return result
 
             except Exception as e:
-                # LangChain has already exhausted its retries if we get here
+                # _invoke_with_retry has exhausted all retries if we get here
                 self.failed_requests += 1
-                self._report_error(True)
                 logger.error(
-                    f"Transcription API error for {image_path.name} after LangChain retries: "
+                    f"Transcription API error for {image_path.name} after retries: "
                     f"{type(e).__name__} - {e}"
                 )
                 return {

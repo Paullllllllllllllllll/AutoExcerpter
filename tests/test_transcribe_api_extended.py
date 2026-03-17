@@ -733,3 +733,56 @@ class TestExtractSequenceNumberEdgeCases:
         mgr = _make_manager()
         result = mgr._extract_sequence_number(Path("vol2_ch3_page_15.png"))
         assert result == 15
+
+
+# ============================================================================
+# transcribe_image uses _invoke_with_retry
+# ============================================================================
+class TestTranscribeImageUsesInvokeWithRetry:
+    """Verify transcribe_image delegates to _invoke_with_retry."""
+
+    def test_transcribe_calls_invoke_with_retry(self, tmp_path) -> None:
+        """transcribe_image uses _invoke_with_retry instead of direct invoke."""
+        image_path = tmp_path / "page_0001.png"
+        image_path.write_bytes(b"\x89PNG")
+
+        mgr = _make_manager(provider="openai")
+
+        mock_response = AIMessage(
+            content=json.dumps(
+                {
+                    "transcription": "Retry-based transcription.",
+                    "no_transcribable_text": False,
+                    "transcription_not_possible": False,
+                }
+            )
+        )
+        mock_response.usage_metadata = {"total_tokens": 100}  # type: ignore[assignment]
+        mock_response.response_metadata = {}
+
+        with (
+            patch.object(
+                mgr, "_invoke_with_retry", return_value=mock_response
+            ) as mock_invoke,
+            patch.object(mgr, "_build_model_inputs", return_value=([], {})),
+            patch("api.transcribe_api.ImageProcessor") as mock_ip_cls,
+            patch("api.base_llm_client.get_token_tracker") as mock_tt,
+        ):
+            from PIL import Image
+
+            mock_processor = MagicMock()
+            mock_processor.process_image_to_memory.return_value = Image.new(
+                "RGB", (10, 10)
+            )
+            mock_processor.img_cfg = {"jpeg_quality": 95}
+            mock_ip_cls.return_value = mock_processor
+            mock_ip_cls.pil_image_to_base64.return_value = "fakebase64"
+
+            mock_tracker = MagicMock()
+            mock_tracker.get_tokens_used_today.return_value = 100
+            mock_tt.return_value = mock_tracker
+
+            result = mgr.transcribe_image(image_path)
+
+        mock_invoke.assert_called_once()
+        assert result["transcription"] == "Retry-based transcription."

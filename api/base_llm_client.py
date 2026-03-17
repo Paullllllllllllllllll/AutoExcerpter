@@ -5,14 +5,16 @@ This module provides the foundational LLM client implementation with:
 1. **Multi-Provider Support**: Works with OpenAI, Anthropic, Google, and OpenRouter
    through LangChain's unified interface.
 
-2. **LangChain Built-in Retry**: API error retries (rate limits, timeouts, server errors)
-   are handled by LangChain's built-in exponential backoff via `max_retries` parameter.
+2. **Application-Level Retry**: API error retries (rate limits, timeouts, server errors)
+   are handled by ``_invoke_with_retry`` with exponential backoff and per-attempt token
+   tracking. SDK-level retries are disabled (``max_retries=0``) so that every attempt
+   is visible to the token tracker.
 
 3. **Schema-Specific Retries**: Optional retries based on model-returned flags
    in responses (e.g., no_transcribable_text, page_type_null_bullets).
 
 4. **Rate Limiting Integration**: Works with RateLimiter to throttle requests and prevent
-   API quota exhaustion (complementary to LangChain's retry).
+   API quota exhaustion (complementary to application-level retry).
 
 5. **Configuration Loading**: Dynamically loads model parameters from YAML configuration files.
 
@@ -23,6 +25,7 @@ from __future__ import annotations
 
 import random
 import statistics
+import time
 from collections import deque
 from collections.abc import Callable
 from typing import Any
@@ -215,20 +218,20 @@ class LLMClientBase:
         self.rate_limiter = rate_limiter
         self.max_retries = max_retries
 
-        # Create LLM configuration - LangChain handles retry with exponential backoff
+        # Create LLM configuration — SDK retries disabled; handled by _invoke_with_retry
         llm_config = LLMConfig(
             model=model_name,
             provider=provider,
             api_key=api_key,
             timeout=self.timeout,  # Use resolved timeout (never None)
-            max_retries=max_retries,  # LangChain handles exponential backoff
+            max_retries=0,  # Disable SDK retries; handled by _invoke_with_retry
             service_tier=service_tier,
         )
 
         # Store the resolved provider
         self.provider = llm_config.provider
 
-        # Instantiate LangChain chat model (with built-in retry)
+        # Instantiate LangChain chat model (no SDK-level retry)
         self.chat_model: BaseChatModel = get_chat_model(llm_config)
 
         # Statistics tracking
@@ -248,7 +251,7 @@ class LLMClientBase:
 
         logger.info(
             f"Initialized LLM client: provider={self.provider}, model={model_name}, "
-            f"max_retries={max_retries} (handled by LangChain)"
+            f"max_retries={max_retries} (application-level via _invoke_with_retry)"
         )
 
     def _load_model_config(self, config_key: str) -> dict[str, Any]:
@@ -434,19 +437,213 @@ class LLMClientBase:
         """
         try:
             usage_meta = getattr(response, "usage_metadata", None)
-            if usage_meta and isinstance(usage_meta, dict):
-                total_tokens = usage_meta.get("total_tokens")
-                if total_tokens and isinstance(total_tokens, int):
-                    token_tracker = get_token_tracker()
-                    token_tracker.add_tokens(total_tokens)
-                    logger.debug(
-                        f"[TOKEN] {context_label}: "
-                        f"added {total_tokens} tokens (total now: {token_tracker.get_tokens_used_today():,})"
-                    )
+            if not usage_meta or not isinstance(usage_meta, dict):
+                logger.warning(
+                    f"[TOKEN] {context_label}: usage_metadata missing or not a dict"
+                )
+                return
+
+            total_tokens = usage_meta.get("total_tokens")
+
+            # Fallback: compute from input_tokens + output_tokens (Anthropic-style)
+            if not total_tokens or not isinstance(total_tokens, int):
+                input_tokens = usage_meta.get("input_tokens", 0)
+                output_tokens = usage_meta.get("output_tokens", 0)
+                if isinstance(input_tokens, int) and isinstance(output_tokens, int):
+                    total_tokens = input_tokens + output_tokens
+
+            if total_tokens and isinstance(total_tokens, int):
+                token_tracker = get_token_tracker()
+                token_tracker.add_tokens(total_tokens)
+                logger.debug(
+                    f"[TOKEN] {context_label}: "
+                    f"added {total_tokens} tokens (total now: {token_tracker.get_tokens_used_today():,})"
+                )
+            else:
+                logger.warning(
+                    f"[TOKEN] {context_label}: no usable token counts in usage_metadata"
+                )
         except (AttributeError, TypeError, ValueError) as e:
             logger.warning(
                 f"Error reporting token usage for {context_label}: {e}"
             )
+
+    def _extract_tokens_from_exception(self, exc: Exception, context_label: str) -> None:
+        """Extract token usage from a failed API call's exception.
+
+        Provider SDK exceptions often carry usage data in ``body.usage`` or
+        ``response.json()["usage"]``.  This method attempts both strategies and
+        reports recovered tokens to the tracker.  It never raises.
+
+        Args:
+            exc: The exception from a failed ``invoke()`` call.
+            context_label: Description for the log message.
+        """
+        try:
+            usage: dict[str, Any] | None = None
+
+            # Strategy 1: exc.body["usage"] (OpenAI / Anthropic SDK exceptions)
+            body = getattr(exc, "body", None)
+            if isinstance(body, dict):
+                usage = body.get("usage")
+
+            # Strategy 2: exc.response.json()["usage"] (raw httpx response)
+            if usage is None:
+                resp = getattr(exc, "response", None)
+                if resp is not None:
+                    try:
+                        resp_json = resp.json()
+                        if isinstance(resp_json, dict):
+                            usage = resp_json.get("usage")
+                    except Exception:
+                        pass
+
+            if not isinstance(usage, dict):
+                logger.debug(
+                    f"[TOKEN] {context_label}: no usage data in exception"
+                )
+                return
+
+            # Try total_tokens, then prompt_tokens+completion_tokens (OpenAI),
+            # then input_tokens+output_tokens (Anthropic)
+            total = usage.get("total_tokens")
+            if not isinstance(total, int) or total <= 0:
+                prompt = usage.get("prompt_tokens", 0)
+                completion = usage.get("completion_tokens", 0)
+                if isinstance(prompt, int) and isinstance(completion, int) and (prompt + completion) > 0:
+                    total = prompt + completion
+                else:
+                    inp = usage.get("input_tokens", 0)
+                    out = usage.get("output_tokens", 0)
+                    if isinstance(inp, int) and isinstance(out, int) and (inp + out) > 0:
+                        total = inp + out
+
+            if isinstance(total, int) and total > 0:
+                token_tracker = get_token_tracker()
+                token_tracker.add_tokens(total)
+                logger.info(
+                    f"[TOKEN] {context_label}: recovered {total} tokens from failed request "
+                    f"(total now: {token_tracker.get_tokens_used_today():,})"
+                )
+            else:
+                logger.debug(
+                    f"[TOKEN] {context_label}: usage dict present but no usable counts"
+                )
+        except Exception:
+            # Never propagate — token tracking is best-effort
+            logger.debug(
+                f"[TOKEN] {context_label}: exception while extracting tokens from error"
+            )
+
+    @staticmethod
+    def _classify_error(exc: Exception) -> tuple[bool, str]:
+        """Classify an exception as retryable or terminal.
+
+        Returns:
+            ``(is_retryable, error_type)`` where *error_type* is one of
+            ``"rate_limit"``, ``"server_error"``, ``"timeout"``, or ``"other"``.
+        """
+        # Check for HTTP status code on the exception
+        status = getattr(exc, "status_code", None) or getattr(exc, "status", None)
+        if isinstance(status, int):
+            if status == 429:
+                return True, "rate_limit"
+            if 500 <= status < 600:
+                return True, "server_error"
+
+        # Check exception class name and message for common transient patterns
+        exc_str = f"{type(exc).__name__}: {exc}".lower()
+        if "timeout" in exc_str or "timed out" in exc_str:
+            return True, "timeout"
+        if "connection" in exc_str or "connect" in exc_str:
+            return True, "timeout"
+        if "rate" in exc_str and "limit" in exc_str:
+            return True, "rate_limit"
+        if "server" in exc_str and "error" in exc_str:
+            return True, "server_error"
+        if "overloaded" in exc_str or "capacity" in exc_str:
+            return True, "server_error"
+        if "502" in exc_str or "503" in exc_str or "504" in exc_str:
+            return True, "server_error"
+
+        return False, "other"
+
+    def _calculate_backoff(self, attempt: int, error_type: str) -> float:
+        """Calculate backoff delay for the given attempt and error type.
+
+        Uses retry config from ``concurrency.yaml`` (``_RETRY_CONFIG``).
+
+        Args:
+            attempt: Zero-based attempt number.
+            error_type: One of ``"rate_limit"``, ``"server_error"``, ``"timeout"``, ``"other"``.
+
+        Returns:
+            Backoff delay in seconds.
+        """
+        backoff_base = _RETRY_CONFIG.get("backoff_base", 0.5)
+        multipliers = _RETRY_CONFIG.get("backoff_multipliers", {})
+        multiplier = multipliers.get(error_type, 2.0)
+
+        jitter = random.uniform(JITTER_MIN, JITTER_MAX)
+        return float(backoff_base * (multiplier ** attempt) + jitter)
+
+    def _invoke_with_retry(
+        self,
+        structured_model: Any,
+        messages: list[Any],
+        invoke_kwargs: dict[str, Any],
+        context_label: str,
+    ) -> Any:
+        """Invoke model with application-level retry and per-attempt token tracking.
+
+        SDK-level retries are disabled (``max_retries=0``), so every HTTP attempt
+        passes through this method, enabling token extraction from both successful
+        and failed attempts.
+
+        Args:
+            structured_model: Chat model (possibly with structured output).
+            messages: List of LangChain messages.
+            invoke_kwargs: Additional kwargs for ``invoke()``.
+            context_label: Description for log messages (e.g. "Transcription for page_001.png").
+
+        Returns:
+            The model response on success.
+
+        Raises:
+            Exception: Re-raises the last exception after exhausting retries or on
+                non-retryable errors.
+        """
+        last_exception: Exception | None = None
+
+        for attempt in range(self.max_retries + 1):
+            try:
+                self._wait_for_rate_limit()
+                response = structured_model.invoke(messages, **invoke_kwargs)
+                return response
+            except Exception as e:
+                last_exception = e
+                retryable, error_type = self._classify_error(e)
+
+                # Track tokens from this failed attempt (when available)
+                self._extract_tokens_from_exception(
+                    e, f"{context_label} (attempt {attempt + 1}/{self.max_retries + 1})"
+                )
+
+                # Report to rate limiter
+                self._report_error(error_type in ("rate_limit", "server_error"))
+
+                if not retryable or attempt >= self.max_retries:
+                    raise
+
+                backoff = self._calculate_backoff(attempt, error_type)
+                logger.warning(
+                    f"Retryable {error_type} on attempt {attempt + 1}/{self.max_retries + 1} "
+                    f"for {context_label}: {type(e).__name__}. "
+                    f"Retrying in {backoff:.1f}s..."
+                )
+                time.sleep(backoff)
+
+        raise last_exception  # type: ignore[misc]  # unreachable; satisfies mypy
 
     def get_stats(self) -> dict[str, Any]:
         """Get statistics about API usage."""

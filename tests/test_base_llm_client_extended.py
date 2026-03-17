@@ -13,6 +13,11 @@ This file complements test_base_llm_client.py by covering:
 - _load_schema_retry_config() — success, missing, error
 - _should_retry_for_schema_flag() — exceeded max_attempts, non-truthy flag
 - _build_invoke_kwargs() — reasoning, text verbosity, provider-specific keys
+- _report_token_usage() — missing metadata, fallback to input+output tokens
+- _extract_tokens_from_exception() — body.usage, response.json, no-op, never raises
+- _classify_error() — retryable vs terminal errors
+- _calculate_backoff() — uses config multipliers
+- _invoke_with_retry() — retries, token tracking, non-retryable errors
 """
 
 from __future__ import annotations
@@ -918,3 +923,389 @@ class TestBuildInvokeKwargsExtended:
         )
         kwargs = client._build_invoke_kwargs()
         assert "service_tier" not in kwargs
+
+
+# ============================================================================
+# _report_token_usage — hardened (Gap 2)
+# ============================================================================
+class TestReportTokenUsageHardened:
+    """Tests for hardened _report_token_usage()."""
+
+    def test_warns_on_missing_metadata(self) -> None:
+        """Logs warning when usage_metadata is None."""
+        client = _make_client()
+        response = MagicMock()
+        response.usage_metadata = None
+
+        with patch("api.base_llm_client.logger") as mock_logger:
+            client._report_token_usage(response, "test")
+
+        mock_logger.warning.assert_called_once()
+        assert "missing" in mock_logger.warning.call_args[0][0].lower()
+
+    def test_warns_on_non_dict_metadata(self) -> None:
+        """Logs warning when usage_metadata is not a dict."""
+        client = _make_client()
+        response = MagicMock()
+        response.usage_metadata = "not a dict"
+
+        with patch("api.base_llm_client.logger") as mock_logger:
+            client._report_token_usage(response, "test")
+
+        mock_logger.warning.assert_called_once()
+
+    def test_fallback_to_input_output_tokens(self) -> None:
+        """Falls back to input_tokens + output_tokens when total_tokens is absent."""
+        client = _make_client()
+        response = MagicMock()
+        response.usage_metadata = {"input_tokens": 100, "output_tokens": 50}
+
+        with patch("api.base_llm_client.get_token_tracker") as mock_tt:
+            mock_tracker = MagicMock()
+            mock_tracker.get_tokens_used_today.return_value = 150
+            mock_tt.return_value = mock_tracker
+
+            client._report_token_usage(response, "test")
+
+        mock_tracker.add_tokens.assert_called_once_with(150)
+
+    def test_warns_when_no_usable_counts(self) -> None:
+        """Logs warning when no usable token counts are found."""
+        client = _make_client()
+        response = MagicMock()
+        response.usage_metadata = {"model": "gpt-5"}  # No token fields
+
+        with patch("api.base_llm_client.logger") as mock_logger:
+            client._report_token_usage(response, "test")
+
+        warning_calls = [
+            call for call in mock_logger.warning.call_args_list
+            if "no usable" in call[0][0].lower()
+        ]
+        assert len(warning_calls) == 1
+
+    def test_total_tokens_still_preferred(self) -> None:
+        """total_tokens is used when present, even if input/output also exist."""
+        client = _make_client()
+        response = MagicMock()
+        response.usage_metadata = {
+            "total_tokens": 200,
+            "input_tokens": 100,
+            "output_tokens": 50,
+        }
+
+        with patch("api.base_llm_client.get_token_tracker") as mock_tt:
+            mock_tracker = MagicMock()
+            mock_tracker.get_tokens_used_today.return_value = 200
+            mock_tt.return_value = mock_tracker
+
+            client._report_token_usage(response, "test")
+
+        mock_tracker.add_tokens.assert_called_once_with(200)
+
+
+# ============================================================================
+# _extract_tokens_from_exception (Gap 1)
+# ============================================================================
+class TestExtractTokensFromException:
+    """Tests for _extract_tokens_from_exception()."""
+
+    def test_extracts_from_body_usage(self) -> None:
+        """Extracts tokens from exc.body['usage']."""
+        client = _make_client()
+        exc = Exception("API error")
+        exc.body = {"usage": {"total_tokens": 300}}  # type: ignore[attr-defined]
+
+        with patch("api.base_llm_client.get_token_tracker") as mock_tt:
+            mock_tracker = MagicMock()
+            mock_tracker.get_tokens_used_today.return_value = 300
+            mock_tt.return_value = mock_tracker
+
+            client._extract_tokens_from_exception(exc, "test")
+
+        mock_tracker.add_tokens.assert_called_once_with(300)
+
+    def test_extracts_from_body_prompt_completion(self) -> None:
+        """Extracts from prompt_tokens + completion_tokens (OpenAI style)."""
+        client = _make_client()
+        exc = Exception("API error")
+        exc.body = {"usage": {"prompt_tokens": 200, "completion_tokens": 100}}  # type: ignore[attr-defined]
+
+        with patch("api.base_llm_client.get_token_tracker") as mock_tt:
+            mock_tracker = MagicMock()
+            mock_tracker.get_tokens_used_today.return_value = 300
+            mock_tt.return_value = mock_tracker
+
+            client._extract_tokens_from_exception(exc, "test")
+
+        mock_tracker.add_tokens.assert_called_once_with(300)
+
+    def test_extracts_from_body_input_output(self) -> None:
+        """Extracts from input_tokens + output_tokens (Anthropic style)."""
+        client = _make_client()
+        exc = Exception("API error")
+        exc.body = {"usage": {"input_tokens": 150, "output_tokens": 75}}  # type: ignore[attr-defined]
+
+        with patch("api.base_llm_client.get_token_tracker") as mock_tt:
+            mock_tracker = MagicMock()
+            mock_tracker.get_tokens_used_today.return_value = 225
+            mock_tt.return_value = mock_tracker
+
+            client._extract_tokens_from_exception(exc, "test")
+
+        mock_tracker.add_tokens.assert_called_once_with(225)
+
+    def test_extracts_from_response_json(self) -> None:
+        """Falls back to exc.response.json()['usage']."""
+        client = _make_client()
+        exc = Exception("API error")
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"usage": {"total_tokens": 500}}
+        exc.response = mock_resp  # type: ignore[attr-defined]
+
+        with patch("api.base_llm_client.get_token_tracker") as mock_tt:
+            mock_tracker = MagicMock()
+            mock_tracker.get_tokens_used_today.return_value = 500
+            mock_tt.return_value = mock_tracker
+
+            client._extract_tokens_from_exception(exc, "test")
+
+        mock_tracker.add_tokens.assert_called_once_with(500)
+
+    def test_noop_when_no_usage_data(self) -> None:
+        """No-op when exception has no usage data."""
+        client = _make_client()
+        exc = Exception("plain error")
+
+        with patch("api.base_llm_client.get_token_tracker") as mock_tt:
+            client._extract_tokens_from_exception(exc, "test")
+
+        mock_tt.return_value.add_tokens.assert_not_called()
+
+    def test_never_raises(self) -> None:
+        """Does not propagate exceptions during extraction."""
+        client = _make_client()
+        exc = Exception("error")
+        # Simulate body that causes an internal error
+        exc.body = PropertyMock(side_effect=RuntimeError("boom"))  # type: ignore[attr-defined]
+
+        # Should not raise
+        client._extract_tokens_from_exception(exc, "test")
+
+
+# ============================================================================
+# _classify_error
+# ============================================================================
+class TestClassifyError:
+    """Tests for _classify_error()."""
+
+    def test_429_is_rate_limit(self) -> None:
+        """HTTP 429 -> retryable rate_limit."""
+        exc = Exception("Too Many Requests")
+        exc.status_code = 429  # type: ignore[attr-defined]
+        retryable, error_type = LLMClientBase._classify_error(exc)
+        assert retryable is True
+        assert error_type == "rate_limit"
+
+    def test_500_is_server_error(self) -> None:
+        """HTTP 500 -> retryable server_error."""
+        exc = Exception("Internal Server Error")
+        exc.status_code = 500  # type: ignore[attr-defined]
+        retryable, error_type = LLMClientBase._classify_error(exc)
+        assert retryable is True
+        assert error_type == "server_error"
+
+    def test_503_is_server_error(self) -> None:
+        """HTTP 503 -> retryable server_error."""
+        exc = Exception("Service Unavailable")
+        exc.status_code = 503  # type: ignore[attr-defined]
+        retryable, error_type = LLMClientBase._classify_error(exc)
+        assert retryable is True
+        assert error_type == "server_error"
+
+    def test_timeout_in_message(self) -> None:
+        """Timeout in exception message -> retryable timeout."""
+        exc = TimeoutError("Connection timed out")
+        retryable, error_type = LLMClientBase._classify_error(exc)
+        assert retryable is True
+        assert error_type == "timeout"
+
+    def test_connection_error(self) -> None:
+        """Connection error -> retryable timeout."""
+        exc = ConnectionError("Connection refused")
+        retryable, error_type = LLMClientBase._classify_error(exc)
+        assert retryable is True
+        assert error_type == "timeout"
+
+    def test_overloaded_message(self) -> None:
+        """'overloaded' in message -> retryable server_error."""
+        exc = Exception("The server is overloaded")
+        retryable, error_type = LLMClientBase._classify_error(exc)
+        assert retryable is True
+        assert error_type == "server_error"
+
+    def test_non_retryable_error(self) -> None:
+        """Generic ValueError -> not retryable."""
+        exc = ValueError("Invalid argument")
+        retryable, error_type = LLMClientBase._classify_error(exc)
+        assert retryable is False
+        assert error_type == "other"
+
+    def test_400_not_retryable(self) -> None:
+        """HTTP 400 -> not retryable."""
+        exc = Exception("Bad Request")
+        exc.status_code = 400  # type: ignore[attr-defined]
+        retryable, error_type = LLMClientBase._classify_error(exc)
+        assert retryable is False
+        assert error_type == "other"
+
+
+# ============================================================================
+# _calculate_backoff
+# ============================================================================
+class TestCalculateBackoff:
+    """Tests for _calculate_backoff()."""
+
+    def test_uses_config_multipliers(self) -> None:
+        """Backoff uses multiplier from _RETRY_CONFIG."""
+        client = _make_client()
+
+        with (
+            patch("api.base_llm_client._RETRY_CONFIG", {
+                "backoff_base": 0.5,
+                "backoff_multipliers": {"rate_limit": 2.0, "timeout": 1.5},
+            }),
+            patch("api.base_llm_client.random.uniform", return_value=0.75),
+        ):
+            # attempt=0, rate_limit: 0.5 * (2.0 ** 0) + 0.75 = 0.5 + 0.75 = 1.25
+            result = client._calculate_backoff(0, "rate_limit")
+            assert result == pytest.approx(1.25)
+
+    def test_exponential_growth(self) -> None:
+        """Backoff grows exponentially with attempt number."""
+        client = _make_client()
+
+        with (
+            patch("api.base_llm_client._RETRY_CONFIG", {
+                "backoff_base": 1.0,
+                "backoff_multipliers": {"timeout": 2.0},
+            }),
+            patch("api.base_llm_client.random.uniform", return_value=0.0),
+        ):
+            b0 = client._calculate_backoff(0, "timeout")  # 1.0 * (2^0) + 0 = 1.0
+            b1 = client._calculate_backoff(1, "timeout")  # 1.0 * (2^1) + 0 = 2.0
+            b2 = client._calculate_backoff(2, "timeout")  # 1.0 * (2^2) + 0 = 4.0
+            assert b0 == pytest.approx(1.0)
+            assert b1 == pytest.approx(2.0)
+            assert b2 == pytest.approx(4.0)
+
+    def test_default_multiplier_for_unknown_type(self) -> None:
+        """Falls back to 2.0 for unknown error types."""
+        client = _make_client()
+
+        with (
+            patch("api.base_llm_client._RETRY_CONFIG", {
+                "backoff_base": 0.5,
+                "backoff_multipliers": {},
+            }),
+            patch("api.base_llm_client.random.uniform", return_value=0.5),
+        ):
+            result = client._calculate_backoff(1, "unknown_type")
+            # 0.5 * (2.0 ** 1) + 0.5 = 1.0 + 0.5 = 1.5
+            assert result == pytest.approx(1.5)
+
+
+# ============================================================================
+# _invoke_with_retry
+# ============================================================================
+class TestInvokeWithRetry:
+    """Tests for _invoke_with_retry()."""
+
+    def test_success_on_first_attempt(self) -> None:
+        """Returns response on first successful attempt."""
+        client = _make_client(max_retries=3)
+        mock_model = MagicMock()
+        mock_model.invoke.return_value = "success_response"
+
+        result = client._invoke_with_retry(mock_model, [], {}, "test")
+        assert result == "success_response"
+        mock_model.invoke.assert_called_once()
+
+    def test_retries_on_429_and_tracks_tokens(self) -> None:
+        """Retries on rate limit (429) and extracts tokens from each failure."""
+        client = _make_client(max_retries=2)
+
+        exc_429 = Exception("Rate limit")
+        exc_429.status_code = 429  # type: ignore[attr-defined]
+        exc_429.body = {"usage": {"total_tokens": 50}}  # type: ignore[attr-defined]
+
+        mock_model = MagicMock()
+        mock_model.invoke.side_effect = [exc_429, "success"]
+
+        with (
+            patch.object(client, "_calculate_backoff", return_value=0.0),
+            patch("api.base_llm_client.time.sleep"),
+            patch("api.base_llm_client.get_token_tracker") as mock_tt,
+        ):
+            mock_tracker = MagicMock()
+            mock_tracker.get_tokens_used_today.return_value = 50
+            mock_tt.return_value = mock_tracker
+
+            result = client._invoke_with_retry(mock_model, [], {}, "test")
+
+        assert result == "success"
+        assert mock_model.invoke.call_count == 2
+        mock_tracker.add_tokens.assert_called_once_with(50)
+
+    def test_raises_on_non_retryable_error(self) -> None:
+        """Raises immediately on non-retryable error."""
+        client = _make_client(max_retries=3)
+
+        mock_model = MagicMock()
+        mock_model.invoke.side_effect = ValueError("Invalid input")
+
+        with pytest.raises(ValueError, match="Invalid input"):
+            client._invoke_with_retry(mock_model, [], {}, "test")
+
+        mock_model.invoke.assert_called_once()
+
+    def test_raises_after_max_retries_exhausted(self) -> None:
+        """Raises after all retries are exhausted."""
+        client = _make_client(max_retries=2)
+
+        exc = Exception("Server error")
+        exc.status_code = 500  # type: ignore[attr-defined]
+
+        mock_model = MagicMock()
+        mock_model.invoke.side_effect = exc
+
+        with (
+            patch.object(client, "_calculate_backoff", return_value=0.0),
+            patch("api.base_llm_client.time.sleep"),
+            pytest.raises(Exception, match="Server error"),
+        ):
+            client._invoke_with_retry(mock_model, [], {}, "test")
+
+        # max_retries=2 means 3 total attempts (0, 1, 2)
+        assert mock_model.invoke.call_count == 3
+
+    def test_reports_error_to_rate_limiter_per_attempt(self) -> None:
+        """Reports each failed attempt to the rate limiter."""
+        limiter = MagicMock()
+        client = _make_client(max_retries=1, rate_limiter=limiter)
+
+        exc = Exception("timeout")
+        exc.status_code = 429  # type: ignore[attr-defined]
+
+        mock_model = MagicMock()
+        mock_model.invoke.side_effect = exc
+
+        with (
+            patch.object(client, "_calculate_backoff", return_value=0.0),
+            patch("api.base_llm_client.time.sleep"),
+            pytest.raises(Exception),
+        ):
+            client._invoke_with_retry(mock_model, [], {}, "test")
+
+        # 2 attempts, each should report error
+        assert limiter.report_error.call_count == 2

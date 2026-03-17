@@ -773,3 +773,38 @@ class TestGetStats:
         assert stats["average_processing_time"] == 1.5
         assert stats["recent_success_rate"] == pytest.approx(83.3, abs=0.1)
         assert stats["service_tier"] == "auto"
+
+
+# ============================================================================
+# generate_summary uses _invoke_with_retry
+# ============================================================================
+class TestGenerateSummaryUsesInvokeWithRetry:
+    """Verify generate_summary delegates to _invoke_with_retry."""
+
+    def test_summary_calls_invoke_with_retry(self) -> None:
+        """generate_summary uses _invoke_with_retry instead of direct invoke."""
+        mgr = _make_manager(provider="openai")
+
+        summary_data = {
+            "page_information": {
+                "page_number_integer": 1,
+                "page_number_type": "arabic",
+                "page_types": ["content"],
+            },
+            "bullet_points": ["Retry-based summary."],
+            "references": None,
+        }
+        response = AIMessage(content=json.dumps(summary_data))
+        response.usage_metadata = None
+        response.response_metadata = {"model": "gpt-5-mini"}
+
+        with (
+            patch.object(
+                mgr, "_invoke_with_retry", return_value=response
+            ) as mock_invoke,
+            patch.object(mgr, "_build_model_inputs", return_value=([], {})),
+        ):
+            result = mgr.generate_summary("Some text.", 1)
+
+        mock_invoke.assert_called_once()
+        assert result["bullet_points"] == ["Retry-based summary."]
