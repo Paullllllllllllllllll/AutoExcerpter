@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 # Type aliases
 ImageDetail = Literal["auto", "high", "low"]
 MediaResolution = Literal["low", "medium", "high", "ultra_high", "auto"]
-ProviderType = Literal["openai", "anthropic", "google", "openrouter", "unknown"]
+ProviderType = Literal["openai", "anthropic", "google", "openrouter", "custom", "unknown"]
 
 
 @dataclass(frozen=True, slots=True)

@@ -145,6 +145,23 @@ AutoExcerpter supports a wide range of models from multiple providers. The syste
 
 OpenRouter provides access to models from all providers through a unified API. Use the `openrouter` provider with any supported model name.
 
+**Custom OpenAI-Compatible Endpoint:**
+
+Connect to any self-hosted or third-party endpoint that implements the OpenAI Chat Completions API with vision support. This enables use of locally hosted OCR models, university-hosted inference servers, or other OpenAI-compatible services. Set `provider: custom` explicitly in `modules/config/model.yaml` and configure the `custom_endpoint` block:
+
+```yaml
+transcription_model:
+  provider: custom
+  name: "org/model-name"
+  custom_endpoint:
+    base_url: "https://your-endpoint.example.com/v1"
+    api_key_env_var: "YOUR_CUSTOM_API_KEY"
+  max_output_tokens: 4096
+  temperature: 0.0
+```
+
+The `base_url` and `api_key_env_var` are fully user-configured. Image preprocessing uses the `custom_image_processing` section in `modules/config/image_processing.yaml`, with defaults suitable for models with small context windows. Custom endpoints do not support batch processing or structured output.
+
 ## How It Works
 
 AutoExcerpter follows a systematic workflow to transform documents into structured, searchable content:

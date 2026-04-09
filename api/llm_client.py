@@ -38,7 +38,7 @@ from modules.logger import setup_logger
 logger = setup_logger(__name__)
 
 # Type alias for supported providers
-ProviderType = Literal["openai", "anthropic", "google", "openrouter"]
+ProviderType = Literal["openai", "anthropic", "google", "openrouter", "custom"]
 
 # Supported providers and their LangChain package requirements
 # Updated November 2025 with latest model prefixes
@@ -70,6 +70,12 @@ SUPPORTED_PROVIDERS: dict[str, dict[str, Any]] = {
         "env_key": "OPENROUTER_API_KEY",
         "base_url": "https://openrouter.ai/api/v1",
         "model_prefixes": [],  # OpenRouter supports many models from all providers
+    },
+    "custom": {
+        "package": "langchain-openai",
+        "class": "ChatOpenAI",
+        "env_key": None,  # Dynamic: read from custom_endpoint.api_key_env_var
+        "model_prefixes": [],  # Never auto-detected; requires explicit provider: custom
     },
 }
 
@@ -180,6 +186,24 @@ def _get_api_key(provider: ProviderType, config_key: str | None = None) -> str:
     if config_key:
         return config_key
 
+    # Custom provider: read env var name from model config
+    if provider == "custom":
+        from modules.config_loader import get_config_loader
+        model_cfg = get_config_loader().get_model_config()
+        for section_key in ("transcription_model", "summary_model"):
+            section = model_cfg.get(section_key, {})
+            if section.get("provider") == "custom":
+                custom_cfg = section.get("custom_endpoint", {})
+                env_key = custom_cfg.get("api_key_env_var")
+                if env_key:
+                    api_key = os.environ.get(env_key)
+                    if api_key:
+                        return api_key
+        raise EnvironmentError(
+            "Custom endpoint API key not found. Set the environment "
+            "variable specified in custom_endpoint.api_key_env_var."
+        )
+
     provider_info = SUPPORTED_PROVIDERS.get(provider, {})
     env_key = provider_info.get("env_key", f"{provider.upper()}_API_KEY")
 
@@ -252,6 +276,20 @@ def get_chat_model(config: LLMConfig) -> BaseChatModel:
         return _create_google_model(api_key, kwargs)
     elif provider == "openrouter":
         return _create_openrouter_model(api_key, kwargs)
+    elif provider == "custom":
+        from modules.config_loader import get_config_loader
+        model_cfg = get_config_loader().get_model_config()
+        for section_key in ("transcription_model", "summary_model"):
+            section = model_cfg.get(section_key, {})
+            if section.get("provider") == "custom":
+                custom_cfg = section.get("custom_endpoint", {})
+                base_url = custom_cfg.get("base_url")
+                if base_url:
+                    return _create_custom_model(api_key, kwargs, base_url)
+        raise ValueError(
+            "provider: custom requires custom_endpoint.base_url "
+            "in model config"
+        )
     else:
         raise ValueError(f"Unsupported provider: {provider}")
 
@@ -348,6 +386,30 @@ def _create_openrouter_model(api_key: str, kwargs: dict[str, Any]) -> BaseChatMo
     return ChatOpenAI(**kwargs)
 
 
+def _create_custom_model(
+    api_key: str,
+    kwargs: dict[str, Any],
+    base_url: str,
+) -> BaseChatModel:
+    """Create a model for a custom OpenAI-compatible endpoint."""
+    try:
+        from langchain_openai import ChatOpenAI
+    except ImportError:
+        raise ImportError(
+            "langchain-openai is required for custom endpoints. "
+            "Install with: pip install langchain-openai"
+        )
+
+    kwargs["api_key"] = api_key
+    kwargs["base_url"] = base_url
+
+    logger.debug(
+        f"Creating custom endpoint model: {kwargs.get('model')} "
+        f"at {base_url}"
+    )
+    return ChatOpenAI(**kwargs)
+
+
 def get_provider_for_model(model: str) -> ProviderType:
     """Get the provider name for a given model.
 
@@ -370,7 +432,9 @@ def is_provider_available(provider: ProviderType) -> bool:
         True if API key is available
     """
     provider_info = SUPPORTED_PROVIDERS.get(provider, {})
-    env_key = provider_info.get("env_key", f"{provider.upper()}_API_KEY")
+    env_key = provider_info.get("env_key")
+    if env_key is None:
+        return False  # Custom provider: availability checked via config, not env
     return bool(os.environ.get(env_key))
 
 

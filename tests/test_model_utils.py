@@ -84,8 +84,12 @@ class TestDetectModelType:
     def test_unknown_provider_and_model_defaults_to_openai(self) -> None:
         """Unknown provider and model defaults to 'openai'."""
         assert detect_model_type("unknown", "unknown-model") == "openai"
-        assert detect_model_type("custom", None) == "openai"
         assert detect_model_type("", "") == "openai"
+
+    def test_custom_provider_returns_custom(self) -> None:
+        """Custom provider returns 'custom' regardless of model name."""
+        assert detect_model_type("custom", None) == "custom"
+        assert detect_model_type("custom", "org/model-name") == "custom"
 
     # ========================================================================
     # Case Sensitivity Tests
