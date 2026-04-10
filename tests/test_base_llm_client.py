@@ -147,8 +147,8 @@ class TestCustomProviderRouting:
         client._apply_structured_output_kwargs(kwargs)
         assert "response_format" not in kwargs
 
-    def test_build_invoke_kwargs_custom_uses_max_output_tokens(self) -> None:
-        """Custom provider routes to max_output_tokens (like OpenAI)."""
+    def test_build_invoke_kwargs_custom_uses_max_tokens(self) -> None:
+        """Custom provider routes to max_tokens (Chat Completions API)."""
         client = LLMClientBase.__new__(LLMClientBase)
         client.provider = "custom"
         client.model_name = "org/model"
@@ -165,8 +165,8 @@ class TestCustomProviderRouting:
         ):
             kwargs = client._build_invoke_kwargs()
 
-        assert kwargs.get("max_output_tokens") == 4096
-        assert "max_tokens" not in kwargs
+        assert kwargs.get("max_tokens") == 4096
+        assert "max_output_tokens" not in kwargs
 
 
 class TestBuildInvokeKwargs:

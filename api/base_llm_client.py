@@ -457,10 +457,22 @@ class LLMClientBase:
         if self.provider == "custom":
             custom_caps = getattr(self, "custom_capabilities", None)
             if custom_caps and custom_caps.supports_structured_output:
-                # Mode A: apply response_format like OpenAI
+                # Mode A: apply response_format for Chat Completions API.
+                # _build_text_format() returns the Responses API shape
+                # (top-level name/schema/strict).  Custom endpoints use
+                # the Chat Completions API which nests those fields under
+                # a "json_schema" key.
                 text_format = self._build_text_format()
                 if text_format:
-                    invoke_kwargs["response_format"] = text_format
+                    chat_completions_format = {
+                        "type": "json_schema",
+                        "json_schema": {
+                            k: v
+                            for k, v in text_format.items()
+                            if k != "type"
+                        },
+                    }
+                    invoke_kwargs["response_format"] = chat_completions_format
 
         if self.provider == "google":
             schema_obj = (
@@ -773,8 +785,12 @@ class LLMClientBase:
         if capabilities.get("max_tokens", True):
             max_tokens = self.model_config.get("max_output_tokens")
             if max_tokens:
-                if self.provider in ("openai", "custom"):
+                if self.provider == "openai":
                     invoke_kwargs["max_output_tokens"] = max_tokens
+                elif self.provider == "custom":
+                    # Custom endpoints use Chat Completions API (max_tokens),
+                    # not the Responses API (max_output_tokens).
+                    invoke_kwargs["max_tokens"] = max_tokens
                 elif self.provider == "anthropic":
                     invoke_kwargs["max_tokens"] = max_tokens
                 elif self.provider == "google":
