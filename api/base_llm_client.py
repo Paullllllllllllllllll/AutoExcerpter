@@ -23,6 +23,7 @@ This module provides the foundational LLM client implementation with:
 
 from __future__ import annotations
 
+import json as _json
 import random
 import statistics
 import time
@@ -165,10 +166,37 @@ def _extract_from_nested_output(data: Any) -> str | None:
         return None
 
 
+def _extract_from_structured_output_wrapper(data: Any) -> str | None:
+    """Extract text from ``with_structured_output(include_raw=True)`` response.
+
+    LangChain's ``with_structured_output(include_raw=True)`` returns a dict
+    with keys ``raw`` (AIMessage), ``parsed`` (dict or pydantic), and
+    ``parsing_error``.  This extractor handles that shape.
+    """
+    if not isinstance(data, dict) or "raw" not in data:
+        return None
+
+    # Prefer the parsed dict (already schema-validated by LangChain)
+    parsed = data.get("parsed")
+    if isinstance(parsed, dict):
+        try:
+            return _json.dumps(parsed, ensure_ascii=False)
+        except (TypeError, ValueError):
+            pass
+
+    # Fallback: extract text from the raw AIMessage
+    raw = data.get("raw")
+    if raw is not None:
+        return _extract_from_aimessage(raw)
+
+    return None
+
+
 # Ordered extraction chain: first non-None result wins
 _EXTRACTORS: list[Callable[[Any], str | None]] = [
     _extract_from_aimessage,
     _extract_from_output_attribute,
+    _extract_from_structured_output_wrapper,
     _extract_from_dict,
     _extract_from_nested_output,
 ]
@@ -376,6 +404,8 @@ class LLMClientBase:
 
         Provider-specific approaches:
         - OpenAI: Native response_format parameter (guaranteed JSON) - handled separately
+        - Custom: Same as OpenAI when supports_structured_output=True (Mode A),
+          otherwise bare model with no structured output (Modes B/C)
         - Anthropic/Google: Prompt-based JSON with markdown stripping fallback
           (LangChain's with_structured_output has tool naming compatibility issues)
         - OpenRouter: Default tool-based structured output (OpenAI-compatible)
@@ -384,6 +414,12 @@ class LLMClientBase:
             Chat model with structured output, or base chat model.
         """
         if self.provider == "openai":
+            return self.chat_model
+
+        # Custom: structured output via response_format kwargs (Mode A) or
+        # none at all (Modes B/C).  Never use with_structured_output since
+        # most custom endpoints do not support tool-based function calling.
+        if self.provider == "custom":
             return self.chat_model
 
         if self.provider in ("anthropic", "google"):
@@ -404,7 +440,8 @@ class LLMClientBase:
         """Apply provider-specific structured output parameters to invoke kwargs.
 
         Modifies invoke_kwargs in-place to add structured output format for
-        OpenAI (response_format) and Google (response_mime_type + response_schema).
+        OpenAI (response_format), Custom Mode A (response_format), and
+        Google (response_mime_type + response_schema).
 
         Args:
             invoke_kwargs: The invocation kwargs dict to modify.
@@ -415,6 +452,14 @@ class LLMClientBase:
                 if "text" in invoke_kwargs:
                     invoke_kwargs["text"]["format"] = text_format
                 else:
+                    invoke_kwargs["response_format"] = text_format
+
+        if self.provider == "custom":
+            custom_caps = getattr(self, "custom_capabilities", None)
+            if custom_caps and custom_caps.supports_structured_output:
+                # Mode A: apply response_format like OpenAI
+                text_format = self._build_text_format()
+                if text_format:
                     invoke_kwargs["response_format"] = text_format
 
         if self.provider == "google":
@@ -728,7 +773,7 @@ class LLMClientBase:
         if capabilities.get("max_tokens", True):
             max_tokens = self.model_config.get("max_output_tokens")
             if max_tokens:
-                if self.provider == "openai":
+                if self.provider in ("openai", "custom"):
                     invoke_kwargs["max_output_tokens"] = max_tokens
                 elif self.provider == "anthropic":
                     invoke_kwargs["max_tokens"] = max_tokens

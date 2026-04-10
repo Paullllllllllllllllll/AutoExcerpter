@@ -64,6 +64,7 @@ def _make_manager(**overrides) -> TranscriptionManager:
         "_output_schema": _MOCK_SCHEMA,
         "transcription_schema": _MOCK_SCHEMA,
         "system_prompt": "Transcribe this image.",
+        "custom_capabilities": None,
     }
     defaults.update(overrides)
     for attr, val in defaults.items():

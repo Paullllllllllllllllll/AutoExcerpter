@@ -12,6 +12,7 @@ from modules.types import (
     SummaryContent,
     SummaryResult,
     ConcurrencyConfig,
+    CustomEndpointCapabilities,
     ItemSpec,
 )
 
@@ -214,6 +215,67 @@ class TestConcurrencyConfig:
 
         with pytest.raises(Exception):
             config.image_processing_limit = 100  # type: ignore
+
+
+class TestCustomEndpointCapabilities:
+    """Tests for CustomEndpointCapabilities dataclass."""
+
+    def test_default_values(self) -> None:
+        caps = CustomEndpointCapabilities()
+        assert caps.supports_vision is True
+        assert caps.supports_structured_output is False
+        assert caps.use_plain_text_prompt is False
+
+    def test_from_dict_mode_a(self) -> None:
+        """Mode A: full structured output."""
+        caps = CustomEndpointCapabilities.from_dict({
+            "supports_vision": True,
+            "supports_structured_output": True,
+            "use_plain_text_prompt": False,
+        })
+        assert caps.supports_structured_output is True
+        assert caps.use_plain_text_prompt is False
+
+    def test_from_dict_mode_b(self) -> None:
+        """Mode B: plain text."""
+        caps = CustomEndpointCapabilities.from_dict({
+            "supports_vision": True,
+            "supports_structured_output": False,
+            "use_plain_text_prompt": True,
+        })
+        assert caps.supports_structured_output is False
+        assert caps.use_plain_text_prompt is True
+
+    def test_from_dict_mode_c(self) -> None:
+        """Mode C: prompt-guided JSON."""
+        caps = CustomEndpointCapabilities.from_dict({
+            "supports_vision": True,
+            "supports_structured_output": False,
+            "use_plain_text_prompt": False,
+        })
+        assert caps.supports_structured_output is False
+        assert caps.use_plain_text_prompt is False
+
+    def test_plain_text_forces_no_structured_output(self) -> None:
+        """use_plain_text_prompt=True forces supports_structured_output=False."""
+        caps = CustomEndpointCapabilities.from_dict({
+            "supports_structured_output": True,
+            "use_plain_text_prompt": True,
+        })
+        assert caps.supports_structured_output is False
+        assert caps.use_plain_text_prompt is True
+
+    def test_from_dict_empty(self) -> None:
+        """Empty dict yields defaults."""
+        caps = CustomEndpointCapabilities.from_dict({})
+        assert caps.supports_vision is True
+        assert caps.supports_structured_output is False
+        assert caps.use_plain_text_prompt is False
+
+    def test_frozen(self) -> None:
+        caps = CustomEndpointCapabilities()
+        with pytest.raises(Exception):
+            caps.supports_vision = False  # type: ignore
 
 
 class TestItemSpec:

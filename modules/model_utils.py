@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-ModelType = Literal["openai", "google", "anthropic"]
+ModelType = Literal["openai", "google", "anthropic", "custom"]
 
 
 def detect_model_type(provider: str, model_name: str | None = None) -> ModelType:

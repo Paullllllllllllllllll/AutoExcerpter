@@ -32,6 +32,7 @@ from modules.logger import setup_logger
 from modules.path_utils import create_safe_directory_name, create_safe_log_filename
 from modules.text_cleaner import clean_transcription
 from modules.context_resolver import resolve_summary_context, format_context_for_prompt
+from modules.types import CustomEndpointCapabilities
 from processors.docx_writer import create_docx_summary
 from processors.file_manager import write_transcription_to_text
 from processors.log_manager import append_to_log, finalize_log_file, initialize_log_file
@@ -114,6 +115,34 @@ class ItemTranscriber:
         self.summary_model = summary_cfg.get("name", DEFAULT_MODEL)
         summary_provider = summary_cfg.get("provider")
 
+        # Load custom endpoint capabilities (if applicable)
+        transcription_custom_caps: CustomEndpointCapabilities | None = None
+        if self.transcription_provider == "custom":
+            custom_endpoint_cfg = transcription_cfg.get("custom_endpoint", {})
+            caps_dict = custom_endpoint_cfg.get("capabilities", {})
+            transcription_custom_caps = CustomEndpointCapabilities.from_dict(
+                caps_dict
+            )
+            logger.info(
+                f"Custom transcription endpoint: "
+                f"structured_output={transcription_custom_caps.supports_structured_output}, "
+                f"plain_text={transcription_custom_caps.use_plain_text_prompt}, "
+                f"vision={transcription_custom_caps.supports_vision}"
+            )
+
+        summary_custom_caps: CustomEndpointCapabilities | None = None
+        if summary_provider == "custom":
+            summary_endpoint_cfg = summary_cfg.get("custom_endpoint", {})
+            summary_caps_dict = summary_endpoint_cfg.get("capabilities", {})
+            summary_custom_caps = CustomEndpointCapabilities.from_dict(
+                summary_caps_dict
+            )
+
+        transcription_was_plain_text = (
+            transcription_custom_caps is not None
+            and transcription_custom_caps.use_plain_text_prompt
+        )
+
         # Use rate limiter with provider-agnostic configuration from concurrency.yaml
         self.transcribe_rate_limiter = RateLimiter(get_rate_limits())
         self.transcribe_manager = TranscriptionManager(
@@ -121,6 +150,7 @@ class ItemTranscriber:
             provider=self.transcription_provider,
             rate_limiter=self.transcribe_rate_limiter,
             timeout=get_api_timeout(),
+            custom_capabilities=transcription_custom_caps,
         )
 
         # Only initialize summary manager if summarization is enabled
@@ -149,6 +179,8 @@ class ItemTranscriber:
                 model_name=self.summary_model,
                 provider=summary_provider,
                 summary_context=self.summary_context,
+                custom_capabilities=summary_custom_caps,
+                transcription_was_plain_text=transcription_was_plain_text,
             )
 
         # Page number processor for adjusting and sorting summary page numbers

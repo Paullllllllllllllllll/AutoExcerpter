@@ -62,6 +62,8 @@ def _make_manager(**overrides) -> SummaryManager:
         "summary_schema": _MOCK_SCHEMA,
         "summary_system_prompt_text": _MOCK_PROMPT,
         "summary_context": None,
+        "custom_capabilities": None,
+        "transcription_was_plain_text": False,
     }
     defaults.update(overrides)
     for attr, val in defaults.items():
@@ -808,3 +810,68 @@ class TestGenerateSummaryUsesInvokeWithRetry:
 
         mock_invoke.assert_called_once()
         assert result["bullet_points"] == ["Retry-based summary."]
+
+
+# ============================================================================
+# Custom Endpoint Tests
+# ============================================================================
+class TestValidateSummarySchema:
+    """Tests for _validate_summary_schema method."""
+
+    @staticmethod
+    def _make_manager() -> SummaryManager:
+        mgr = SummaryManager.__new__(SummaryManager)
+        mgr.custom_capabilities = None
+        mgr.transcription_was_plain_text = False
+        return mgr
+
+    def test_valid_json(self) -> None:
+        mgr = self._make_manager()
+        text = json.dumps({
+            "page_information": {"page_number_integer": 1},
+            "bullet_points": ["point"],
+            "references": None,
+        })
+        is_valid, reason = mgr._validate_summary_schema(text)
+        assert is_valid is True
+        assert reason == ""
+
+    def test_invalid_json(self) -> None:
+        mgr = self._make_manager()
+        is_valid, reason = mgr._validate_summary_schema("not json")
+        assert is_valid is False
+        assert "invalid JSON" in reason
+
+    def test_missing_keys(self) -> None:
+        mgr = self._make_manager()
+        text = json.dumps({"page_information": {}})
+        is_valid, reason = mgr._validate_summary_schema(text)
+        assert is_valid is False
+        assert "missing keys" in reason
+
+
+class TestSummaryBuildModelInputsCustomProvider:
+    """Tests that custom provider uses OpenAI message format."""
+
+    def test_custom_provider_uses_content_array(self) -> None:
+        mgr = SummaryManager.__new__(SummaryManager)
+        mgr.provider = "custom"
+        mgr.summary_schema = _MOCK_SCHEMA
+        mgr.summary_system_prompt_text = "Summarize: {{SCHEMA}}"
+        mgr.summary_context = None
+        mgr._output_schema = _MOCK_SCHEMA
+        mgr.model_config = {}
+        mgr.model_name = "org/model"
+        mgr.service_tier = "auto"
+        mgr.custom_capabilities = None
+
+        with patch(
+            "api.base_llm_client.get_model_capabilities",
+            return_value={"max_tokens": True, "reasoning": False, "text_verbosity": False},
+        ):
+            messages, _ = mgr._build_model_inputs("Sample text")
+
+        user_msg = messages[1]
+        assert isinstance(user_msg, HumanMessage)
+        assert isinstance(user_msg.content, list)
+        assert user_msg.content[0]["type"] == "text"

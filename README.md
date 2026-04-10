@@ -147,7 +147,7 @@ OpenRouter provides access to models from all providers through a unified API. U
 
 **Custom OpenAI-Compatible Endpoint:**
 
-Connect to any self-hosted or third-party endpoint that implements the OpenAI Chat Completions API with vision support. This enables use of locally hosted OCR models, university-hosted inference servers, or other OpenAI-compatible services. Set `provider: custom` explicitly in `modules/config/model.yaml` and configure the `custom_endpoint` block:
+Connect to any self-hosted or third-party endpoint that implements the OpenAI Chat Completions API with vision support. This enables use of locally hosted OCR models, university-hosted inference servers, or other OpenAI-compatible services. Set `provider: custom` explicitly in `modules/config/model.yaml` and configure the `custom_endpoint` block with a `capabilities` section:
 
 ```yaml
 transcription_model:
@@ -156,11 +156,25 @@ transcription_model:
   custom_endpoint:
     base_url: "https://your-endpoint.example.com/v1"
     api_key_env_var: "YOUR_CUSTOM_API_KEY"
+    capabilities:
+      supports_vision: true              # default: true
+      supports_structured_output: false   # default: false
+      use_plain_text_prompt: false        # default: false
   max_output_tokens: 4096
   temperature: 0.0
 ```
 
-The `base_url` and `api_key_env_var` are fully user-configured. Image preprocessing uses the `custom_image_processing` section in `modules/config/image_processing.yaml`, with defaults suitable for models with small context windows. Custom endpoints do not support batch processing or structured output.
+The `base_url` and `api_key_env_var` are fully user-configured. Image preprocessing uses the `custom_image_processing` section in `modules/config/image_processing.yaml`, with defaults suitable for models with small context windows.
+
+**Three usage patterns** are supported via the `capabilities` flags:
+
+| Pattern | `supports_structured_output` | `use_plain_text_prompt` | Description |
+|---------|------------------------------|------------------------|-------------|
+| **A: Full structured** | `true` | `false` | Identical to commercial providers. API-level `response_format` enforces JSON schema. Normal prompts with all formatting instructions. |
+| **B: Plain text** | `false` | `true` | Simplified prompt with no markdown, page number tags, or JSON output. Raw text response. |
+| **C: Prompt-guided JSON** | `false` | `false` | Normal prompts with JSON schema in the prompt text, but no API-level enforcement. Relies on `validation_failure` retries (see below) to catch malformed responses. |
+
+Setting `use_plain_text_prompt: true` automatically forces `supports_structured_output: false`. Pattern C is the recommended workaround for models that can follow JSON instructions in the prompt but lack native structured output support.
 
 ## How It Works
 
@@ -627,9 +641,14 @@ retry:
     min: 0.5
     max: 1.0
 
-  # Schema-specific retries (based on model output flags)
+  # Schema-specific retries (based on model output validation)
   schema_retries:
     transcription:
+      validation_failure:  # Invalid JSON or missing required schema keys
+        enabled: true      # Fires BEFORE flag-specific retries
+        max_attempts: 3
+        backoff_base: 0.5
+        backoff_multiplier: 1.5
       no_transcribable_text:  # Image contains no text
         enabled: true
         max_attempts: 0  # 0 = disabled
@@ -641,13 +660,13 @@ retry:
         backoff_base: 0.5
         backoff_multiplier: 1.5
     summary:
-      contains_no_semantic_content:  # Blank page, TOC, etc.
-        enabled: true
-        max_attempts: 0
+      validation_failure:  # Invalid JSON or missing required schema keys
+        enabled: true      # Fires BEFORE flag-specific retries
+        max_attempts: 3
         backoff_base: 0.5
         backoff_multiplier: 1.5
-      contains_no_page_number:
-        enabled: true
+      page_type_null_bullets:  # Non-content page with null bullet_points
+        enabled: false
         max_attempts: 0
         backoff_base: 0.5
         backoff_multiplier: 1.5
@@ -669,17 +688,18 @@ retry:
 
 #### Schema-Aware Retry Controls
 
-AutoExcerpter implements two complementary retry layers:
+AutoExcerpter implements three complementary retry layers:
 
 -   **API errors**: Controlled by `max_attempts`, `backoff_base`, and `backoff_multipliers`. Applies to rate limits, timeouts, and server-side errors using exponential backoff with jitter, based on OpenAI cookbook guidance.
+-   **Validation retries** (`validation_failure`): Fires first, before any flag-specific retries. Checks whether the model response is valid JSON containing the required schema keys. This is particularly important for custom endpoints using Pattern C (prompt-guided JSON without API-level `response_format` enforcement), where the model may occasionally return malformed JSON or omit required fields.
 -   **Schema flags**: Configure per-flag policies under `schema_retries`. Each flag exposes `enabled`, `max_attempts`, `backoff_base`, and `backoff_multiplier`. Most flags default to `max_attempts: 0` to avoid unnecessary reprocessing, except `transcription_not_possible` which defaults to 3 attempts for handling temporarily illegible images. Increase attempts when working with noisy scans or documents that frequently trigger these flags.
 
 **Supported Flags:**
 
--   **Transcription**: `no_transcribable_text`, `transcription_not_possible`
--   **Summary**: `contains_no_semantic_content`, `contains_no_page_number`
+-   **Transcription**: `validation_failure`, `no_transcribable_text`, `transcription_not_possible`
+-   **Summary**: `validation_failure`, `page_type_null_bullets`
 
-When a flag is enabled and the model returns `true`, AutoExcerpter automatically re-issues the same request after waiting `backoff_base * backoff_multiplier^attempt + jitter`. Statistics for both API-level and schema-level retries are logged per page for auditing.
+When a flag is enabled and the condition is detected, AutoExcerpter automatically re-issues the same request after waiting `backoff_base * backoff_multiplier^attempt + jitter`. The `validation_failure` flag checks JSON validity and required key presence; all other flags check for specific model-returned values. Statistics for both API-level and schema-level retries are logged per page for auditing.
 
 ### Image Processing Configuration (image_processing.yaml)
 

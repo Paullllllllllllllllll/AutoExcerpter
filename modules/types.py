@@ -6,9 +6,12 @@ to replace loose dictionary payloads throughout the application.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, TypedDict
+
+logger = logging.getLogger(__name__)
 
 
 # ============================================================================
@@ -71,6 +74,51 @@ class SummaryResult(TypedDict, total=False):
 # ============================================================================
 # Configuration Data Classes
 # ============================================================================
+@dataclass(frozen=True)
+class CustomEndpointCapabilities:
+    """Capabilities declared for a custom OpenAI-compatible endpoint.
+
+    Three usage patterns:
+      A) supports_structured_output=True, use_plain_text_prompt=False
+         → Identical to commercial providers (response_format enforcement).
+      B) supports_structured_output=False, use_plain_text_prompt=True
+         → Simplified plain-text prompt, raw text response, no JSON.
+      C) supports_structured_output=False, use_plain_text_prompt=False
+         → Normal prompts with schema in prompt text; relies on
+           validation_failure retry to catch malformed JSON responses.
+    """
+
+    supports_vision: bool = True
+    supports_structured_output: bool = False
+    use_plain_text_prompt: bool = False
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> CustomEndpointCapabilities:
+        """Create from a capabilities configuration dictionary.
+
+        Enforces: use_plain_text_prompt=True forces
+        supports_structured_output=False.
+        """
+        supports_vision = bool(data.get("supports_vision", True))
+        supports_structured_output = bool(
+            data.get("supports_structured_output", False)
+        )
+        use_plain_text_prompt = bool(data.get("use_plain_text_prompt", False))
+
+        if use_plain_text_prompt and supports_structured_output:
+            logger.warning(
+                "use_plain_text_prompt=true forces "
+                "supports_structured_output=false"
+            )
+            supports_structured_output = False
+
+        return cls(
+            supports_vision=supports_vision,
+            supports_structured_output=supports_structured_output,
+            use_plain_text_prompt=use_plain_text_prompt,
+        )
+
+
 @dataclass(frozen=True)
 class ConcurrencyConfig:
     """Configuration for concurrent processing."""
@@ -191,6 +239,7 @@ __all__ = [
     "PageInformation",
     "SummaryContent",
     "SummaryResult",
+    "CustomEndpointCapabilities",
     "ConcurrencyConfig",
     "ModelConfig",
     "ItemSpec",

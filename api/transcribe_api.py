@@ -37,9 +37,18 @@ from modules.text_cleaner import strip_markdown_code_block
 
 logger = setup_logger(__name__)
 
+from modules.types import CustomEndpointCapabilities
+
 # Constants
 TRANSCRIPTION_SCHEMA_FILE = "transcription_schema.json"
 SYSTEM_PROMPT_FILE = "transcription_system_prompt.txt"
+PLAIN_TEXT_PROMPT_FILE = "transcription_plain_text_prompt.txt"
+
+# Required top-level keys in the transcription JSON schema response
+TRANSCRIPTION_REQUIRED_KEYS = frozenset(
+    {"image_analysis", "transcription", "no_transcribable_text",
+     "transcription_not_possible"}
+)
 
 
 class TranscriptionManager(LLMClientBase):
@@ -64,25 +73,34 @@ class TranscriptionManager(LLMClientBase):
         api_key: str | None = None,
         rate_limiter: RateLimiter | None = None,
         timeout: int | None = None,
+        custom_capabilities: CustomEndpointCapabilities | None = None,
     ) -> None:
         """
         Initialize the transcription manager.
 
         Args:
             model_name: Model to use (e.g., 'gpt-5-mini', 'claude-sonnet-4-5-20250929').
-            provider: Provider name (openai, anthropic, google, openrouter).
+            provider: Provider name (openai, anthropic, google, openrouter, custom).
             api_key: Optional API key. If None, uses environment variable.
             rate_limiter: Optional RateLimiter instance.
             timeout: Request timeout in seconds.
+            custom_capabilities: Declared capabilities for custom endpoints.
 
         Raises:
             ValueError: If the selected model doesn't support multimodal (image) input.
         """
         super().__init__(model_name, provider, api_key, timeout, rate_limiter)
 
+        # Store custom endpoint capabilities (used for routing decisions)
+        self.custom_capabilities = custom_capabilities
+
         # Check multimodal capability (required for image transcription)
         capabilities = get_model_capabilities(model_name)
-        if not capabilities.get("multimodal", False):
+        has_multimodal = capabilities.get("multimodal", False)
+        # Override with user-declared capability for custom endpoints
+        if custom_capabilities is not None:
+            has_multimodal = custom_capabilities.supports_vision
+        if not has_multimodal:
             logger.warning(
                 f"Model '{model_name}' may not support multimodal (image) input. "
                 "Image transcription may fail. Consider using gpt-5, gpt-4o, claude, or gemini."
@@ -102,30 +120,67 @@ class TranscriptionManager(LLMClientBase):
         # Load schema-specific retry configuration
         self.schema_retry_config = self._load_schema_retry_config("transcription")
 
+    @property
+    def is_plain_text_mode(self) -> bool:
+        """Whether this manager operates in plain-text (non-JSON) mode."""
+        return (
+            self.custom_capabilities is not None
+            and self.custom_capabilities.use_plain_text_prompt
+        )
+
     def _load_schema_and_prompt(self) -> None:
-        """Load transcription schema and system prompt from configuration files."""
+        """Load transcription schema and system prompt from configuration files.
+
+        In plain-text mode (Mode B): loads a simplified prompt with no JSON
+        schema injection.  In standard mode (Modes A/C): loads the full schema
+        and renders the prompt with schema injection.
+        """
         try:
-            # Load schema
-            schema_path = (SCHEMAS_DIR / TRANSCRIPTION_SCHEMA_FILE).resolve()
-            if schema_path.exists():
-                with open(schema_path, "r", encoding="utf-8") as f:
-                    self.transcription_schema = json.load(f)
+            if self.is_plain_text_mode:
+                # Mode B: no schema, plain-text prompt
+                self.transcription_schema = None
+                prompt_file = PLAIN_TEXT_PROMPT_FILE
                 logger.info(
-                    f"Loaded transcription schema from {TRANSCRIPTION_SCHEMA_FILE} "
-                    f"({len(json.dumps(self.transcription_schema))} bytes)"
+                    "Plain-text mode: skipping transcription schema, "
+                    f"using {PLAIN_TEXT_PROMPT_FILE}"
                 )
             else:
-                logger.error(f"Transcription schema not found at {schema_path}")
-                raise FileNotFoundError(f"Required schema file missing: {schema_path}")
+                # Modes A/C: load schema as usual
+                prompt_file = SYSTEM_PROMPT_FILE
+                schema_path = (
+                    SCHEMAS_DIR / TRANSCRIPTION_SCHEMA_FILE
+                ).resolve()
+                if schema_path.exists():
+                    with open(schema_path, "r", encoding="utf-8") as f:
+                        self.transcription_schema = json.load(f)
+                    logger.info(
+                        f"Loaded transcription schema from "
+                        f"{TRANSCRIPTION_SCHEMA_FILE} "
+                        f"({len(json.dumps(self.transcription_schema))} bytes)"
+                    )
+                else:
+                    logger.error(
+                        f"Transcription schema not found at {schema_path}"
+                    )
+                    raise FileNotFoundError(
+                        f"Required schema file missing: {schema_path}"
+                    )
 
-            # Load and render prompt
-            prompt_path = (PROMPTS_DIR / SYSTEM_PROMPT_FILE).resolve()
+            # Load prompt
+            prompt_path = (PROMPTS_DIR / prompt_file).resolve()
             if prompt_path.exists():
                 with open(prompt_path, "r", encoding="utf-8") as f:
                     raw_prompt = f.read()
 
-                # Render prompt with schema injection
-                if self.transcription_schema is not None:
+                if self.is_plain_text_mode:
+                    # No schema injection for plain-text prompt
+                    self.system_prompt = raw_prompt
+                    logger.info(
+                        f"Loaded plain-text transcription prompt "
+                        f"({len(self.system_prompt)} chars)"
+                    )
+                elif self.transcription_schema is not None:
+                    # Render prompt with schema injection
                     bare_schema = self.transcription_schema.get(
                         "schema", self.transcription_schema
                     )
@@ -213,9 +268,34 @@ class TranscriptionManager(LLMClientBase):
             truncated = truncated[:last_space]
         return truncated.rstrip(".,;:") + "..."
 
+    def _validate_transcription_schema(self, raw_text: str) -> tuple[bool, str]:
+        """Validate that *raw_text* is valid JSON with required schema keys.
+
+        Args:
+            raw_text: Raw text response from the API.
+
+        Returns:
+            ``(is_valid, reason)`` -- *is_valid* is True when JSON is valid
+            and contains all required top-level keys.
+        """
+        stripped = strip_markdown_code_block(raw_text)
+        try:
+            obj = json.loads(stripped)
+        except (json.JSONDecodeError, TypeError):
+            return False, "invalid JSON"
+        if not isinstance(obj, dict):
+            return False, f"expected JSON object, got {type(obj).__name__}"
+        missing = TRANSCRIPTION_REQUIRED_KEYS - obj.keys()
+        if missing:
+            return False, f"missing keys: {', '.join(sorted(missing))}"
+        return True, ""
+
     def _parse_transcription_from_text(self, text: str, image_name: str = "") -> str:
         """
-        Parse transcription from JSON response, handling special flags.
+        Parse transcription from API response, handling special flags.
+
+        In plain-text mode the response is treated as raw text with sentinel
+        string checks.  In standard mode the response is parsed as JSON.
 
         Args:
             text: Raw text response from API.
@@ -227,6 +307,17 @@ class TranscriptionManager(LLMClientBase):
         if not text:
             return f"[transcription error: {image_name or '[unknown image]'}]"
 
+        # Plain-text mode: response IS the transcription (no JSON)
+        if self.is_plain_text_mode:
+            stripped = text.strip()
+            img_name = self._format_image_name(image_name)
+            if stripped == "[no transcribable text]":
+                return f"[{img_name}: no transcribable text]"
+            if stripped == "[transcription not possible]":
+                return f"[{img_name}: transcription not possible]"
+            return stripped
+
+        # Standard JSON mode
         stripped = strip_markdown_code_block(text)
 
         if not stripped.startswith("{"):
@@ -363,7 +454,8 @@ class TranscriptionManager(LLMClientBase):
                 "error_type": "preprocessing_failure",
             }
 
-        schema_retry_attempts = {
+        schema_retry_attempts: dict[str, int] = {
+            "validation_failure": 0,
             "no_transcribable_text": 0,
             "transcription_not_possible": 0,
         }
@@ -374,7 +466,7 @@ class TranscriptionManager(LLMClientBase):
                 # Build messages and invocation kwargs
                 messages, invoke_kwargs = self._build_model_inputs(base64_image)
 
-                # Get structured chat model (uses with_structured_output for non-OpenAI providers)
+                # Get structured chat model
                 structured_model = self._get_structured_chat_model()
 
                 # Application-level retry with per-attempt token tracking
@@ -394,58 +486,134 @@ class TranscriptionManager(LLMClientBase):
                 )
 
                 raw_text = self._extract_output_text(response)
+
+                # --- Validation retry (fires BEFORE schema-flag retries) ---
+                # Active in standard mode (Modes A/C) when response must be
+                # valid JSON conforming to the transcription schema.
+                if not self.is_plain_text_mode:
+                    is_valid, reason = self._validate_transcription_schema(
+                        raw_text
+                    )
+                    if not is_valid:
+                        should_retry, backoff_time, max_attempts = (
+                            self._should_retry_for_schema_flag(
+                                "validation_failure",
+                                True,
+                                schema_retry_attempts["validation_failure"],
+                            )
+                        )
+                        if should_retry:
+                            schema_retry_attempts["validation_failure"] += 1
+                            logger.warning(
+                                f"Validation failure for {image_path.name}: "
+                                f"{reason}. Retrying "
+                                f"({schema_retry_attempts['validation_failure']}"
+                                f"/{max_attempts}) in {backoff_time:.2f}s..."
+                            )
+                            time.sleep(backoff_time)
+                            continue
+
                 transcription = self._parse_transcription_from_text(
                     raw_text, image_path.name
                 )
 
-                # Parse the raw text as JSON to check for schema flags
-                parsed_response = None
-                try:
-                    parsed_response = json.loads(raw_text)
-                except (json.JSONDecodeError, TypeError):
-                    pass
-
-                # Check for schema-specific retry conditions
-                if isinstance(parsed_response, dict):
-                    # Check no_transcribable_text flag
-                    if parsed_response.get("no_transcribable_text") is True:
+                # --- Plain-text mode: sentinel-based retries ---
+                if self.is_plain_text_mode:
+                    stripped_text = raw_text.strip()
+                    if stripped_text == "[no transcribable text]":
                         should_retry, backoff_time, max_attempts = (
                             self._should_retry_for_schema_flag(
                                 "no_transcribable_text",
                                 True,
-                                schema_retry_attempts["no_transcribable_text"],
+                                schema_retry_attempts[
+                                    "no_transcribable_text"
+                                ],
                             )
                         )
-
                         if should_retry:
-                            schema_retry_attempts["no_transcribable_text"] += 1
+                            schema_retry_attempts[
+                                "no_transcribable_text"
+                            ] += 1
                             logger.warning(
-                                f"Schema flag 'no_transcribable_text' detected for {image_path.name}. "
-                                f"Retrying ({schema_retry_attempts['no_transcribable_text']}/{max_attempts}) "
-                                f"in {backoff_time:.2f}s..."
+                                f"Sentinel '[no transcribable text]' for "
+                                f"{image_path.name}. Retrying "
+                                f"({schema_retry_attempts['no_transcribable_text']}"
+                                f"/{max_attempts}) in {backoff_time:.2f}s..."
                             )
                             time.sleep(backoff_time)
                             continue
 
-                    # Check transcription_not_possible flag
-                    if parsed_response.get("transcription_not_possible") is True:
+                    elif stripped_text == "[transcription not possible]":
                         should_retry, backoff_time, max_attempts = (
                             self._should_retry_for_schema_flag(
                                 "transcription_not_possible",
                                 True,
-                                schema_retry_attempts["transcription_not_possible"],
+                                schema_retry_attempts[
+                                    "transcription_not_possible"
+                                ],
                             )
                         )
-
                         if should_retry:
-                            schema_retry_attempts["transcription_not_possible"] += 1
+                            schema_retry_attempts[
+                                "transcription_not_possible"
+                            ] += 1
                             logger.warning(
-                                f"Schema flag 'transcription_not_possible' detected for {image_path.name}. "
-                                f"Retrying ({schema_retry_attempts['transcription_not_possible']}/{max_attempts}) "
-                                f"in {backoff_time:.2f}s..."
+                                f"Sentinel '[transcription not possible]' for "
+                                f"{image_path.name}. Retrying "
+                                f"({schema_retry_attempts['transcription_not_possible']}"
+                                f"/{max_attempts}) in {backoff_time:.2f}s..."
                             )
                             time.sleep(backoff_time)
                             continue
+
+                # --- Standard JSON mode: schema-flag retries ---
+                if not self.is_plain_text_mode:
+                    # Parse the raw text as JSON to check for schema flags
+                    parsed_response = None
+                    try:
+                        parsed_response = json.loads(raw_text)
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+
+                    # Check for schema-specific retry conditions
+                    if isinstance(parsed_response, dict):
+                        # Check no_transcribable_text flag
+                        if parsed_response.get("no_transcribable_text") is True:
+                            should_retry, backoff_time, max_attempts = (
+                                self._should_retry_for_schema_flag(
+                                    "no_transcribable_text",
+                                    True,
+                                    schema_retry_attempts["no_transcribable_text"],
+                                )
+                            )
+                            if should_retry:
+                                schema_retry_attempts["no_transcribable_text"] += 1
+                                logger.warning(
+                                    f"Schema flag 'no_transcribable_text' detected for {image_path.name}. "
+                                    f"Retrying ({schema_retry_attempts['no_transcribable_text']}/{max_attempts}) "
+                                    f"in {backoff_time:.2f}s..."
+                                )
+                                time.sleep(backoff_time)
+                                continue
+
+                        # Check transcription_not_possible flag
+                        if parsed_response.get("transcription_not_possible") is True:
+                            should_retry, backoff_time, max_attempts = (
+                                self._should_retry_for_schema_flag(
+                                    "transcription_not_possible",
+                                    True,
+                                    schema_retry_attempts["transcription_not_possible"],
+                                )
+                            )
+                            if should_retry:
+                                schema_retry_attempts["transcription_not_possible"] += 1
+                                logger.warning(
+                                    f"Schema flag 'transcription_not_possible' detected for {image_path.name}. "
+                                    f"Retrying ({schema_retry_attempts['transcription_not_possible']}/{max_attempts}) "
+                                    f"in {backoff_time:.2f}s..."
+                                )
+                                time.sleep(backoff_time)
+                                continue
 
                 result = {
                     "image": image_path.name,

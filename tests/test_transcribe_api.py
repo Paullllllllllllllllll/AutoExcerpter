@@ -138,6 +138,103 @@ class TestParseTranscriptionFromText:
         assert brief.endswith("...")
 
 
+class TestValidateTranscriptionSchema:
+    """Tests for _validate_transcription_schema method."""
+
+    @staticmethod
+    def _make_manager() -> TranscriptionManager:
+        """Create a minimal TranscriptionManager without full init."""
+        mgr = TranscriptionManager.__new__(TranscriptionManager)
+        mgr.custom_capabilities = None
+        return mgr
+
+    def test_valid_json(self) -> None:
+        mgr = self._make_manager()
+        text = json.dumps({
+            "image_analysis": "text",
+            "transcription": "hello",
+            "no_transcribable_text": False,
+            "transcription_not_possible": False,
+        })
+        is_valid, reason = mgr._validate_transcription_schema(text)
+        assert is_valid is True
+        assert reason == ""
+
+    def test_invalid_json(self) -> None:
+        mgr = self._make_manager()
+        is_valid, reason = mgr._validate_transcription_schema("not json at all")
+        assert is_valid is False
+        assert "invalid JSON" in reason
+
+    def test_missing_keys(self) -> None:
+        mgr = self._make_manager()
+        text = json.dumps({"image_analysis": "text", "transcription": "hello"})
+        is_valid, reason = mgr._validate_transcription_schema(text)
+        assert is_valid is False
+        assert "missing keys" in reason
+
+    def test_markdown_wrapped_json(self) -> None:
+        mgr = self._make_manager()
+        inner = json.dumps({
+            "image_analysis": "x",
+            "transcription": "y",
+            "no_transcribable_text": False,
+            "transcription_not_possible": False,
+        })
+        text = f"```json\n{inner}\n```"
+        is_valid, reason = mgr._validate_transcription_schema(text)
+        assert is_valid is True
+
+
+class TestPlainTextParsing:
+    """Tests for plain-text mode parsing."""
+
+    @staticmethod
+    def _make_plain_text_manager() -> TranscriptionManager:
+        from modules.types import CustomEndpointCapabilities
+
+        mgr = TranscriptionManager.__new__(TranscriptionManager)
+        mgr.custom_capabilities = CustomEndpointCapabilities(
+            use_plain_text_prompt=True
+        )
+        return mgr
+
+    def test_normal_text_returned_as_is(self) -> None:
+        mgr = self._make_plain_text_manager()
+        result = mgr._parse_transcription_from_text("Hello world", "page_001.jpg")
+        assert result == "Hello world"
+
+    def test_sentinel_no_transcribable_text(self) -> None:
+        mgr = self._make_plain_text_manager()
+        result = mgr._parse_transcription_from_text(
+            "[no transcribable text]", "page_001.jpg"
+        )
+        assert "page_001.jpg" in result
+        assert "no transcribable text" in result
+
+    def test_sentinel_transcription_not_possible(self) -> None:
+        mgr = self._make_plain_text_manager()
+        result = mgr._parse_transcription_from_text(
+            "[transcription not possible]", "page_001.jpg"
+        )
+        assert "page_001.jpg" in result
+        assert "transcription not possible" in result
+
+    def test_empty_text_returns_error(self) -> None:
+        mgr = self._make_plain_text_manager()
+        result = mgr._parse_transcription_from_text("", "page_001.jpg")
+        assert "transcription error" in result
+
+    def test_is_plain_text_mode_property(self) -> None:
+        mgr = self._make_plain_text_manager()
+        assert mgr.is_plain_text_mode is True
+
+    def test_is_not_plain_text_mode_without_caps(self) -> None:
+        mgr = TranscriptionManager.__new__(TranscriptionManager)
+        mgr.custom_capabilities = None
+        assert mgr.is_plain_text_mode is False
+
+
 class TestTranscriptionSchemaFlags:
     """Tests verifying schema flag handling expectations."""
 

@@ -31,11 +31,19 @@ from modules.config_loader import PROMPTS_DIR, SCHEMAS_DIR
 from modules.logger import setup_logger
 from modules.text_cleaner import strip_markdown_code_block
 
+from modules.types import CustomEndpointCapabilities
+
 logger = setup_logger(__name__)
 
 # Constants
 SUMMARY_SCHEMA_FILE = "summary_schema.json"
 SUMMARY_PROMPT_FILE = "summary_system_prompt.txt"
+PLAIN_TEXT_SUMMARY_PROMPT_FILE = "summary_plain_text_prompt.txt"
+
+# Required top-level keys in the summary JSON schema response
+SUMMARY_REQUIRED_KEYS = frozenset(
+    {"page_information", "bullet_points", "references"}
+)
 
 
 class SummaryManager(LLMClientBase):
@@ -59,19 +67,28 @@ class SummaryManager(LLMClientBase):
         provider: ProviderType | None = None,
         api_key: str | None = None,
         summary_context: str | None = None,
+        custom_capabilities: CustomEndpointCapabilities | None = None,
+        transcription_was_plain_text: bool = False,
     ) -> None:
         """
         Initialize the summary manager.
 
         Args:
             model_name: Model to use (e.g., 'gpt-5-mini', 'claude-sonnet-4-5-20250929').
-            provider: Provider name (openai, anthropic, google, openrouter).
+            provider: Provider name (openai, anthropic, google, openrouter, custom).
             api_key: Optional API key. If None, uses environment variable.
             summary_context: Optional context string for guiding summarization focus.
+            custom_capabilities: Declared capabilities for custom endpoints.
+            transcription_was_plain_text: Whether the transcription step used
+                plain-text mode (affects which summary prompt is loaded).
         """
         # Initialize rate limiter with provider-agnostic configuration
         rate_limiter = RateLimiter(get_rate_limits())
         super().__init__(model_name, provider, api_key, get_api_timeout(), rate_limiter)
+
+        # Store custom endpoint capabilities (used for routing decisions)
+        self.custom_capabilities = custom_capabilities
+        self.transcription_was_plain_text = transcription_was_plain_text
 
         # Load schema and system prompt
         self.summary_schema: dict[str, Any] | None = None
@@ -91,9 +108,14 @@ class SummaryManager(LLMClientBase):
         self.schema_retry_config = self._load_schema_retry_config("summary")
 
     def _load_schema_and_prompt(self) -> None:
-        """Load summary schema and system prompt from configuration files."""
+        """Load summary schema and system prompt from configuration files.
+
+        Schema is always loaded (the summary step can use structured output
+        regardless of how the transcription was produced).  The prompt file
+        varies depending on whether the transcription was plain text.
+        """
         try:
-            # Load schema
+            # Schema is always loaded
             schema_path = (SCHEMAS_DIR / SUMMARY_SCHEMA_FILE).resolve()
             if schema_path.exists():
                 with open(schema_path, "r", encoding="utf-8") as f:
@@ -103,8 +125,18 @@ class SummaryManager(LLMClientBase):
                 logger.error(f"Summary schema not found at {schema_path}")
                 raise FileNotFoundError(f"Required schema file missing: {schema_path}")
 
+            # Select prompt based on transcription mode
+            if self.transcription_was_plain_text:
+                prompt_file = PLAIN_TEXT_SUMMARY_PROMPT_FILE
+                logger.info(
+                    "Transcription was plain text; using "
+                    f"{PLAIN_TEXT_SUMMARY_PROMPT_FILE}"
+                )
+            else:
+                prompt_file = SUMMARY_PROMPT_FILE
+
             # Load prompt
-            prompt_path = (PROMPTS_DIR / SUMMARY_PROMPT_FILE).resolve()
+            prompt_path = (PROMPTS_DIR / prompt_file).resolve()
             if prompt_path.exists():
                 with open(prompt_path, "r", encoding="utf-8") as f:
                     self.summary_system_prompt_text = f.read()
@@ -170,7 +202,7 @@ class SummaryManager(LLMClientBase):
         system_msg = SystemMessage(content=system_text)
 
         # Build user message based on provider
-        if self.provider in ("openai", "openrouter"):
+        if self.provider in ("openai", "openrouter", "custom"):
             user_msg = HumanMessage(content=[{"type": "text", "text": transcription}])
         else:
             # Anthropic, Google use simpler format
@@ -210,6 +242,27 @@ class SummaryManager(LLMClientBase):
             if "page_types" not in page_info:
                 page_info["page_types"] = ["content"]
 
+    def _validate_summary_schema(self, raw_text: str) -> tuple[bool, str]:
+        """Validate that *raw_text* is valid JSON with required summary keys.
+
+        Args:
+            raw_text: Raw (markdown-stripped) text response from the API.
+
+        Returns:
+            ``(is_valid, reason)`` -- *is_valid* is True when JSON is valid
+            and contains all required top-level keys.
+        """
+        try:
+            obj = json.loads(raw_text)
+        except (json.JSONDecodeError, TypeError):
+            return False, "invalid JSON"
+        if not isinstance(obj, dict):
+            return False, f"expected JSON object, got {type(obj).__name__}"
+        missing = SUMMARY_REQUIRED_KEYS - obj.keys()
+        if missing:
+            return False, f"missing keys: {', '.join(sorted(missing))}"
+        return True, ""
+
     def generate_summary(
         self, transcription: str, page_num: int, max_schema_retries: int = 3
     ) -> dict[str, Any]:
@@ -217,6 +270,7 @@ class SummaryManager(LLMClientBase):
         start_time = time.time()
 
         summary_json = None
+        schema_retry_attempts: dict[str, int] = {"validation_failure": 0}
 
         # Schema retry loop (API retries handled by _invoke_with_retry)
         for _ in range(max_schema_retries + 1):
@@ -224,7 +278,7 @@ class SummaryManager(LLMClientBase):
                 # Build messages and invocation kwargs
                 messages, invoke_kwargs = self._build_model_inputs(transcription)
 
-                # Get structured chat model (uses with_structured_output for non-OpenAI providers)
+                # Get structured chat model
                 structured_model = self._get_structured_chat_model()
 
                 # Application-level retry with per-attempt token tracking
@@ -248,21 +302,74 @@ class SummaryManager(LLMClientBase):
                 # Strip markdown code blocks if present
                 summary_json_str = strip_markdown_code_block(summary_json_str)
 
-                # Parse JSON with better error handling
-                try:
-                    summary_json = json.loads(summary_json_str)
-                except json.JSONDecodeError as json_err:
-                    logger.error(
-                        f"JSON decode error for page {page_num}: {json_err}. "
-                        f"Raw content (first 500 chars): {summary_json_str[:500]}"
+                # --- Validation retry (fires BEFORE JSON parse) ---
+                is_valid, reason = self._validate_summary_schema(summary_json_str)
+                if not is_valid:
+                    should_retry, backoff_time, max_attempts = (
+                        self._should_retry_for_schema_flag(
+                            "validation_failure",
+                            True,
+                            schema_retry_attempts["validation_failure"],
+                        )
                     )
-                    raise ValueError(f"Invalid JSON in API response: {json_err}")
+                    if should_retry:
+                        schema_retry_attempts["validation_failure"] += 1
+                        logger.warning(
+                            f"Summary validation failure for page {page_num}: "
+                            f"{reason}. Retrying "
+                            f"({schema_retry_attempts['validation_failure']}"
+                            f"/{max_attempts}) in {backoff_time:.2f}s..."
+                        )
+                        time.sleep(backoff_time)
+                        continue
+
+                    # Validation retries exhausted -- if the summary model
+                    # is a custom endpoint without structured output, wrap
+                    # the raw text into the expected structure as a fallback.
+                    custom_caps = self.custom_capabilities
+                    if (
+                        custom_caps is not None
+                        and not custom_caps.supports_structured_output
+                    ):
+                        logger.warning(
+                            f"Summary for page {page_num}: wrapping non-JSON "
+                            "response into placeholder structure."
+                        )
+                        summary_json = {
+                            "page_information": {
+                                "page_number_integer": page_num,
+                                "page_number_type": "arabic",
+                                "page_types": ["content"],
+                            },
+                            "bullet_points": [summary_json_str.strip()],
+                            "references": None,
+                        }
+                    else:
+                        # Not a custom endpoint -- raise so the outer
+                        # except block can handle it.
+                        raise ValueError(
+                            f"Invalid summary JSON for page {page_num}: "
+                            f"{reason}"
+                        )
+                else:
+                    # Parse JSON
+                    try:
+                        summary_json = json.loads(summary_json_str)
+                    except json.JSONDecodeError as json_err:
+                        logger.error(
+                            f"JSON decode error for page {page_num}: "
+                            f"{json_err}. Raw content (first 500 chars): "
+                            f"{summary_json_str[:500]}"
+                        )
+                        raise ValueError(
+                            f"Invalid JSON in API response: {json_err}"
+                        )
 
                 # Ensure page_information structure is correct
                 self._ensure_page_information_structure(summary_json, page_num)
 
                 # Build flat result structure - LLM content fields at top level
-                result = {
+                result: dict[str, Any] = {
                     "page": page_num,
                     "page_information": summary_json.get("page_information"),
                     "bullet_points": summary_json.get("bullet_points"),
@@ -270,6 +377,11 @@ class SummaryManager(LLMClientBase):
                     "processing_time": round(processing_time, 2),
                     "provider": self.provider,
                 }
+
+                # Include schema retry statistics if any occurred
+                total_schema_retries = sum(schema_retry_attempts.values())
+                if total_schema_retries > 0:
+                    result["schema_retries"] = schema_retry_attempts.copy()
 
                 # Add response metadata for logging
                 response_meta = getattr(response, "response_metadata", {})

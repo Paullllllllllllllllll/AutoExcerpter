@@ -63,6 +63,112 @@ class TestSchemaRetryDecision:
         assert max_attempts == 3
 
 
+class TestExtractFromStructuredOutputWrapper:
+    """Tests for the with_structured_output(include_raw=True) extractor."""
+
+    def test_extract_parsed_dict(self) -> None:
+        """Parsed dict is serialised to JSON."""
+        data = {
+            "raw": AIMessage(content="raw text"),
+            "parsed": {"transcription": "hello", "flag": True},
+            "parsing_error": None,
+        }
+        result = LLMClientBase._extract_output_text(data)
+        assert '"transcription"' in result
+        assert '"hello"' in result
+
+    def test_fallback_to_raw_when_parsed_none(self) -> None:
+        """Falls back to raw AIMessage when parsed is None."""
+        data = {
+            "raw": AIMessage(content="fallback text"),
+            "parsed": None,
+            "parsing_error": "some error",
+        }
+        result = LLMClientBase._extract_output_text(data)
+        assert result == "fallback text"
+
+    def test_ignores_non_matching_dicts(self) -> None:
+        """Dicts without 'raw' key are not matched by the wrapper extractor."""
+        data = {"output_text": "normal dict"}
+        result = LLMClientBase._extract_output_text(data)
+        assert result == "normal dict"
+
+
+class TestCustomProviderRouting:
+    """Tests for custom provider structured output routing."""
+
+    def test_get_structured_chat_model_custom_returns_bare_model(self) -> None:
+        """Custom provider always returns bare chat_model."""
+        client = LLMClientBase.__new__(LLMClientBase)
+        client.provider = "custom"
+        client._output_schema = {"schema": {"type": "object"}}
+
+        sentinel = object()
+        client.chat_model = sentinel  # type: ignore[assignment]
+
+        result = client._get_structured_chat_model()
+        assert result is sentinel
+
+    def test_apply_structured_output_kwargs_mode_a(self) -> None:
+        """Mode A (supports_structured_output=True) adds response_format."""
+        from modules.types import CustomEndpointCapabilities
+
+        client = LLMClientBase.__new__(LLMClientBase)
+        client.provider = "custom"
+        client._output_schema = {
+            "name": "test",
+            "strict": True,
+            "schema": {"type": "object", "properties": {}},
+        }
+        client.custom_capabilities = CustomEndpointCapabilities(
+            supports_structured_output=True
+        )
+
+        kwargs: dict[str, object] = {}
+        client._apply_structured_output_kwargs(kwargs)
+        assert "response_format" in kwargs
+
+    def test_apply_structured_output_kwargs_mode_b(self) -> None:
+        """Mode B (use_plain_text_prompt=True) adds nothing."""
+        from modules.types import CustomEndpointCapabilities
+
+        client = LLMClientBase.__new__(LLMClientBase)
+        client.provider = "custom"
+        client._output_schema = {
+            "name": "test",
+            "strict": True,
+            "schema": {"type": "object", "properties": {}},
+        }
+        client.custom_capabilities = CustomEndpointCapabilities(
+            use_plain_text_prompt=True
+        )
+
+        kwargs: dict[str, object] = {}
+        client._apply_structured_output_kwargs(kwargs)
+        assert "response_format" not in kwargs
+
+    def test_build_invoke_kwargs_custom_uses_max_output_tokens(self) -> None:
+        """Custom provider routes to max_output_tokens (like OpenAI)."""
+        client = LLMClientBase.__new__(LLMClientBase)
+        client.provider = "custom"
+        client.model_name = "org/model"
+        client.model_config = {"max_output_tokens": 4096}
+        client.service_tier = "auto"
+
+        with patch(
+            "api.base_llm_client.get_model_capabilities",
+            return_value={
+                "max_tokens": True,
+                "reasoning": False,
+                "text_verbosity": False,
+            },
+        ):
+            kwargs = client._build_invoke_kwargs()
+
+        assert kwargs.get("max_output_tokens") == 4096
+        assert "max_tokens" not in kwargs
+
+
 class TestBuildInvokeKwargs:
     def test_build_invoke_kwargs_openai_capability_guarding(self) -> None:
         client = LLMClientBase.__new__(LLMClientBase)
