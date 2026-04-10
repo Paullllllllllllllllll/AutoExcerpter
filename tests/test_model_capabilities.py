@@ -24,6 +24,8 @@ class TestDetectProvider:
         assert detect_provider("gpt-5.3-chat-latest") == "openai"
         assert detect_provider("gpt-5.4") == "openai"
         assert detect_provider("gpt-5.4-pro") == "openai"
+        assert detect_provider("gpt-5.4-mini") == "openai"
+        assert detect_provider("gpt-5.4-nano") == "openai"
 
     def test_detect_openai_reasoning_models(self) -> None:
         assert detect_provider("o1") == "openai"
@@ -121,6 +123,46 @@ class TestDetectCapabilities:
         assert caps.max_context_tokens == 1050000
         assert caps.max_output_tokens == 128000
 
+    def test_gpt54_mini_capabilities(self) -> None:
+        caps = detect_capabilities("gpt-5.4-mini")
+        assert caps.family == "gpt-5.4-mini"
+        assert caps.provider_name == "openai"
+        assert caps.is_reasoning_model is True
+        assert caps.supports_reasoning_effort is True
+        assert caps.supports_text_verbosity is True
+        assert caps.supports_vision is True
+        assert caps.supports_structured_output is True
+        assert caps.max_context_tokens == 400000
+        assert caps.max_output_tokens == 128000
+
+    def test_gpt54_mini_does_not_match_gpt54(self) -> None:
+        """Ensure gpt-5.4-mini is matched by its own entry, not the gpt-5.4 prefix."""
+        mini = detect_capabilities("gpt-5.4-mini")
+        base = detect_capabilities("gpt-5.4")
+        assert mini.family == "gpt-5.4-mini"
+        assert base.family == "gpt-5.4"
+        assert mini.max_context_tokens == 400000
+        assert base.max_context_tokens == 1050000
+
+    def test_gpt54_nano_capabilities(self) -> None:
+        caps = detect_capabilities("gpt-5.4-nano")
+        assert caps.family == "gpt-5.4-nano"
+        assert caps.provider_name == "openai"
+        assert caps.is_reasoning_model is True
+        assert caps.supports_reasoning_effort is True
+        assert caps.supports_text_verbosity is True
+        assert caps.supports_vision is True
+        assert caps.supports_structured_output is True
+        assert caps.max_context_tokens == 400000
+        assert caps.max_output_tokens == 128000
+
+    def test_gpt54_nano_does_not_match_gpt54(self) -> None:
+        """Ensure gpt-5.4-nano is matched by its own entry, not the gpt-5.4 prefix."""
+        nano = detect_capabilities("gpt-5.4-nano")
+        base = detect_capabilities("gpt-5.4")
+        assert nano.family == "gpt-5.4-nano"
+        assert base.family == "gpt-5.4"
+
     def test_gpt54_pro_capabilities(self) -> None:
         caps = detect_capabilities("gpt-5.4-pro")
         assert caps.family == "gpt-5.4-pro"
@@ -128,6 +170,8 @@ class TestDetectCapabilities:
         assert caps.is_reasoning_model is True
         assert caps.supports_reasoning_effort is True
         assert caps.supports_text_verbosity is True
+        assert caps.supports_structured_output is False
+        assert caps.supports_json_mode is False
         assert caps.max_context_tokens == 1050000
         assert caps.max_output_tokens == 128000
 

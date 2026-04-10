@@ -277,7 +277,29 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
         _OPENAI_REASONING_BASE,
         dict(
             supports_text_verbosity=True,
+            supports_structured_output=False,
+            supports_json_mode=False,
             max_context_tokens=1050000,
+            max_output_tokens=128000,
+        ),
+    ),
+    (
+        ("gpt-5.4-mini",),
+        "gpt-5.4-mini",
+        _OPENAI_REASONING_BASE,
+        dict(
+            supports_text_verbosity=True,
+            max_context_tokens=400000,
+            max_output_tokens=128000,
+        ),
+    ),
+    (
+        ("gpt-5.4-nano",),
+        "gpt-5.4-nano",
+        _OPENAI_REASONING_BASE,
+        dict(
+            supports_text_verbosity=True,
+            max_context_tokens=400000,
             max_output_tokens=128000,
         ),
     ),
