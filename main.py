@@ -16,6 +16,7 @@ from pathlib import Path
 
 from cli.argument_parser import (
     setup_argparse,
+    _apply_app_config_overrides,
     _build_cli_model_overrides,
     _parse_cli_selection,
     _parse_execution_mode,
@@ -108,6 +109,8 @@ def _setup_and_scan(
         summary_context,
         resume_mode,
     ) = _parse_execution_mode(args)
+
+    _apply_app_config_overrides(args)
 
     cli_model_overrides = _build_cli_model_overrides(args)
     if cli_model_overrides:

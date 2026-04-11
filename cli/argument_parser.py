@@ -14,6 +14,7 @@ logger = setup_logger(__name__)
 
 REASONING_EFFORT_CHOICES = ("minimal", "low", "medium", "high")
 VERBOSITY_CHOICES = ("low", "medium", "high")
+PROVIDER_CHOICES = ("openai", "anthropic", "google", "openrouter", "custom")
 
 
 def _positive_int(value: str) -> int:
@@ -24,6 +25,17 @@ def _positive_int(value: str) -> int:
         raise argparse.ArgumentTypeError("must be an integer") from exc
     if parsed <= 0:
         raise argparse.ArgumentTypeError("must be > 0")
+    return parsed
+
+
+def _temperature_float(value: str) -> float:
+    """Argparse type validator for temperature values (0.0-2.0)."""
+    try:
+        parsed = float(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be a number") from exc
+    if parsed < 0.0 or parsed > 2.0:
+        raise argparse.ArgumentTypeError("must be between 0.0 and 2.0")
     return parsed
 
 
@@ -96,6 +108,18 @@ def setup_argparse() -> argparse.Namespace:
             help="Summary context: topics to focus on during summarization (e.g., 'Food History, Wages, Early Modern').",
         )
         parser.add_argument(
+            "--summarize",
+            action=argparse.BooleanOptionalAction,
+            default=None,
+            help="Enable/disable summarization phase. Overrides summarize in app.yaml.",
+        )
+        parser.add_argument(
+            "--cleanup",
+            action=argparse.BooleanOptionalAction,
+            default=None,
+            help="Enable/disable cleanup of temporary working directory. Overrides delete_temp_working_dir in app.yaml.",
+        )
+        parser.add_argument(
             "--model",
             type=str,
             default=None,
@@ -166,6 +190,42 @@ def setup_argparse() -> argparse.Namespace:
             type=_positive_int,
             default=None,
             help="Override summary max output tokens.",
+        )
+        parser.add_argument(
+            "--temperature",
+            type=_temperature_float,
+            default=None,
+            help="Set temperature for both models (0.0-2.0).",
+        )
+        parser.add_argument(
+            "--transcription-temperature",
+            type=_temperature_float,
+            default=None,
+            help="Override transcription temperature (0.0-2.0).",
+        )
+        parser.add_argument(
+            "--summary-temperature",
+            type=_temperature_float,
+            default=None,
+            help="Override summary temperature (0.0-2.0).",
+        )
+        parser.add_argument(
+            "--provider",
+            choices=PROVIDER_CHOICES,
+            default=None,
+            help="Set provider for both models.",
+        )
+        parser.add_argument(
+            "--transcription-provider",
+            choices=PROVIDER_CHOICES,
+            default=None,
+            help="Override transcription provider.",
+        )
+        parser.add_argument(
+            "--summary-provider",
+            choices=PROVIDER_CHOICES,
+            default=None,
+            help="Override summary provider.",
         )
     else:
         # Interactive mode: optional input argument with default from config
@@ -240,6 +300,29 @@ def _parse_execution_mode(
         summary_context,
         resume_mode,
     )
+
+
+def _apply_app_config_overrides(args: argparse.Namespace) -> None:
+    """Apply CLI flag overrides to app_config module-level settings.
+
+    Mutates module attributes on ``modules.app_config`` so that downstream
+    code reading ``config.SUMMARIZE`` etc. sees the CLI-specified value.
+    Only effective in CLI mode; no-ops silently otherwise.
+    """
+    if not config.CLI_MODE:
+        return
+
+    if getattr(args, "summarize", None) is not None:
+        config.SUMMARIZE = args.summarize
+        logger.info(
+            "CLI override: summarize=%s", args.summarize,
+        )
+
+    if getattr(args, "cleanup", None) is not None:
+        config.DELETE_TEMP_WORKING_DIR = args.cleanup
+        logger.info(
+            "CLI override: delete_temp_working_dir=%s", args.cleanup,
+        )
 
 
 def _set_model_override(
@@ -333,6 +416,44 @@ def _build_cli_model_overrides(args: argparse.Namespace) -> dict[str, Any]:
             "summary_model",
             ["max_output_tokens"],
             int(summary_max_tokens),
+        )
+
+    # Temperature overrides (None-aware: 0.0 is a valid value)
+    shared_temp = getattr(args, "temperature", None)
+    transcription_temp = getattr(args, "transcription_temperature", None)
+    if transcription_temp is None:
+        transcription_temp = shared_temp
+    summary_temp = getattr(args, "summary_temperature", None)
+    if summary_temp is None:
+        summary_temp = shared_temp
+    if transcription_temp is not None:
+        _set_model_override(
+            overrides,
+            "transcription_model",
+            ["temperature"],
+            float(transcription_temp),
+        )
+    if summary_temp is not None:
+        _set_model_override(
+            overrides,
+            "summary_model",
+            ["temperature"],
+            float(summary_temp),
+        )
+
+    # Provider overrides
+    shared_provider = getattr(args, "provider", None)
+    transcription_provider = (
+        getattr(args, "transcription_provider", None) or shared_provider
+    )
+    summary_provider = getattr(args, "summary_provider", None) or shared_provider
+    if transcription_provider:
+        _set_model_override(
+            overrides, "transcription_model", ["provider"], transcription_provider
+        )
+    if summary_provider:
+        _set_model_override(
+            overrides, "summary_model", ["provider"], summary_provider
         )
 
     return overrides
