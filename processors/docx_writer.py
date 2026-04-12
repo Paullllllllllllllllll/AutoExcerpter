@@ -470,7 +470,7 @@ def add_math_to_paragraph(paragraph: Any, latex_code: str) -> None:
             "Failed to convert LaTeX to MathML: %s. Displaying as text.", exc
         )
         logger.warning("Problematic LaTeX code: %s", latex_code[:200])
-        run = paragraph.add_run(f" {latex_code} ")
+        run = paragraph.add_run(f" {sanitize_for_xml(latex_code)} ")
         run.font.name = "Cambria Math"
         run.italic = True
 
