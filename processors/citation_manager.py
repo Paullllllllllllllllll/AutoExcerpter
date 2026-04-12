@@ -22,6 +22,8 @@ API_REQUEST_TIMEOUT = 10
 API_RETRY_DELAY = 1.0
 MAX_API_RETRIES = 3
 API_POLITE_DELAY = 0.1  # Delay between API calls to be polite
+# 429 budget-exhaustion: skip remaining enrichment if retryAfter exceeds this (seconds)
+BUDGET_EXHAUSTED_RETRY_AFTER_THRESHOLD = 300  # 5 minutes
 
 # Constants for citation matching
 MIN_AUTHOR_LENGTH = 3
@@ -129,6 +131,7 @@ class CitationManager:
         self.citations: dict[str, Citation] = {}
         self.polite_pool_email = polite_pool_email or OPENALEX_POLITE_POOL_EMAIL
         self._api_cache: dict[str, dict[str, Any] | None] = {}
+        self._openalex_budget_exhausted: bool = False
 
     def add_citations(self, citations: list[str], page_number: int) -> None:
         """
@@ -179,6 +182,14 @@ class CitationManager:
 
             if max_requests and requests_made >= max_requests:
                 logger.info("Reached maximum API requests limit (%d)", max_requests)
+                break
+
+            if self._openalex_budget_exhausted:
+                remaining = len(self.citations) - processed
+                logger.warning(
+                    "OpenAlex daily budget exhausted — skipping %d remaining citation(s).",
+                    remaining,
+                )
                 break
 
             # Try to extract identifiable information
@@ -267,8 +278,54 @@ class CitationManager:
                 elif response.status_code == 404:
                     # 404 is expected when resource not found
                     return None
+                elif response.status_code == 429:
+                    # Rate-limit or paid-tier budget exhaustion.
+                    try:
+                        error_detail = response.json()
+                    except Exception:
+                        error_detail = {}
+                    retry_after = int(error_detail.get("retryAfter", 0))
+                    if retry_after > BUDGET_EXHAUSTED_RETRY_AFTER_THRESHOLD:
+                        # Long retryAfter means budget is depleted for the day;
+                        # disable OpenAlex for the rest of this run.
+                        self._openalex_budget_exhausted = True
+                        logger.warning(
+                            "OpenAlex daily budget exhausted (retryAfter=%ds). "
+                            "Disabling OpenAlex enrichment for this run.",
+                            retry_after,
+                        )
+                    else:
+                        logger.warning(
+                            "OpenAlex rate limit hit for %s (retryAfter=%ds). "
+                            "Skipping this citation.",
+                            context_description,
+                            retry_after,
+                        )
+                    return None
+                elif response.status_code == 500:
+                    # Transient server error — retry with exponential backoff.
+                    delay = API_RETRY_DELAY * (2 ** attempt)
+                    if attempt < MAX_API_RETRIES - 1:
+                        logger.debug(
+                            "OpenAlex server error 500 for %s (attempt %d/%d); "
+                            "retrying in %.1fs.",
+                            context_description,
+                            attempt + 1,
+                            MAX_API_RETRIES,
+                            delay,
+                        )
+                        time.sleep(delay)
+                        continue
+                    else:
+                        logger.warning(
+                            "OpenAlex API returned status 500 for %s after %d attempts; "
+                            "giving up.",
+                            context_description,
+                            MAX_API_RETRIES,
+                        )
+                        return None
                 else:
-                    # Log error details
+                    # Other unexpected client/server errors — log once and skip.
                     try:
                         error_detail = response.json()
                         logger.warning(
@@ -283,7 +340,7 @@ class CitationManager:
                             response.status_code,
                             context_description,
                         )
-                    return None  # Don't retry on client errors
+                    return None
             except requests.RequestException as e:
                 logger.warning(
                     "Error querying OpenAlex for %s (attempt %d/%d): %s",
