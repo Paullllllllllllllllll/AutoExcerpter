@@ -1,4 +1,4 @@
-"""Tests for api/llm_client.py - Multi-provider LLM client."""
+"""Tests for llm/client.py - Multi-provider LLM client."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from api.llm_client import (
+from llm.client import (
     LLMConfig,
     get_chat_model,
     get_model_capabilities,
@@ -18,7 +18,7 @@ from api.llm_client import (
     _infer_provider,
     _get_api_key,
 )
-from api.model_capabilities import detect_capabilities
+from llm.capabilities import detect_capabilities
 
 
 class TestLLMConfig:
@@ -216,7 +216,7 @@ class TestGetApiKey:
             },
         }
         with patch(
-            "modules.config_loader.get_config_loader"
+            "config.loader.get_config_loader"
         ) as mock_loader, patch.dict(
             os.environ,
             {"TRANS_KEY": "trans-val", "SUM_KEY": "sum-val"},
@@ -239,7 +239,7 @@ class TestGetApiKey:
             },
         }
         with patch(
-            "modules.config_loader.get_config_loader"
+            "config.loader.get_config_loader"
         ) as mock_loader, patch.dict(
             os.environ,
             {"TRANS_KEY": "trans-val", "SUM_KEY": "sum-val"},
@@ -262,7 +262,7 @@ class TestGetApiKey:
             },
         }
         with patch(
-            "modules.config_loader.get_config_loader"
+            "config.loader.get_config_loader"
         ) as mock_loader, patch.dict(
             os.environ,
             {"TRANS_KEY": "trans-val", "SUM_KEY": "sum-val"},

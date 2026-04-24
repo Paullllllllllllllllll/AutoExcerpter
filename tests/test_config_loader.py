@@ -1,4 +1,4 @@
-"""Tests for modules/config_loader.py - Configuration loading utilities."""
+"""Tests for config/loader.py - Configuration loading utilities."""
 
 from __future__ import annotations
 
@@ -9,11 +9,10 @@ from unittest.mock import patch, MagicMock
 import pytest
 import yaml
 
-from modules.config_loader import (
+from config.loader import (
     ConfigLoader,
     get_config_loader,
     PROJECT_ROOT,
-    MODULES_DIR,
     CONFIG_DIR,
     PROMPTS_DIR,
     SCHEMAS_DIR,
@@ -27,10 +26,6 @@ class TestPathConstants:
         """PROJECT_ROOT path exists."""
         assert PROJECT_ROOT.exists()
 
-    def test_modules_dir_exists(self) -> None:
-        """MODULES_DIR path exists."""
-        assert MODULES_DIR.exists()
-
     def test_config_dir_exists(self) -> None:
         """CONFIG_DIR path exists."""
         assert CONFIG_DIR.exists()
@@ -43,9 +38,9 @@ class TestPathConstants:
         """SCHEMAS_DIR path exists."""
         assert SCHEMAS_DIR.exists()
 
-    def test_config_dir_is_under_modules(self) -> None:
-        """CONFIG_DIR is under MODULES_DIR."""
-        assert CONFIG_DIR.parent == MODULES_DIR
+    def test_config_dir_is_under_config_package(self) -> None:
+        """CONFIG_DIR (config/defaults/) is under the config/ package directory."""
+        assert CONFIG_DIR.parent == PROJECT_ROOT / "config"
 
 
 class TestConfigLoaderInit:
@@ -95,7 +90,7 @@ class TestConfigLoaderLoadConfigs:
 
         loader = ConfigLoader()
 
-        with patch("modules.config_loader.CONFIG_DIR", temp_dir):
+        with patch("config.loader.CONFIG_DIR", temp_dir):
             result = loader._load_yaml_config("test_config.yaml")
 
         assert result == {"key": "value", "nested": {"subkey": "subvalue"}}
@@ -107,7 +102,7 @@ class TestConfigLoaderLoadConfigs:
 
         loader = ConfigLoader()
 
-        with patch("modules.config_loader.CONFIG_DIR", temp_dir):
+        with patch("config.loader.CONFIG_DIR", temp_dir):
             result = loader._load_yaml_config("invalid.yaml")
 
         assert result == {}
@@ -119,7 +114,7 @@ class TestConfigLoaderLoadConfigs:
 
         loader = ConfigLoader()
 
-        with patch("modules.config_loader.CONFIG_DIR", temp_dir):
+        with patch("config.loader.CONFIG_DIR", temp_dir):
             result = loader._load_yaml_config("list.yaml")
 
         assert result == {}
@@ -207,7 +202,7 @@ class TestGetConfigLoader:
     def test_returns_config_loader(self) -> None:
         """Returns a ConfigLoader instance."""
         # Reset singleton for test
-        import modules.config_loader as config_module
+        import config.loader as config_module
 
         config_module._config_loader_instance = None
 
@@ -218,7 +213,7 @@ class TestGetConfigLoader:
     def test_returns_same_instance(self) -> None:
         """Returns same instance on repeated calls."""
         # Reset singleton for test
-        import modules.config_loader as config_module
+        import config.loader as config_module
 
         config_module._config_loader_instance = None
 
@@ -230,7 +225,7 @@ class TestGetConfigLoader:
     def test_instance_is_loaded(self) -> None:
         """Singleton instance has configs loaded."""
         # Reset singleton for test
-        import modules.config_loader as config_module
+        import config.loader as config_module
 
         config_module._config_loader_instance = None
 

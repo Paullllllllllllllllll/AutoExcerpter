@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from modules.constants import (
+from config.constants import (
     # API Configuration
     DEFAULT_MODEL,
     DEFAULT_CONCURRENT_REQUESTS,

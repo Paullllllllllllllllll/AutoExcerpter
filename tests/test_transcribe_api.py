@@ -1,4 +1,4 @@
-"""Tests for api/transcribe_api.py - Transcription API utilities."""
+"""Tests for llm/transcription.py - Transcription API utilities."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from api.transcribe_api import TranscriptionManager
+from llm.transcription import TranscriptionManager
 
 
 class TestFormatImageName:
@@ -191,7 +191,7 @@ class TestPlainTextParsing:
 
     @staticmethod
     def _make_plain_text_manager() -> TranscriptionManager:
-        from modules.types import CustomEndpointCapabilities
+        from llm.types import CustomEndpointCapabilities
 
         mgr = TranscriptionManager.__new__(TranscriptionManager)
         mgr.custom_capabilities = CustomEndpointCapabilities(

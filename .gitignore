@@ -3,10 +3,10 @@
 /.idea/misc.xml
 
 # User-specific runtime config (contains paths, emails, model preferences)
-modules/config/app.yaml
-modules/config/concurrency.yaml
-modules/config/image_processing.yaml
-modules/config/model.yaml
+config/defaults/app.yaml
+config/defaults/concurrency.yaml
+config/defaults/image_processing.yaml
+config/defaults/model.yaml
 
 .coverage
 .windsurf

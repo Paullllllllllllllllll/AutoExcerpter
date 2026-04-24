@@ -1,4 +1,4 @@
-"""Extended tests for api/base_llm_client.py — covers untested code paths.
+"""Extended tests for llm/base.py — covers untested code paths.
 
 This file complements test_base_llm_client.py by covering:
 - __init__() initialization with various parameters
@@ -30,7 +30,7 @@ from unittest.mock import MagicMock, patch, PropertyMock
 import pytest
 from langchain_core.messages import AIMessage
 
-from api.base_llm_client import LLMClientBase
+from llm.base import LLMClientBase
 
 
 # ============================================================================
@@ -66,8 +66,8 @@ def _make_client(**overrides) -> LLMClientBase:
 class TestInit:
     """Tests for LLMClientBase.__init__()."""
 
-    @patch("api.base_llm_client.get_chat_model")
-    @patch("api.base_llm_client.get_api_timeout", return_value=600)
+    @patch("llm.base.get_chat_model")
+    @patch("llm.base.get_api_timeout", return_value=600)
     def test_init_defaults(self, mock_timeout, mock_get_chat) -> None:
         """Initialization stores resolved provider, model, and stats defaults."""
         mock_model = MagicMock()
@@ -88,8 +88,8 @@ class TestInit:
         assert client.service_tier == "auto"
         assert client._output_schema is None
 
-    @patch("api.base_llm_client.get_chat_model")
-    @patch("api.base_llm_client.get_api_timeout", return_value=600)
+    @patch("llm.base.get_chat_model")
+    @patch("llm.base.get_api_timeout", return_value=600)
     def test_init_explicit_timeout(self, mock_timeout, mock_get_chat) -> None:
         """Explicit timeout overrides the config-loaded default."""
         mock_get_chat.return_value = MagicMock()
@@ -101,8 +101,8 @@ class TestInit:
         )
         assert client.timeout == 120
 
-    @patch("api.base_llm_client.get_chat_model")
-    @patch("api.base_llm_client.get_api_timeout", return_value=600)
+    @patch("llm.base.get_chat_model")
+    @patch("llm.base.get_api_timeout", return_value=600)
     def test_init_none_timeout_uses_config(self, mock_timeout, mock_get_chat) -> None:
         """When timeout is None, get_api_timeout() is used."""
         mock_get_chat.return_value = MagicMock()
@@ -113,8 +113,8 @@ class TestInit:
         )
         assert client.timeout == 600
 
-    @patch("api.base_llm_client.get_chat_model")
-    @patch("api.base_llm_client.get_api_timeout", return_value=600)
+    @patch("llm.base.get_chat_model")
+    @patch("llm.base.get_api_timeout", return_value=600)
     def test_init_with_rate_limiter(self, mock_timeout, mock_get_chat) -> None:
         """Rate limiter is stored correctly."""
         mock_get_chat.return_value = MagicMock()
@@ -127,8 +127,8 @@ class TestInit:
         )
         assert client.rate_limiter is limiter
 
-    @patch("api.base_llm_client.get_chat_model")
-    @patch("api.base_llm_client.get_api_timeout", return_value=600)
+    @patch("llm.base.get_chat_model")
+    @patch("llm.base.get_api_timeout", return_value=600)
     def test_init_custom_service_tier(self, mock_timeout, mock_get_chat) -> None:
         """Explicit service_tier overrides default 'auto'."""
         mock_get_chat.return_value = MagicMock()
@@ -140,8 +140,8 @@ class TestInit:
         )
         assert client.service_tier == "flex"
 
-    @patch("api.base_llm_client.get_chat_model")
-    @patch("api.base_llm_client.get_api_timeout", return_value=600)
+    @patch("llm.base.get_chat_model")
+    @patch("llm.base.get_api_timeout", return_value=600)
     def test_init_provider_resolved_from_llm_config(self, mock_timeout, mock_get_chat) -> None:
         """When provider is None, it is resolved via LLMConfig."""
         mock_get_chat.return_value = MagicMock()
@@ -168,7 +168,7 @@ class TestLoadModelConfig:
             "transcription_model": {"name": "gpt-5", "max_output_tokens": 4096}
         }
 
-        with patch("api.base_llm_client.get_config_loader", return_value=mock_loader):
+        with patch("llm.base.get_config_loader", return_value=mock_loader):
             result = client._load_model_config("transcription_model")
 
         assert result == {"name": "gpt-5", "max_output_tokens": 4096}
@@ -179,7 +179,7 @@ class TestLoadModelConfig:
         mock_loader = MagicMock()
         mock_loader.get_model_config.return_value = {}
 
-        with patch("api.base_llm_client.get_config_loader", return_value=mock_loader):
+        with patch("llm.base.get_config_loader", return_value=mock_loader):
             result = client._load_model_config("nonexistent_model")
 
         assert result == {}
@@ -189,7 +189,7 @@ class TestLoadModelConfig:
         client = _make_client()
 
         with patch(
-            "api.base_llm_client.get_config_loader",
+            "llm.base.get_config_loader",
             side_effect=RuntimeError("broken"),
         ):
             result = client._load_model_config("transcription_model")
@@ -209,7 +209,7 @@ class TestDetermineServiceTier:
             client = _make_client(provider=provider)
             assert client._determine_service_tier("transcription") == "auto"
 
-    @patch("api.base_llm_client.get_service_tier", return_value="flex")
+    @patch("llm.base.get_service_tier", return_value="flex")
     def test_openai_delegates_to_get_service_tier(self, mock_tier) -> None:
         """OpenAI provider delegates to get_service_tier()."""
         client = _make_client(provider="openai")
@@ -649,7 +649,7 @@ class TestLoadSchemaRetryConfig:
             }
         }
         client = _make_client()
-        with patch("api.base_llm_client.get_config_loader", return_value=mock_loader):
+        with patch("llm.base.get_config_loader", return_value=mock_loader):
             result = client._load_schema_retry_config("transcription")
 
         assert "no_transcribable_text" in result
@@ -662,7 +662,7 @@ class TestLoadSchemaRetryConfig:
             "retry": {"schema_retries": {}}
         }
         client = _make_client()
-        with patch("api.base_llm_client.get_config_loader", return_value=mock_loader):
+        with patch("llm.base.get_config_loader", return_value=mock_loader):
             result = client._load_schema_retry_config("transcription")
 
         assert result == {}
@@ -672,7 +672,7 @@ class TestLoadSchemaRetryConfig:
         mock_loader = MagicMock()
         mock_loader.get_concurrency_config.return_value = {}
         client = _make_client()
-        with patch("api.base_llm_client.get_config_loader", return_value=mock_loader):
+        with patch("llm.base.get_config_loader", return_value=mock_loader):
             result = client._load_schema_retry_config("transcription")
 
         assert result == {}
@@ -681,7 +681,7 @@ class TestLoadSchemaRetryConfig:
         """Returns empty dict on exception."""
         client = _make_client()
         with patch(
-            "api.base_llm_client.get_config_loader",
+            "llm.base.get_config_loader",
             side_effect=RuntimeError("fail"),
         ):
             result = client._load_schema_retry_config("transcription")
@@ -749,7 +749,7 @@ class TestShouldRetryForSchemaFlagExtended:
                 },
             }
         )
-        with patch("api.base_llm_client.random.uniform", return_value=1.0):
+        with patch("llm.base.random.uniform", return_value=1.0):
             should, backoff, max_att = client._should_retry_for_schema_flag(
                 "flag", True, 0
             )
@@ -766,7 +766,7 @@ class TestBuildInvokeKwargsExtended:
     """Extended tests for _build_invoke_kwargs()."""
 
     @patch(
-        "api.base_llm_client.get_model_capabilities",
+        "llm.base.get_model_capabilities",
         return_value={"max_tokens": True, "reasoning": False, "text_verbosity": False},
     )
     def test_google_uses_max_output_tokens(self, _) -> None:
@@ -782,7 +782,7 @@ class TestBuildInvokeKwargsExtended:
         assert "service_tier" not in kwargs  # Not OpenAI
 
     @patch(
-        "api.base_llm_client.get_model_capabilities",
+        "llm.base.get_model_capabilities",
         return_value={"max_tokens": True, "reasoning": False, "text_verbosity": False},
     )
     def test_openrouter_uses_max_tokens(self, _) -> None:
@@ -797,7 +797,7 @@ class TestBuildInvokeKwargsExtended:
         assert kwargs["max_tokens"] == 1024
 
     @patch(
-        "api.base_llm_client.get_model_capabilities",
+        "llm.base.get_model_capabilities",
         return_value={"max_tokens": True, "reasoning": False, "text_verbosity": False},
     )
     def test_no_max_output_tokens_in_config(self, _) -> None:
@@ -812,7 +812,7 @@ class TestBuildInvokeKwargsExtended:
         assert "max_tokens" not in kwargs
 
     @patch(
-        "api.base_llm_client.get_model_capabilities",
+        "llm.base.get_model_capabilities",
         return_value={"max_tokens": False, "reasoning": False, "text_verbosity": False},
     )
     def test_max_tokens_capability_disabled(self, _) -> None:
@@ -826,7 +826,7 @@ class TestBuildInvokeKwargsExtended:
         assert "max_output_tokens" not in kwargs
 
     @patch(
-        "api.base_llm_client.get_model_capabilities",
+        "llm.base.get_model_capabilities",
         return_value={"max_tokens": True, "reasoning": True, "text_verbosity": False},
     )
     def test_reasoning_config_non_dict_ignored(self, _) -> None:
@@ -840,7 +840,7 @@ class TestBuildInvokeKwargsExtended:
         assert "reasoning" not in kwargs
 
     @patch(
-        "api.base_llm_client.get_model_capabilities",
+        "llm.base.get_model_capabilities",
         return_value={"max_tokens": True, "reasoning": True, "text_verbosity": False},
     )
     def test_reasoning_dict_without_effort_ignored(self, _) -> None:
@@ -854,7 +854,7 @@ class TestBuildInvokeKwargsExtended:
         assert "reasoning" not in kwargs
 
     @patch(
-        "api.base_llm_client.get_model_capabilities",
+        "llm.base.get_model_capabilities",
         return_value={"max_tokens": True, "reasoning": False, "text_verbosity": True},
     )
     def test_text_verbosity_config(self, _) -> None:
@@ -868,7 +868,7 @@ class TestBuildInvokeKwargsExtended:
         assert kwargs["text"] == {"verbosity": "medium"}
 
     @patch(
-        "api.base_llm_client.get_model_capabilities",
+        "llm.base.get_model_capabilities",
         return_value={"max_tokens": True, "reasoning": False, "text_verbosity": True},
     )
     def test_text_non_dict_ignored(self, _) -> None:
@@ -882,7 +882,7 @@ class TestBuildInvokeKwargsExtended:
         assert "text" not in kwargs
 
     @patch(
-        "api.base_llm_client.get_model_capabilities",
+        "llm.base.get_model_capabilities",
         return_value={"max_tokens": True, "reasoning": False, "text_verbosity": True},
     )
     def test_text_dict_without_verbosity_ignored(self, _) -> None:
@@ -896,7 +896,7 @@ class TestBuildInvokeKwargsExtended:
         assert "text" not in kwargs
 
     @patch(
-        "api.base_llm_client.get_model_capabilities",
+        "llm.base.get_model_capabilities",
         return_value={"max_tokens": True, "reasoning": False, "text_verbosity": False},
     )
     def test_non_openai_no_service_tier(self, _) -> None:
@@ -911,7 +911,7 @@ class TestBuildInvokeKwargsExtended:
         assert "service_tier" not in kwargs
 
     @patch(
-        "api.base_llm_client.get_model_capabilities",
+        "llm.base.get_model_capabilities",
         return_value={"max_tokens": True, "reasoning": False, "text_verbosity": False},
     )
     def test_openai_empty_service_tier_omitted(self, _) -> None:
@@ -927,7 +927,7 @@ class TestBuildInvokeKwargsExtended:
     # --- Anthropic extended thinking ---
 
     @patch(
-        "api.base_llm_client.get_model_capabilities",
+        "llm.base.get_model_capabilities",
         return_value={
             "max_tokens": True,
             "reasoning": False,
@@ -951,7 +951,7 @@ class TestBuildInvokeKwargsExtended:
         }
 
     @patch(
-        "api.base_llm_client.get_model_capabilities",
+        "llm.base.get_model_capabilities",
         return_value={
             "max_tokens": True,
             "reasoning": False,
@@ -975,7 +975,7 @@ class TestBuildInvokeKwargsExtended:
         }
 
     @patch(
-        "api.base_llm_client.get_model_capabilities",
+        "llm.base.get_model_capabilities",
         return_value={
             "max_tokens": True,
             "reasoning": False,
@@ -996,7 +996,7 @@ class TestBuildInvokeKwargsExtended:
         assert "thinking" not in kwargs
 
     @patch(
-        "api.base_llm_client.get_model_capabilities",
+        "llm.base.get_model_capabilities",
         return_value={
             "max_tokens": True,
             "reasoning": False,
@@ -1019,7 +1019,7 @@ class TestBuildInvokeKwargsExtended:
     # --- Google thinking mode ---
 
     @patch(
-        "api.base_llm_client.get_model_capabilities",
+        "llm.base.get_model_capabilities",
         return_value={
             "max_tokens": True,
             "reasoning": False,
@@ -1040,7 +1040,7 @@ class TestBuildInvokeKwargsExtended:
         assert kwargs["thinking_config"] == {"thinking_budget": 4096}
 
     @patch(
-        "api.base_llm_client.get_model_capabilities",
+        "llm.base.get_model_capabilities",
         return_value={
             "max_tokens": True,
             "reasoning": False,
@@ -1073,7 +1073,7 @@ class TestReportTokenUsageHardened:
         response = MagicMock()
         response.usage_metadata = None
 
-        with patch("api.base_llm_client.logger") as mock_logger:
+        with patch("llm.base.logger") as mock_logger:
             client._report_token_usage(response, "test")
 
         mock_logger.warning.assert_called_once()
@@ -1085,7 +1085,7 @@ class TestReportTokenUsageHardened:
         response = MagicMock()
         response.usage_metadata = "not a dict"
 
-        with patch("api.base_llm_client.logger") as mock_logger:
+        with patch("llm.base.logger") as mock_logger:
             client._report_token_usage(response, "test")
 
         mock_logger.warning.assert_called_once()
@@ -1096,7 +1096,7 @@ class TestReportTokenUsageHardened:
         response = MagicMock()
         response.usage_metadata = {"input_tokens": 100, "output_tokens": 50}
 
-        with patch("api.base_llm_client.get_token_tracker") as mock_tt:
+        with patch("llm.base.get_token_tracker") as mock_tt:
             mock_tracker = MagicMock()
             mock_tracker.get_tokens_used_today.return_value = 150
             mock_tt.return_value = mock_tracker
@@ -1111,7 +1111,7 @@ class TestReportTokenUsageHardened:
         response = MagicMock()
         response.usage_metadata = {"model": "gpt-5"}  # No token fields
 
-        with patch("api.base_llm_client.logger") as mock_logger:
+        with patch("llm.base.logger") as mock_logger:
             client._report_token_usage(response, "test")
 
         warning_calls = [
@@ -1130,7 +1130,7 @@ class TestReportTokenUsageHardened:
             "output_tokens": 50,
         }
 
-        with patch("api.base_llm_client.get_token_tracker") as mock_tt:
+        with patch("llm.base.get_token_tracker") as mock_tt:
             mock_tracker = MagicMock()
             mock_tracker.get_tokens_used_today.return_value = 200
             mock_tt.return_value = mock_tracker
@@ -1152,7 +1152,7 @@ class TestExtractTokensFromException:
         exc = Exception("API error")
         exc.body = {"usage": {"total_tokens": 300}}  # type: ignore[attr-defined]
 
-        with patch("api.base_llm_client.get_token_tracker") as mock_tt:
+        with patch("llm.base.get_token_tracker") as mock_tt:
             mock_tracker = MagicMock()
             mock_tracker.get_tokens_used_today.return_value = 300
             mock_tt.return_value = mock_tracker
@@ -1167,7 +1167,7 @@ class TestExtractTokensFromException:
         exc = Exception("API error")
         exc.body = {"usage": {"prompt_tokens": 200, "completion_tokens": 100}}  # type: ignore[attr-defined]
 
-        with patch("api.base_llm_client.get_token_tracker") as mock_tt:
+        with patch("llm.base.get_token_tracker") as mock_tt:
             mock_tracker = MagicMock()
             mock_tracker.get_tokens_used_today.return_value = 300
             mock_tt.return_value = mock_tracker
@@ -1182,7 +1182,7 @@ class TestExtractTokensFromException:
         exc = Exception("API error")
         exc.body = {"usage": {"input_tokens": 150, "output_tokens": 75}}  # type: ignore[attr-defined]
 
-        with patch("api.base_llm_client.get_token_tracker") as mock_tt:
+        with patch("llm.base.get_token_tracker") as mock_tt:
             mock_tracker = MagicMock()
             mock_tracker.get_tokens_used_today.return_value = 225
             mock_tt.return_value = mock_tracker
@@ -1199,7 +1199,7 @@ class TestExtractTokensFromException:
         mock_resp.json.return_value = {"usage": {"total_tokens": 500}}
         exc.response = mock_resp  # type: ignore[attr-defined]
 
-        with patch("api.base_llm_client.get_token_tracker") as mock_tt:
+        with patch("llm.base.get_token_tracker") as mock_tt:
             mock_tracker = MagicMock()
             mock_tracker.get_tokens_used_today.return_value = 500
             mock_tt.return_value = mock_tracker
@@ -1213,7 +1213,7 @@ class TestExtractTokensFromException:
         client = _make_client()
         exc = Exception("plain error")
 
-        with patch("api.base_llm_client.get_token_tracker") as mock_tt:
+        with patch("llm.base.get_token_tracker") as mock_tt:
             client._extract_tokens_from_exception(exc, "test")
 
         mock_tt.return_value.add_tokens.assert_not_called()
@@ -1307,11 +1307,11 @@ class TestCalculateBackoff:
         client = _make_client()
 
         with (
-            patch("api.base_llm_client._RETRY_CONFIG", {
+            patch("llm.base._RETRY_CONFIG", {
                 "backoff_base": 0.5,
                 "backoff_multipliers": {"rate_limit": 2.0, "timeout": 1.5},
             }),
-            patch("api.base_llm_client.random.uniform", return_value=0.75),
+            patch("llm.base.random.uniform", return_value=0.75),
         ):
             # attempt=0, rate_limit: 0.5 * (2.0 ** 0) + 0.75 = 0.5 + 0.75 = 1.25
             result = client._calculate_backoff(0, "rate_limit")
@@ -1322,11 +1322,11 @@ class TestCalculateBackoff:
         client = _make_client()
 
         with (
-            patch("api.base_llm_client._RETRY_CONFIG", {
+            patch("llm.base._RETRY_CONFIG", {
                 "backoff_base": 1.0,
                 "backoff_multipliers": {"timeout": 2.0},
             }),
-            patch("api.base_llm_client.random.uniform", return_value=0.0),
+            patch("llm.base.random.uniform", return_value=0.0),
         ):
             b0 = client._calculate_backoff(0, "timeout")  # 1.0 * (2^0) + 0 = 1.0
             b1 = client._calculate_backoff(1, "timeout")  # 1.0 * (2^1) + 0 = 2.0
@@ -1340,11 +1340,11 @@ class TestCalculateBackoff:
         client = _make_client()
 
         with (
-            patch("api.base_llm_client._RETRY_CONFIG", {
+            patch("llm.base._RETRY_CONFIG", {
                 "backoff_base": 0.5,
                 "backoff_multipliers": {},
             }),
-            patch("api.base_llm_client.random.uniform", return_value=0.5),
+            patch("llm.base.random.uniform", return_value=0.5),
         ):
             result = client._calculate_backoff(1, "unknown_type")
             # 0.5 * (2.0 ** 1) + 0.5 = 1.0 + 0.5 = 1.5
@@ -1380,8 +1380,8 @@ class TestInvokeWithRetry:
 
         with (
             patch.object(client, "_calculate_backoff", return_value=0.0),
-            patch("api.base_llm_client.time.sleep"),
-            patch("api.base_llm_client.get_token_tracker") as mock_tt,
+            patch("llm.base.time.sleep"),
+            patch("llm.base.get_token_tracker") as mock_tt,
         ):
             mock_tracker = MagicMock()
             mock_tracker.get_tokens_used_today.return_value = 50
@@ -1417,7 +1417,7 @@ class TestInvokeWithRetry:
 
         with (
             patch.object(client, "_calculate_backoff", return_value=0.0),
-            patch("api.base_llm_client.time.sleep"),
+            patch("llm.base.time.sleep"),
             pytest.raises(Exception, match="Server error"),
         ):
             client._invoke_with_retry(mock_model, [], {}, "test")
@@ -1438,7 +1438,7 @@ class TestInvokeWithRetry:
 
         with (
             patch.object(client, "_calculate_backoff", return_value=0.0),
-            patch("api.base_llm_client.time.sleep"),
+            patch("llm.base.time.sleep"),
             pytest.raises(Exception),
         ):
             client._invoke_with_retry(mock_model, [], {}, "test")

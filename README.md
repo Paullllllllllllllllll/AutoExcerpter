@@ -92,7 +92,7 @@ AutoExcerpter processes documents through a sophisticated two-stage pipeline tha
 
 -   **LangChain Integration**: Unified interface for multiple LLM providers via LangChain
 -   **Provider Flexibility**: Switch between OpenAI, Anthropic, Google, or OpenRouter with configuration changes
--   **Capability Guarding**: Automatic parameter filtering via a centralized registry (`api/model_capabilities.py`) that maps every supported model to a typed capability profile, preventing unsupported-parameter API errors
+-   **Capability Guarding**: Automatic parameter filtering via a centralized registry (`llm/capabilities.py`) that maps every supported model to a typed capability profile, preventing unsupported-parameter API errors
 -   **Model Auto-Detection**: Automatic provider inference from model names (gpt-5 to OpenAI, claude to Anthropic, etc.)
 
 **Architecture Excellence:**
@@ -147,7 +147,7 @@ OpenRouter provides access to models from all providers through a unified API. U
 
 **Custom OpenAI-Compatible Endpoint:**
 
-Connect to any self-hosted or third-party endpoint that implements the OpenAI Chat Completions API with vision support. This enables use of locally hosted OCR models, university-hosted inference servers, or other OpenAI-compatible services. Set `provider: custom` explicitly in `modules/config/model.yaml` and configure the `custom_endpoint` block with a `capabilities` section:
+Connect to any self-hosted or third-party endpoint that implements the OpenAI Chat Completions API with vision support. This enables use of locally hosted OCR models, university-hosted inference servers, or other OpenAI-compatible services. Set `provider: custom` explicitly in `config/defaults/model.yaml` and configure the `custom_endpoint` block with a `capabilities` section:
 
 ```yaml
 transcription_model:
@@ -164,7 +164,7 @@ transcription_model:
   temperature: 0.0
 ```
 
-The `base_url` and `api_key_env_var` are fully user-configured. Image preprocessing uses the `custom_image_processing` section in `modules/config/image_processing.yaml`, with defaults suitable for models with small context windows.
+The `base_url` and `api_key_env_var` are fully user-configured. Image preprocessing uses the `custom_image_processing` section in `config/defaults/image_processing.yaml`, with defaults suitable for models with small context windows.
 
 **Three usage patterns** are supported via the `capabilities` flags:
 
@@ -320,7 +320,7 @@ On Windows, use `set` instead of `export`, or configure environment variables th
 
 5.  **Configure the application:**
 
-Edit `modules/config/app.yaml` to set your input/output paths:
+Edit `config/defaults/app.yaml` to set your input/output paths:
 
 ```yaml
 input_folder_path: 'C:\Users\yourname\Documents\PDFs'
@@ -328,7 +328,7 @@ output_folder_path: 'C:\Users\yourname\Documents\Output'
 input_paths_is_output_path: true  # Write outputs next to each input file
 ```
 
-Edit `modules/config/model.yaml` to set your preferred models:
+Edit `config/defaults/model.yaml` to set your preferred models:
 
 ```yaml
 transcription_model:
@@ -344,7 +344,7 @@ summary_model:
 
 ### Interactive Mode (Default)
 
-Interactive mode provides a guided experience with structured prompts and visual feedback. Set `cli_mode: false` in `modules/config/app.yaml` (or leave as default) and run:
+Interactive mode provides a guided experience with structured prompts and visual feedback. Set `cli_mode: false` in `config/defaults/app.yaml` (or leave as default) and run:
 
 ```bash
 python main.py
@@ -370,7 +370,7 @@ Interactive mode highlights:
 
 ### CLI Mode
 
-CLI mode is optimized for batch processing, automation, and integration into pipelines without interactive prompts. Set `cli_mode: true` in `modules/config/app.yaml`.
+CLI mode is optimized for batch processing, automation, and integration into pipelines without interactive prompts. Set `cli_mode: true` in `config/defaults/app.yaml`.
 
 **Command syntax:**
 
@@ -441,11 +441,11 @@ CLI mode highlights:
 
 **Transcription-Only Mode:**
 
-For faster processing without summaries, set `summarize: false` in `modules/config/app.yaml`. This mode is ideal for creating searchable text archives, quick digitization projects, cost-sensitive workflows, and building document databases for later analysis.
+For faster processing without summaries, set `summarize: false` in `config/defaults/app.yaml`. This mode is ideal for creating searchable text archives, quick digitization projects, cost-sensitive workflows, and building document databases for later analysis.
 
 **Transcription + Summarization Mode:**
 
-Enable full processing with `summarize: true`. This mode provides complete transcriptions, structured summaries, extracted and enriched citations, and professional DOCX and Markdown output.
+Enable full processing with `summarize: true` in `config/defaults/app.yaml`. This mode provides complete transcriptions, structured summaries, extracted and enriched citations, and professional DOCX and Markdown output.
 
 ### Batch Processing
 
@@ -460,18 +460,18 @@ The application automatically skips items that have already been processed (outp
 
 ## Configuration
 
-AutoExcerpter uses a multi-file YAML configuration system located in `modules/config/`. Each configuration file includes cross-references to related files for easy navigation.
+AutoExcerpter uses a multi-file YAML configuration system located in `config/defaults/`. Each configuration file includes cross-references to related files for easy navigation.
 
 | File | Purpose |
 |---|---|
-| `app.yaml` | Application settings, file paths, feature toggles, daily limits |
-| `model.yaml` | LLM provider and model settings (transcription and summary) |
-| `concurrency.yaml` | API rate limits, retries, and parallelism settings |
-| `image_processing.yaml` | Image preprocessing and text cleaning options |
+| `config/defaults/app.yaml` | Application settings, file paths, feature toggles, daily limits |
+| `config/defaults/model.yaml` | LLM provider and model settings (transcription and summary) |
+| `config/defaults/concurrency.yaml` | API rate limits, retries, and parallelism settings |
+| `config/defaults/image_processing.yaml` | Image preprocessing and text cleaning options |
 
 ### Basic Configuration (app.yaml)
 
-**File**: `modules/config/app.yaml`
+**File**: `config/defaults/app.yaml`
 
 This is the primary configuration file for application-level settings. Model configuration is in `model.yaml`, and API concurrency/rate limits are in `concurrency.yaml`.
 
@@ -518,7 +518,7 @@ daily_token_limit:
 
 ### Model Configuration (model.yaml)
 
-**File**: `modules/config/model.yaml`
+**File**: `config/defaults/model.yaml`
 
 LLM settings for transcription and summarization phases. The provider is auto-detected from the model name but can be set explicitly.
 
@@ -598,7 +598,7 @@ transcription_model:
 
 ### Concurrency Configuration (concurrency.yaml)
 
-**File**: `modules/config/concurrency.yaml`
+**File**: `config/defaults/concurrency.yaml`
 
 Controls parallel processing behavior for both local operations and API requests.
 
@@ -703,7 +703,7 @@ When a flag is enabled and the condition is detected, AutoExcerpter automaticall
 
 ### Image Processing Configuration (image_processing.yaml)
 
-**File**: `modules/config/image_processing.yaml`
+**File**: `config/defaults/image_processing.yaml`
 
 Controls image preprocessing before LLM API calls and post-transcription text cleaning.
 
@@ -777,7 +777,7 @@ If no context is found through any of these methods, summarization proceeds norm
 
 ### Citation Management
 
-**File**: `modules/config/app.yaml` (citation section)
+**File**: `config/defaults/app.yaml` (citation section)
 
 ```yaml
 citation:
@@ -797,7 +797,7 @@ Replace `your-email@example.com` with your real email for faster OpenAlex respon
 
 ### Daily Token Limit
 
-**File**: `modules/config/app.yaml` (`daily_token_limit` section)
+**File**: `config/defaults/app.yaml` (`daily_token_limit` section)
 
 AutoExcerpter enforces a configurable daily token budget to keep usage aligned with your API allowance. Tokens are counted after every API response (including retried attempts) and persisted to `.autoexcerpter_token_state.json` so limits survive restarts.
 
@@ -839,66 +839,81 @@ Detailed JSON logs for both transcription (`_transcription_log.json`) and summar
 
 ```
 AutoExcerpter/
-├── api/                                # LangChain Multi-Provider API Layer
-│   ├── model_capabilities.py           # Unified model capability registry
-│   ├── llm_client.py                   # Multi-provider LLM client and provider detection
-│   ├── base_llm_client.py              # Provider-agnostic base class with retry logic
-│   ├── transcribe_api.py               # TranscriptionManager for image-to-text
-│   ├── summary_api.py                  # SummaryManager for structured summaries
-│   └── rate_limiter.py                 # Sliding window rate limiter
+├── main.py                             # Entry point
 │
-├── cli/                                # Command-Line Interface
-│   ├── argument_parser.py              # CLI argument parsing and validation
-│   ├── display.py                      # Console output formatting
-│   └── processing.py                   # CLI processing orchestration
+├── config/                             # Configuration package
+│   ├── __init__.py                     # Curated public interface
+│   ├── app.py                          # Application settings (CLI_MODE, SUMMARIZE, paths, API keys)
+│   ├── loader.py                       # YAML loader for image_processing.yaml, concurrency.yaml, model.yaml
+│   ├── accessors.py                    # Typed accessors for concurrency/rate-limit/DPI settings
+│   ├── constants.py                    # Hardcoded defaults and named constants
+│   └── defaults/                       # User-editable YAML configs
+│       ├── app.yaml                    # Application settings and paths
+│       ├── model.yaml                  # LLM provider and model settings
+│       ├── concurrency.yaml            # API concurrency, rate limits, retries
+│       └── image_processing.yaml       # Image preprocessing and text cleaning
 │
-├── core/                               # Core Processing Logic
-│   ├── transcriber.py                  # Main ItemTranscriber orchestration
-│   ├── page_numbering.py               # Page number extraction and adjustment
-│   └── resume.py                       # Processing resume/checkpoint logic
+├── llm/                                # LLM client layer (multi-provider)
+│   ├── __init__.py                     # Curated public facade
+│   ├── client.py                       # Model factory (LLMConfig, get_chat_model)
+│   ├── base.py                         # LLMClientBase (package-private)
+│   ├── capabilities.py                 # Provider/model capability detection
+│   ├── rate_limit.py                   # Sliding-window rate limiter (package-private)
+│   ├── transcription.py                # TranscriptionManager
+│   ├── summary.py                      # SummaryManager
+│   ├── prompts.py                      # Prompt rendering + response parsing helpers
+│   └── resources/
+│       ├── prompts/                    # System prompt templates
+│       │   ├── transcription_system_prompt.txt
+│       │   ├── summary_system_prompt.txt
+│       │   ├── transcription_plain_text_prompt.txt
+│       │   └── summary_plain_text_prompt.txt
+│       └── schemas/                    # JSON schemas for structured outputs
+│           ├── transcription_schema.json
+│           └── summary_schema.json
 │
-├── processors/                         # File I/O and Processing
-│   ├── citation_manager.py             # Citation deduplication and OpenAlex enrichment
-│   ├── file_manager.py                 # Shared helpers and transcription text output
-│   ├── docx_writer.py                  # DOCX summary generation with LaTeX support
-│   ├── markdown_writer.py              # Markdown summary generation
-│   ├── log_manager.py                  # JSON log file management
-│   └── pdf_processor.py               # PDF page extraction and image preprocessing
+├── imaging/                            # PDF rendering and image preprocessing
+│   ├── __init__.py
+│   ├── pdf.py                          # Extract PDF pages to JPEG images
+│   ├── preprocessing.py                # In-memory image preprocessing (ImageProcessor)
+│   └── _provider.py                    # Provider-specific image config helpers (private)
 │
-├── modules/                            # Configuration and Utilities
-│   ├── config/                         # YAML Configuration Files
-│   │   ├── app.yaml                    # Application settings and paths
-│   │   ├── model.yaml                  # LLM provider and model settings
-│   │   ├── concurrency.yaml            # API concurrency, rate limits, retries
-│   │   └── image_processing.yaml       # Image preprocessing and text cleaning
-│   ├── prompts/                        # System Prompts
-│   │   ├── transcription_system_prompt.txt
-│   │   └── summary_system_prompt.txt
-│   ├── schemas/                        # JSON Schemas for Structured Outputs
-│   │   ├── transcription_schema.json
-│   │   └── summary_schema.json
-│   ├── app_config.py                   # Configuration loader with validation
-│   ├── config_loader.py                # YAML/JSON parsing utilities
-│   ├── concurrency_helper.py           # Concurrency settings access
-│   ├── constants.py                    # Shared constants
-│   ├── context_resolver.py             # Hierarchical summary context resolution
-│   ├── error_handler.py                # Centralized error handling
-│   ├── image_utils.py                  # In-memory image preprocessing
-│   ├── item_scanner.py                 # Input directory scanning
-│   ├── logger.py                       # Logging configuration
-│   ├── model_utils.py                  # Model type detection utilities
-│   ├── path_utils.py                   # Path resolution helpers
-│   ├── prompt_utils.py                 # Prompt template rendering with schema injection
-│   ├── roman_numerals.py               # Roman numeral conversion
-│   ├── text_cleaner.py                 # Post-transcription text cleaning
-│   ├── token_tracker.py                # Daily token budget tracking
-│   ├── types.py                        # Shared type definitions
-│   └── user_prompts.py                 # Interactive user prompt utilities
+├── rendering/                          # Output rendering
+│   ├── __init__.py
+│   ├── text.py                         # Write transcription .txt file
+│   ├── summary.py                      # Prepare summary data (shared by docx/markdown writers)
+│   ├── docx.py                         # Generate .docx summary document
+│   ├── markdown.py                     # Generate .md summary document
+│   └── citations.py                    # Citation deduplication, OpenAlex enrichment, shared reference helpers
 │
-├── context/summary/                    # Default Summary Context
+├── pipeline/                           # Orchestration
+│   ├── __init__.py                     # Curated public interface
+│   ├── transcriber.py                  # ItemTranscriber orchestrator
+│   ├── page_numbering.py               # Page-number correction (PageNumberProcessor)
+│   ├── resume.py                       # Resume/checkpoint logic (ResumeChecker, ProcessingState)
+│   ├── scanner.py                      # Input directory scanning (scan_input_path)
+│   ├── context.py                      # Hierarchical summary context resolution
+│   ├── paths.py                        # Windows-safe path helpers
+│   └── log.py                          # JSONL log file lifecycle management
+│
+├── cli/                                # Command-line interface
+│   ├── __init__.py                     # Curated public interface
+│   ├── args.py                         # Argparse schema and execution-mode resolution
+│   ├── display.py                      # Interactive display (item selection, processing summary, completion)
+│   ├── interaction.py                  # Terminal I/O primitives (print_*, prompt_*, Colors)
+│   ├── loop.py                         # Per-item processing loop + token-limit wait
+│   └── errors.py                       # Domain exceptions + error handlers
+│
+├── logger.py                           # Application-wide logging factory
+├── token_tracker.py                    # Daily token-budget tracker (singleton)
+├── text_cleaner.py                     # Post-transcription text cleanup pipeline
+├── app_types.py                        # Shared TypedDicts and frozen dataclasses
+│
+├── context/summary/                    # Default summary context (user-editable)
 │   └── general.txt                     # Global summarization focus topics
 │
-├── main.py                             # Entry point
+├── tests/                              # Test suite (1,204 tests)
+├── RELEASE_NOTES_v4.0.md               # Current release notes
 ├── requirements.txt                    # Runtime dependencies
 └── requirements-dev.txt                # Development dependencies
 ```
@@ -1030,7 +1045,7 @@ If you encounter issues not covered here:
 
 1.  Check the log files in the `_working_files/` directory for detailed error messages
 2.  Review your provider's API status page for service disruptions
-3.  Enable debug logging by modifying `modules/logger.py`
+3.  Enable debug logging by modifying `logger.py`
 4.  Open an issue on the project repository with relevant log excerpts
 
 ## Contributing
@@ -1065,6 +1080,7 @@ Contributions to AutoExcerpter are welcome! Whether you are fixing bugs, adding 
 -   Performance optimizations
 -   User interface improvements
 -   Extended model capability profiles for new model releases
+-   See `RELEASE_NOTES_v4.0.md` for the architectural rationale behind the v4.0 deep-module restructure
 
 ## License
 

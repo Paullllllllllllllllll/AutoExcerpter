@@ -1,7 +1,7 @@
-"""Tests for api/model_capabilities.py - Unified model capability detection."""
+"""Tests for llm/capabilities.py - Unified model capability detection."""
 
 import pytest
-from api.model_capabilities import (
+from llm.capabilities import (
     ProviderCapabilities,
     CapabilityError,
     detect_provider,

@@ -1,4 +1,4 @@
-"""Tests for the resume-aware processing utilities in core/resume.py.
+"""Tests for the resume-aware processing utilities in pipeline/resume.py.
 
 Covers:
 - ProcessingState enum
@@ -6,7 +6,7 @@ Covers:
 - ResumeChecker (skip/overwrite modes, item-level and page-level detection)
 - load_completed_pages (JSON array parsing, incomplete log recovery)
 - load_transcription_results_from_log
-- Integration with main.py's _resolve_item_output_dir, _display_resume_info, _parse_execution_mode
+- Integration with main.py's _resolve_item_output_dir, _display_resume_info, _parse_execution_mode (cli.args)
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.resume import (
+from pipeline.resume import (
     ProcessingState,
     ResumeChecker,
     ResumeResult,
@@ -27,7 +27,7 @@ from core.resume import (
     load_transcription_results_from_log,
     _parse_log_entries,
 )
-from modules.path_utils import create_safe_directory_name, create_safe_log_filename
+from pipeline.paths import create_safe_directory_name, create_safe_log_filename
 
 
 # ============================================================================
@@ -622,7 +622,7 @@ class TestMainIntegration:
 
     def test_parse_execution_mode_default_resume(self) -> None:
         """Default resume mode is 'skip'."""
-        from cli.argument_parser import _parse_execution_mode
+        from cli.args import _parse_execution_mode
 
         args = MagicMock()
         args.force = None
@@ -635,7 +635,7 @@ class TestMainIntegration:
         args.select = None
         args.context = None
 
-        with patch("cli.argument_parser.config") as mock_config:
+        with patch("cli.args.config") as mock_config:
             mock_config.CLI_MODE = True
             result = _parse_execution_mode(args)
 
@@ -643,7 +643,7 @@ class TestMainIntegration:
 
     def test_parse_execution_mode_force(self) -> None:
         """--force flag sets resume_mode to 'overwrite'."""
-        from cli.argument_parser import _parse_execution_mode
+        from cli.args import _parse_execution_mode
 
         args = MagicMock()
         args.force = True
@@ -656,7 +656,7 @@ class TestMainIntegration:
         args.select = None
         args.context = None
 
-        with patch("cli.argument_parser.config") as mock_config:
+        with patch("cli.args.config") as mock_config:
             mock_config.CLI_MODE = True
             result = _parse_execution_mode(args)
 
@@ -664,7 +664,7 @@ class TestMainIntegration:
 
     def test_parse_execution_mode_named_paths_override_positional(self) -> None:
         """Named --input-path/--output-path values override positional paths."""
-        from cli.argument_parser import _parse_execution_mode
+        from cli.args import _parse_execution_mode
 
         args = MagicMock()
         args.force = None
@@ -677,7 +677,7 @@ class TestMainIntegration:
         args.select = None
         args.context = None
 
-        with patch("cli.argument_parser.config") as mock_config:
+        with patch("cli.args.config") as mock_config:
             mock_config.CLI_MODE = True
             input_path, output_path, *_ = _parse_execution_mode(args)
 
@@ -686,7 +686,7 @@ class TestMainIntegration:
 
     def test_build_cli_model_overrides_shared_and_specific(self) -> None:
         """CLI model override builder applies shared values and specific overrides."""
-        from cli.argument_parser import _build_cli_model_overrides
+        from cli.args import _build_cli_model_overrides
 
         args = MagicMock()
         args.model = "gpt-5"
@@ -702,7 +702,7 @@ class TestMainIntegration:
         args.transcription_max_output_tokens = None
         args.summary_max_output_tokens = 7000
 
-        with patch("cli.argument_parser.config") as mock_config:
+        with patch("cli.args.config") as mock_config:
             mock_config.CLI_MODE = True
             overrides = _build_cli_model_overrides(args)
 
@@ -717,7 +717,7 @@ class TestMainIntegration:
 
     def test_positive_int_validator(self) -> None:
         """_positive_int accepts valid positive integers and rejects non-positive values."""
-        from cli.argument_parser import _positive_int
+        from cli.args import _positive_int
 
         assert _positive_int("7") == 7
         with pytest.raises(Exception):
@@ -725,9 +725,9 @@ class TestMainIntegration:
 
     def test_setup_argparse_cli_supports_named_paths_without_positionals(self) -> None:
         """setup_argparse accepts named --input-path/--output-path without positional args."""
-        from cli.argument_parser import setup_argparse
+        from cli.args import setup_argparse
 
-        with patch("cli.argument_parser.config") as mock_config:
+        with patch("cli.args.config") as mock_config:
             mock_config.CLI_MODE = True
             argv = [
                 "main.py",
@@ -748,9 +748,9 @@ class TestMainIntegration:
 
     def test_setup_argparse_cli_requires_paths(self) -> None:
         """setup_argparse raises SystemExit when CLI mode has no input/output path."""
-        from cli.argument_parser import setup_argparse
+        from cli.args import setup_argparse
 
-        with patch("cli.argument_parser.config") as mock_config:
+        with patch("cli.args.config") as mock_config:
             mock_config.CLI_MODE = True
             with patch.object(sys, "argv", ["main.py", "--all"]):
                 with pytest.raises(SystemExit):

@@ -7,12 +7,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from core.resume import ResumeResult
-from modules import app_config as config
-from modules.logger import setup_logger
-from modules.token_tracker import get_token_tracker
-from modules.types import ItemSpec
-from modules.user_prompts import (
+from pipeline.resume import ResumeResult
+from config import app as config
+from config.logger import setup_logger
+from llm.token_tracker import get_token_tracker
+from pipeline.types import ItemSpec
+from cli.interaction import (
     print_header,
     print_section,
     print_success,
@@ -70,7 +70,7 @@ def _display_processing_summary(
     Returns:
         True if user confirms, False to cancel
     """
-    from modules.config_loader import get_config_loader
+    from config.loader import get_config_loader
 
     # Load configurations
     config_loader = get_config_loader()

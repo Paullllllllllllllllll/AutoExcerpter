@@ -1,4 +1,4 @@
-"""Extended tests for api/summary_api.py — covers untested code paths.
+"""Extended tests for llm/summary.py — covers untested code paths.
 
 This file provides comprehensive coverage for:
 - SummaryManager.__init__() with mocked dependencies
@@ -21,7 +21,7 @@ from unittest.mock import MagicMock, mock_open, patch
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-from api.summary_api import SummaryManager
+from llm.summary import SummaryManager
 
 # ============================================================================
 # Helpers
@@ -77,11 +77,11 @@ def _make_manager(**overrides) -> SummaryManager:
 class TestSummaryManagerInit:
     """Tests for SummaryManager.__init__()."""
 
-    @patch("api.base_llm_client.get_chat_model")
-    @patch("api.base_llm_client.get_api_timeout", return_value=300)
-    @patch("api.summary_api.get_api_timeout", return_value=300)
-    @patch("api.summary_api.get_rate_limits", return_value=[(120, 1)])
-    @patch("api.summary_api.RateLimiter")
+    @patch("llm.base.get_chat_model")
+    @patch("llm.base.get_api_timeout", return_value=300)
+    @patch("llm.summary.get_api_timeout", return_value=300)
+    @patch("llm.summary.get_rate_limits", return_value=[(120, 1)])
+    @patch("llm.summary.RateLimiter")
     def test_init_sets_key_attributes(
         self,
         mock_rl_cls,
@@ -108,9 +108,9 @@ class TestSummaryManagerInit:
         )
 
         with (
-            patch("api.base_llm_client.get_config_loader") as mock_cl,
-            patch("api.summary_api.SCHEMAS_DIR", schemas_dir),
-            patch("api.summary_api.PROMPTS_DIR", prompts_dir),
+            patch("llm.base.get_config_loader") as mock_cl,
+            patch("llm.summary.SCHEMAS_DIR", schemas_dir),
+            patch("llm.summary.PROMPTS_DIR", prompts_dir),
         ):
             loader = MagicMock()
             loader.get_model_config.return_value = {
@@ -132,11 +132,11 @@ class TestSummaryManagerInit:
         assert mgr.summary_context == "Focus on culinary history."
         assert mgr.summary_schema is not None
 
-    @patch("api.base_llm_client.get_chat_model")
-    @patch("api.base_llm_client.get_api_timeout", return_value=300)
-    @patch("api.summary_api.get_api_timeout", return_value=300)
-    @patch("api.summary_api.get_rate_limits", return_value=[(120, 1)])
-    @patch("api.summary_api.RateLimiter")
+    @patch("llm.base.get_chat_model")
+    @patch("llm.base.get_api_timeout", return_value=300)
+    @patch("llm.summary.get_api_timeout", return_value=300)
+    @patch("llm.summary.get_rate_limits", return_value=[(120, 1)])
+    @patch("llm.summary.RateLimiter")
     def test_init_no_context(
         self,
         mock_rl_cls,
@@ -163,9 +163,9 @@ class TestSummaryManagerInit:
         )
 
         with (
-            patch("api.base_llm_client.get_config_loader") as mock_cl,
-            patch("api.summary_api.SCHEMAS_DIR", schemas_dir),
-            patch("api.summary_api.PROMPTS_DIR", prompts_dir),
+            patch("llm.base.get_config_loader") as mock_cl,
+            patch("llm.summary.SCHEMAS_DIR", schemas_dir),
+            patch("llm.summary.PROMPTS_DIR", prompts_dir),
         ):
             loader = MagicMock()
             loader.get_model_config.return_value = {"summary_model": {}}
@@ -207,8 +207,8 @@ class TestLoadSchemaAndPrompt:
         )
 
         with (
-            patch("api.summary_api.SCHEMAS_DIR", schemas_dir),
-            patch("api.summary_api.PROMPTS_DIR", prompts_dir),
+            patch("llm.summary.SCHEMAS_DIR", schemas_dir),
+            patch("llm.summary.PROMPTS_DIR", prompts_dir),
         ):
             mgr._load_schema_and_prompt()
 
@@ -224,7 +224,7 @@ class TestLoadSchemaAndPrompt:
         # Schema file does not exist
 
         with (
-            patch("api.summary_api.SCHEMAS_DIR", schemas_dir),
+            patch("llm.summary.SCHEMAS_DIR", schemas_dir),
             pytest.raises(FileNotFoundError, match="Required schema file"),
         ):
             mgr._load_schema_and_prompt()
@@ -244,8 +244,8 @@ class TestLoadSchemaAndPrompt:
         # Prompt file does not exist
 
         with (
-            patch("api.summary_api.SCHEMAS_DIR", schemas_dir),
-            patch("api.summary_api.PROMPTS_DIR", prompts_dir),
+            patch("llm.summary.SCHEMAS_DIR", schemas_dir),
+            patch("llm.summary.PROMPTS_DIR", prompts_dir),
             pytest.raises(FileNotFoundError, match="Required prompt file"),
         ):
             mgr._load_schema_and_prompt()
@@ -310,7 +310,7 @@ class TestBuildModelInputs:
     """Tests for _build_model_inputs()."""
 
     @patch(
-        "api.base_llm_client.get_model_capabilities",
+        "llm.base.get_model_capabilities",
         return_value={"max_tokens": True, "reasoning": False, "text_verbosity": False},
     )
     def test_openai_format(self, _) -> None:
@@ -324,7 +324,7 @@ class TestBuildModelInputs:
             _output_schema=_MOCK_SCHEMA,
         )
 
-        with patch("api.summary_api.render_prompt_with_schema", return_value="sys"):
+        with patch("llm.summary.render_prompt_with_schema", return_value="sys"):
             messages, kwargs = mgr._build_model_inputs("Some transcription text.")
 
         assert isinstance(messages[0], SystemMessage)
@@ -335,7 +335,7 @@ class TestBuildModelInputs:
         assert content[0]["text"] == "Some transcription text."  # type: ignore[index]
 
     @patch(
-        "api.base_llm_client.get_model_capabilities",
+        "llm.base.get_model_capabilities",
         return_value={"max_tokens": True, "reasoning": False, "text_verbosity": False},
     )
     def test_anthropic_format(self, _) -> None:
@@ -349,7 +349,7 @@ class TestBuildModelInputs:
             _output_schema=_MOCK_SCHEMA,
         )
 
-        with patch("api.summary_api.render_prompt_with_schema", return_value="sys"):
+        with patch("llm.summary.render_prompt_with_schema", return_value="sys"):
             messages, kwargs = mgr._build_model_inputs("Some text.")
 
         content = messages[1].content
@@ -357,7 +357,7 @@ class TestBuildModelInputs:
         assert content == "Some text."
 
     @patch(
-        "api.base_llm_client.get_model_capabilities",
+        "llm.base.get_model_capabilities",
         return_value={"max_tokens": True, "reasoning": False, "text_verbosity": False},
     )
     def test_google_format(self, _) -> None:
@@ -371,7 +371,7 @@ class TestBuildModelInputs:
             _output_schema=_MOCK_SCHEMA,
         )
 
-        with patch("api.summary_api.render_prompt_with_schema", return_value="sys"):
+        with patch("llm.summary.render_prompt_with_schema", return_value="sys"):
             messages, kwargs = mgr._build_model_inputs("Text for Google.")
 
         content = messages[1].content
@@ -379,7 +379,7 @@ class TestBuildModelInputs:
         assert content == "Text for Google."
 
     @patch(
-        "api.base_llm_client.get_model_capabilities",
+        "llm.base.get_model_capabilities",
         return_value={"max_tokens": True, "reasoning": False, "text_verbosity": False},
     )
     def test_context_injection(self, _) -> None:
@@ -394,7 +394,7 @@ class TestBuildModelInputs:
         )
 
         with patch(
-            "api.summary_api.render_prompt_with_schema",
+            "llm.summary.render_prompt_with_schema",
             return_value="rendered with context",
         ) as mock_render:
             messages, kwargs = mgr._build_model_inputs("Transcription.")
@@ -404,7 +404,7 @@ class TestBuildModelInputs:
         assert call_kwargs[1]["context"] == "Focus on spice trade."
 
     @patch(
-        "api.base_llm_client.get_model_capabilities",
+        "llm.base.get_model_capabilities",
         return_value={"max_tokens": True, "reasoning": False, "text_verbosity": False},
     )
     def test_openrouter_uses_text_list_format(self, _) -> None:
@@ -418,7 +418,7 @@ class TestBuildModelInputs:
             _output_schema=_MOCK_SCHEMA,
         )
 
-        with patch("api.summary_api.render_prompt_with_schema", return_value="sys"):
+        with patch("llm.summary.render_prompt_with_schema", return_value="sys"):
             messages, kwargs = mgr._build_model_inputs("Text for OR.")
 
         content = messages[1].content
@@ -706,7 +706,7 @@ class TestGenerateSummary:
                 mgr, "_get_structured_chat_model", return_value=mock_structured
             ),
             patch.object(mgr, "_build_model_inputs", return_value=([], {})),
-            patch("api.base_llm_client.get_token_tracker") as mock_tt,
+            patch("llm.base.get_token_tracker") as mock_tt,
         ):
             mock_tracker = MagicMock()
             mock_tracker.get_tokens_used_today.return_value = 500
@@ -866,7 +866,7 @@ class TestSummaryBuildModelInputsCustomProvider:
         mgr.custom_capabilities = None
 
         with patch(
-            "api.base_llm_client.get_model_capabilities",
+            "llm.base.get_model_capabilities",
             return_value={"max_tokens": True, "reasoning": False, "text_verbosity": False},
         ):
             messages, _ = mgr._build_model_inputs("Sample text")

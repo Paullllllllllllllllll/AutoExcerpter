@@ -14,7 +14,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from cli.argument_parser import (
+from cli.args import (
     setup_argparse,
     _apply_app_config_overrides,
     _build_cli_model_overrides,
@@ -28,19 +28,19 @@ from cli.display import (
     _prompt_for_summary_context,
     prompt_for_item_selection,
 )
-from cli.processing import (
+from cli.loop import (
     _check_and_wait_for_token_limit,
     _process_single_item,
 )
-from core.resume import ProcessingState, ResumeChecker, ResumeResult
-from modules import app_config as config
-from modules.config_loader import get_config_loader
-from modules.error_handler import handle_critical_error
-from modules.item_scanner import scan_input_path
-from modules.logger import setup_logger
-from modules.token_tracker import get_token_tracker
-from modules.types import ItemSpec
-from modules.user_prompts import (
+from pipeline import ProcessingState, ResumeChecker, ResumeResult
+from config import app as config
+from config.loader import get_config_loader
+from cli.errors import handle_critical_error
+from pipeline import scan_input_path
+from config.logger import setup_logger
+from llm.token_tracker import get_token_tracker
+from pipeline.types import ItemSpec
+from cli.interaction import (
     print_section,
     print_success,
     print_warning,
@@ -118,7 +118,7 @@ def _setup_and_scan(
         logger.info("CLI mode model overrides applied: %s", cli_model_overrides)
 
     if not config.CLI_MODE:
-        from modules.user_prompts import print_header
+        from cli.interaction import print_header
 
         print_header(
             "AUTOEXCERPTER", "PDF & Image Transcription and Summarization Tool"
@@ -142,7 +142,7 @@ def _setup_and_scan(
             logger.error(f"No items found to process in: {input_path_arg}")
             sys.exit(1)
         else:
-            from modules.user_prompts import print_error
+            from cli.interaction import print_error
 
             print_error("No items found to process. Please check your input path.")
             logger.debug("No items found in: %s", input_path_arg)

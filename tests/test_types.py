@@ -1,4 +1,4 @@
-"""Tests for modules/types.py - Type definitions and data structures."""
+"""Tests for split type modules (llm.types, pipeline.types, config.types)."""
 
 from __future__ import annotations
 
@@ -6,15 +6,15 @@ from pathlib import Path
 
 import pytest
 
-from modules.types import (
+from llm.types import (
     TranscriptionResult,
     PageInformation,
     SummaryContent,
     SummaryResult,
-    ConcurrencyConfig,
     CustomEndpointCapabilities,
-    ItemSpec,
 )
+from pipeline.types import ItemSpec
+from config.types import ConcurrencyConfig
 
 
 class TestTranscriptionResult:

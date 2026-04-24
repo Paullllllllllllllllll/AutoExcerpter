@@ -1,4 +1,4 @@
-"""Extended tests for modules/concurrency_helper.py - coverage gap filling.
+"""Extended tests for config/accessors.py - coverage gap filling.
 
 Covers:
 - get_api_concurrency: missing api_type in config, empty config dict
@@ -18,7 +18,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-import modules.concurrency_helper as ch
+import config.accessors as ch
 
 
 # ---------------------------------------------------------------------------

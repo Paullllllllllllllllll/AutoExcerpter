@@ -1,4 +1,4 @@
-"""Tests for api/rate_limiter.py - Rate limiting with adaptive backoff."""
+"""Tests for llm/rate_limit.py - Rate limiting with adaptive backoff."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
-from api.rate_limiter import RateLimiter
+from llm.rate_limit import RateLimiter
 
 
 class TestRateLimiterInit:

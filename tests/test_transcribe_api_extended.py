@@ -1,4 +1,4 @@
-"""Extended tests for api/transcribe_api.py — covers untested code paths.
+"""Extended tests for llm/transcription.py — covers untested code paths.
 
 This file complements test_transcribe_api.py by covering:
 - TranscriptionManager.__init__() with mocked dependencies
@@ -23,7 +23,7 @@ from unittest.mock import MagicMock, mock_open, patch, PropertyMock
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-from api.transcribe_api import TranscriptionManager
+from llm.transcription import TranscriptionManager
 
 # ============================================================================
 # Helpers
@@ -76,16 +76,16 @@ def _make_manager(**overrides) -> TranscriptionManager:
 def mock_all_init_deps() -> Generator[MagicMock, None, None]:
     """Patch all dependencies needed by TranscriptionManager.__init__."""
     with (
-        patch("api.base_llm_client.get_chat_model") as mock_gcm,
-        patch("api.base_llm_client.get_api_timeout", return_value=300),
+        patch("llm.base.get_chat_model") as mock_gcm,
+        patch("llm.base.get_api_timeout", return_value=300),
         patch(
-            "api.transcribe_api.get_model_capabilities",
+            "llm.transcription.get_model_capabilities",
             return_value={"multimodal": True, "max_tokens": True},
         ),
-        patch("api.base_llm_client.get_config_loader") as mock_cl_base,
-        patch("api.transcribe_api.SCHEMAS_DIR", Path("/fake/schemas")),
-        patch("api.transcribe_api.PROMPTS_DIR", Path("/fake/prompts")),
-        patch("api.transcribe_api.render_prompt_with_schema", return_value="rendered"),
+        patch("llm.base.get_config_loader") as mock_cl_base,
+        patch("llm.transcription.SCHEMAS_DIR", Path("/fake/schemas")),
+        patch("llm.transcription.PROMPTS_DIR", Path("/fake/prompts")),
+        patch("llm.transcription.render_prompt_with_schema", return_value="rendered"),
     ):
         mock_gcm.return_value = MagicMock()
         mock_loader = MagicMock()
@@ -123,10 +123,10 @@ class TestTranscriptionManagerInit:
             assert mgr.transcription_schema is not None
             assert mgr.system_prompt != ""
 
-    @patch("api.base_llm_client.get_chat_model")
-    @patch("api.base_llm_client.get_api_timeout", return_value=300)
+    @patch("llm.base.get_chat_model")
+    @patch("llm.base.get_api_timeout", return_value=300)
     @patch(
-        "api.transcribe_api.get_model_capabilities",
+        "llm.transcription.get_model_capabilities",
         return_value={"multimodal": False, "max_tokens": True},
     )
     def test_init_warns_for_non_multimodal(self, mock_caps, mock_timeout, mock_gcm) -> None:
@@ -134,14 +134,14 @@ class TestTranscriptionManagerInit:
         mock_gcm.return_value = MagicMock()
 
         with (
-            patch("api.base_llm_client.get_config_loader") as mock_cl,
-            patch("api.transcribe_api.SCHEMAS_DIR", Path("/fake/schemas")),
-            patch("api.transcribe_api.PROMPTS_DIR", Path("/fake/prompts")),
+            patch("llm.base.get_config_loader") as mock_cl,
+            patch("llm.transcription.SCHEMAS_DIR", Path("/fake/schemas")),
+            patch("llm.transcription.PROMPTS_DIR", Path("/fake/prompts")),
             patch("pathlib.Path.exists", return_value=True),
             patch("builtins.open", mock_open(read_data=json.dumps(_MOCK_SCHEMA))),
             patch("json.load", return_value=_MOCK_SCHEMA),
-            patch("api.transcribe_api.render_prompt_with_schema", return_value="r"),
-            patch("api.transcribe_api.logger") as mock_logger,
+            patch("llm.transcription.render_prompt_with_schema", return_value="r"),
+            patch("llm.transcription.logger") as mock_logger,
         ):
             loader = MagicMock()
             loader.get_model_config.return_value = {"transcription_model": {}}
@@ -181,10 +181,10 @@ class TestLoadSchemaAndPrompt:
         prompt_file.write_text(_MOCK_PROMPT, encoding="utf-8")
 
         with (
-            patch("api.transcribe_api.SCHEMAS_DIR", schemas_dir),
-            patch("api.transcribe_api.PROMPTS_DIR", prompts_dir),
+            patch("llm.transcription.SCHEMAS_DIR", schemas_dir),
+            patch("llm.transcription.PROMPTS_DIR", prompts_dir),
             patch(
-                "api.transcribe_api.render_prompt_with_schema",
+                "llm.transcription.render_prompt_with_schema",
                 return_value="rendered prompt",
             ),
         ):
@@ -202,7 +202,7 @@ class TestLoadSchemaAndPrompt:
         # Schema file does not exist
 
         with (
-            patch("api.transcribe_api.SCHEMAS_DIR", schemas_dir),
+            patch("llm.transcription.SCHEMAS_DIR", schemas_dir),
             pytest.raises(FileNotFoundError, match="Required schema file"),
         ):
             mgr._load_schema_and_prompt()
@@ -221,8 +221,8 @@ class TestLoadSchemaAndPrompt:
         # Prompt file does not exist
 
         with (
-            patch("api.transcribe_api.SCHEMAS_DIR", schemas_dir),
-            patch("api.transcribe_api.PROMPTS_DIR", prompts_dir),
+            patch("llm.transcription.SCHEMAS_DIR", schemas_dir),
+            patch("llm.transcription.PROMPTS_DIR", prompts_dir),
             pytest.raises(FileNotFoundError, match="Required prompt file"),
         ):
             mgr._load_schema_and_prompt()
@@ -423,7 +423,7 @@ class TestBuildModelInputs:
     """Tests for _build_model_inputs()."""
 
     @patch(
-        "api.base_llm_client.get_model_capabilities",
+        "llm.base.get_model_capabilities",
         return_value={"max_tokens": True, "reasoning": False, "text_verbosity": False},
     )
     def test_openai_format(self, _) -> None:
@@ -444,7 +444,7 @@ class TestBuildModelInputs:
         assert "data:image/jpeg;base64,base64data==" in content[0]["image_url"]["url"]  # type: ignore[index]
 
     @patch(
-        "api.base_llm_client.get_model_capabilities",
+        "llm.base.get_model_capabilities",
         return_value={"max_tokens": True, "reasoning": False, "text_verbosity": False},
     )
     def test_anthropic_format(self, _) -> None:
@@ -464,7 +464,7 @@ class TestBuildModelInputs:
         assert content[0]["source"]["data"] == "base64data=="
 
     @patch(
-        "api.base_llm_client.get_model_capabilities",
+        "llm.base.get_model_capabilities",
         return_value={"max_tokens": True, "reasoning": False, "text_verbosity": False},
     )
     def test_google_format(self, _) -> None:
@@ -524,8 +524,8 @@ class TestTranscribeImage:
                 mgr, "_get_structured_chat_model", return_value=mock_structured
             ),
             patch.object(mgr, "_build_model_inputs", return_value=([], {})),
-            patch("api.transcribe_api.ImageProcessor") as mock_ip_cls,
-            patch("api.base_llm_client.get_token_tracker") as mock_tt,
+            patch("llm.transcription.ImageProcessor") as mock_ip_cls,
+            patch("llm.base.get_token_tracker") as mock_tt,
         ):
             mock_processor = MagicMock()
             mock_processor.process_image_to_memory.return_value = img
@@ -552,7 +552,7 @@ class TestTranscribeImage:
         mgr = _make_manager()
 
         with patch(
-            "api.transcribe_api.ImageProcessor",
+            "llm.transcription.ImageProcessor",
             side_effect=RuntimeError("cannot process"),
         ):
             result = mgr.transcribe_image(image_path)
@@ -575,7 +575,7 @@ class TestTranscribeImage:
                 mgr, "_get_structured_chat_model", return_value=mock_structured
             ),
             patch.object(mgr, "_build_model_inputs", return_value=([], {})),
-            patch("api.transcribe_api.ImageProcessor") as mock_ip_cls,
+            patch("llm.transcription.ImageProcessor") as mock_ip_cls,
         ):
             mock_processor = MagicMock()
             from PIL import Image
@@ -643,9 +643,9 @@ class TestTranscribeImage:
                 mgr, "_get_structured_chat_model", return_value=mock_structured
             ),
             patch.object(mgr, "_build_model_inputs", return_value=([], {})),
-            patch("api.transcribe_api.ImageProcessor") as mock_ip_cls,
-            patch("api.transcribe_api.time.sleep"),
-            patch("api.base_llm_client.random.uniform", return_value=1.0),
+            patch("llm.transcription.ImageProcessor") as mock_ip_cls,
+            patch("llm.transcription.time.sleep"),
+            patch("llm.base.random.uniform", return_value=1.0),
         ):
             from PIL import Image
 
@@ -766,8 +766,8 @@ class TestTranscribeImageUsesInvokeWithRetry:
                 mgr, "_invoke_with_retry", return_value=mock_response
             ) as mock_invoke,
             patch.object(mgr, "_build_model_inputs", return_value=([], {})),
-            patch("api.transcribe_api.ImageProcessor") as mock_ip_cls,
-            patch("api.base_llm_client.get_token_tracker") as mock_tt,
+            patch("llm.transcription.ImageProcessor") as mock_ip_cls,
+            patch("llm.base.get_token_tracker") as mock_tt,
         ):
             from PIL import Image
 

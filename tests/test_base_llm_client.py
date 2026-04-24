@@ -1,4 +1,4 @@
-"""Tests for api/base_llm_client.py."""
+"""Tests for llm/base.py."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from langchain_core.messages import AIMessage
 
-from api.base_llm_client import LLMClientBase
+from llm.base import LLMClientBase
 
 
 class TestExtractOutputText:
@@ -53,7 +53,7 @@ class TestSchemaRetryDecision:
             }
         }
 
-        with patch("api.base_llm_client.random.uniform", return_value=1.0):
+        with patch("llm.base.random.uniform", return_value=1.0):
             should_retry, backoff, max_attempts = client._should_retry_for_schema_flag(
                 "flag", True, 1
             )
@@ -111,7 +111,7 @@ class TestCustomProviderRouting:
 
     def test_apply_structured_output_kwargs_mode_a(self) -> None:
         """Mode A (supports_structured_output=True) adds response_format."""
-        from modules.types import CustomEndpointCapabilities
+        from llm.types import CustomEndpointCapabilities
 
         client = LLMClientBase.__new__(LLMClientBase)
         client.provider = "custom"
@@ -130,7 +130,7 @@ class TestCustomProviderRouting:
 
     def test_apply_structured_output_kwargs_mode_b(self) -> None:
         """Mode B (use_plain_text_prompt=True) adds nothing."""
-        from modules.types import CustomEndpointCapabilities
+        from llm.types import CustomEndpointCapabilities
 
         client = LLMClientBase.__new__(LLMClientBase)
         client.provider = "custom"
@@ -156,7 +156,7 @@ class TestCustomProviderRouting:
         client.service_tier = "auto"
 
         with patch(
-            "api.base_llm_client.get_model_capabilities",
+            "llm.base.get_model_capabilities",
             return_value={
                 "max_tokens": True,
                 "reasoning": False,
@@ -182,7 +182,7 @@ class TestBuildInvokeKwargs:
         client.service_tier = "flex"
 
         with patch(
-            "api.base_llm_client.get_model_capabilities",
+            "llm.base.get_model_capabilities",
             return_value={
                 "max_tokens": True,
                 "reasoning": True,
@@ -208,7 +208,7 @@ class TestBuildInvokeKwargs:
         client.service_tier = "flex"
 
         with patch(
-            "api.base_llm_client.get_model_capabilities",
+            "llm.base.get_model_capabilities",
             return_value={
                 "max_tokens": True,
                 "reasoning": False,
@@ -230,7 +230,7 @@ class TestBuildInvokeKwargs:
         client.service_tier = "auto"
 
         with patch(
-            "api.base_llm_client.get_model_capabilities",
+            "llm.base.get_model_capabilities",
             return_value={
                 "max_tokens": True,
                 "reasoning": False,

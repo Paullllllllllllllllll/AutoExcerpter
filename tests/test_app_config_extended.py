@@ -1,4 +1,4 @@
-"""Extended tests for modules/app_config.py - coverage gap filling.
+"""Extended tests for config/app.py - coverage gap filling.
 
 Covers the private helper functions that are loaded at import time:
 - _load_yaml_app_config: file exists, file missing, invalid YAML, non-dict YAML
@@ -27,7 +27,7 @@ import yaml
 # We import the module (which triggers the top-level code) and then exercise
 # the private helpers.  The import succeeds because the CI/test environment
 # has at least one API key in the environment (or the conftest sets one).
-from modules.app_config import (
+from config.app import (
     _load_yaml_app_config,
     _get_str,
     _get_int,
@@ -47,7 +47,7 @@ class TestLoadYamlAppConfig:
         config_file = tmp_path / "app.yaml"
         config_file.write_text(yaml.dump(yaml_content), encoding="utf-8")
 
-        import modules.app_config as ac
+        import config.app as ac
 
         monkeypatch.setattr(ac, "_APP_CONFIG_PATH", config_file)
 
@@ -60,7 +60,7 @@ class TestLoadYamlAppConfig:
         """Returns empty dict when the config file does not exist."""
         nonexistent = tmp_path / "does_not_exist.yaml"
 
-        import modules.app_config as ac
+        import config.app as ac
 
         monkeypatch.setattr(ac, "_APP_CONFIG_PATH", nonexistent)
 
@@ -72,7 +72,7 @@ class TestLoadYamlAppConfig:
         bad_yaml = tmp_path / "bad.yaml"
         bad_yaml.write_text(":::not: valid: yaml: [[[", encoding="utf-8")
 
-        import modules.app_config as ac
+        import config.app as ac
 
         monkeypatch.setattr(ac, "_APP_CONFIG_PATH", bad_yaml)
 
@@ -84,7 +84,7 @@ class TestLoadYamlAppConfig:
         list_yaml = tmp_path / "list.yaml"
         list_yaml.write_text("- item1\n- item2\n", encoding="utf-8")
 
-        import modules.app_config as ac
+        import config.app as ac
 
         monkeypatch.setattr(ac, "_APP_CONFIG_PATH", list_yaml)
 

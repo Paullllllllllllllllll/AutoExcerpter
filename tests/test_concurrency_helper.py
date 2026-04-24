@@ -1,4 +1,4 @@
-"""Tests for modules/concurrency_helper.py."""
+"""Tests for config/accessors.py."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-import modules.concurrency_helper as ch
+import config.accessors as ch
 
 
 class TestConcurrencyHelper:
