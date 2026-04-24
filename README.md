@@ -1,0 +1,1095 @@
+# AutoExcerpter
+
+AutoExcerpter is an intelligent document processing pipeline that automatically transcribes and summarizes PDF documents and image collections. Built on LangChain for multi-provider LLM support, it converts scanned documents into searchable, structured text with optional summaries and enriched bibliographic citations. The tool supports OpenAI (GPT-5.4 Pro, GPT-5.4, GPT-5.3, GPT-5.2, GPT-5.1, GPT-5, GPT-4, o-series), Anthropic (Claude 4.6, Claude 4.5, Claude 4), Google (Gemini 3, Gemini 2.5), and OpenRouter for accessing additional models. It is designed for researchers, academics, and professionals who need to digitize and analyze large volumes of documents efficiently.
+
+> **Work in Progress** — AutoExcerpter is under active development. We aim to keep it continuously maintained and improved, but bugs may be present. If you encounter any issues, please [report them on GitHub](https://github.com/Paullllllllllllllllll/AutoExcerpter/issues) — your feedback is greatly appreciated.
+
+## Table of Contents
+
+-   [Overview](#overview)
+-   [Key Features](#key-features)
+-   [Supported Models](#supported-models)
+-   [How It Works](#how-it-works)
+-   [Prerequisites](#prerequisites)
+-   [Installation](#installation)
+-   [Usage](#usage)
+    -   [Interactive Mode (Default)](#interactive-mode-default)
+    -   [CLI Mode](#cli-mode)
+    -   [Processing Modes](#processing-modes)
+    -   [Batch Processing](#batch-processing)
+-   [Configuration](#configuration)
+    -   [Basic Configuration (app.yaml)](#basic-configuration-appyaml)
+    -   [Model Configuration (model.yaml)](#model-configuration-modelyaml)
+    -   [Concurrency Configuration (concurrency.yaml)](#concurrency-configuration-concurrencyyaml)
+    -   [Image Processing Configuration (image_processing.yaml)](#image-processing-configuration-image_processingyaml)
+    -   [Summary Context](#summary-context)
+    -   [Citation Management](#citation-management)
+    -   [Daily Token Limit](#daily-token-limit)
+-   [Output Files](#output-files)
+-   [Project Structure](#project-structure)
+-   [Advanced Topics](#advanced-topics)
+-   [Troubleshooting](#troubleshooting)
+-   [Contributing](#contributing)
+-   [License](#license)
+
+## Overview
+
+AutoExcerpter processes documents through a sophisticated two-stage pipeline that leverages vision-enabled LLMs with optical character recognition (OCR) capabilities. Built on LangChain, the system supports multiple AI providers including OpenAI, Anthropic, Google, and OpenRouter, allowing you to choose the best model for your needs. In the first stage, each page is transcribed using structured JSON schemas to ensure consistent output. In the second optional stage, transcribed text is analyzed to generate structured summaries with automatically deduplicated citations enriched with metadata from the OpenAlex academic database.
+
+**Primary Use Cases:**
+
+-   **Academic Research**: Digitize scanned academic papers, extract citations, and generate structured literature reviews
+-   **Document Digitization**: Convert image-based archival documents into searchable, machine-readable text
+-   **Literature Analysis**: Automatically summarize research papers with consolidated bibliographies
+-   **Knowledge Management**: Build searchable databases from historical documents and scanned materials
+-   **Content Extraction**: Process multi-column layouts, preserve mathematical equations, and capture visual content descriptions
+
+## Key Features
+
+**Advanced Transcription:**
+
+-   **Multi-Format Support**: Processes PDFs (with automatic page extraction) and direct image folders
+-   **Format Compatibility**: Supports PNG, JPG, JPEG, TIFF, BMP, GIF, and WEBP image formats
+-   **Structure Preservation**: Maintains document structure including headers, footers, page numbers, footnotes, tables, and multi-column layouts
+-   **Mathematical Notation**: Converts mathematical equations to LaTeX format for accurate representation
+-   **Visual Content**: Provides detailed descriptions of images, diagrams, charts, and figures
+-   **Schema-Driven Output**: Uses strict JSON schemas to ensure consistent, parseable transcription results
+-   **In-Memory Processing**: Optimized image preprocessing pipeline that eliminates disk I/O bottlenecks and prevents race conditions
+-   **Intelligent Formatting**: Preserves markdown formatting (headings, bold, italic) and line breaks
+-   **Configurable Text Cleaning**: Runs Unicode normalization, LaTeX repairs, optional hyphenation merging, whitespace cleanup, and line wrapping before summarization or export
+
+**Intelligent Summarization:**
+
+-   **Concise Extraction**: Generates bullet-point summaries highlighting main ideas and key findings for each page
+-   **Smart Filtering**: Automatically identifies and excludes pages without semantic content (title pages, blank pages, reference lists)
+-   **Page Tracking**: Accurately tracks page numbers from document headers and footers
+-   **Dual Output Formats**: Exports summaries as both formatted DOCX documents and Markdown files for maximum flexibility
+-   **Markdown Output**: Version-control friendly `.md` files compatible with Writage and other markdown-to-Word tools
+-   **Focused Summarization**: Hierarchical context system allows file-specific, folder-specific, or general context to guide the model to pay special attention to specific topics during summarization
+
+**Enhanced Citation Management:**
+
+-   **Automatic Deduplication**: Uses normalized text hashing to identify and merge duplicate citations across the entire document
+-   **Page Range Tracking**: Displays comprehensive page numbers where each citation appears (e.g., "pp. 5, 12-15, 23")
+-   **Metadata Enrichment**: Integrates with OpenAlex API to enrich citations with DOI, publication year, authors, and venue information
+-   **Clickable Hyperlinks**: Adds direct hyperlinks to citations for instant access to extended metadata
+-   **Consolidated Bibliography**: Presents all citations in a dedicated section at the end of summary documents
+-   **Smart Matching**: Uses both text similarity and DOI extraction for accurate citation identification
+
+**Performance and Reliability:**
+
+-   **Concurrent Processing**: Configurable parallelism for both image preprocessing and API requests
+-   **Adaptive Rate Limiting**: Sliding window rate limiter prevents API quota violations
+-   **LangChain Built-in Retry**: Automatic exponential backoff with jitter handled by LangChain for API errors
+-   **Schema-Specific Retries**: Optional retries based on model-returned content flags (no_transcribable_text, etc.)
+-   **Daily Token Budgeting**: Built-in token tracker enforces configurable daily limits with automatic midnight resets and per-request accounting
+-   **Service Tier Support**: Full support for OpenAI Flex tier to reduce processing costs by up to 50%
+-   **Progress Tracking**: Real-time progress bars with estimated time of completion
+-   **Comprehensive Logging**: Detailed JSON logs for debugging, quality assurance, and audit trails
+-   **Automatic Cleanup**: Optional deletion of temporary working directories after successful processing
+
+**Multi-Provider Architecture:**
+
+-   **LangChain Integration**: Unified interface for multiple LLM providers via LangChain
+-   **Provider Flexibility**: Switch between OpenAI, Anthropic, Google, or OpenRouter with configuration changes
+-   **Capability Guarding**: Automatic parameter filtering via a centralized registry (`llm/capabilities.py`) that maps every supported model to a typed capability profile, preventing unsupported-parameter API errors
+-   **Model Auto-Detection**: Automatic provider inference from model names (gpt-5 to OpenAI, claude to Anthropic, etc.)
+
+**Architecture Excellence:**
+
+-   **Modular Design**: Clear separation of concerns with well-defined component responsibilities
+-   **YAML-Based Configuration**: Human-readable configuration with validation and sensible defaults
+-   **Base Classes**: Shared API logic through inheritance to eliminate code duplication
+-   **Testable Components**: Well-defined interfaces that facilitate unit testing
+-   **Type Safety**: Comprehensive type hints throughout the codebase
+-   **Public API**: Clear module exports via `__all__` declarations
+
+## Supported Models
+
+AutoExcerpter supports a wide range of models from multiple providers. The system automatically detects model capabilities and filters parameters accordingly.
+
+**OpenAI Models:**
+
+| Model Family | Models | Capabilities |
+|---|---|---|
+| GPT-5.4 Pro (Mar 2026) | gpt-5.4-pro | Reasoning, text verbosity, multimodal, 1.05M context |
+| GPT-5.4 (Mar 2026) | gpt-5.4 | Reasoning, text verbosity, multimodal, 1.05M context |
+| GPT-5.3 (Feb 2026) | gpt-5.3 | Reasoning, text verbosity, multimodal, 400k context |
+| GPT-5.2 (Feb 2026) | gpt-5.2 | Reasoning, text verbosity, multimodal, 400k context |
+| GPT-5.1 (Nov 2025) | gpt-5.1, gpt-5.1-instant, gpt-5.1-thinking | Reasoning, text verbosity, multimodal |
+| GPT-5 (Aug 2025) | gpt-5, gpt-5-mini, gpt-5-nano | Reasoning, text verbosity, multimodal |
+| O-series | o4, o4-mini, o3, o3-mini, o1, o1-mini | Reasoning (no temperature control) |
+| GPT-4.1 | gpt-4.1, gpt-4.1-mini, gpt-4.1-nano | Multimodal |
+| GPT-4o | gpt-4o, gpt-4o-mini | Multimodal |
+
+**Anthropic Claude Models:**
+
+| Model Family | Models | Capabilities |
+|---|---|---|
+| Claude 4.6 (Feb 2026) | claude-opus-4-6, claude-sonnet-4-6 | Multimodal, extended thinking, 200k context |
+| Claude 4.5 (Oct-Nov 2025) | claude-opus-4-5, claude-sonnet-4-5, claude-haiku-4-5 | Multimodal, extended thinking (opus/sonnet) |
+| Claude 4 | claude-opus-4, claude-sonnet-4 | Multimodal, extended thinking |
+| Claude 3.x | claude-3-7-sonnet, claude-3-5-sonnet, claude-3-5-haiku | Multimodal |
+
+**Google Gemini Models:**
+
+| Model Family | Models | Capabilities |
+|---|---|---|
+| Gemini 3 Preview (Feb 2026) | gemini-3-pro-preview, gemini-3-flash-preview | Thinking, multimodal, 1M context |
+| Gemini 3 (Nov 2025) | gemini-3-pro, gemini-3-flash | Thinking, multimodal |
+| Gemini 2.5 (Mar 2025) | gemini-2.5-pro, gemini-2.5-flash, gemini-2.5-flash-lite | Thinking, multimodal |
+| Gemini 2.0 | gemini-2.0-flash, gemini-2.0-flash-lite | Multimodal |
+| Gemini 1.5 | gemini-1.5-pro, gemini-1.5-flash | Multimodal |
+
+**OpenRouter:**
+
+OpenRouter provides access to models from all providers through a unified API. Use the `openrouter` provider with any supported model name.
+
+**Custom OpenAI-Compatible Endpoint:**
+
+Connect to any self-hosted or third-party endpoint that implements the OpenAI Chat Completions API with vision support. This enables use of locally hosted OCR models, university-hosted inference servers, or other OpenAI-compatible services. Set `provider: custom` explicitly in `config/defaults/model.yaml` and configure the `custom_endpoint` block with a `capabilities` section:
+
+```yaml
+transcription_model:
+  provider: custom
+  name: "org/model-name"
+  custom_endpoint:
+    base_url: "https://your-endpoint.example.com/v1"
+    api_key_env_var: "YOUR_CUSTOM_API_KEY"
+    capabilities:
+      supports_vision: true              # default: true
+      supports_structured_output: false   # default: false
+      use_plain_text_prompt: false        # default: false
+  max_output_tokens: 4096
+  temperature: 0.0
+```
+
+The `base_url` and `api_key_env_var` are fully user-configured. Image preprocessing uses the `custom_image_processing` section in `config/defaults/image_processing.yaml`, with defaults suitable for models with small context windows.
+
+**Three usage patterns** are supported via the `capabilities` flags:
+
+| Pattern | `supports_structured_output` | `use_plain_text_prompt` | Description |
+|---------|------------------------------|------------------------|-------------|
+| **A: Full structured** | `true` | `false` | Identical to commercial providers. API-level `response_format` enforces JSON schema. Normal prompts with all formatting instructions. |
+| **B: Plain text** | `false` | `true` | Simplified prompt with no markdown, page number tags, or JSON output. Raw text response. |
+| **C: Prompt-guided JSON** | `false` | `false` | Normal prompts with JSON schema in the prompt text, but no API-level enforcement. Relies on `validation_failure` retries (see below) to catch malformed responses. |
+
+Setting `use_plain_text_prompt: true` automatically forces `supports_structured_output: false`. Pattern C is the recommended workaround for models that can follow JSON instructions in the prompt but lack native structured output support.
+
+## How It Works
+
+AutoExcerpter follows a systematic workflow to transform documents into structured, searchable content:
+
+**1. Input Selection and Scanning**
+
+The application scans your configured input directory for processable items (PDF files and image folders). It presents an interactive menu where you can select specific items or process all available documents in batch.
+
+**2. Page Extraction (PDF Only)**
+
+For PDF inputs, each page is extracted as a high-resolution image using configurable DPI settings (default: 300 DPI). The extraction process applies optimizations including grayscale conversion, transparency handling, and format normalization. For image folder inputs, existing images are processed directly.
+
+**3. Image Preprocessing**
+
+Images undergo in-memory preprocessing to optimize OCR accuracy:
+
+-   Grayscale conversion to reduce noise and improve text recognition
+-   Transparency handling to flatten alpha channels onto white backgrounds
+-   Intelligent resizing based on detail level (maintains aspect ratio)
+-   JPEG compression optimization for API transmission
+-   All processing happens in memory to prevent race conditions and improve performance
+
+**4. Transcription via LangChain**
+
+Each preprocessed image is sent to the configured LLM provider through LangChain with:
+
+-   A detailed system prompt instructing the model to perform verbatim transcription
+-   Structured JSON schema defining the expected output format
+-   Configuration for reasoning effort and text verbosity (from model.yaml)
+-   Model parameters including max_output_tokens and service tier settings
+-   Automatic capability guarding to filter unsupported parameters based on model
+
+The API returns structured JSON containing:
+
+-   Full verbatim transcription with markdown formatting
+-   Preserved structural elements (headers, footers, tables, footnotes)
+-   Mathematical equations in LaTeX notation
+-   Page numbers marked with special XML-style tags
+-   Detailed descriptions of visual elements (images, diagrams, charts)
+
+LangChain handles API retries with exponential backoff automatically. Schema-specific retries are available for content flags.
+
+**5. Summarization (Optional)**
+
+When enabled, transcribed text is processed by the configured LLM provider with a summarization prompt that extracts:
+
+-   Concise bullet-point summaries of main ideas
+-   Full bibliographic citations in APA format
+-   Page number metadata for accurate referencing
+-   Flags indicating pages without semantic content
+
+**6. Citation Processing**
+
+The citation manager processes extracted citations through:
+
+-   Normalization of citation text for duplicate detection
+-   Deduplication using text similarity hashing
+-   Page range consolidation (merges consecutive and discontinuous page references)
+-   OpenAlex API enrichment for DOI, authors, publication year, and venue
+-   Hyperlink generation for citations with sufficient metadata
+
+**7. Output Generation**
+
+The pipeline produces multiple output files:
+
+-   Plain text file with complete transcriptions including metadata headers
+-   Formatted DOCX file with structured summaries and consolidated citations
+-   Markdown file with the same summary content in version-control friendly format
+-   JSON log files with detailed processing metadata, timing, and error information
+
+**8. Cleanup**
+
+If configured, the system automatically deletes temporary working directories including extracted images and intermediate processing files, keeping only the final outputs.
+
+## Prerequisites
+
+Before installing AutoExcerpter, ensure you have:
+
+-   **Python 3.10 or higher**: Required for LangChain v1.0 compatibility
+-   **API Key(s)**: At least one API key from a supported provider:
+    -   OpenAI API key (for GPT-5, GPT-4, o-series models)
+    -   Anthropic API key (for Claude models)
+    -   Google API key (for Gemini models)
+    -   OpenRouter API key (for accessing multiple providers)
+
+## Installation
+
+1.  **Clone the repository:**
+
+```bash
+git clone https://github.com/yourusername/AutoExcerpter.git
+cd AutoExcerpter
+```
+
+2.  **Create and activate a virtual environment:**
+
+```bash
+python -m venv .venv
+
+# On Windows:
+.venv\Scripts\activate
+
+# On macOS/Linux:
+source .venv/bin/activate
+```
+
+3.  **Install dependencies:**
+
+```bash
+pip install -r requirements.txt
+```
+
+For development and testing, install the dev dependencies:
+
+```bash
+pip install -r requirements-dev.txt
+```
+
+Run the test suite:
+
+```bash
+python -m pytest
+```
+
+4.  **Set up API keys as environment variables:**
+
+```bash
+# OpenAI (required for default configuration)
+export OPENAI_API_KEY="your-openai-api-key"
+
+# Anthropic (optional, for Claude models)
+export ANTHROPIC_API_KEY="your-anthropic-api-key"
+
+# Google (optional, for Gemini models)
+export GOOGLE_API_KEY="your-google-api-key"
+
+# OpenRouter (optional, for multi-provider access)
+export OPENROUTER_API_KEY="your-openrouter-api-key"
+```
+
+On Windows, use `set` instead of `export`, or configure environment variables through System Properties.
+
+5.  **Configure the application:**
+
+Edit `config/defaults/app.yaml` to set your input/output paths:
+
+```yaml
+input_folder_path: 'C:\Users\yourname\Documents\PDFs'
+output_folder_path: 'C:\Users\yourname\Documents\Output'
+input_paths_is_output_path: true  # Write outputs next to each input file
+```
+
+Edit `config/defaults/model.yaml` to set your preferred models:
+
+```yaml
+transcription_model:
+  name: "gpt-5-mini"  # or any supported model
+  provider: "openai"
+
+summary_model:
+  name: "gpt-5-mini"
+  provider: "openai"
+```
+
+## Usage
+
+### Interactive Mode (Default)
+
+Interactive mode provides a guided experience with structured prompts and visual feedback. Set `cli_mode: false` in `config/defaults/app.yaml` (or leave as default) and run:
+
+```bash
+python main.py
+```
+
+The application scans the configured input directory and presents an interactive menu. Use flexible selection syntax to choose documents:
+
+```
+Select items to process: 42                    # Select item #42
+Select items to process: 1,5,10               # Select items #1, #5, and #10
+Select items to process: 1-10                 # Select items #1 through #10
+Select items to process: all                  # Select all items
+Select items to process: Mennell              # Find items containing "Mennell"
+Select items to process: food history         # Find items containing "food history"
+```
+
+Interactive mode highlights:
+
+-   Styled console output with headers, sections, and status indicators
+-   Exit options available at every prompt (`exit`, `quit`, or `q`)
+-   Daily token-limit wait screen can be cancelled instantly by typing `q` and pressing Enter
+-   Inline progress updates for every document processed
+
+### CLI Mode
+
+CLI mode is optimized for batch processing, automation, and integration into pipelines without interactive prompts. Set `cli_mode: true` in `config/defaults/app.yaml`.
+
+**Command syntax:**
+
+```bash
+python main.py <input> <output> [--all] [--select PATTERN] [--context TOPICS] [--model MODEL] [--reasoning-effort LEVEL] [--verbosity LEVEL] [--max-output-tokens N]
+# or use named paths (overrides positional values):
+python main.py --input-path <input> --output-path <output> [other options]
+```
+
+**Arguments:**
+
+-   `input` (required): Path to a PDF file, an image folder, or a directory containing multiple items
+-   `output` (required): Destination directory for generated transcriptions and summaries
+-   `--input-path PATH` / `--output-path PATH` (optional): Named paths; override positional values when both are provided
+-   `--all` (optional): Process every item discovered under the input directory
+-   `--select PATTERN` (optional): Select items by number, range, or filename pattern. Supports single numbers (`--select 5`), comma-separated (`--select "1,3,5"`), ranges (`--select "1-10"`), and filename search (`--select "Mennell"`)
+-   `--context TOPICS` (optional): Specify topics for focused summarization. Example: `--context "Food History, Wages, Early Modern"`
+-   `--model MODEL` (optional): Set both transcription and summary model names at runtime
+-   `--transcription-model MODEL` / `--summary-model MODEL` (optional): Per-phase model overrides
+-   `--reasoning-effort {minimal,low,medium,high}` (optional): Set reasoning effort for both models
+-   `--transcription-reasoning-effort ...` / `--summary-reasoning-effort ...` (optional): Per-phase reasoning overrides
+-   `--verbosity {low,medium,high}` (optional): Set output verbosity for both models (GPT-5 family only; ignored for other providers via capability guarding)
+-   `--transcription-verbosity ...` / `--summary-verbosity ...` (optional): Per-phase verbosity overrides
+-   `--max-output-tokens N` (optional): Set max output tokens for both models
+-   `--transcription-max-output-tokens N` / `--summary-max-output-tokens N` (optional): Per-phase token budget overrides
+
+When neither `--all` nor `--select` is specified, only the first item is processed if multiple items exist.
+
+**Usage examples:**
+
+```bash
+# Process a single PDF using relative paths
+python main.py "./documents/paper.pdf" "./output"
+
+# Process every item found in a directory
+python main.py "./documents" "./output" --all
+
+# Process specific items by number or range
+python main.py "./documents" "./output" --select "1,5,10"
+python main.py "./documents" "./output" --select "1-20"
+
+# Process items matching a filename pattern
+python main.py "./documents" "./output" --select "Mennell"
+
+# Process with focused summarization on specific topics
+python main.py "./documents" "./output" --all --context "Food History, Wages, Early Modern"
+
+# Override model config at runtime
+python main.py "./documents" "./output" --all --model "gpt-5.1" --reasoning-effort high --verbosity medium --max-output-tokens 120000
+
+# Use separate model and token settings for transcription vs summary
+python main.py "./documents" "./output" --all --transcription-model "gpt-5.2" --summary-model "gpt-5-mini" --transcription-max-output-tokens 128000 --summary-max-output-tokens 32000
+
+# Automate multiple PDFs in a shell script
+for pdf in ./papers/*.pdf; do
+    python main.py "$pdf" "./output"
+done
+```
+
+CLI mode highlights:
+
+-   No interactive prompts; suitable for cron jobs and CI/CD workflows
+-   Console output limited to structured logging
+-   Supports runtime model overrides via CLI while preserving YAML defaults on disk
+-   Allows absolute or relative input/output paths and resolves them before processing
+
+### Processing Modes
+
+**Transcription-Only Mode:**
+
+For faster processing without summaries, set `summarize: false` in `config/defaults/app.yaml`. This mode is ideal for creating searchable text archives, quick digitization projects, cost-sensitive workflows, and building document databases for later analysis.
+
+**Transcription + Summarization Mode:**
+
+Enable full processing with `summarize: true` in `config/defaults/app.yaml`. This mode provides complete transcriptions, structured summaries, extracted and enriched citations, and professional DOCX and Markdown output.
+
+### Batch Processing
+
+Process multiple documents in sequence:
+
+1.  Place all PDFs and image folders in your input directory
+2.  Run `python main.py`
+3.  Select "all" when prompted (or use `--all` in CLI mode)
+4.  The system processes each item sequentially with progress tracking
+
+The application automatically skips items that have already been processed (output files exist).
+
+## Configuration
+
+AutoExcerpter uses a multi-file YAML configuration system located in `config/defaults/`. Each configuration file includes cross-references to related files for easy navigation.
+
+| File | Purpose |
+|---|---|
+| `config/defaults/app.yaml` | Application settings, file paths, feature toggles, daily limits |
+| `config/defaults/model.yaml` | LLM provider and model settings (transcription and summary) |
+| `config/defaults/concurrency.yaml` | API rate limits, retries, and parallelism settings |
+| `config/defaults/image_processing.yaml` | Image preprocessing and text cleaning options |
+
+### Basic Configuration (app.yaml)
+
+**File**: `config/defaults/app.yaml`
+
+This is the primary configuration file for application-level settings. Model configuration is in `model.yaml`, and API concurrency/rate limits are in `concurrency.yaml`.
+
+```yaml
+# Execution Mode
+cli_mode: false  # true = CLI with arguments, false = interactive prompts
+
+# Feature Toggles
+summarize: true  # false = transcription only (no summarization phase)
+
+# Summary Output Formats (only applies when summarize=true)
+summary_output:
+  docx: true      # Generate .docx summary with formatted Word document
+  markdown: true  # Generate .md summary for version control and markdown viewers
+
+# File Paths
+input_folder_path: 'C:\Users\yourname\Documents\PDFs'
+output_folder_path: ''  # Empty = use input_folder_path as output location
+input_paths_is_output_path: true  # true = write outputs next to each input file
+
+# Cleanup Settings
+delete_temp_working_dir: true  # Delete extracted images and temp files after completion
+
+# Citation Management (OpenAlex API integration)
+citation:
+  openalex_email: 'your-email@example.com'  # Required for polite pool (faster responses)
+  max_api_requests: 300  # Cap API calls per document to avoid rate limits
+
+# Daily Token Limit (budget control)
+daily_token_limit:
+  enabled: true  # Enforce the daily token budget
+  daily_tokens: 9000000  # Max tokens per day (resets at midnight)
+```
+
+**Key Settings Explained:**
+
+-   **cli_mode**: Set to `true` for automation and scripting without interactive prompts
+-   **summarize**: Set to `false` if you only need transcription without summaries (faster and cheaper)
+-   **summary_output.docx**: Generate formatted Word documents (default: true)
+-   **summary_output.markdown**: Generate Markdown files for version control and markdown viewers (default: true)
+-   **input_paths_is_output_path**: When `true`, outputs are saved beside the source file instead of the global `output_folder_path`
+-   **delete_temp_working_dir**: Automatically cleans up extracted images and temporary files after processing
+-   **daily_token_limit**: Enforces a configurable daily token budget to stay within API allowances
+
+### Model Configuration (model.yaml)
+
+**File**: `config/defaults/model.yaml`
+
+LLM settings for transcription and summarization phases. The provider is auto-detected from the model name but can be set explicitly.
+
+```yaml
+# Transcription Model (OCR/image-to-text conversion)
+transcription_model:
+  name: "gpt-5.2"      # Model identifier
+  provider: "openai"   # Optional if model prefix is unambiguous
+  max_output_tokens: 12000
+
+  # Cross-provider reasoning (maps to native implementations):
+  # OpenAI: reasoning_effort | Anthropic: extended_thinking | Google: thinking_level
+  reasoning:
+    effort: medium  # low | medium | high
+
+  # OpenAI GPT-5 only: controls output verbosity
+  text:
+    verbosity: medium  # low | medium | high
+
+  temperature: 1.0  # 0.0-2.0 (null = provider default)
+
+# Summary Model (structured summaries from transcriptions)
+summary_model:
+  name: "gpt-5-mini"
+  provider: "openai"
+  max_output_tokens: 16384
+
+  reasoning:
+    effort: medium
+
+  text:
+    verbosity: low  # Lower verbosity for concise summaries
+
+  temperature: 1.0
+```
+
+**Parameter Details:**
+
+-   **name**: Model identifier (e.g., "gpt-5-mini", "claude-sonnet-4-5", "gemini-2.5-pro")
+-   **provider**: LLM provider (openai, anthropic, google, openrouter); can be auto-detected from model name
+-   **max_output_tokens**: Controls the maximum length of model responses; increase for longer documents
+-   **temperature**: Controls randomness in generation (0.0 for deterministic, up to 2.0 for creative output)
+-   **reasoning.effort**: Higher effort improves accuracy but increases processing time and cost
+    -   `minimal`: Fastest, lowest cost, basic reasoning
+    -   `low`: Balanced for simple documents (recommended)
+    -   `medium`: Good balance for complex documents
+    -   `high`: Maximum accuracy for complex technical content
+-   **text.verbosity**: Controls output detail level (OpenAI GPT-5 family only)
+    -   `low`: More concise, fewer details (good for summaries)
+    -   `medium`: Balanced detail level (good for transcriptions)
+    -   `high`: Maximum detail, comprehensive output
+
+**Provider-specific examples:**
+
+```yaml
+# Anthropic Claude
+transcription_model:
+  name: "claude-sonnet-4-5-20250929"
+  provider: "anthropic"
+  max_output_tokens: 16384
+  temperature: 1.0  # Required for extended thinking
+
+# Google Gemini
+transcription_model:
+  name: "gemini-2.5-pro"
+  provider: "google"
+  max_output_tokens: 32768
+  reasoning:
+    effort: high  # Maps to thinking_level: "high"
+
+# OpenRouter (access any model)
+transcription_model:
+  name: "anthropic/claude-sonnet-4-5"  # Use provider/model format
+  provider: "openrouter"
+  max_output_tokens: 8192
+```
+
+### Concurrency Configuration (concurrency.yaml)
+
+**File**: `config/defaults/concurrency.yaml`
+
+Controls parallel processing behavior for both local operations and API requests.
+
+```yaml
+# Local Image Processing (CPU/Disk bound)
+image_processing:
+  concurrency_limit: 24  # Parallel tasks (8-24 for SSD, lower for HDD)
+  delay_between_tasks: 0  # No delay needed for local operations
+
+# API Request Concurrency
+api_requests:
+  api_timeout: 900  # Request timeout (seconds). 900s for flex tier queuing
+
+  # Rate limiting: [max_requests, window_seconds]
+  rate_limits:
+    - [120, 1]       # Per-second burst limit
+    - [15000, 60]    # Per-minute sustained limit
+    - [15000, 3600]  # Per-hour aggregate limit
+
+  transcription:
+    concurrency_limit: 5  # Parallel API requests (OpenAI: 50-150, Anthropic: 5-10)
+    delay_between_tasks: 0.1
+    service_tier: default  # 'default' | 'flex' | 'priority'
+
+  summary:
+    concurrency_limit: 5
+    delay_between_tasks: 0.1
+    service_tier: flex  # Cost optimization for batch summarization
+
+# Retry Configuration (exponential backoff with jitter)
+retry:
+  max_attempts: 5  # Total attempts before giving up
+  backoff_base: 1.0  # Initial wait time in seconds
+  backoff_multipliers:
+    rate_limit: 2.0   # 429 Too Many Requests
+    timeout: 1.5      # Connection/read timeouts
+    server_error: 2.0 # 500-series errors
+    other: 2.0
+  jitter:
+    min: 0.5
+    max: 1.0
+
+  # Schema-specific retries (based on model output validation)
+  schema_retries:
+    transcription:
+      validation_failure:  # Invalid JSON or missing required schema keys
+        enabled: true      # Fires BEFORE flag-specific retries
+        max_attempts: 3
+        backoff_base: 0.5
+        backoff_multiplier: 1.5
+      no_transcribable_text:  # Image contains no text
+        enabled: true
+        max_attempts: 0  # 0 = disabled
+        backoff_base: 0.5
+        backoff_multiplier: 1.5
+      transcription_not_possible:  # Illegible/corrupted image
+        enabled: true
+        max_attempts: 3
+        backoff_base: 0.5
+        backoff_multiplier: 1.5
+    summary:
+      validation_failure:  # Invalid JSON or missing required schema keys
+        enabled: true      # Fires BEFORE flag-specific retries
+        max_attempts: 3
+        backoff_base: 0.5
+        backoff_multiplier: 1.5
+      page_type_null_bullets:  # Non-content page with null bullet_points
+        enabled: false
+        max_attempts: 0
+        backoff_base: 0.5
+        backoff_multiplier: 1.5
+```
+
+**Service Tier Options:**
+
+-   **`auto`**: Let OpenAI choose the best tier automatically
+-   **`default`**: Standard processing speed and cost
+-   **`flex`**: Lower cost, longer processing time (recommended for batch processing)
+-   **`priority`**: Faster processing, higher cost (for time-sensitive work)
+
+**Tuning Guidelines:**
+
+-   **Lower OpenAI Tiers (1-2)**: Set `concurrency_limit: 10-30`
+-   **Mid-Tier (3-4)**: Set `concurrency_limit: 50-100`
+-   **High Tier (4-5)**: Set `concurrency_limit: 100-200`
+-   **Image Processing**: 8-24 for HDD, 24-48 for SSD systems
+
+#### Schema-Aware Retry Controls
+
+AutoExcerpter implements three complementary retry layers:
+
+-   **API errors**: Controlled by `max_attempts`, `backoff_base`, and `backoff_multipliers`. Applies to rate limits, timeouts, and server-side errors using exponential backoff with jitter, based on OpenAI cookbook guidance.
+-   **Validation retries** (`validation_failure`): Fires first, before any flag-specific retries. Checks whether the model response is valid JSON containing the required schema keys. This is particularly important for custom endpoints using Pattern C (prompt-guided JSON without API-level `response_format` enforcement), where the model may occasionally return malformed JSON or omit required fields.
+-   **Schema flags**: Configure per-flag policies under `schema_retries`. Each flag exposes `enabled`, `max_attempts`, `backoff_base`, and `backoff_multiplier`. Most flags default to `max_attempts: 0` to avoid unnecessary reprocessing, except `transcription_not_possible` which defaults to 3 attempts for handling temporarily illegible images. Increase attempts when working with noisy scans or documents that frequently trigger these flags.
+
+**Supported Flags:**
+
+-   **Transcription**: `validation_failure`, `no_transcribable_text`, `transcription_not_possible`
+-   **Summary**: `validation_failure`, `page_type_null_bullets`
+
+When a flag is enabled and the condition is detected, AutoExcerpter automatically re-issues the same request after waiting `backoff_base * backoff_multiplier^attempt + jitter`. The `validation_failure` flag checks JSON validity and required key presence; all other flags check for specific model-returned values. Statistics for both API-level and schema-level retries are logged per page for auditing.
+
+### Image Processing Configuration (image_processing.yaml)
+
+**File**: `config/defaults/image_processing.yaml`
+
+Controls image preprocessing before LLM API calls and post-transcription text cleaning.
+
+```yaml
+api_image_processing:
+  # PDF rendering resolution (higher = better quality, more tokens)
+  target_dpi: 300  # 150-300 recommended for OCR
+
+  # Preprocessing steps
+  grayscale_conversion: true  # Convert to grayscale (improves OCR, reduces noise)
+  handle_transparency: true   # Flatten alpha channel onto white background
+
+  # Image fidelity for OpenAI Vision API
+  # high = better OCR, more tokens | low = faster, cheaper | auto = model decides
+  llm_detail: high
+
+  # JPEG compression quality (1-100). Higher = better quality, larger files
+  jpeg_quality: 100
+
+  # Resize strategy: 'high' | 'low' | 'auto' | 'none'
+  resize_profile: high
+
+  # Resize parameters
+  low_max_side_px: 512         # Max dimension for 'low' profile
+  high_target_box: [768, 1536] # [width, height] target for 'high' profile
+
+text_cleaning:
+  enabled: true  # Master switch for all text cleaning
+  unicode_normalization: true
+  latex_fixing:
+    enabled: true
+    balance_dollar_signs: true
+    close_unclosed_braces: true
+    fix_common_commands: true
+  merge_hyphenation: false  # WARNING: Can damage genuine compounds
+  whitespace_normalization:
+    enabled: true
+    collapse_internal_spaces: true
+    max_blank_lines: 2
+    tab_size: 4
+  line_wrapping:
+    enabled: true
+    auto_width: true
+    fixed_width: 80
+```
+
+### Summary Context
+
+AutoExcerpter supports a hierarchical context system that allows you to guide the summarization model to pay special attention to specific topics.
+
+**Context Resolution Hierarchy (highest to lowest priority):**
+
+1. **CLI/Interactive Context**: Provided via `--context` flag or interactive prompt
+2. **File-Specific Context**: `<filename>_summary_context.txt` next to the input file
+3. **Folder-Specific Context**: `<foldername>_summary_context.txt` in the parent directory
+4. **General Context**: `context/summary/general.txt` in the project root
+
+Create a plain text file with topics or keywords that you want the model to focus on during summarization:
+
+```text
+Food History
+Wages and Labor Economics
+Early Modern History
+Agricultural Trade
+```
+
+When context is provided (via any method), the summarization prompt includes an instruction like:
+> "Pay special attention to the following topics during summarization. Content related to these topics should be summarized in greater detail: Food History, Wages, Early Modern History."
+
+If no context is found through any of these methods, summarization proceeds normally without topic-specific focus.
+
+### Citation Management
+
+**File**: `config/defaults/app.yaml` (citation section)
+
+```yaml
+citation:
+  openalex_email: 'your-email@example.com'  # Email for OpenAlex API polite pool
+  max_api_requests: 300  # Maximum metadata enrichment calls per document
+```
+
+The citation manager automatically:
+
+1.  **Deduplicates** identical citations using normalized text comparison
+2.  **Tracks pages** where each citation appears and displays as ranges (e.g., "pp. 3, 7-9, 15")
+3.  **Enriches metadata** via OpenAlex API: DOI, authors, publication year, venue
+4.  **Adds hyperlinks** to citations with DOIs for direct access to extended metadata
+5.  **Consolidates** all citations in a dedicated bibliography section
+
+Replace `your-email@example.com` with your real email for faster OpenAlex response times (polite pool). The OpenAlex API is free and requires no API key.
+
+### Daily Token Limit
+
+**File**: `config/defaults/app.yaml` (`daily_token_limit` section)
+
+AutoExcerpter enforces a configurable daily token budget to keep usage aligned with your API allowance. Tokens are counted after every API response (including retried attempts) and persisted to `.autoexcerpter_token_state.json` so limits survive restarts.
+
+```yaml
+daily_token_limit:
+  enabled: true           # Toggle token tracking and enforcement
+  daily_tokens: 9000000   # Maximum tokens allowed per calendar day (9 million)
+```
+
+**Behavior:**
+
+-   **Accurate Accounting**: Tracks `usage.total_tokens` from each API call (transcription + summary).
+-   **Daily Reset**: Counter resets automatically at local midnight; tokens persist across restarts until reset.
+-   **Wait Handling**: When the limit is reached, processing pauses and shows the reset ETA.
+-   **Interactive Cancellation**: During the wait, type `q` + Enter to cancel immediately (no need for Ctrl+C).
+-   **Manual Overrides**: Delete or edit `.autoexcerpter_token_state.json` to synchronize with official dashboard totals if required.
+
+## Output Files
+
+AutoExcerpter generates organized outputs for each processed document, located in the configured output directory.
+
+**1. `<document_name>.txt` - Complete Transcription**
+
+Plain text file containing a metadata header (source file, total time, page count, model used), full verbatim transcription with markdown formatting, mathematical equations in LaTeX notation, page numbers marked with XML-style tags (`<page_number>15</page_number>`), footnotes in markdown format, preserved tables and multi-column layouts, and descriptions of visual elements.
+
+**2. `<document_name>_summary.docx` - Formatted Summary** (if summarization and DOCX output enabled)
+
+Professional DOCX document with page-by-page structured summaries, bullet-point extraction of main ideas, automatic exclusion of non-semantic pages, consolidated bibliography with deduplicated citations and page ranges, clickable hyperlinks to citations with DOI information, and LaTeX formulas converted to native Word equations (via MathML/OMML).
+
+**3. `<document_name>_summary.md` - Markdown Summary** (if summarization and Markdown output enabled)
+
+Version-control friendly Markdown file with the same content structure as the DOCX summary. LaTeX formulas are preserved as-is (`$...$` and `$$...$$`) for compatibility with MathJax/KaTeX. Compatible with Writage and other markdown-to-Word conversion tools.
+
+**4. JSON Log Files** (in `<document_name>_working_files/`)
+
+Detailed JSON logs for both transcription (`_transcription_log.json`) and summarization (`_summary_log.json`) phases, containing per-page processing metadata, timing, error information, and retry statistics. Useful for debugging, quality assurance, and audit trails. The working files directory is automatically deleted if `delete_temp_working_dir: true`.
+
+## Project Structure
+
+```
+AutoExcerpter/
+├── main.py                             # Entry point
+│
+├── config/                             # Configuration package
+│   ├── __init__.py                     # Curated public interface
+│   ├── app.py                          # Application settings (CLI_MODE, SUMMARIZE, paths, API keys)
+│   ├── loader.py                       # YAML loader for image_processing.yaml, concurrency.yaml, model.yaml
+│   ├── accessors.py                    # Typed accessors for concurrency/rate-limit/DPI settings
+│   ├── constants.py                    # Hardcoded defaults and named constants
+│   └── defaults/                       # User-editable YAML configs
+│       ├── app.yaml                    # Application settings and paths
+│       ├── model.yaml                  # LLM provider and model settings
+│       ├── concurrency.yaml            # API concurrency, rate limits, retries
+│       └── image_processing.yaml       # Image preprocessing and text cleaning
+│
+├── llm/                                # LLM client layer (multi-provider)
+│   ├── __init__.py                     # Curated public facade
+│   ├── client.py                       # Model factory (LLMConfig, get_chat_model)
+│   ├── base.py                         # LLMClientBase (package-private)
+│   ├── capabilities.py                 # Provider/model capability detection
+│   ├── rate_limit.py                   # Sliding-window rate limiter (package-private)
+│   ├── transcription.py                # TranscriptionManager
+│   ├── summary.py                      # SummaryManager
+│   ├── prompts.py                      # Prompt rendering + response parsing helpers
+│   └── resources/
+│       ├── prompts/                    # System prompt templates
+│       │   ├── transcription_system_prompt.txt
+│       │   ├── summary_system_prompt.txt
+│       │   ├── transcription_plain_text_prompt.txt
+│       │   └── summary_plain_text_prompt.txt
+│       └── schemas/                    # JSON schemas for structured outputs
+│           ├── transcription_schema.json
+│           └── summary_schema.json
+│
+├── imaging/                            # PDF rendering and image preprocessing
+│   ├── __init__.py
+│   ├── pdf.py                          # Extract PDF pages to JPEG images
+│   ├── preprocessing.py                # In-memory image preprocessing (ImageProcessor)
+│   └── _provider.py                    # Provider-specific image config helpers (private)
+│
+├── rendering/                          # Output rendering
+│   ├── __init__.py
+│   ├── text.py                         # Write transcription .txt file
+│   ├── summary.py                      # Prepare summary data (shared by docx/markdown writers)
+│   ├── docx.py                         # Generate .docx summary document
+│   ├── markdown.py                     # Generate .md summary document
+│   └── citations.py                    # Citation deduplication, OpenAlex enrichment, shared reference helpers
+│
+├── pipeline/                           # Orchestration
+│   ├── __init__.py                     # Curated public interface
+│   ├── transcriber.py                  # ItemTranscriber orchestrator
+│   ├── page_numbering.py               # Page-number correction (PageNumberProcessor)
+│   ├── resume.py                       # Resume/checkpoint logic (ResumeChecker, ProcessingState)
+│   ├── scanner.py                      # Input directory scanning (scan_input_path)
+│   ├── context.py                      # Hierarchical summary context resolution
+│   ├── paths.py                        # Windows-safe path helpers
+│   └── log.py                          # JSONL log file lifecycle management
+│
+├── cli/                                # Command-line interface
+│   ├── __init__.py                     # Curated public interface
+│   ├── args.py                         # Argparse schema and execution-mode resolution
+│   ├── display.py                      # Interactive display (item selection, processing summary, completion)
+│   ├── interaction.py                  # Terminal I/O primitives (print_*, prompt_*, Colors)
+│   ├── loop.py                         # Per-item processing loop + token-limit wait
+│   └── errors.py                       # Domain exceptions + error handlers
+│
+├── logger.py                           # Application-wide logging factory
+├── token_tracker.py                    # Daily token-budget tracker (singleton)
+├── text_cleaner.py                     # Post-transcription text cleanup pipeline
+├── app_types.py                        # Shared TypedDicts and frozen dataclasses
+│
+├── context/summary/                    # Default summary context (user-editable)
+│   └── general.txt                     # Global summarization focus topics
+│
+├── tests/                              # Test suite (1,204 tests)
+├── RELEASE_NOTES_v4.0.md               # Current release notes
+├── requirements.txt                    # Runtime dependencies
+└── requirements-dev.txt                # Development dependencies
+```
+
+## Advanced Topics
+
+### Performance Optimization
+
+**Maximizing Throughput:**
+
+1.  Set `concurrency_limit` in `concurrency.yaml` based on your provider tier (OpenAI: 50-150, Anthropic: 5-10)
+2.  Use `service_tier: flex` for batch processing (slower but 50% cheaper)
+3.  Increase `image_processing.concurrency_limit` to 24-48 on SSD systems
+4.  Use `llm_detail: auto` or `low` for straightforward documents
+5.  Set appropriate `target_dpi` (300 is usually optimal)
+
+**Memory Management:**
+
+-   Enable `delete_temp_working_dir: true` to clean up temporary files
+-   Process documents in batches rather than all at once
+-   Reduce `concurrency_limit` in `concurrency.yaml` if experiencing memory pressure
+-   Monitor system resources during processing
+
+### Cost Management
+
+**Reducing Processing Costs:**
+
+1.  **Use Flex Tier**: Set `service_tier: flex` for 40-50% cost savings
+2.  **Lower Image Quality**: Reduce `target_dpi` to 200-250 for clean documents
+3.  **Transcription-Only Mode**: Set `summarize: false` if summaries aren't needed
+4.  **Optimize Detail Level**: Use `llm_detail: low` for straightforward text
+5.  **Batch Processing**: Process multiple documents in one session to amortize startup costs
+
+**Cost Tracking:**
+
+Monitor your API usage at your provider's dashboard (e.g., [https://platform.openai.com/usage](https://platform.openai.com/usage)) to understand cost per page, impact of configuration settings, and optimal settings for your use cases.
+
+### Best Practices
+
+**Document Preparation:**
+
+-   Ensure scanned documents are clear and high-contrast
+-   Remove unnecessary blank pages before processing
+-   Verify PDFs are not already text-based (use native PDF text extraction if possible)
+-   Organize documents in logical folders for batch processing
+
+**Configuration Management:**
+
+-   Start with default settings and adjust based on results
+-   Test with a small document before processing large batches
+-   Keep separate configuration files for different document types
+-   Document your configuration choices for reproducibility
+
+**Quality Assurance:**
+
+-   Review transcription logs for errors and failed pages
+-   Spot-check transcriptions against source documents
+-   Verify citations are correctly extracted and deduplicated
+-   Check page number alignment in summaries
+
+**Security and Privacy:**
+
+-   Never commit API keys to version control (use environment variables)
+-   Be mindful of sensitive information in documents
+-   Review data usage policies for your chosen AI provider
+-   Keep temporary working directories secure during processing
+
+## Troubleshooting
+
+**Common Issues and Solutions:**
+
+**Issue: "No API key found in environment"**
+
+-   Ensure you have set the appropriate API key environment variable for your provider:
+    -   `OPENAI_API_KEY` for OpenAI models
+    -   `ANTHROPIC_API_KEY` for Claude models
+    -   `GOOGLE_API_KEY` for Gemini models
+    -   `OPENROUTER_API_KEY` for OpenRouter
+-   Verify the key is correct and has not been revoked
+-   Check that the environment variable is set in your current shell session
+
+**Issue: "Unsupported parameter" errors**
+
+-   The model may not support certain parameters (e.g., reasoning_effort on gpt-4o)
+-   AutoExcerpter should automatically filter unsupported parameters via capability guarding
+-   If you see this error, ensure you are using the latest version of the application
+
+**Issue: Rate limit errors (429 responses)**
+
+-   Reduce `concurrency_limit` in `concurrency.yaml` (try 2 or 3)
+-   Adjust `rate_limits` in `concurrency.yaml` to match your provider tier limits
+-   Set `service_tier: flex` for less aggressive rate limiting (OpenAI only)
+-   Check your API account for quota limits
+
+**Issue: Timeout errors**
+
+-   Increase `api_timeout` in `concurrency.yaml` (e.g., 600 for larger images)
+-   Reduce `target_dpi` in `image_processing.yaml` to decrease image size
+-   Use `llm_detail: low` for faster processing
+
+**Issue: Poor transcription quality**
+
+-   Increase `target_dpi` in `image_processing.yaml` (try 400 or 600)
+-   Set `llm_detail: high` for better accuracy
+-   Ensure source images/PDFs are high quality and legible
+-   Check that the correct language and formatting are used in source documents
+
+**Issue: Memory errors during processing**
+
+-   Reduce `concurrency_limit` in `concurrency.yaml` for both transcription and summary tasks
+-   Reduce `image_processing.concurrency_limit` to limit parallel image processing
+-   Process documents in smaller batches
+
+**Issue: "Permission denied" errors when deleting working files**
+
+-   Set `delete_temp_working_dir: false` to preserve working files
+-   Close any programs that might have files open (e.g., image viewers)
+-   Run the application with appropriate file system permissions
+
+**Issue: Missing or incorrect page numbers in summaries**
+
+-   Verify that page numbers are visible in the source document
+-   Check transcription output for `<page_number>X</page_number>` tags
+-   Ensure pages actually contain page numbers in headers/footers
+
+**Getting Help:**
+
+If you encounter issues not covered here:
+
+1.  Check the log files in the `_working_files/` directory for detailed error messages
+2.  Review your provider's API status page for service disruptions
+3.  Enable debug logging by modifying `logger.py`
+4.  Open an issue on the project repository with relevant log excerpts
+
+## Contributing
+
+Contributions to AutoExcerpter are welcome! Whether you are fixing bugs, adding features, improving documentation, or suggesting enhancements, your input is valuable.
+
+**Development Best Practices:**
+
+-   **Code Style**: Follow PEP 8 guidelines for Python code
+-   **Type Hints**: Use type annotations for function signatures
+-   **Documentation**: Add docstrings to all public functions and classes
+-   **Error Handling**: Include robust error handling with informative messages
+-   **Testing**: Write unit tests for new functionality
+-   **Modularity**: Maintain clear separation of concerns with well-defined interfaces
+-   **Logging**: Use the logger module for debugging information
+
+**Contribution Workflow:**
+
+1.  Fork the repository
+2.  Create a feature branch (`git checkout -b feature/your-feature-name`)
+3.  Make your changes with clear, descriptive commit messages
+4.  Test your changes thoroughly
+5.  Update documentation as needed
+6.  Submit a pull request with a detailed description of your changes
+
+**Areas for Contribution:**
+
+-   Support for additional LLM providers (AWS Bedrock, Cohere, Mistral, etc.)
+-   Enhanced image preprocessing algorithms
+-   Batch API integration for cost-optimized processing
+-   Additional unit and integration tests
+-   Performance optimizations
+-   User interface improvements
+-   Extended model capability profiles for new model releases
+-   See `RELEASE_NOTES_v4.0.md` for the architectural rationale behind the v4.0 deep-module restructure
+
+## License
+
+MIT License
+
+Copyright (c) 2026 Paul Goetz
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

@@ -1,0 +1,581 @@
+"""Citation management utilities for deduplication, tracking, and metadata enrichment."""
+
+from __future__ import annotations
+
+import hashlib
+import re
+import time
+from dataclasses import dataclass, field
+from typing import Any, TYPE_CHECKING
+
+import requests
+
+from config.logger import setup_logger
+
+logger = setup_logger(__name__)
+
+
+# ============================================================================
+# Page Range Formatting
+# ============================================================================
+
+def _format_page_range(pages: list[int]) -> str:
+    """Format a list of page numbers as a compact range string.
+
+    Examples:
+        [1, 2, 3, 5, 7, 8, 9] -> "pp. 1-3, 5, 7-9"
+        [5] -> "p. 5"
+    """
+    if not pages:
+        return ""
+
+    pages = sorted(set(pages))
+    if len(pages) == 1:
+        return f"p. {pages[0]}"
+
+    ranges = []
+    start = pages[0]
+    end = pages[0]
+
+    for page in pages[1:]:
+        if page == end + 1:
+            end = page
+        else:
+            if start == end:
+                ranges.append(str(start))
+            else:
+                ranges.append(f"{start}-{end}")
+            start = end = page
+
+    if start == end:
+        ranges.append(str(start))
+    else:
+        ranges.append(f"{start}-{end}")
+
+    return f"pp. {', '.join(ranges)}"
+
+
+# ============================================================================
+# OpenAlex Enrichment Helper (shared by DOCX and Markdown writers)
+# ============================================================================
+
+def enrich_if_enabled(citation_manager: "CitationManager") -> None:
+    """Run OpenAlex metadata enrichment if enabled in config.
+
+    Reads ``config.app.CITATION_ENABLE_OPENALEX`` and
+    ``config.app.CITATION_MAX_API_REQUESTS``; logs the decision.
+    """
+    from config import app as config  # deferred to avoid import cycles
+
+    if config.CITATION_ENABLE_OPENALEX:
+        citation_manager.enrich_with_metadata(
+            max_requests=config.CITATION_MAX_API_REQUESTS
+        )
+    else:
+        logger.info("OpenAlex enrichment disabled - skipping metadata lookup")
+
+# Constants for API configuration
+OPENALEX_API_BASE = "https://api.openalex.org"
+OPENALEX_POLITE_POOL_EMAIL = "your-email@example.com"  # Users should update this
+API_REQUEST_TIMEOUT = 10
+API_RETRY_DELAY = 1.0
+MAX_API_RETRIES = 3
+API_POLITE_DELAY = 0.1  # Delay between API calls to be polite
+# 429 budget-exhaustion: skip remaining enrichment if retryAfter exceeds this (seconds)
+BUDGET_EXHAUSTED_RETRY_AFTER_THRESHOLD = 300  # 5 minutes
+
+# Constants for citation matching
+MIN_AUTHOR_LENGTH = 3
+MIN_TITLE_LENGTH = 10
+MIN_YEAR_LENGTH = 4
+MATCH_RATIO_THRESHOLD = 0.3  # Minimum word overlap ratio for citation matching
+MAX_AUTHORS_TO_EXTRACT = 5  # Limit authors in metadata
+SEARCH_QUERY_MAX_LENGTH = 100  # Maximum length for search queries
+SEARCH_RESULTS_PER_PAGE = 5  # Candidates fetched per search; first matching wins
+PROGRESS_LOG_INTERVAL = 5  # Log progress every N citations
+
+
+@dataclass
+class Citation:
+    """Represents a single citation with metadata and page tracking."""
+
+    raw_text: str
+    pages: set[int] = field(default_factory=set)
+    normalized_key: str = ""
+    metadata: dict[str, Any] | None = None
+    doi: str | None = None
+    url: str | None = None
+
+    def __post_init__(self) -> None:
+        """Generate normalized key for deduplication."""
+        if not self.normalized_key:
+            self.normalized_key = self._generate_normalized_key()
+
+    def _generate_normalized_key(self) -> str:
+        """Create a normalized key for citation deduplication."""
+        # Start with lowercase text
+        text = self.raw_text.strip().lower()
+
+        # Remove URLs (http/https)
+        text = re.sub(r"https?://[^\s]+", "", text)
+
+        # Remove DOIs
+        text = re.sub(r"doi:\s*[\d.]+/[^\s]+", "", text)
+
+        # Remove page numbers in various formats: p. 123, pp. 123-145, (p. 123), (pp. 123-145)
+        text = re.sub(r"\(?\s*pp?\.\s*\d+[-–—]?\d*\s*\)?", "", text)
+
+        # Remove years in parentheses: (2002), (n.d.), (1984/1996), (forthcoming)
+        text = re.sub(
+            r"\(\s*(?:\d{4}(?:[-/]\d{4})?|n\.?d\.?|forthcoming)\s*\)", "", text
+        )
+
+        # Remove standalone years: 1984, 2002
+        text = re.sub(r"\b\d{4}\b", "", text)
+
+        # Remove "n.d." standalone
+        text = re.sub(r"\bn\.?\s*d\.?\b", "", text)
+
+        # Remove editor references: (Ed.), (Eds.), (Trans.)
+        text = re.sub(r"\(\s*(?:ed|eds|trans)\.?\s*\)", "", text, flags=re.IGNORECASE)
+
+        # Remove volume references: Vol. 4, Volume 4
+        text = re.sub(r"\b(?:vol|volume)\.?\s*\d+\b", "", text, flags=re.IGNORECASE)
+
+        # Remove issue/page references in journals: 63(3), 101,
+        text = re.sub(r"\d+\(\d+\)", "", text)
+
+        # Remove common publisher locations and publishers
+        text = re.sub(
+            r"\b(?:london|cambridge|oxford|new york|berkeley|chicago|press|university|publisher)\b",
+            "",
+            text,
+            flags=re.IGNORECASE,
+        )
+
+        # Remove common citation elements: [publisher], [Place of publication not identified]
+        text = re.sub(r"\[.*?\]", "", text)
+
+        # Remove remaining punctuation except spaces
+        text = re.sub(r'[,.:;()\[\]"\'–—]', " ", text)
+
+        # Normalize whitespace
+        text = re.sub(r"\s+", " ", text).strip()
+
+        # Create hash for efficient comparison
+        return hashlib.md5(text.encode("utf-8")).hexdigest()
+
+    def add_page(self, page: int) -> None:
+        """Add a page number to this citation."""
+        self.pages.add(page)
+
+    def get_sorted_pages(self) -> list[int]:
+        """Return sorted list of page numbers."""
+        return sorted(self.pages)
+
+    def get_page_range_str(self) -> str:
+        """Return a formatted string of page numbers/ranges."""
+        return _format_page_range(self.get_sorted_pages())
+
+
+class CitationManager:
+    """Manages citations across a document with deduplication and metadata enrichment."""
+
+    def __init__(self, polite_pool_email: str | None = None):
+        """
+        Initialize the citation manager.
+
+        Args:
+            polite_pool_email: Email for OpenAlex API polite pool access.
+        """
+        self.citations: dict[str, Citation] = {}
+        self.polite_pool_email = polite_pool_email or OPENALEX_POLITE_POOL_EMAIL
+        self._api_cache: dict[str, dict[str, Any] | None] = {}
+        self._openalex_budget_exhausted: bool = False
+
+    def add_citations(self, citations: list[str], page_number: int) -> None:
+        """
+        Add citations from a page, handling deduplication.
+
+        Args:
+            citations: List of citation strings from a page.
+            page_number: The page number where these citations appear.
+        """
+        for citation_text in citations:
+            if not citation_text or not citation_text.strip():
+                continue
+
+            # Create or retrieve citation
+            citation = Citation(raw_text=citation_text.strip())
+            normalized_key = citation.normalized_key
+
+            if normalized_key in self.citations:
+                # Citation already exists, just add the page
+                self.citations[normalized_key].add_page(page_number)
+            else:
+                # New citation
+                citation.add_page(page_number)
+                self.citations[normalized_key] = citation
+
+    def enrich_with_metadata(self, max_requests: int | None = None) -> None:
+        """
+        Enrich citations with metadata from OpenAlex API.
+
+        Args:
+            max_requests: Maximum number of API requests to make (None for unlimited).
+        """
+        logger.info("Enriching %d unique citations with metadata", len(self.citations))
+
+        requests_made = 0
+        processed = 0
+        for citation in self.citations.values():
+            processed += 1
+
+            # Log progress periodically
+            if processed % PROGRESS_LOG_INTERVAL == 0:
+                logger.info(
+                    "Processed %d/%d citations, enriched %d with metadata",
+                    processed,
+                    len(self.citations),
+                    requests_made,
+                )
+
+            if max_requests and requests_made >= max_requests:
+                logger.info("Reached maximum API requests limit (%d)", max_requests)
+                break
+
+            if self._openalex_budget_exhausted:
+                remaining = len(self.citations) - processed
+                logger.warning(
+                    "OpenAlex daily budget exhausted — skipping %d remaining citation(s).",
+                    remaining,
+                )
+                break
+
+            # Try to extract identifiable information
+            metadata = self._fetch_metadata_from_openalex(citation.raw_text)
+            if metadata:
+                citation.metadata = metadata
+                citation.doi = metadata.get("doi")
+                citation.url = metadata.get("url")
+                requests_made += 1
+
+                # Be polite to the API
+                time.sleep(API_POLITE_DELAY)
+
+        logger.info("Successfully enriched %d citations with metadata", requests_made)
+
+    def _fetch_metadata_from_openalex(self, citation_text: str) -> dict[str, Any] | None:
+        """
+        Fetch metadata for a citation from OpenAlex API.
+
+        Args:
+            citation_text: The citation text to search for.
+
+        Returns:
+            Dictionary with metadata if found, None otherwise.
+        """
+        # Check cache first
+        if citation_text in self._api_cache:
+            return self._api_cache[citation_text]
+
+        # Extract potential DOI from citation
+        doi = self._extract_doi(citation_text)
+        if doi:
+            result = self._query_openalex_by_doi(doi)
+            if result:
+                self._api_cache[citation_text] = result
+                return result
+
+        # Try searching by citation text
+        result = self._query_openalex_by_text(citation_text)
+        self._api_cache[citation_text] = result
+        return result
+
+    def _extract_doi(self, citation_text: str) -> str | None:
+        """Extract DOI from citation text if present."""
+        # Common DOI patterns
+        doi_patterns = [
+            r"doi:\s*(10\.\d{4,}/[^\s]+)",
+            r"https?://doi\.org/(10\.\d{4,}/[^\s]+)",
+            r"https?://dx\.doi\.org/(10\.\d{4,}/[^\s]+)",
+            r"\b(10\.\d{4,}/[^\s,;]+)",
+        ]
+
+        for pattern in doi_patterns:
+            match = re.search(pattern, citation_text, re.IGNORECASE)
+            if match:
+                doi = match.group(1).rstrip(".,;")
+                return doi
+
+        return None
+
+    def _make_openalex_request(
+        self, url: str, params: dict[str, Any], context_description: str = ""
+    ) -> dict[str, Any] | None:
+        """
+        Make a request to OpenAlex API with retry logic and error handling.
+
+        Args:
+            url: The API endpoint URL.
+            params: Query parameters.
+            context_description: Description for logging (e.g., "DOI 10.1234/abc").
+
+        Returns:
+            Response data if successful, None otherwise.
+        """
+        for attempt in range(MAX_API_RETRIES):
+            try:
+                response = requests.get(url, params=params, timeout=API_REQUEST_TIMEOUT)
+
+                # Log request URL on first attempt if not successful
+                if attempt == 0 and response.status_code != 200:
+                    logger.debug("OpenAlex request URL: %s", response.url)
+
+                if response.status_code == 200:
+                    result: dict[str, Any] = response.json()
+                    return result
+                elif response.status_code == 404:
+                    # 404 is expected when resource not found
+                    return None
+                elif response.status_code == 429:
+                    # Rate-limit or paid-tier budget exhaustion.
+                    try:
+                        error_detail = response.json()
+                    except Exception:
+                        error_detail = {}
+                    retry_after = int(error_detail.get("retryAfter", 0))
+                    if retry_after > BUDGET_EXHAUSTED_RETRY_AFTER_THRESHOLD:
+                        # Long retryAfter means budget is depleted for the day;
+                        # disable OpenAlex for the rest of this run.
+                        self._openalex_budget_exhausted = True
+                        logger.warning(
+                            "OpenAlex daily budget exhausted (retryAfter=%ds). "
+                            "Disabling OpenAlex enrichment for this run.",
+                            retry_after,
+                        )
+                    else:
+                        logger.warning(
+                            "OpenAlex rate limit hit for %s (retryAfter=%ds). "
+                            "Skipping this citation.",
+                            context_description,
+                            retry_after,
+                        )
+                    return None
+                elif response.status_code == 500:
+                    # Transient server error — retry with exponential backoff.
+                    delay = API_RETRY_DELAY * (2 ** attempt)
+                    if attempt < MAX_API_RETRIES - 1:
+                        logger.debug(
+                            "OpenAlex server error 500 for %s (attempt %d/%d); "
+                            "retrying in %.1fs.",
+                            context_description,
+                            attempt + 1,
+                            MAX_API_RETRIES,
+                            delay,
+                        )
+                        time.sleep(delay)
+                        continue
+                    else:
+                        logger.warning(
+                            "OpenAlex API returned status 500 for %s after %d attempts; "
+                            "giving up.",
+                            context_description,
+                            MAX_API_RETRIES,
+                        )
+                        return None
+                else:
+                    # Other unexpected client/server errors — log once and skip.
+                    try:
+                        error_detail = response.json()
+                        logger.warning(
+                            "OpenAlex API returned status %d for %s: %s",
+                            response.status_code,
+                            context_description,
+                            error_detail,
+                        )
+                    except Exception:
+                        logger.warning(
+                            "OpenAlex API returned status %d for %s",
+                            response.status_code,
+                            context_description,
+                        )
+                    return None
+            except requests.RequestException as e:
+                logger.warning(
+                    "Error querying OpenAlex for %s (attempt %d/%d): %s",
+                    context_description,
+                    attempt + 1,
+                    MAX_API_RETRIES,
+                    str(e),
+                )
+                if attempt < MAX_API_RETRIES - 1:
+                    time.sleep(API_RETRY_DELAY)
+            except Exception as e:
+                logger.warning(
+                    "Unexpected error querying OpenAlex for %s: %s",
+                    context_description,
+                    str(e),
+                )
+                return None
+
+        return None
+
+    def _query_openalex_by_doi(self, doi: str) -> dict[str, Any] | None:
+        """Query OpenAlex API using DOI."""
+        url = f"{OPENALEX_API_BASE}/works/https://doi.org/{doi}"
+        params = {"mailto": self.polite_pool_email}
+
+        data = self._make_openalex_request(url, params, f"DOI {doi}")
+        if data:
+            return self._extract_metadata_from_response(data)
+        return None
+
+    def _query_openalex_by_text(self, citation_text: str) -> dict[str, Any] | None:
+        """Query OpenAlex API using citation text search.
+
+        Fetches the top ``SEARCH_RESULTS_PER_PAGE`` candidates and returns
+        the first one whose title passes :meth:`_verify_citation_match`.
+        Requesting multiple candidates matters because OpenAlex's relevance
+        ranking is noisy for long-tail citations: the true match is often
+        rank 2-5 rather than rank 1.
+        """
+        # Extract key terms for better search
+        search_query = self._extract_search_terms(citation_text)
+        if not search_query or len(search_query) < 10:
+            return None
+
+        url = f"{OPENALEX_API_BASE}/works"
+        params = {
+            "search": search_query,
+            "mailto": self.polite_pool_email,
+            "per-page": SEARCH_RESULTS_PER_PAGE,
+        }
+
+        data = self._make_openalex_request(
+            url, params, f"search query: {search_query[:50]}"
+        )
+        if not data:
+            return None
+
+        results = data.get("results") or []
+        for candidate in results:
+            if self._verify_citation_match(citation_text, candidate):
+                return self._extract_metadata_from_response(candidate)
+
+        return None
+
+    def _extract_search_terms(self, citation_text: str) -> str:
+        """Extract key search terms from citation text.
+
+        Preferred strategy: take up to three author surnames followed by the
+        italicized (``*title*``) or quoted (``"title"``) title. Including
+        venue/publisher tokens (``Stanford University Press``) dilutes
+        relevance on the OpenAlex ``/works`` endpoint and can push the true
+        match off the first page of results. When no markup-delimited title
+        is present, fall back to the naive cleanup as a last resort.
+        """
+        # Extract italicized title (markdown *...*) or quoted title ("...")
+        title = ""
+        ital = re.search(r"\*([^*\n]{5,})\*", citation_text)
+        quoted = re.search(r'"([^"\n]{5,})"', citation_text)
+        if ital:
+            title = ital.group(1)
+        elif quoted:
+            title = quoted.group(1)
+
+        # Extract author surnames: first few Capitalized words (>=3 chars)
+        # appearing before the first year or opening parenthesis.
+        head = re.split(r"\(|\d{4}", citation_text, maxsplit=1)[0]
+        surnames = [
+            tok
+            for tok in re.findall(r"[A-Z][a-z]{2,}", head)
+            if tok.lower() not in {"ed", "eds", "the", "and", "of", "in", "on"}
+        ][:3]
+
+        if title and surnames:
+            combined = " ".join(surnames) + " " + title
+            # Strip OpenAlex search operators (`*`, `"`, `?`, `!`) that
+            # otherwise trigger 500 errors on /works.
+            combined = re.sub(r'[*"?!]', " ", combined)
+            combined = re.sub(r"\s+", " ", combined).strip()
+            return combined[:SEARCH_QUERY_MAX_LENGTH]
+
+        # Fallback: naive cleanup
+        text = re.sub(r"\([^)]*\)", "", citation_text)
+        text = re.sub(r"\[[^\]]*\]", "", text)
+        text = re.sub(r"\d{4}", "", text)
+        text = re.sub(r'[*"?!]', " ", text)
+        text = re.sub(r"[,.:;]", " ", text)
+        text = re.sub(r"\s+", " ", text).strip()
+        return text[:SEARCH_QUERY_MAX_LENGTH]
+
+    def _verify_citation_match(self, citation_text: str, work_data: dict[str, Any]) -> bool:
+        """Verify that OpenAlex result matches the citation."""
+        raw_title = work_data.get("title") or work_data.get("display_name") or ""
+        title = raw_title.lower()
+        citation_lower = citation_text.lower()
+
+        # Check if title appears in citation (at least 50% of title words)
+        if title:
+            title_words = set(re.findall(r"\w+", title))
+            title_words = {w for w in title_words if len(w) > 3}
+
+            if title_words:
+                citation_words = set(re.findall(r"\w+", citation_lower))
+                common_words = title_words & citation_words
+                match_ratio = len(common_words) / len(title_words)
+
+                return match_ratio >= MATCH_RATIO_THRESHOLD
+
+        return False
+
+    def _extract_metadata_from_response(self, work_data: dict[str, Any]) -> dict[str, Any]:
+        """Extract relevant metadata from OpenAlex API response."""
+        metadata: dict[str, Any] = {
+            "title": work_data.get("title"),
+            "doi": (
+                work_data.get("doi", "").replace("https://doi.org/", "")
+                if work_data.get("doi")
+                else None
+            ),
+            "publication_year": work_data.get("publication_year"),
+            "url": work_data.get("doi") or work_data.get("id"),
+            "authors": [],
+            "venue": None,
+        }
+
+        # Extract authors
+        authorships = work_data.get("authorships", [])
+        for authorship in authorships[:MAX_AUTHORS_TO_EXTRACT]:
+            author = authorship.get("author", {})
+            if author.get("display_name"):
+                metadata["authors"].append(author["display_name"])
+
+        # Extract venue
+        primary_location = work_data.get("primary_location", {})
+        if primary_location:
+            source = primary_location.get("source", {})
+            if source:
+                metadata["venue"] = source.get("display_name")
+
+        return metadata
+
+    def get_sorted_citations(self) -> list[Citation]:
+        """
+        Return citations sorted alphabetically by raw text.
+
+        Returns:
+            List of Citation objects sorted by citation text.
+        """
+        return sorted(self.citations.values(), key=lambda c: c.raw_text.lower())
+
+    def get_citations_with_pages(self) -> list[tuple[Citation, str]]:
+        """
+        Return citations with formatted page information.
+
+        Returns:
+            List of tuples (Citation, page_range_string).
+        """
+        citations = self.get_sorted_citations()
+        return [(citation, citation.get_page_range_str()) for citation in citations]
