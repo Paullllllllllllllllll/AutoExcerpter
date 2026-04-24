@@ -84,7 +84,10 @@ class SummaryManager(LLMClientBase):
         """
         # Initialize rate limiter with provider-agnostic configuration
         rate_limiter = RateLimiter(get_rate_limits())
-        super().__init__(model_name, provider, api_key, get_api_timeout(), rate_limiter)
+        super().__init__(
+            model_name, provider, api_key, get_api_timeout(), rate_limiter,
+            section_hint="summary_model",
+        )
 
         # Store custom endpoint capabilities (used for routing decisions)
         self.custom_capabilities = custom_capabilities

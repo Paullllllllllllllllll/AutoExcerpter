@@ -114,6 +114,8 @@ class LLMConfig:
         temperature: Model temperature (0.0 - 2.0)
         max_tokens: Maximum output tokens
         service_tier: OpenAI service tier ("flex", "default", "auto")
+        section_hint: YAML config section ("transcription_model" or "summary_model")
+            for disambiguating custom endpoints with different keys/URLs.
         extra_kwargs: Additional provider-specific parameters
     """
 
@@ -125,6 +127,7 @@ class LLMConfig:
     temperature: float | None = None
     max_tokens: int | None = None
     service_tier: str | None = None  # OpenAI-specific: "flex", "default", "auto"
+    section_hint: str | None = None
     extra_kwargs: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -170,12 +173,18 @@ def _infer_provider(model: str) -> ProviderType:
     return "openai"
 
 
-def _get_api_key(provider: ProviderType, config_key: str | None = None) -> str:
+def _get_api_key(
+    provider: ProviderType,
+    config_key: str | None = None,
+    section_hint: str | None = None,
+) -> str:
     """Get API key for the specified provider.
 
     Args:
         provider: Provider name
         config_key: Optional API key from configuration
+        section_hint: YAML section name (e.g. "transcription_model") to
+            disambiguate when multiple custom endpoints use different keys.
 
     Returns:
         API key string
@@ -190,7 +199,11 @@ def _get_api_key(provider: ProviderType, config_key: str | None = None) -> str:
     if provider == "custom":
         from modules.config_loader import get_config_loader
         model_cfg = get_config_loader().get_model_config()
-        for section_key in ("transcription_model", "summary_model"):
+        sections = (
+            (section_hint,) if section_hint
+            else ("transcription_model", "summary_model")
+        )
+        for section_key in sections:
             section = model_cfg.get(section_key, {})
             if section.get("provider") == "custom":
                 custom_cfg = section.get("custom_endpoint", {})
@@ -244,7 +257,7 @@ def get_chat_model(config: LLMConfig) -> BaseChatModel:
         raise ValueError(f"Unsupported provider: {provider}")
 
     # Get API key
-    api_key = _get_api_key(provider, config.api_key)
+    api_key = _get_api_key(provider, config.api_key, config.section_hint)
 
     # Parse model name (remove provider prefix if present)
     model_name = config.model
@@ -279,7 +292,11 @@ def get_chat_model(config: LLMConfig) -> BaseChatModel:
     elif provider == "custom":
         from modules.config_loader import get_config_loader
         model_cfg = get_config_loader().get_model_config()
-        for section_key in ("transcription_model", "summary_model"):
+        sections = (
+            (config.section_hint,) if config.section_hint
+            else ("transcription_model", "summary_model")
+        )
+        for section_key in sections:
             section = model_cfg.get(section_key, {})
             if section.get("provider") == "custom":
                 custom_cfg = section.get("custom_endpoint", {})

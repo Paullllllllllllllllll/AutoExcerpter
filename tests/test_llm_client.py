@@ -203,6 +203,75 @@ class TestGetApiKey:
             with pytest.raises(EnvironmentError, match="API key not found"):
                 _get_api_key("openai", None)
 
+    def test_custom_section_hint_transcription(self) -> None:
+        """section_hint selects the correct custom endpoint key."""
+        mock_cfg = {
+            "transcription_model": {
+                "provider": "custom",
+                "custom_endpoint": {"api_key_env_var": "TRANS_KEY"},
+            },
+            "summary_model": {
+                "provider": "custom",
+                "custom_endpoint": {"api_key_env_var": "SUM_KEY"},
+            },
+        }
+        with patch(
+            "modules.config_loader.get_config_loader"
+        ) as mock_loader, patch.dict(
+            os.environ,
+            {"TRANS_KEY": "trans-val", "SUM_KEY": "sum-val"},
+            clear=True,
+        ):
+            mock_loader.return_value.get_model_config.return_value = mock_cfg
+            result = _get_api_key("custom", None, section_hint="transcription_model")
+            assert result == "trans-val"
+
+    def test_custom_section_hint_summary(self) -> None:
+        """section_hint selects the summary endpoint key."""
+        mock_cfg = {
+            "transcription_model": {
+                "provider": "custom",
+                "custom_endpoint": {"api_key_env_var": "TRANS_KEY"},
+            },
+            "summary_model": {
+                "provider": "custom",
+                "custom_endpoint": {"api_key_env_var": "SUM_KEY"},
+            },
+        }
+        with patch(
+            "modules.config_loader.get_config_loader"
+        ) as mock_loader, patch.dict(
+            os.environ,
+            {"TRANS_KEY": "trans-val", "SUM_KEY": "sum-val"},
+            clear=True,
+        ):
+            mock_loader.return_value.get_model_config.return_value = mock_cfg
+            result = _get_api_key("custom", None, section_hint="summary_model")
+            assert result == "sum-val"
+
+    def test_custom_no_section_hint_returns_first(self) -> None:
+        """Without section_hint, returns the first matching key."""
+        mock_cfg = {
+            "transcription_model": {
+                "provider": "custom",
+                "custom_endpoint": {"api_key_env_var": "TRANS_KEY"},
+            },
+            "summary_model": {
+                "provider": "custom",
+                "custom_endpoint": {"api_key_env_var": "SUM_KEY"},
+            },
+        }
+        with patch(
+            "modules.config_loader.get_config_loader"
+        ) as mock_loader, patch.dict(
+            os.environ,
+            {"TRANS_KEY": "trans-val", "SUM_KEY": "sum-val"},
+            clear=True,
+        ):
+            mock_loader.return_value.get_model_config.return_value = mock_cfg
+            result = _get_api_key("custom", None)
+            assert result == "trans-val"
+
 
 class TestGetChatModel:
     """Tests for get_chat_model function."""

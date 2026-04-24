@@ -73,6 +73,22 @@ _JITTER = _RETRY_CONFIG.get("jitter", {})
 JITTER_MIN = _JITTER.get("min", 0.5)
 JITTER_MAX = _JITTER.get("max", 1.0)
 
+_ANTHROPIC_EFFORT_TO_BUDGET: dict[str, int] = {
+    "none": 0,
+    "low": 2048,
+    "medium": 4096,
+    "high": 8192,
+    "xhigh": 16384,
+}
+
+_GOOGLE_EFFORT_TO_BUDGET: dict[str, int] = {
+    "none": 0,
+    "low": 1024,
+    "medium": 4096,
+    "high": 8192,
+    "xhigh": 16384,
+}
+
 
 # ============================================================================
 # Output Text Extraction Chain
@@ -226,6 +242,7 @@ class LLMClientBase:
         rate_limiter: Any | None = None,
         max_retries: int = DEFAULT_MAX_RETRIES,
         service_tier: str | None = None,
+        section_hint: str | None = None,
     ) -> None:
         """
         Initialize the base LLM client.
@@ -239,6 +256,7 @@ class LLMClientBase:
             rate_limiter: Optional RateLimiter instance for request throttling.
             max_retries: Max retry attempts. LangChain handles exponential backoff automatically.
             service_tier: OpenAI service tier ("flex", "default", "auto"). OpenAI-only.
+            section_hint: YAML config section for custom endpoint disambiguation.
         """
         self.model_name = model_name
         self.provider = provider
@@ -254,6 +272,7 @@ class LLMClientBase:
             timeout=self.timeout,  # Use resolved timeout (never None)
             max_retries=0,  # Disable SDK retries; handled by _invoke_with_retry
             service_tier=service_tier,
+            section_hint=section_hint,
         )
 
         # Store the resolved provider
@@ -810,9 +829,47 @@ class LLMClientBase:
                 if isinstance(reasoning_cfg, dict) and "effort" in reasoning_cfg:
                     invoke_kwargs["reasoning"] = {"effort": reasoning_cfg["effort"]}
                     logger.debug(f"Added reasoning params for {self.model_name}")
+
+        # Anthropic-specific: extended thinking (Claude 4.5+, Opus models)
+        elif (
+            self.provider == "anthropic"
+            and capabilities.get("extended_thinking", False)
+        ):
+            if "reasoning" in self.model_config:
+                reasoning_cfg = self.model_config["reasoning"]
+                if isinstance(reasoning_cfg, dict) and "effort" in reasoning_cfg:
+                    effort = reasoning_cfg["effort"]
+                    budget = _ANTHROPIC_EFFORT_TO_BUDGET.get(effort)
+                    if budget is not None and budget > 0:
+                        invoke_kwargs["thinking"] = {
+                            "type": "enabled",
+                            "budget_tokens": budget,
+                        }
+                        logger.debug(
+                            f"Added Anthropic extended thinking for "
+                            f"{self.model_name}: budget_tokens={budget}"
+                        )
+
+        # Google-specific: thinking mode (Gemini 2.5+, 3.x)
+        elif self.provider == "google" and capabilities.get("thinking", False):
+            if "reasoning" in self.model_config:
+                reasoning_cfg = self.model_config["reasoning"]
+                if isinstance(reasoning_cfg, dict) and "effort" in reasoning_cfg:
+                    effort = reasoning_cfg["effort"]
+                    budget = _GOOGLE_EFFORT_TO_BUDGET.get(effort)
+                    if budget is not None and budget > 0:
+                        invoke_kwargs["thinking_config"] = {
+                            "thinking_budget": budget,
+                        }
+                        logger.debug(
+                            f"Added Google thinking for "
+                            f"{self.model_name}: thinking_budget={budget}"
+                        )
+
         elif "reasoning" in self.model_config:
             logger.debug(
-                f"Skipping reasoning params for {self.model_name} (not supported)"
+                f"Skipping reasoning params for {self.model_name} "
+                f"(not supported)"
             )
 
         # OpenAI-specific: text verbosity parameters (only GPT-5 family)

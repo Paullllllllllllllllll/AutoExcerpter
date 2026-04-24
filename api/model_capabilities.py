@@ -314,11 +314,33 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
         ),
     ),
     (
+        ("gpt-5.3-codex",),
+        "gpt-5.3-codex",
+        _OPENAI_REASONING_BASE,
+        dict(
+            supports_text_verbosity=True,
+            max_context_tokens=400000,
+            max_output_tokens=128000,
+        ),
+    ),
+    (
         ("gpt-5.3",),
         "gpt-5.3",
         _OPENAI_REASONING_BASE,
         dict(
             supports_text_verbosity=True,
+            max_context_tokens=400000,
+            max_output_tokens=128000,
+        ),
+    ),
+    (
+        ("gpt-5.2-pro",),
+        "gpt-5.2-pro",
+        _OPENAI_REASONING_BASE,
+        dict(
+            supports_text_verbosity=True,
+            supports_structured_output=False,
+            supports_json_mode=False,
             max_context_tokens=400000,
             max_output_tokens=128000,
         ),
@@ -354,7 +376,26 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
         ),
     ),
     # ===== OpenAI o-series reasoning models =====
+    (
+        ("o4-mini-deep-research",),
+        "o4-mini-deep-research",
+        _OPENAI_REASONING_BASE,
+        dict(
+            max_context_tokens=200000,
+            max_output_tokens=100000,
+        ),
+    ),
+    (("o4-mini",), "o4-mini", _OPENAI_REASONING_BASE, {}),
     (("o4",), "o4", _OPENAI_REASONING_BASE, {}),
+    (
+        ("o3-deep-research",),
+        "o3-deep-research",
+        _OPENAI_REASONING_BASE,
+        dict(
+            max_context_tokens=200000,
+            max_output_tokens=100000,
+        ),
+    ),
     (("o3-pro",), "o3-pro", _OPENAI_REASONING_BASE, {}),
     (
         ("o3-mini",),
@@ -383,6 +424,24 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
     # ===== OpenAI GPT-4.x standard models =====
     (("gpt-4o",), "gpt-4o", _OPENAI_STANDARD_BASE, {}),
     (
+        ("gpt-4.1-mini",),
+        "gpt-4.1-mini",
+        _OPENAI_STANDARD_BASE,
+        dict(
+            max_context_tokens=1000000,
+            max_output_tokens=16384,
+        ),
+    ),
+    (
+        ("gpt-4.1-nano",),
+        "gpt-4.1-nano",
+        _OPENAI_STANDARD_BASE,
+        dict(
+            max_context_tokens=1000000,
+            max_output_tokens=16384,
+        ),
+    ),
+    (
         ("gpt-4.1",),
         "gpt-4.1",
         _OPENAI_STANDARD_BASE,
@@ -410,6 +469,18 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
     ),
     # ===== Anthropic Claude models (most-specific first) =====
     (
+        ("claude-opus-4-7", "claude-opus-4.7"),
+        "claude-opus-4.7",
+        _ANTHROPIC_BASE,
+        dict(
+            is_reasoning_model=True,
+            supports_reasoning_effort=True,
+            supports_top_p=False,
+            max_context_tokens=1000000,
+            max_output_tokens=128000,
+        ),
+    ),
+    (
         ("claude-opus-4-6", "claude-opus-4.6"),
         "claude-opus-4.6",
         _ANTHROPIC_BASE,
@@ -417,7 +488,8 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
             is_reasoning_model=True,
             supports_reasoning_effort=True,
             supports_top_p=False,
-            max_output_tokens=32768,
+            max_context_tokens=1000000,
+            max_output_tokens=128000,
         ),
     ),
     (
@@ -428,7 +500,8 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
             is_reasoning_model=True,
             supports_reasoning_effort=True,
             supports_top_p=False,
-            max_output_tokens=16384,
+            max_context_tokens=1000000,
+            max_output_tokens=128000,
         ),
     ),
     (
@@ -439,7 +512,7 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
             is_reasoning_model=True,
             supports_reasoning_effort=True,
             supports_top_p=False,
-            max_output_tokens=32768,
+            max_output_tokens=64000,
         ),
     ),
     (
@@ -450,7 +523,8 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
             is_reasoning_model=True,
             supports_reasoning_effort=True,
             supports_top_p=False,
-            max_output_tokens=16384,
+            max_context_tokens=1000000,
+            max_output_tokens=64000,
         ),
     ),
     (
@@ -463,6 +537,7 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
             supports_top_p=False,
             supports_structured_output=False,
             supports_json_mode=False,
+            max_output_tokens=64000,
         ),
     ),
     (
@@ -519,6 +594,28 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
     ),
     (("claude",), "claude", _ANTHROPIC_BASE, {}),
     # ===== Google Gemini models (most-specific first) =====
+    (
+        ("gemini-3.1-pro", "gemini-3-1-pro"),
+        "gemini-3.1-pro",
+        _GOOGLE_BASE,
+        dict(
+            is_reasoning_model=True,
+            supports_reasoning_effort=True,
+            max_context_tokens=1048576,
+            max_output_tokens=65536,
+        ),
+    ),
+    (
+        ("gemini-3.1-flash-lite", "gemini-3-1-flash-lite"),
+        "gemini-3.1-flash-lite",
+        _GOOGLE_BASE,
+        dict(
+            is_reasoning_model=True,
+            supports_reasoning_effort=True,
+            max_context_tokens=1048576,
+            max_output_tokens=65536,
+        ),
+    ),
     (
         ("gemini-3-flash", "gemini-3.0-flash"),
         "gemini-3-flash",
@@ -577,7 +674,7 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
         dict(
             is_reasoning_model=True,
             supports_reasoning_effort=True,
-            max_output_tokens=32768,
+            max_output_tokens=65536,
         ),
     ),
     (("gemini-2.0", "gemini-2-0"), "gemini-2.0", _GOOGLE_BASE, {}),

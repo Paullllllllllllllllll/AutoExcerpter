@@ -89,7 +89,10 @@ class TranscriptionManager(LLMClientBase):
         Raises:
             ValueError: If the selected model doesn't support multimodal (image) input.
         """
-        super().__init__(model_name, provider, api_key, timeout, rate_limiter)
+        super().__init__(
+            model_name, provider, api_key, timeout, rate_limiter,
+            section_hint="transcription_model",
+        )
 
         # Store custom endpoint capabilities (used for routing decisions)
         self.custom_capabilities = custom_capabilities

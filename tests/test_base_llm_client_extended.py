@@ -924,6 +924,142 @@ class TestBuildInvokeKwargsExtended:
         kwargs = client._build_invoke_kwargs()
         assert "service_tier" not in kwargs
 
+    # --- Anthropic extended thinking ---
+
+    @patch(
+        "api.base_llm_client.get_model_capabilities",
+        return_value={
+            "max_tokens": True,
+            "reasoning": False,
+            "extended_thinking": True,
+            "thinking": False,
+            "text_verbosity": False,
+        },
+    )
+    def test_anthropic_extended_thinking_medium(self, _) -> None:
+        """Anthropic extended thinking maps medium effort to 4096."""
+        client = _make_client(
+            provider="anthropic",
+            model_name="claude-opus-4-6",
+            model_config={"reasoning": {"effort": "medium"}},
+            service_tier="",
+        )
+        kwargs = client._build_invoke_kwargs()
+        assert kwargs["thinking"] == {
+            "type": "enabled",
+            "budget_tokens": 4096,
+        }
+
+    @patch(
+        "api.base_llm_client.get_model_capabilities",
+        return_value={
+            "max_tokens": True,
+            "reasoning": False,
+            "extended_thinking": True,
+            "thinking": False,
+            "text_verbosity": False,
+        },
+    )
+    def test_anthropic_extended_thinking_high(self, _) -> None:
+        """Anthropic extended thinking maps high effort to 8192."""
+        client = _make_client(
+            provider="anthropic",
+            model_name="claude-opus-4-5",
+            model_config={"reasoning": {"effort": "high"}},
+            service_tier="",
+        )
+        kwargs = client._build_invoke_kwargs()
+        assert kwargs["thinking"] == {
+            "type": "enabled",
+            "budget_tokens": 8192,
+        }
+
+    @patch(
+        "api.base_llm_client.get_model_capabilities",
+        return_value={
+            "max_tokens": True,
+            "reasoning": False,
+            "extended_thinking": False,
+            "thinking": False,
+            "text_verbosity": False,
+        },
+    )
+    def test_anthropic_no_thinking_when_unsupported(self, _) -> None:
+        """No thinking kwargs when extended_thinking is False."""
+        client = _make_client(
+            provider="anthropic",
+            model_name="claude-sonnet-4",
+            model_config={"reasoning": {"effort": "medium"}},
+            service_tier="",
+        )
+        kwargs = client._build_invoke_kwargs()
+        assert "thinking" not in kwargs
+
+    @patch(
+        "api.base_llm_client.get_model_capabilities",
+        return_value={
+            "max_tokens": True,
+            "reasoning": False,
+            "extended_thinking": True,
+            "thinking": False,
+            "text_verbosity": False,
+        },
+    )
+    def test_anthropic_thinking_none_effort_omitted(self, _) -> None:
+        """Anthropic with effort='none' (budget 0) does not add thinking."""
+        client = _make_client(
+            provider="anthropic",
+            model_name="claude-opus-4-6",
+            model_config={"reasoning": {"effort": "none"}},
+            service_tier="",
+        )
+        kwargs = client._build_invoke_kwargs()
+        assert "thinking" not in kwargs
+
+    # --- Google thinking mode ---
+
+    @patch(
+        "api.base_llm_client.get_model_capabilities",
+        return_value={
+            "max_tokens": True,
+            "reasoning": False,
+            "extended_thinking": False,
+            "thinking": True,
+            "text_verbosity": False,
+        },
+    )
+    def test_google_thinking_medium(self, _) -> None:
+        """Google thinking mode maps medium effort to 4096."""
+        client = _make_client(
+            provider="google",
+            model_name="gemini-2.5-flash",
+            model_config={"reasoning": {"effort": "medium"}},
+            service_tier="",
+        )
+        kwargs = client._build_invoke_kwargs()
+        assert kwargs["thinking_config"] == {"thinking_budget": 4096}
+
+    @patch(
+        "api.base_llm_client.get_model_capabilities",
+        return_value={
+            "max_tokens": True,
+            "reasoning": False,
+            "extended_thinking": False,
+            "thinking": False,
+            "text_verbosity": False,
+        },
+    )
+    def test_google_no_thinking_when_unsupported(self, _) -> None:
+        """No thinking_config when thinking capability is False."""
+        client = _make_client(
+            provider="google",
+            model_name="gemini-2.0-flash",
+            model_config={"reasoning": {"effort": "medium"}},
+            service_tier="",
+        )
+        kwargs = client._build_invoke_kwargs()
+        assert "thinking_config" not in kwargs
+
 
 # ============================================================================
 # _report_token_usage — hardened (Gap 2)

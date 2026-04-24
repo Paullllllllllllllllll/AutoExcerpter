@@ -204,7 +204,7 @@ class TestDetectCapabilities:
     # --- OpenAI o-series ---
 
     def test_o4_capabilities(self) -> None:
-        caps = detect_capabilities("o4-mini")
+        caps = detect_capabilities("o4")
         assert caps.family == "o4"
         assert caps.is_reasoning_model is True
         assert caps.supports_reasoning_effort is True
@@ -253,7 +253,67 @@ class TestDetectCapabilities:
         assert caps.is_reasoning_model is True
         assert caps.supports_structured_output is False
 
+    def test_o4_mini(self) -> None:
+        caps = detect_capabilities("o4-mini")
+        assert caps.family == "o4-mini"
+        assert caps.is_reasoning_model is True
+        assert caps.supports_vision is True
+
+    def test_o4_mini_dated(self) -> None:
+        caps = detect_capabilities("o4-mini-2025-04-16")
+        assert caps.family == "o4-mini"
+
+    def test_o4_mini_deep_research(self) -> None:
+        caps = detect_capabilities("o4-mini-deep-research")
+        assert caps.family == "o4-mini-deep-research"
+        assert caps.is_reasoning_model is True
+        assert caps.max_context_tokens == 200000
+
+    def test_o3_deep_research(self) -> None:
+        caps = detect_capabilities("o3-deep-research")
+        assert caps.family == "o3-deep-research"
+        assert caps.is_reasoning_model is True
+        assert caps.max_context_tokens == 200000
+
+    def test_gpt53_codex(self) -> None:
+        caps = detect_capabilities("gpt-5.3-codex")
+        assert caps.family == "gpt-5.3-codex"
+        assert caps.is_reasoning_model is True
+        assert caps.supports_text_verbosity is True
+        assert caps.max_context_tokens == 400000
+
+    def test_gpt52_pro(self) -> None:
+        caps = detect_capabilities("gpt-5.2-pro")
+        assert caps.family == "gpt-5.2-pro"
+        assert caps.is_reasoning_model is True
+        assert caps.supports_text_verbosity is True
+        assert caps.supports_structured_output is False
+
+    def test_gpt41_mini(self) -> None:
+        caps = detect_capabilities("gpt-4.1-mini")
+        assert caps.family == "gpt-4.1-mini"
+        assert caps.is_reasoning_model is False
+        assert caps.supports_vision is True
+        assert caps.max_context_tokens == 1000000
+        assert caps.max_output_tokens == 16384
+
+    def test_gpt41_nano(self) -> None:
+        caps = detect_capabilities("gpt-4.1-nano")
+        assert caps.family == "gpt-4.1-nano"
+        assert caps.is_reasoning_model is False
+        assert caps.max_context_tokens == 1000000
+        assert caps.max_output_tokens == 16384
+
     # --- Anthropic Claude models ---
+
+    def test_claude_opus_47(self) -> None:
+        caps = detect_capabilities("claude-opus-4-7")
+        assert caps.family == "claude-opus-4.7"
+        assert caps.provider_name == "anthropic"
+        assert caps.is_reasoning_model is True
+        assert caps.supports_top_p is False
+        assert caps.max_context_tokens == 1000000
+        assert caps.max_output_tokens == 128000
 
     def test_claude_opus_46(self) -> None:
         caps = detect_capabilities("claude-opus-4-6")
@@ -261,19 +321,38 @@ class TestDetectCapabilities:
         assert caps.provider_name == "anthropic"
         assert caps.is_reasoning_model is True
         assert caps.supports_top_p is False
-        assert caps.max_output_tokens == 32768
+        assert caps.max_context_tokens == 1000000
+        assert caps.max_output_tokens == 128000
+
+    def test_claude_sonnet_46(self) -> None:
+        caps = detect_capabilities("claude-sonnet-4-6")
+        assert caps.family == "claude-sonnet-4.6"
+        assert caps.provider_name == "anthropic"
+        assert caps.is_reasoning_model is True
+        assert caps.max_context_tokens == 1000000
+        assert caps.max_output_tokens == 128000
+
+    def test_claude_opus_45(self) -> None:
+        caps = detect_capabilities("claude-opus-4-5")
+        assert caps.family == "claude-opus-4.5"
+        assert caps.is_reasoning_model is True
+        assert caps.max_context_tokens == 200000
+        assert caps.max_output_tokens == 64000
 
     def test_claude_sonnet_45(self) -> None:
         caps = detect_capabilities("claude-sonnet-4-5-20250929")
         assert caps.family == "claude-sonnet-4.5"
         assert caps.is_reasoning_model is True
         assert caps.supports_vision is True
+        assert caps.max_context_tokens == 1000000
+        assert caps.max_output_tokens == 64000
 
     def test_claude_haiku_45_no_structured(self) -> None:
         caps = detect_capabilities("claude-haiku-4-5")
         assert caps.family == "claude-haiku-4.5"
         assert caps.supports_structured_output is False
         assert caps.supports_json_mode is False
+        assert caps.max_output_tokens == 64000
 
     def test_claude_sonnet_4_not_reasoning(self) -> None:
         caps = detect_capabilities("claude-sonnet-4")
@@ -304,6 +383,21 @@ class TestDetectCapabilities:
 
     # --- Google Gemini models ---
 
+    def test_gemini_31_pro(self) -> None:
+        caps = detect_capabilities("gemini-3.1-pro-preview")
+        assert caps.family == "gemini-3.1-pro"
+        assert caps.provider_name == "google"
+        assert caps.is_reasoning_model is True
+        assert caps.max_context_tokens == 1048576
+        assert caps.max_output_tokens == 65536
+
+    def test_gemini_31_flash_lite(self) -> None:
+        caps = detect_capabilities("gemini-3.1-flash-lite-preview")
+        assert caps.family == "gemini-3.1-flash-lite"
+        assert caps.is_reasoning_model is True
+        assert caps.max_context_tokens == 1048576
+        assert caps.max_output_tokens == 65536
+
     def test_gemini_3_flash(self) -> None:
         caps = detect_capabilities("gemini-3-flash-preview")
         assert caps.family == "gemini-3-flash"
@@ -321,6 +415,7 @@ class TestDetectCapabilities:
         caps = detect_capabilities("gemini-2.5-flash")
         assert caps.family == "gemini-2.5-flash"
         assert caps.is_reasoning_model is True
+        assert caps.max_output_tokens == 65536
 
     def test_gemini_20_not_reasoning(self) -> None:
         caps = detect_capabilities("gemini-2.0-flash")
@@ -380,6 +475,21 @@ class TestDetectCapabilities:
     def test_openrouter_fallback(self) -> None:
         caps = detect_capabilities("some-provider/some-model")
         assert caps.family == "openrouter"
+        assert caps.provider_name == "openrouter"
+
+    # --- SUZ custom endpoint models (slash in name) ---
+
+    def test_suz_dots_mocr_detected_as_openrouter(self) -> None:
+        caps = detect_capabilities("rednote-hilab/dots.mocr")
+        assert caps.provider_name == "openrouter"
+        assert caps.supports_vision is True
+
+    def test_suz_dots_ocr_detected_as_openrouter(self) -> None:
+        caps = detect_capabilities("kristaller486/dots.ocr-1.5")
+        assert caps.provider_name == "openrouter"
+
+    def test_suz_nanonets_detected_as_openrouter(self) -> None:
+        caps = detect_capabilities("nanonets/Nanonets-OCR2-3B")
         assert caps.provider_name == "openrouter"
 
     # --- Fallback ---
