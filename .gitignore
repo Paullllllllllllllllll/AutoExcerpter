@@ -6,7 +6,7 @@
 modules/config/app.yaml
 modules/config/concurrency.yaml
 modules/config/image_processing.yaml
-modules/config/model.yaml
+# modules/config/model.yaml
 
 .coverage
 .windsurf
