@@ -1,0 +1,243 @@
+"""Tests for llm/base.py."""
+
+from __future__ import annotations
+
+from unittest.mock import patch
+
+from langchain_core.messages import AIMessage
+
+from llm.base import LLMClientBase
+
+
+class TestExtractOutputText:
+    def test_extract_output_text_from_ai_message_string(self) -> None:
+        msg = AIMessage(content=" hello ")
+        assert LLMClientBase._extract_output_text(msg) == "hello"
+
+    def test_extract_output_text_from_ai_message_blocks(self) -> None:
+        msg = AIMessage(
+            content=[
+                {"type": "text", "text": "hello"},
+                {"type": "output_text", "text": " world"},
+            ]
+        )
+        assert LLMClientBase._extract_output_text(msg) == "hello world"
+
+    def test_extract_output_text_from_output_text_attr(self) -> None:
+        class Obj:
+            output_text = "  hi  "
+
+        assert LLMClientBase._extract_output_text(Obj()) == "hi"
+
+
+class TestSchemaRetryDecision:
+    def test_should_retry_for_schema_flag_disabled(self) -> None:
+        client = LLMClientBase.__new__(LLMClientBase)
+        client.schema_retry_config = {"flag": {"enabled": False, "max_attempts": 3}}
+
+        should_retry, backoff, max_attempts = client._should_retry_for_schema_flag(
+            "flag", True, 0
+        )
+        assert should_retry is False
+        assert backoff == 0.0
+        assert max_attempts == 0
+
+    def test_should_retry_for_schema_flag_enabled_with_backoff(self) -> None:
+        client = LLMClientBase.__new__(LLMClientBase)
+        client.schema_retry_config = {
+            "flag": {
+                "enabled": True,
+                "max_attempts": 3,
+                "backoff_base": 1.0,
+                "backoff_multiplier": 2.0,
+            }
+        }
+
+        with patch("llm.base.random.uniform", return_value=1.0):
+            should_retry, backoff, max_attempts = client._should_retry_for_schema_flag(
+                "flag", True, 1
+            )
+
+        assert should_retry is True
+        assert backoff == 2.0
+        assert max_attempts == 3
+
+
+class TestExtractFromStructuredOutputWrapper:
+    """Tests for the with_structured_output(include_raw=True) extractor."""
+
+    def test_extract_parsed_dict(self) -> None:
+        """Parsed dict is serialised to JSON."""
+        data = {
+            "raw": AIMessage(content="raw text"),
+            "parsed": {"transcription": "hello", "flag": True},
+            "parsing_error": None,
+        }
+        result = LLMClientBase._extract_output_text(data)
+        assert '"transcription"' in result
+        assert '"hello"' in result
+
+    def test_fallback_to_raw_when_parsed_none(self) -> None:
+        """Falls back to raw AIMessage when parsed is None."""
+        data = {
+            "raw": AIMessage(content="fallback text"),
+            "parsed": None,
+            "parsing_error": "some error",
+        }
+        result = LLMClientBase._extract_output_text(data)
+        assert result == "fallback text"
+
+    def test_ignores_non_matching_dicts(self) -> None:
+        """Dicts without 'raw' key are not matched by the wrapper extractor."""
+        data = {"output_text": "normal dict"}
+        result = LLMClientBase._extract_output_text(data)
+        assert result == "normal dict"
+
+
+class TestCustomProviderRouting:
+    """Tests for custom provider structured output routing."""
+
+    def test_get_structured_chat_model_custom_returns_bare_model(self) -> None:
+        """Custom provider always returns bare chat_model."""
+        client = LLMClientBase.__new__(LLMClientBase)
+        client.provider = "custom"
+        client._output_schema = {"schema": {"type": "object"}}
+
+        sentinel = object()
+        client.chat_model = sentinel  # type: ignore[assignment]
+
+        result = client._get_structured_chat_model()
+        assert result is sentinel
+
+    def test_apply_structured_output_kwargs_mode_a(self) -> None:
+        """Mode A (supports_structured_output=True) adds response_format."""
+        from llm.types import CustomEndpointCapabilities
+
+        client = LLMClientBase.__new__(LLMClientBase)
+        client.provider = "custom"
+        client._output_schema = {
+            "name": "test",
+            "strict": True,
+            "schema": {"type": "object", "properties": {}},
+        }
+        client.custom_capabilities = CustomEndpointCapabilities(
+            supports_structured_output=True
+        )
+
+        kwargs: dict[str, object] = {}
+        client._apply_structured_output_kwargs(kwargs)
+        assert "response_format" in kwargs
+
+    def test_apply_structured_output_kwargs_mode_b(self) -> None:
+        """Mode B (use_plain_text_prompt=True) adds nothing."""
+        from llm.types import CustomEndpointCapabilities
+
+        client = LLMClientBase.__new__(LLMClientBase)
+        client.provider = "custom"
+        client._output_schema = {
+            "name": "test",
+            "strict": True,
+            "schema": {"type": "object", "properties": {}},
+        }
+        client.custom_capabilities = CustomEndpointCapabilities(
+            use_plain_text_prompt=True
+        )
+
+        kwargs: dict[str, object] = {}
+        client._apply_structured_output_kwargs(kwargs)
+        assert "response_format" not in kwargs
+
+    def test_build_invoke_kwargs_custom_uses_max_tokens(self) -> None:
+        """Custom provider routes to max_tokens (Chat Completions API)."""
+        client = LLMClientBase.__new__(LLMClientBase)
+        client.provider = "custom"
+        client.model_name = "org/model"
+        client.model_config = {"max_output_tokens": 4096}
+        client.service_tier = "auto"
+
+        with patch(
+            "llm.base.get_model_capabilities",
+            return_value={
+                "max_tokens": True,
+                "reasoning": False,
+                "text_verbosity": False,
+            },
+        ):
+            kwargs = client._build_invoke_kwargs()
+
+        assert kwargs.get("max_tokens") == 4096
+        assert "max_output_tokens" not in kwargs
+
+
+class TestBuildInvokeKwargs:
+    def test_build_invoke_kwargs_openai_capability_guarding(self) -> None:
+        client = LLMClientBase.__new__(LLMClientBase)
+        client.provider = "openai"
+        client.model_name = "gpt-5-mini"
+        client.model_config = {
+            "max_output_tokens": 123,
+            "reasoning": {"effort": "low"},
+            "text": {"verbosity": "low"},
+        }
+        client.service_tier = "flex"
+
+        with patch(
+            "llm.base.get_model_capabilities",
+            return_value={
+                "max_tokens": True,
+                "reasoning": True,
+                "text_verbosity": True,
+            },
+        ):
+            kwargs = client._build_invoke_kwargs()
+
+        assert kwargs["max_output_tokens"] == 123
+        assert kwargs["service_tier"] == "flex"
+        assert kwargs["reasoning"] == {"effort": "low"}
+        assert kwargs["text"] == {"verbosity": "low"}
+
+    def test_build_invoke_kwargs_skips_unsupported_reasoning_and_text(self) -> None:
+        client = LLMClientBase.__new__(LLMClientBase)
+        client.provider = "openai"
+        client.model_name = "gpt-4o"
+        client.model_config = {
+            "max_output_tokens": 123,
+            "reasoning": {"effort": "low"},
+            "text": {"verbosity": "low"},
+        }
+        client.service_tier = "flex"
+
+        with patch(
+            "llm.base.get_model_capabilities",
+            return_value={
+                "max_tokens": True,
+                "reasoning": False,
+                "text_verbosity": False,
+            },
+        ):
+            kwargs = client._build_invoke_kwargs()
+
+        assert kwargs["max_output_tokens"] == 123
+        assert kwargs["service_tier"] == "flex"
+        assert "reasoning" not in kwargs
+        assert "text" not in kwargs
+
+    def test_build_invoke_kwargs_anthropic_uses_max_tokens_key(self) -> None:
+        client = LLMClientBase.__new__(LLMClientBase)
+        client.provider = "anthropic"
+        client.model_name = "claude-sonnet-4-5"
+        client.model_config = {"max_output_tokens": 456}
+        client.service_tier = "auto"
+
+        with patch(
+            "llm.base.get_model_capabilities",
+            return_value={
+                "max_tokens": True,
+                "reasoning": False,
+                "text_verbosity": False,
+            },
+        ):
+            kwargs = client._build_invoke_kwargs()
+
+        assert kwargs["max_tokens"] == 456
+        assert "service_tier" not in kwargs
