@@ -1,4 +1,4 @@
-# AutoExcerpter v1.0.0
+# AutoExcerpter v1.0.1
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -170,7 +170,7 @@ Three capability patterns are available:
 
 ## Prerequisites
 
--   Python 3.10+
+-   Python 3.13+
 -   At least one API key: `OPENAI_API_KEY`,
     `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, or
     `OPENROUTER_API_KEY`
@@ -180,14 +180,7 @@ Three capability patterns are available:
 ```bash
 git clone https://github.com/yourusername/AutoExcerpter.git
 cd AutoExcerpter
-python -m venv .venv
-
-# Windows:
-.venv\Scripts\activate
-# macOS/Linux:
-source .venv/bin/activate
-
-pip install -r requirements.txt
+uv sync
 ```
 
 Set API keys as environment variables:
@@ -208,8 +201,8 @@ Configure paths in `config/defaults/app.yaml` and models in
 For development:
 
 ```bash
-pip install -r requirements-dev.txt
-python -m pytest
+uv sync --extra dev
+uv run pytest
 ```
 
 ## Usage
@@ -626,7 +619,9 @@ your provider's status page, or open an issue on the repository.
 This project uses semantic versioning. The commit history was
 squashed to a single baseline commit at v1.0.0 on 25 April
 2026. All prior development history was consolidated; version
-numbers before v1.0.0 do not exist.
+numbers before v1.0.0 do not exist. v1.0.1 migrates the
+project to `pyproject.toml` as the single source of truth for
+dependencies and tooling configuration.
 
 ## Contributing
 
