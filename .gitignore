@@ -4,6 +4,10 @@
 .claude/
 
 # User-specific runtime config (contains paths, emails, model preferences)
+config/defaults/app.yaml
+config/defaults/concurrency.yaml
+config/defaults/image_processing.yaml
+config/defaults/model.yaml
 
 .coverage
 .windsurf
