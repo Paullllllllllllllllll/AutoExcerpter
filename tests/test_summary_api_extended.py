@@ -873,5 +873,6 @@ class TestSummaryBuildModelInputsCustomProvider:
 
         user_msg = messages[1]
         assert isinstance(user_msg, HumanMessage)
-        assert isinstance(user_msg.content, list)
-        assert user_msg.content[0]["type"] == "text"
+        content = user_msg.content
+        assert isinstance(content, list)
+        assert content[0]["type"] == "text"  # type: ignore[index]

@@ -1,4 +1,4 @@
-# AutoExcerpter v1.0.1
+# AutoExcerpter v1.0.2
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -560,9 +560,9 @@ AutoExcerpter/
 │   ├── loop.py                      # Per-item processing loop
 │   └── errors.py                    # Domain exceptions
 ├── context/summary/general.txt      # Default summarization topics
-├── tests/                           # Test suite (1,204 tests)
-├── requirements.txt                 # Runtime dependencies
-└── requirements-dev.txt             # Dev dependencies (pytest, mypy)
+├── tests/                           # Test suite (1,207 tests)
+├── pyproject.toml                   # Project metadata and dependencies
+└── uv.lock                         # Pinned dependency lockfile
 ```
 
 ## Advanced Topics
@@ -621,7 +621,8 @@ squashed to a single baseline commit at v1.0.0 on 25 April
 2026. All prior development history was consolidated; version
 numbers before v1.0.0 do not exist. v1.0.1 migrates the
 project to `pyproject.toml` as the single source of truth for
-dependencies and tooling configuration.
+dependencies and tooling configuration. v1.0.2 resolves all
+pre-existing mypy strict-mode errors.
 
 ## Contributing
 

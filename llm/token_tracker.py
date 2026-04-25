@@ -38,7 +38,7 @@ from typing import Any
 from config import app as config
 from config.logger import setup_logger
 
-__all__ = ["DailyTokenTracker", "get_token_tracker"]
+__all__ = ["DailyTokenTracker", "get_token_tracker", "config"]
 
 logger = setup_logger(__name__)
 
