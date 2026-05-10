@@ -1,4 +1,4 @@
-# AutoExcerpter v1.1.1
+# AutoExcerpter v1.1.2
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -627,6 +627,8 @@ pre-existing mypy strict-mode errors.
 
 ## Changelog
 
+- **v1.1.2** (10 May 2026) -- add ruff linter and formatter
+    configuration; gitignore `CLAUDE.md`.
 - **v1.1.1** (10 May 2026) -- resolve all pre-existing mypy
     strict-mode errors across the codebase.
 - **v1.1.0** (10 May 2026) -- migrate build system to

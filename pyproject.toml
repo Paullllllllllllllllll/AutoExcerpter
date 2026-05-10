@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "autoexcerpter"
-version = "1.1.1"
+version = "1.1.2"
 description = "Document processing pipeline that transcribes and summarizes PDFs and image collections using vision-enabled LLMs"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -70,3 +70,17 @@ packages = [
     "pipeline",
     "rendering",
 ]
+
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+extend-include = ["*.ipynb"]
+extend-exclude = ["data/", "outputs/", "scratch", ".claude", "backup", "deprecated", "exploratory", "explorative", "extras"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+ignore = []
+
+[tool.ruff.format]
+quote-style = "double"
+docstring-code-format = false
