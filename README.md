@@ -1,4 +1,4 @@
-# AutoExcerpter v1.1.0
+# AutoExcerpter v1.1.1
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -13,32 +13,33 @@ citation-enriched bibliographies.
 
 ## Table of Contents
 
--   [Overview](#overview)
--   [Key Features](#key-features)
--   [Supported Models](#supported-models)
--   [How It Works](#how-it-works)
--   [Prerequisites](#prerequisites)
--   [Installation](#installation)
--   [Usage](#usage)
-    -   [Interactive Mode (Default)](#interactive-mode-default)
-    -   [CLI Mode](#cli-mode)
-    -   [Processing Modes](#processing-modes)
-    -   [Batch Processing](#batch-processing)
--   [Configuration](#configuration)
-    -   [Basic Configuration (app.yaml)](#basic-configuration-appyaml)
-    -   [Model Configuration (model.yaml)](#model-configuration-modelyaml)
-    -   [Concurrency Configuration (concurrency.yaml)](#concurrency-configuration-concurrencyyaml)
-    -   [Image Processing Configuration (image_processing.yaml)](#image-processing-configuration-image_processingyaml)
-    -   [Summary Context](#summary-context)
-    -   [Citation Management](#citation-management)
-    -   [Daily Token Limit](#daily-token-limit)
--   [Output Files](#output-files)
--   [Project Structure](#project-structure)
--   [Advanced Topics](#advanced-topics)
--   [Troubleshooting](#troubleshooting)
--   [Versioning](#versioning)
--   [Contributing](#contributing)
--   [License](#license)
+- [Overview](#overview)
+- [Key Features](#key-features)
+- [Supported Models](#supported-models)
+- [How It Works](#how-it-works)
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
+- [Usage](#usage)
+  - [Interactive Mode (Default)](#interactive-mode-default)
+  - [CLI Mode](#cli-mode)
+  - [Processing Modes](#processing-modes)
+  - [Batch Processing](#batch-processing)
+- [Configuration](#configuration)
+  - [Basic Configuration (app.yaml)](#basic-configuration-appyaml)
+  - [Model Configuration (model.yaml)](#model-configuration-modelyaml)
+  - [Concurrency Configuration (concurrency.yaml)](#concurrency-configuration-concurrencyyaml)
+  - [Image Processing Configuration (image_processing.yaml)](#image-processing-configuration-image_processingyaml)
+  - [Summary Context](#summary-context)
+  - [Citation Management](#citation-management)
+  - [Daily Token Limit](#daily-token-limit)
+- [Output Files](#output-files)
+- [Project Structure](#project-structure)
+- [Advanced Topics](#advanced-topics)
+- [Troubleshooting](#troubleshooting)
+- [Versioning](#versioning)
+- [Changelog](#changelog)
+- [Contributing](#contributing)
+- [License](#license)
 
 ## Overview
 
@@ -170,8 +171,8 @@ Three capability patterns are available:
 
 ## Prerequisites
 
--   Python 3.13+
--   At least one API key: `OPENAI_API_KEY`,
+- Python 3.13+
+- At least one API key: `OPENAI_API_KEY`,
     `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, or
     `OPENROUTER_API_KEY`
 
@@ -560,9 +561,9 @@ AutoExcerpter/
 │   ├── loop.py                      # Per-item processing loop
 │   └── errors.py                    # Domain exceptions
 ├── context/summary/general.txt      # Default summarization topics
-├── tests/                           # Test suite (1,204 tests)
-├── requirements.txt                 # Runtime dependencies
-└── requirements-dev.txt             # Dev dependencies (pytest, mypy)
+├── tests/                           # Test suite (1,207 tests)
+├── pyproject.toml                   # Project metadata and dependencies
+└── uv.lock                         # Pinned dependency lockfile
 ```
 
 ## Advanced Topics
@@ -621,7 +622,18 @@ squashed to a single baseline commit at v1.0.0 on 25 April
 2026. All prior development history was consolidated; version
 numbers before v1.0.0 do not exist. v1.1.0 migrates the
 project to `pyproject.toml` as the single source of truth for
-dependencies and tooling configuration.
+dependencies and tooling configuration. v1.1.1 resolves all
+pre-existing mypy strict-mode errors.
+
+## Changelog
+
+- **v1.1.1** (10 May 2026) -- resolve all pre-existing mypy
+    strict-mode errors across the codebase.
+- **v1.1.0** (10 May 2026) -- migrate build system to
+    `pyproject.toml` and `uv`; remove `requirements.txt`,
+    `mypy.ini`, and `pytest.ini`.
+- **v1.0.0** (25 April 2026) -- initial public release;
+    squashed baseline.
 
 ## Contributing
 

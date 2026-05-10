@@ -103,9 +103,7 @@ def _sanitize_schema_for_anthropic(schema: dict[str, Any]) -> dict[str, Any]:
 
     schema = copy.deepcopy(schema)
 
-    def _walk(node: Any) -> Any:
-        if not isinstance(node, dict):
-            return node
+    def _walk(node: dict[str, Any]) -> dict[str, Any]:
         if "type" in node and isinstance(node["type"], list):
             non_null = [t for t in node["type"] if t != "null"]
             node["type"] = non_null[0] if non_null else "string"
@@ -277,6 +275,7 @@ class LLMClientBase:
     service_tier: str
     schema_retry_config: dict[str, Any]
     _output_schema: dict[str, Any] | None
+    custom_capabilities: Any
 
     def __init__(
         self,
