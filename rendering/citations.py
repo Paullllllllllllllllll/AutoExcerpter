@@ -1,4 +1,5 @@
-"""Citation management utilities for deduplication, tracking, and metadata enrichment."""
+"""Citation management utilities for deduplication, tracking, and metadata
+enrichment."""
 
 from __future__ import annotations
 
@@ -18,6 +19,7 @@ logger = setup_logger(__name__)
 # ============================================================================
 # Page Range Formatting
 # ============================================================================
+
 
 def _format_page_range(pages: list[int]) -> str:
     """Format a list of page numbers as a compact range string.
@@ -59,7 +61,8 @@ def _format_page_range(pages: list[int]) -> str:
 # OpenAlex Enrichment Helper (shared by DOCX and Markdown writers)
 # ============================================================================
 
-def enrich_if_enabled(citation_manager: "CitationManager") -> None:
+
+def enrich_if_enabled(citation_manager: CitationManager) -> None:
     """Run OpenAlex metadata enrichment if enabled in config.
 
     Reads ``config.app.CITATION_ENABLE_OPENALEX`` and
@@ -73,6 +76,7 @@ def enrich_if_enabled(citation_manager: "CitationManager") -> None:
         )
     else:
         logger.info("OpenAlex enrichment disabled - skipping metadata lookup")
+
 
 # Constants for API configuration
 OPENALEX_API_BASE = "https://api.openalex.org"
@@ -122,7 +126,8 @@ class Citation:
         # Remove DOIs
         text = re.sub(r"doi:\s*[\d.]+/[^\s]+", "", text)
 
-        # Remove page numbers in various formats: p. 123, pp. 123-145, (p. 123), (pp. 123-145)
+        # Remove page numbers in various formats:
+        # p. 123, pp. 123-145, (p. 123), (pp. 123-145)
         text = re.sub(r"\(?\s*pp?\.\s*\d+[-–—]?\d*\s*\)?", "", text)
 
         # Remove years in parentheses: (2002), (n.d.), (1984/1996), (forthcoming)
@@ -147,13 +152,15 @@ class Citation:
 
         # Remove common publisher locations and publishers
         text = re.sub(
-            r"\b(?:london|cambridge|oxford|new york|berkeley|chicago|press|university|publisher)\b",
+            r"\b(?:london|cambridge|oxford|new york|berkeley|chicago"
+            r"|press|university|publisher)\b",
             "",
             text,
             flags=re.IGNORECASE,
         )
 
-        # Remove common citation elements: [publisher], [Place of publication not identified]
+        # Remove common citation elements: [publisher],
+        # [Place of publication not identified]
         text = re.sub(r"\[.*?\]", "", text)
 
         # Remove remaining punctuation except spaces
@@ -179,7 +186,8 @@ class Citation:
 
 
 class CitationManager:
-    """Manages citations across a document with deduplication and metadata enrichment."""
+    """Manages citations across a document with deduplication and metadata
+    enrichment."""
 
     def __init__(self, polite_pool_email: str | None = None):
         """
@@ -227,10 +235,7 @@ class CitationManager:
         logger.info("Enriching %d unique citations with metadata", len(self.citations))
 
         requests_made = 0
-        processed = 0
-        for citation in self.citations.values():
-            processed += 1
-
+        for processed, citation in enumerate(self.citations.values(), start=1):
             # Log progress periodically
             if processed % PROGRESS_LOG_INTERVAL == 0:
                 logger.info(
@@ -247,7 +252,8 @@ class CitationManager:
             if self._openalex_budget_exhausted:
                 remaining = len(self.citations) - processed
                 logger.warning(
-                    "OpenAlex daily budget exhausted — skipping %d remaining citation(s).",
+                    "OpenAlex daily budget exhausted — skipping %d "
+                    "remaining citation(s).",
                     remaining,
                 )
                 break
@@ -265,7 +271,9 @@ class CitationManager:
 
         logger.info("Successfully enriched %d citations with metadata", requests_made)
 
-    def _fetch_metadata_from_openalex(self, citation_text: str) -> dict[str, Any] | None:
+    def _fetch_metadata_from_openalex(
+        self, citation_text: str
+    ) -> dict[str, Any] | None:
         """
         Fetch metadata for a citation from OpenAlex API.
 
@@ -364,7 +372,7 @@ class CitationManager:
                     return None
                 elif response.status_code == 500:
                     # Transient server error — retry with exponential backoff.
-                    delay = API_RETRY_DELAY * (2 ** attempt)
+                    delay = API_RETRY_DELAY * (2**attempt)
                     if attempt < MAX_API_RETRIES - 1:
                         logger.debug(
                             "OpenAlex server error 500 for %s (attempt %d/%d); "
@@ -378,8 +386,8 @@ class CitationManager:
                         continue
                     else:
                         logger.warning(
-                            "OpenAlex API returned status 500 for %s after %d attempts; "
-                            "giving up.",
+                            "OpenAlex API returned status 500 for %s "
+                            "after %d attempts; giving up.",
                             context_description,
                             MAX_API_RETRIES,
                         )
@@ -510,7 +518,9 @@ class CitationManager:
         text = re.sub(r"\s+", " ", text).strip()
         return text[:SEARCH_QUERY_MAX_LENGTH]
 
-    def _verify_citation_match(self, citation_text: str, work_data: dict[str, Any]) -> bool:
+    def _verify_citation_match(
+        self, citation_text: str, work_data: dict[str, Any]
+    ) -> bool:
         """Verify that OpenAlex result matches the citation."""
         raw_title = work_data.get("title") or work_data.get("display_name") or ""
         title = raw_title.lower()
@@ -530,7 +540,9 @@ class CitationManager:
 
         return False
 
-    def _extract_metadata_from_response(self, work_data: dict[str, Any]) -> dict[str, Any]:
+    def _extract_metadata_from_response(
+        self, work_data: dict[str, Any]
+    ) -> dict[str, Any]:
         """Extract relevant metadata from OpenAlex API response."""
         metadata: dict[str, Any] = {
             "title": work_data.get("title"),

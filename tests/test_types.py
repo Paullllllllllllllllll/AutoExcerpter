@@ -6,15 +6,15 @@ from pathlib import Path
 
 import pytest
 
+from config.types import ConcurrencyConfig
 from llm.types import (
-    TranscriptionResult,
+    CustomEndpointCapabilities,
     PageInformation,
     SummaryContent,
     SummaryResult,
-    CustomEndpointCapabilities,
+    TranscriptionResult,
 )
 from pipeline.types import ItemSpec
-from config.types import ConcurrencyConfig
 
 
 class TestTranscriptionResult:
@@ -213,7 +213,7 @@ class TestConcurrencyConfig:
         """ConcurrencyConfig is immutable."""
         config = ConcurrencyConfig()
 
-        with pytest.raises(Exception):
+        with pytest.raises(AttributeError):
             config.image_processing_limit = 100  # type: ignore
 
 
@@ -228,40 +228,48 @@ class TestCustomEndpointCapabilities:
 
     def test_from_dict_mode_a(self) -> None:
         """Mode A: full structured output."""
-        caps = CustomEndpointCapabilities.from_dict({
-            "supports_vision": True,
-            "supports_structured_output": True,
-            "use_plain_text_prompt": False,
-        })
+        caps = CustomEndpointCapabilities.from_dict(
+            {
+                "supports_vision": True,
+                "supports_structured_output": True,
+                "use_plain_text_prompt": False,
+            }
+        )
         assert caps.supports_structured_output is True
         assert caps.use_plain_text_prompt is False
 
     def test_from_dict_mode_b(self) -> None:
         """Mode B: plain text."""
-        caps = CustomEndpointCapabilities.from_dict({
-            "supports_vision": True,
-            "supports_structured_output": False,
-            "use_plain_text_prompt": True,
-        })
+        caps = CustomEndpointCapabilities.from_dict(
+            {
+                "supports_vision": True,
+                "supports_structured_output": False,
+                "use_plain_text_prompt": True,
+            }
+        )
         assert caps.supports_structured_output is False
         assert caps.use_plain_text_prompt is True
 
     def test_from_dict_mode_c(self) -> None:
         """Mode C: prompt-guided JSON."""
-        caps = CustomEndpointCapabilities.from_dict({
-            "supports_vision": True,
-            "supports_structured_output": False,
-            "use_plain_text_prompt": False,
-        })
+        caps = CustomEndpointCapabilities.from_dict(
+            {
+                "supports_vision": True,
+                "supports_structured_output": False,
+                "use_plain_text_prompt": False,
+            }
+        )
         assert caps.supports_structured_output is False
         assert caps.use_plain_text_prompt is False
 
     def test_plain_text_forces_no_structured_output(self) -> None:
         """use_plain_text_prompt=True forces supports_structured_output=False."""
-        caps = CustomEndpointCapabilities.from_dict({
-            "supports_structured_output": True,
-            "use_plain_text_prompt": True,
-        })
+        caps = CustomEndpointCapabilities.from_dict(
+            {
+                "supports_structured_output": True,
+                "use_plain_text_prompt": True,
+            }
+        )
         assert caps.supports_structured_output is False
         assert caps.use_plain_text_prompt is True
 
@@ -274,7 +282,7 @@ class TestCustomEndpointCapabilities:
 
     def test_frozen(self) -> None:
         caps = CustomEndpointCapabilities()
-        with pytest.raises(Exception):
+        with pytest.raises(AttributeError):
             caps.supports_vision = False  # type: ignore
 
 

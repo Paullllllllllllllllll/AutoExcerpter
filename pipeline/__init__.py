@@ -3,7 +3,8 @@
 Public interface:
 
 - ``ItemTranscriber`` — processes a single PDF / image folder end-to-end.
-- ``ResumeChecker``, ``ProcessingState``, ``ResumeResult`` — resume-from-interrupt state machine.
+- ``ResumeChecker``, ``ProcessingState``, ``ResumeResult`` — resume-from-interrupt
+  state machine.
 - ``scan_input_path``, ``is_pdf_file``, ``is_supported_image`` — input discovery.
 - ``ItemSpec`` — descriptor for a PDF or image folder to process.
 

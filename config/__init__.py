@@ -27,10 +27,10 @@ from config.accessors import (
 )
 from config.loader import (
     CONFIG_DIR,
-    ConfigLoader,
     PROJECT_ROOT,
     PROMPTS_DIR,
     SCHEMAS_DIR,
+    ConfigLoader,
     get_config_loader,
 )
 

@@ -13,12 +13,10 @@ This file complements test_transcribe_api.py by covering:
 from __future__ import annotations
 
 import json
-import time
 from collections import deque
-from pathlib import Path
 from collections.abc import Generator
-from typing import Any
-from unittest.mock import MagicMock, mock_open, patch, PropertyMock
+from pathlib import Path
+from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -73,7 +71,7 @@ def _make_manager(**overrides) -> TranscriptionManager:
 
 
 @pytest.fixture
-def mock_all_init_deps() -> Generator[MagicMock, None, None]:
+def mock_all_init_deps() -> Generator[MagicMock]:
     """Patch all dependencies needed by TranscriptionManager.__init__."""
     with (
         patch("llm.base.get_chat_model") as mock_gcm,
@@ -110,7 +108,6 @@ class TestTranscriptionManagerInit:
     def test_init_multimodal_model(self, mock_all_init_deps) -> None:
         """Initializes without warning for multimodal model."""
         schema_data = json.dumps(_MOCK_SCHEMA)
-        prompt_data = _MOCK_PROMPT
 
         with (
             patch("pathlib.Path.exists", return_value=True),
@@ -129,7 +126,9 @@ class TestTranscriptionManagerInit:
         "llm.transcription.get_model_capabilities",
         return_value={"multimodal": False, "max_tokens": True},
     )
-    def test_init_warns_for_non_multimodal(self, mock_caps, mock_timeout, mock_gcm) -> None:
+    def test_init_warns_for_non_multimodal(
+        self, mock_caps, mock_timeout, mock_gcm
+    ) -> None:
         """Logs warning when model does not support multimodal input."""
         mock_gcm.return_value = MagicMock()
 
@@ -151,7 +150,7 @@ class TestTranscriptionManagerInit:
             }
             mock_cl.return_value = loader
 
-            mgr = TranscriptionManager(
+            TranscriptionManager(
                 model_name="text-davinci-003",
                 provider="openai",
                 api_key="test-key",
@@ -312,7 +311,7 @@ class TestParseTranscriptionFromText:
         """Empty text returns error message."""
         mgr = _make_manager()
         result = mgr._parse_transcription_from_text("", "page_001.png")
-        assert "[transcription error: page_001.png]" == result
+        assert result == "[transcription error: page_001.png]"
 
     def test_empty_text_no_image_name(self) -> None:
         """Empty text with no image name uses placeholder."""

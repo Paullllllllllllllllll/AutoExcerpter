@@ -51,7 +51,8 @@ def setup_argparse() -> argparse.Namespace:
         "--resume",
         action="store_true",
         default=None,
-        help="Skip files whose output already exists (default behavior). Overrides resume_mode in config.",
+        help="Skip files whose output already exists (default behavior)."
+        " Overrides resume_mode in config.",
     )
     resume_group.add_argument(
         "--force",
@@ -69,26 +70,30 @@ def setup_argparse() -> argparse.Namespace:
             nargs="?",
             type=str,
             default=None,
-            help="Path to PDF file, image folder, or directory containing PDFs/image folders (relative or absolute).",
+            help="Path to PDF file, image folder, or directory containing"
+            " PDFs/image folders (relative or absolute).",
         )
         parser.add_argument(
             "output",
             nargs="?",
             type=str,
             default=None,
-            help="Output directory path for transcriptions and summaries (relative or absolute).",
+            help="Output directory path for transcriptions and summaries"
+            " (relative or absolute).",
         )
         parser.add_argument(
             "--input-path",
             type=str,
             default=None,
-            help="Named input path (same as positional input). Overrides positional input if both are provided.",
+            help="Named input path (same as positional input)."
+            " Overrides positional input if both are provided.",
         )
         parser.add_argument(
             "--output-path",
             type=str,
             default=None,
-            help="Named output path (same as positional output). Overrides positional output if both are provided.",
+            help="Named output path (same as positional output)."
+            " Overrides positional output if both are provided.",
         )
         parser.add_argument(
             "--all",
@@ -99,13 +104,15 @@ def setup_argparse() -> argparse.Namespace:
             "--select",
             type=str,
             default=None,
-            help="Select items by number (e.g., '1,3,5'), range (e.g., '1-5'), or filename pattern (e.g., 'Mennell').",
+            help="Select items by number (e.g., '1,3,5'), range (e.g., '1-5'),"
+            " or filename pattern (e.g., 'Mennell').",
         )
         parser.add_argument(
             "--context",
             type=str,
             default=None,
-            help="Summary context: topics to focus on during summarization (e.g., 'Food History, Wages, Early Modern').",
+            help="Summary context: topics to focus on during summarization"
+            " (e.g., 'Food History, Wages, Early Modern').",
         )
         parser.add_argument(
             "--summarize",
@@ -117,7 +124,8 @@ def setup_argparse() -> argparse.Namespace:
             "--cleanup",
             action=argparse.BooleanOptionalAction,
             default=None,
-            help="Enable/disable cleanup of temporary working directory. Overrides delete_temp_working_dir in app.yaml.",
+            help="Enable/disable cleanup of temporary working directory."
+            " Overrides delete_temp_working_dir in app.yaml.",
         )
         parser.add_argument(
             "--model",
@@ -159,7 +167,8 @@ def setup_argparse() -> argparse.Namespace:
             "--verbosity",
             choices=VERBOSITY_CHOICES,
             default=None,
-            help="Set output verbosity for both models (currently GPT-5 OpenAI models).",
+            help="Set output verbosity for both models"
+            " (currently GPT-5 OpenAI models).",
         )
         parser.add_argument(
             "--transcription-verbosity",
@@ -233,7 +242,8 @@ def setup_argparse() -> argparse.Namespace:
             "--input",
             type=str,
             default=config.INPUT_FOLDER_PATH,
-            help="Path to the folder containing PDFs and/or image folders, or path to a single PDF/image folder.",
+            help="Path to the folder containing PDFs and/or image folders,"
+            " or path to a single PDF/image folder.",
         )
 
     args = parser.parse_args()
@@ -253,12 +263,10 @@ def setup_argparse() -> argparse.Namespace:
 def _parse_execution_mode(
     args: argparse.Namespace,
 ) -> tuple[Path, Path, bool, str | None, str | None, str]:
-    """Parse execution mode and return input path, output path, process_all flag, select pattern, context, and resume mode."""
+    """Parse execution mode and return input path, output path, process_all flag,
+    select pattern, context, and resume mode."""
     # Resolve resume mode from CLI flags (default: "skip")
-    if getattr(args, "force", None):
-        resume_mode = "overwrite"
-    else:
-        resume_mode = "skip"
+    resume_mode = "overwrite" if getattr(args, "force", None) else "skip"
 
     if config.CLI_MODE:
         # CLI mode: use command line arguments
@@ -315,13 +323,15 @@ def _apply_app_config_overrides(args: argparse.Namespace) -> None:
     if getattr(args, "summarize", None) is not None:
         config.SUMMARIZE = args.summarize
         logger.info(
-            "CLI override: summarize=%s", args.summarize,
+            "CLI override: summarize=%s",
+            args.summarize,
         )
 
     if getattr(args, "cleanup", None) is not None:
         config.DELETE_TEMP_WORKING_DIR = args.cleanup
         logger.info(
-            "CLI override: delete_temp_working_dir=%s", args.cleanup,
+            "CLI override: delete_temp_working_dir=%s",
+            args.cleanup,
         )
 
 
@@ -452,9 +462,7 @@ def _build_cli_model_overrides(args: argparse.Namespace) -> dict[str, Any]:
             overrides, "transcription_model", ["provider"], transcription_provider
         )
     if summary_provider:
-        _set_model_override(
-            overrides, "summary_model", ["provider"], summary_provider
-        )
+        _set_model_override(overrides, "summary_model", ["provider"], summary_provider)
 
     return overrides
 

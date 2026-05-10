@@ -1,8 +1,8 @@
 """Image preprocessing utilities for OCR optimization.
 
-This module provides image processing functionality optimized for multiple LLM Vision APIs
-(OpenAI, Google Gemini, Anthropic Claude) and OCR quality. All processing can be done
-in-memory to avoid disk I/O overhead.
+This module provides image processing functionality optimized for multiple LLM Vision
+APIs (OpenAI, Google Gemini, Anthropic Claude) and OCR quality. All processing can be
+done in-memory to avoid disk I/O overhead.
 
 Key Features:
 1. **Provider-Specific Preprocessing**: Different resize strategies per provider:
@@ -39,21 +39,21 @@ from typing import Any
 
 from PIL import Image, ImageOps
 
-from config.loader import get_config_loader
 from config.constants import (
-    SUPPORTED_IMAGE_EXTENSIONS,
-    DEFAULT_LOW_MAX_SIDE_PX,
-    DEFAULT_HIGH_TARGET_WIDTH,
     DEFAULT_HIGH_TARGET_HEIGHT,
+    DEFAULT_HIGH_TARGET_WIDTH,
     DEFAULT_JPEG_QUALITY,
+    DEFAULT_LOW_MAX_SIDE_PX,
+    SUPPORTED_IMAGE_EXTENSIONS,
     WHITE_BACKGROUND_COLOR,
 )
+from config.loader import get_config_loader
+from config.logger import setup_logger
 from imaging._provider import (
+    ModelType,
     detect_model_type,
     get_image_config_section_name,
-    ModelType,
 )
-from config.logger import setup_logger
 
 logger = setup_logger(__name__)
 
@@ -154,7 +154,8 @@ class ImageProcessor:
 
         Args:
             image: The input image.
-            detail: The desired level of detail ('low', 'high', 'auto', 'medium', 'ultra_high').
+            detail: The desired level of detail ('low', 'high', 'auto', 'medium',
+                'ultra_high').
             img_cfg: The image configuration dictionary.
             model_type: The model type ('openai', 'google', 'anthropic').
 
@@ -184,10 +185,9 @@ class ImageProcessor:
             return ImageProcessor._resize_box_fit(image, img_cfg)
 
     @staticmethod
-    def _resize_max_side(
-        image: Image.Image, max_side: int
-    ) -> Image.Image:
-        """Cap longest side, preserving aspect ratio (shared by low-detail and Anthropic)."""
+    def _resize_max_side(image: Image.Image, max_side: int) -> Image.Image:
+        """Cap longest side, preserving aspect ratio (shared by low-detail and
+        Anthropic)."""
         w, h = image.size
         longest = max(w, h)
 
@@ -246,13 +246,13 @@ class ImageProcessor:
 
     def handle_transparency(self, image: Image.Image) -> Image.Image:
         """Handle transparency by pasting the image onto a white background."""
-        if self.img_cfg.get("handle_transparency", True):
-            if image.mode in ("RGBA", "LA") or (
-                image.mode == "P" and "transparency" in image.info
-            ):
-                background = Image.new("RGB", image.size, WHITE_BACKGROUND_COLOR)
-                background.paste(image, mask=image.split()[-1])
-                return background
+        if self.img_cfg.get("handle_transparency", True) and (
+            image.mode in ("RGBA", "LA")
+            or (image.mode == "P" and "transparency" in image.info)
+        ):
+            background = Image.new("RGB", image.size, WHITE_BACKGROUND_COLOR)
+            background.paste(image, mask=image.split()[-1])
+            return background
         return image
 
     def _get_detail_param(self) -> str:
@@ -285,19 +285,18 @@ class ImageProcessor:
             Preprocessed PIL Image.
         """
         # Handle transparency
-        if img_cfg.get("handle_transparency", True):
-            if pil_img.mode in ("RGBA", "LA") or (
-                pil_img.mode == "P" and "transparency" in pil_img.info
-            ):
-                background = Image.new("RGB", pil_img.size, WHITE_BACKGROUND_COLOR)
-                mask = pil_img.split()[-1] if pil_img.mode in ("RGBA", "LA") else None
-                background.paste(pil_img, mask=mask)
-                pil_img = background
+        if img_cfg.get("handle_transparency", True) and (
+            pil_img.mode in ("RGBA", "LA")
+            or (pil_img.mode == "P" and "transparency" in pil_img.info)
+        ):
+            background = Image.new("RGB", pil_img.size, WHITE_BACKGROUND_COLOR)
+            mask = pil_img.split()[-1] if pil_img.mode in ("RGBA", "LA") else None
+            background.paste(pil_img, mask=mask)
+            pil_img = background
 
         # Grayscale conversion
-        if img_cfg.get("grayscale_conversion", True):
-            if pil_img.mode != "L":
-                pil_img = ImageOps.grayscale(pil_img)
+        if img_cfg.get("grayscale_conversion", True) and pil_img.mode != "L":
+            pil_img = ImageOps.grayscale(pil_img)
 
         # Get detail parameter based on model type
         if model_type == "google":
@@ -308,9 +307,7 @@ class ImageProcessor:
             detail = img_cfg.get("llm_detail", "high") or "high"
 
         # Resize with provider-specific strategy
-        pil_img = ImageProcessor.resize_for_detail(
-            pil_img, detail, img_cfg, model_type
-        )
+        pil_img = ImageProcessor.resize_for_detail(pil_img, detail, img_cfg, model_type)
 
         return pil_img
 
@@ -335,7 +332,8 @@ class ImageProcessor:
                 img.save(jpg_output_path, format="JPEG", quality=jpeg_quality)
                 logger.debug(
                     f"Saved processed image {jpg_output_path.name} size={img.size} "
-                    f"quality={jpeg_quality} detail={detail} model_type={self.model_type}"
+                    f"quality={jpeg_quality} detail={detail}"
+                    f" model_type={self.model_type}"
                 )
             return f"Processed and saved: {jpg_output_path.name}"
         except Exception as e:

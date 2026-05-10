@@ -96,15 +96,12 @@ class CustomEndpointCapabilities:
         supports_structured_output=False.
         """
         supports_vision = bool(data.get("supports_vision", True))
-        supports_structured_output = bool(
-            data.get("supports_structured_output", False)
-        )
+        supports_structured_output = bool(data.get("supports_structured_output", False))
         use_plain_text_prompt = bool(data.get("use_plain_text_prompt", False))
 
         if use_plain_text_prompt and supports_structured_output:
             logger.warning(
-                "use_plain_text_prompt=true forces "
-                "supports_structured_output=false"
+                "use_plain_text_prompt=true forces supports_structured_output=false"
             )
             supports_structured_output = False
 

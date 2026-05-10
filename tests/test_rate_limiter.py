@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import time
 import threading
-from unittest.mock import patch
-
-import pytest
+import time
 
 from llm.rate_limit import RateLimiter
 
@@ -271,9 +268,7 @@ class TestAdaptiveBackoff:
 
         # Next request should wait longer due to multiplier
         # (The actual wait is multiplied by error_multiplier)
-        start = time.time()
         limiter.wait_for_capacity()
-        elapsed = time.time() - start
 
         # Should have some wait (rate limited)
         assert limiter.total_requests == 3

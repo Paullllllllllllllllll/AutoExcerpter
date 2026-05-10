@@ -2,34 +2,24 @@
 
 from __future__ import annotations
 
-import json
-from datetime import datetime
-from pathlib import Path
 from typing import Any
-from unittest.mock import patch, MagicMock
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 from rendering.docx import (
-    parse_latex_in_text,
     normalize_latex_whitespace,
+    parse_latex_in_text,
     simplify_problematic_latex,
-)
-from rendering.summary import (
-    sanitize_for_xml,
-    _extract_summary_payload,
-    _page_information,
-    _is_meaningful_summary,
-    _should_render_bullets,
-    _get_structure_types,
-    filter_empty_pages,
-    PAGE_TYPES_WITH_BULLETS,
-    STRUCTURE_PAGE_TYPE_ORDER,
-    format_page_heading,
-    int_to_roman,
 )
 from rendering.markdown import (
     create_markdown_summary,
+)
+from rendering.summary import (
+    _extract_summary_payload,
+    _is_meaningful_summary,
+    _page_information,
+    format_page_heading,
+    int_to_roman,
+    sanitize_for_xml,
 )
 
 
@@ -58,7 +48,7 @@ class TestSanitizeForXml:
         assert "\x01" not in result
         assert "\x02" not in result
         assert "\x03" not in result
-        assert "testtext" == result
+        assert result == "testtext"
 
     def test_preserves_tab(self) -> None:
         """Tab character is preserved."""
@@ -557,8 +547,6 @@ class TestFileManagerIntegration:
     def test_docx_creation_imports(self) -> None:
         """Required imports for DOCX creation are available."""
         from docx import Document
-        from docx.shared import Pt
-        from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 
         # Should not raise
         doc = Document()
@@ -567,7 +555,6 @@ class TestFileManagerIntegration:
     def test_latex_conversion_imports(self) -> None:
         """Required imports for LaTeX conversion are available."""
         from latex2mathml.converter import convert as latex_to_mathml
-        import mathml2omml
 
         # Test basic conversion
         mathml = latex_to_mathml("x")

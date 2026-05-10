@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import patch, MagicMock
-import pytest
+from unittest.mock import MagicMock, patch
 
 from rendering.citations import (
     Citation,
@@ -249,7 +248,9 @@ class TestCitationManagerEnrichment:
 
             mock_fetch.assert_called()
 
-    def test_enrich_with_metadata_respects_limit(self, sample_citations: list[str]) -> None:
+    def test_enrich_with_metadata_respects_limit(
+        self, sample_citations: list[str]
+    ) -> None:
         """Enrichment respects max_requests limit."""
         manager = CitationManager()
         manager.add_citations(sample_citations, page_number=1)
@@ -268,7 +269,9 @@ class TestCitationManagerEnrichment:
 
         assert call_count == 1
 
-    def test_extract_metadata_from_response(self, mock_openalex_response: dict[str, Any]) -> None:
+    def test_extract_metadata_from_response(
+        self, mock_openalex_response: dict[str, Any]
+    ) -> None:
         """Metadata is extracted correctly from API response."""
         manager = CitationManager()
 
@@ -314,9 +317,7 @@ class TestCitationManagerAPIRequest:
         mock_response.status_code = 200
         mock_response.json.return_value = {"results": []}
 
-        with patch(
-            "rendering.citations.requests.get", return_value=mock_response
-        ):
+        with patch("rendering.citations.requests.get", return_value=mock_response):
             result = manager._make_openalex_request(
                 "https://api.openalex.org/works", {"search": "test"}, "test query"
             )
@@ -330,9 +331,7 @@ class TestCitationManagerAPIRequest:
         mock_response = MagicMock()
         mock_response.status_code = 404
 
-        with patch(
-            "rendering.citations.requests.get", return_value=mock_response
-        ):
+        with patch("rendering.citations.requests.get", return_value=mock_response):
             result = manager._make_openalex_request(
                 "https://api.openalex.org/works/invalid", {}, "invalid DOI"
             )
@@ -357,11 +356,11 @@ class TestCitationManagerAPIRequest:
             response.json.return_value = {"results": []}
             return response
 
-        with patch("rendering.citations.requests.get", side_effect=mock_get):
-            with patch("rendering.citations.time.sleep"):  # Skip delays
-                result = manager._make_openalex_request(
-                    "https://api.openalex.org/works", {}, "test"
-                )
+        with (
+            patch("rendering.citations.requests.get", side_effect=mock_get),
+            patch("rendering.citations.time.sleep"),
+        ):
+            manager._make_openalex_request("https://api.openalex.org/works", {}, "test")
 
         assert call_count >= 2  # At least one retry
 

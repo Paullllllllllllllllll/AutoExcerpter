@@ -7,8 +7,8 @@ This module provides functions to scan directories and identify processable item
 from __future__ import annotations
 
 import os
-from pathlib import Path
 from collections.abc import Iterable
+from pathlib import Path
 
 from config.constants import SUPPORTED_IMAGE_EXTENSIONS
 from config.logger import setup_logger

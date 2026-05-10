@@ -22,14 +22,13 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from llm.base import LLMClientBase
-from llm.client import ProviderType
-from llm.rate_limit import RateLimiter
 from config.accessors import get_api_timeout, get_rate_limits
-from llm.prompts import render_prompt_with_schema, strip_markdown_code_block
 from config.loader import PROMPTS_DIR, SCHEMAS_DIR
 from config.logger import setup_logger
-
+from llm.base import LLMClientBase
+from llm.client import ProviderType
+from llm.prompts import render_prompt_with_schema, strip_markdown_code_block
+from llm.rate_limit import RateLimiter
 from llm.types import CustomEndpointCapabilities
 
 logger = setup_logger(__name__)
@@ -40,9 +39,7 @@ SUMMARY_PROMPT_FILE = "summary_system_prompt.txt"
 PLAIN_TEXT_SUMMARY_PROMPT_FILE = "summary_plain_text_prompt.txt"
 
 # Required top-level keys in the summary JSON schema response
-SUMMARY_REQUIRED_KEYS = frozenset(
-    {"page_information", "bullet_points", "references"}
-)
+SUMMARY_REQUIRED_KEYS = frozenset({"page_information", "bullet_points", "references"})
 
 
 class SummaryManager(LLMClientBase):
@@ -84,7 +81,11 @@ class SummaryManager(LLMClientBase):
         # Initialize rate limiter with provider-agnostic configuration
         rate_limiter = RateLimiter(get_rate_limits())
         super().__init__(
-            model_name, provider, api_key, get_api_timeout(), rate_limiter,
+            model_name,
+            provider,
+            api_key,
+            get_api_timeout(),
+            rate_limiter,
             section_hint="summary_model",
         )
 
@@ -120,7 +121,7 @@ class SummaryManager(LLMClientBase):
             # Schema is always loaded
             schema_path = (SCHEMAS_DIR / SUMMARY_SCHEMA_FILE).resolve()
             if schema_path.exists():
-                with open(schema_path, "r", encoding="utf-8") as f:
+                with open(schema_path, encoding="utf-8") as f:
                     self.summary_schema = json.load(f)
                 logger.info(f"Loaded summary schema from {SUMMARY_SCHEMA_FILE}")
             else:
@@ -140,7 +141,7 @@ class SummaryManager(LLMClientBase):
             # Load prompt
             prompt_path = (PROMPTS_DIR / prompt_file).resolve()
             if prompt_path.exists():
-                with open(prompt_path, "r", encoding="utf-8") as f:
+                with open(prompt_path, encoding="utf-8") as f:
                     self.summary_system_prompt_text = f.read()
                 logger.info(
                     f"Loaded summary system prompt "
@@ -189,7 +190,9 @@ class SummaryManager(LLMClientBase):
 
         return result
 
-    def _build_model_inputs(self, transcription: str) -> tuple[list[Any], dict[str, Any]]:
+    def _build_model_inputs(
+        self, transcription: str
+    ) -> tuple[list[Any], dict[str, Any]]:
         """Build messages and invocation kwargs for summary generation."""
         # Prepare system prompt with schema
         schema_obj = (
@@ -220,13 +223,9 @@ class SummaryManager(LLMClientBase):
         self, summary_json: dict[str, Any], page_num: int
     ) -> None:
         """Ensure page_information structure is correct in the summary JSON."""
-        if "page_information" not in summary_json:
-            summary_json["page_information"] = {
-                "page_number_integer": page_num,
-                "page_number_type": "arabic",
-                "page_types": ["content"],
-            }
-        elif not isinstance(summary_json["page_information"], dict):
+        if "page_information" not in summary_json or not isinstance(
+            summary_json["page_information"], dict
+        ):
             summary_json["page_information"] = {
                 "page_number_integer": page_num,
                 "page_number_type": "arabic",
@@ -285,7 +284,9 @@ class SummaryManager(LLMClientBase):
 
                 # Application-level retry with per-attempt token tracking
                 response = self._invoke_with_retry(
-                    structured_model, messages, invoke_kwargs,
+                    structured_model,
+                    messages,
+                    invoke_kwargs,
                     f"Summary for page {page_num}",
                 )
 
@@ -350,8 +351,7 @@ class SummaryManager(LLMClientBase):
                         # Not a custom endpoint -- raise so the outer
                         # except block can handle it.
                         raise ValueError(
-                            f"Invalid summary JSON for page {page_num}: "
-                            f"{reason}"
+                            f"Invalid summary JSON for page {page_num}: {reason}"
                         )
                 else:
                     # Parse JSON
@@ -365,7 +365,7 @@ class SummaryManager(LLMClientBase):
                         )
                         raise ValueError(
                             f"Invalid JSON in API response: {json_err}"
-                        )
+                        ) from json_err
 
                 # Ensure page_information structure is correct
                 self._ensure_page_information_structure(summary_json, page_num)

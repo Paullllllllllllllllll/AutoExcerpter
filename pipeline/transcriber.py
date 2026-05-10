@@ -8,33 +8,37 @@ from typing import Any
 
 from tqdm import tqdm
 
-from llm import TranscriptionManager, SummaryManager
-from config.loader import get_config_loader
 from config import app as config
-from config.constants import (
-    DEFAULT_MODEL,
-    EMPTY_PAGE_MARKER,
-    NO_TRANSCRIPTION_MARKER,
-    MIN_SAMPLES_FOR_ETA,
-    RECENT_SAMPLES_FOR_ETA,
-    ETA_BLEND_WEIGHT_OVERALL,
-    ETA_BLEND_WEIGHT_RECENT,
-)
 from config.accessors import (
     get_api_timeout,
     get_target_dpi,
     get_transcription_concurrency,
 )
+from config.constants import (
+    DEFAULT_MODEL,
+    EMPTY_PAGE_MARKER,
+    ETA_BLEND_WEIGHT_OVERALL,
+    ETA_BLEND_WEIGHT_RECENT,
+    MIN_SAMPLES_FOR_ETA,
+    NO_TRANSCRIPTION_MARKER,
+    RECENT_SAMPLES_FOR_ETA,
+)
+from config.loader import get_config_loader
 from config.logger import setup_logger
-from pipeline.paths import create_safe_directory_name, create_safe_log_filename
-from pipeline.text_cleaner import clean_transcription
-from pipeline.context import resolve_summary_context, format_context_for_prompt
-from llm.types import CustomEndpointCapabilities
-from rendering import create_docx_summary, create_markdown_summary, write_transcription_to_text
-from pipeline.log import append_to_log, finalize_log_file, initialize_log_file
 from imaging import extract_pdf_pages_to_images, get_image_paths_from_folder
+from llm import SummaryManager, TranscriptionManager
+from llm.types import CustomEndpointCapabilities
+from pipeline.context import format_context_for_prompt, resolve_summary_context
+from pipeline.log import append_to_log, finalize_log_file, initialize_log_file
 from pipeline.page_numbering import PageNumberProcessor
+from pipeline.paths import create_safe_directory_name, create_safe_log_filename
 from pipeline.resume import load_transcription_results_from_log
+from pipeline.text_cleaner import clean_transcription
+from rendering import (
+    create_docx_summary,
+    create_markdown_summary,
+    write_transcription_to_text,
+)
 
 logger = setup_logger(__name__)
 
@@ -112,12 +116,11 @@ class ItemTranscriber:
         if self.transcription_provider == "custom":
             custom_endpoint_cfg = transcription_cfg.get("custom_endpoint", {})
             caps_dict = custom_endpoint_cfg.get("capabilities", {})
-            transcription_custom_caps = CustomEndpointCapabilities.from_dict(
-                caps_dict
-            )
+            transcription_custom_caps = CustomEndpointCapabilities.from_dict(caps_dict)
             logger.info(
-                f"Custom transcription endpoint: "
-                f"structured_output={transcription_custom_caps.supports_structured_output}, "
+                "Custom transcription endpoint: "
+                "structured_output="
+                f"{transcription_custom_caps.supports_structured_output}, "
                 f"plain_text={transcription_custom_caps.use_plain_text_prompt}, "
                 f"vision={transcription_custom_caps.supports_vision}"
             )
@@ -177,7 +180,8 @@ class ItemTranscriber:
         # Page number processor for adjusting and sorting summary page numbers
         self.page_number_processor = PageNumberProcessor()
 
-        # Image preprocessing is handled within imaging.preprocessing inside the transcription manager.
+        # Image preprocessing is handled within imaging.preprocessing inside the
+        # transcription manager.
 
     def _get_list_of_images_to_transcribe(self) -> list[Path]:
         if self.input_type == "pdf":
@@ -269,9 +273,7 @@ class ItemTranscriber:
         return payload
 
     @staticmethod
-    def _compute_page_num(
-        page_num_model: Any, fallback_index: int
-    ) -> tuple[bool, int]:
+    def _compute_page_num(page_num_model: Any, fallback_index: int) -> tuple[bool, int]:
         """Return (has_valid_model_page_num, page_num_to_use)."""
         has_valid = isinstance(page_num_model, int)
         return has_valid, page_num_model if has_valid else fallback_index + 1
@@ -313,9 +315,7 @@ class ItemTranscriber:
                     transcription_text, page_num_to_use
                 )
             summary_error = (
-                summary_data.get("error")
-                if isinstance(summary_data, dict)
-                else None
+                summary_data.get("error") if isinstance(summary_data, dict) else None
             )
         else:
             error_msg = transcription_result.get("error", "Unknown error")
@@ -378,9 +378,7 @@ class ItemTranscriber:
                 "processing_time" in transcription_result
                 and "error" not in transcription_result
             ):
-                self.transcription_times.append(
-                    transcription_result["processing_time"]
-                )
+                self.transcription_times.append(transcription_result["processing_time"])
 
             status = (
                 "SUCCESS"
@@ -391,7 +389,8 @@ class ItemTranscriber:
             eta_str = self._calculate_eta(processed_count_ref[0], total_images)
 
             logger.debug(
-                f"Processed {processed_count_ref[0]}/{total_images} - Item {item_num_str} - Status: {status} - {eta_str}"
+                f"Processed {processed_count_ref[0]}/{total_images} "
+                f"- Item {item_num_str} - Status: {status} - {eta_str}"
             )
             transcription_results.append(transcription_result)
             return transcription_result
@@ -439,23 +438,27 @@ class ItemTranscriber:
 
             if skipped_page_count > 0:
                 logger.info(
-                    f"Page-level resume: {skipped_page_count} page(s) already transcribed, "
-                    f"{len(pending)} page(s) remaining"
+                    f"Page-level resume: {skipped_page_count} page(s) already "
+                    f"transcribed, {len(pending)} page(s) remaining"
                 )
 
         if not image_paths_with_indices:
             logger.info(
-                "All pages already transcribed (page-level resume). Skipping transcription."
+                "All pages already transcribed (page-level resume). "
+                "Skipping transcription."
             )
             transcription_results.sort(
                 key=lambda x: x.get("original_input_order_index", 0)
             )
             return transcription_results, summary_results
 
+        suffix = " and summarization" if config.SUMMARIZE else ""
+        resume_note = (
+            f" ({skipped_page_count} skipped via resume)" if skipped_page_count else ""
+        )
         logger.info(
-            f"Starting transcription{' and summarization' if config.SUMMARIZE else ''} of "
-            f"{len(image_paths_with_indices)} images"
-            f"{f' ({skipped_page_count} skipped via resume)' if skipped_page_count else ''}..."
+            f"Starting transcription{suffix} of "
+            f"{len(image_paths_with_indices)} images{resume_note}..."
         )
 
         if config.SUMMARIZE and self.summary_manager:
@@ -568,8 +571,10 @@ class ItemTranscriber:
             return
 
         self.total_items_to_transcribe = len(image_paths_to_process)
+        suffix = " and summarization" if config.SUMMARIZE else ""
         logger.info(
-            f"Prepared {self.total_items_to_transcribe} images for transcription{' and summarization' if config.SUMMARIZE else ''}."
+            f"Prepared {self.total_items_to_transcribe} images "
+            f"for transcription{suffix}."
         )
 
         # Initialize log file with a header
@@ -629,7 +634,8 @@ class ItemTranscriber:
 
             # Save summaries to output files if summarization is enabled
             if config.SUMMARIZE and summary_results:
-                # Step 1: Adjust page numbers and sort (uses page_number_type for unnumbered detection)
+                # Step 1: Adjust page numbers and sort
+                # (uses page_number_type for unnumbered detection)
                 adjusted_summary_results = (
                     self.page_number_processor.adjust_and_sort_page_numbers(
                         summary_results
@@ -666,12 +672,14 @@ class ItemTranscriber:
                     self.transcription_times
                 )
                 logger.info(
-                    f"  Average API processing time per successful image: {avg_api_time:.2f}s"
+                    "  Average API processing time per successful image: "
+                    f"{avg_api_time:.2f}s"
                 )
             if total_elapsed_time > 0 and final_success_count > 0:
                 throughput_iph = (final_success_count / total_elapsed_time) * 3600
                 logger.info(
-                    f"  Overall throughput for this item: {throughput_iph:.1f} successful images/hour"
+                    f"  Overall throughput for this item: "
+                    f"{throughput_iph:.1f} successful images/hour"
                 )
             logger.info(f"  Final transcription output: {self.output_txt_path}")
             if config.SUMMARIZE:
@@ -684,21 +692,21 @@ class ItemTranscriber:
                     logger.info(
                         f"  Final summary outputs: {', '.join(summary_outputs)}"
                     )
-            logger.info(
-                f"  Detailed logs: {self.log_path}{' and ' + str(self.summary_log_path) if config.SUMMARIZE else ''}"
+            detail_suffix = (
+                " and " + str(self.summary_log_path) if config.SUMMARIZE else ""
             )
+            logger.info(f"  Detailed logs: {self.log_path}{detail_suffix}")
 
             # Determine if we should cleanup images directory
             # Only delete if we have successful outputs (transcription and/or summary)
             if self.output_txt_path.exists():
                 # We have a transcription output
                 should_cleanup = True
-            if config.SUMMARIZE:
-                # Check if any summary output exists
-                if (config.OUTPUT_DOCX and self.output_summary_docx_path.exists()) or (
-                    config.OUTPUT_MARKDOWN and self.output_summary_md_path.exists()
-                ):
-                    should_cleanup = True
+            if config.SUMMARIZE and (
+                (config.OUTPUT_DOCX and self.output_summary_docx_path.exists())
+                or (config.OUTPUT_MARKDOWN and self.output_summary_md_path.exists())
+            ):
+                should_cleanup = True
 
         finally:
             # Always finalize log files by closing JSON arrays, even if errors occurred

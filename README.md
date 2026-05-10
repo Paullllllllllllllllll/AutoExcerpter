@@ -1,4 +1,4 @@
-# AutoExcerpter v1.1.2
+# AutoExcerpter v1.2.0
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -199,11 +199,19 @@ System Properties.
 Configure paths in `config/defaults/app.yaml` and models in
 `config/defaults/model.yaml` (see [Configuration](#configuration)).
 
-For development:
+For development, install all dependencies including dev extras:
 
 ```bash
 uv sync --extra dev
-uv run pytest
+```
+
+Run the test suite, linter, and type checker:
+
+```bash
+uv run pytest -v
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy .
 ```
 
 ## Usage
@@ -623,10 +631,14 @@ squashed to a single baseline commit at v1.0.0 on 25 April
 numbers before v1.0.0 do not exist. v1.1.0 migrates the
 project to `pyproject.toml` as the single source of truth for
 dependencies and tooling configuration. v1.1.1 resolves all
-pre-existing mypy strict-mode errors.
+pre-existing mypy strict-mode errors. v1.2.0 applies ruff
+linting and formatting across the entire codebase.
 
 ## Changelog
 
+- **v1.2.0** (10 May 2026) -- apply ruff linting and formatting
+    across all source and test files; add `ruff>=0.15` to dev
+    dependencies; resolve 404 lint violations.
 - **v1.1.2** (10 May 2026) -- add ruff linter and formatter
     configuration; gitignore `CLAUDE.md`.
 - **v1.1.1** (10 May 2026) -- resolve all pre-existing mypy
@@ -642,9 +654,10 @@ pre-existing mypy strict-mode errors.
 Contributions are welcome. Fork the repository, create a feature
 branch, and submit a pull request with a clear description.
 
-**Guidelines:** PEP 8 with type annotations; unit tests for new
-functionality; clear separation of concerns; use the logger
-module for debug output.
+**Guidelines:** PEP 8 enforced via `ruff check` and
+`ruff format`; run both before submitting. Type annotations
+required; unit tests for new functionality; clear separation
+of concerns; use the logger module for debug output.
 
 **Areas of interest:** additional LLM providers, batch API
 integration, enhanced image preprocessing, extended model

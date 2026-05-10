@@ -36,21 +36,21 @@ import fitz  # PyMuPDF
 from PIL import Image
 from tqdm import tqdm
 
-from config.loader import get_config_loader
 from config.constants import (
-    SUPPORTED_IMAGE_EXTENSIONS,
-    DEFAULT_TARGET_DPI,
     DEFAULT_JPEG_QUALITY,
+    DEFAULT_TARGET_DPI,
     MAX_EXTRACTION_WORKERS,
     PDF_DPI_CONVERSION_FACTOR,
+    SUPPORTED_IMAGE_EXTENSIONS,
 )
-from imaging.preprocessing import ImageProcessor
+from config.loader import get_config_loader
+from config.logger import setup_logger
 from imaging._provider import (
+    ModelType,
     detect_model_type,
     get_image_config_section_name,
-    ModelType,
 )
-from config.logger import setup_logger
+from imaging.preprocessing import ImageProcessor
 
 logger = setup_logger(__name__)
 
@@ -88,7 +88,8 @@ def extract_pdf_pages_to_images(
     model_name: str = "",
 ) -> list[Path]:
     """
-    Extract pages from a PDF and save them as images with provider-specific preprocessing.
+    Extract pages from a PDF and save them as images with provider-specific
+    preprocessing.
 
     Args:
         pdf_path: Path to the PDF file
@@ -132,7 +133,8 @@ def extract_pdf_pages_to_images(
 
         def extract_page_task(page_num: int) -> tuple[int, Path | None]:
             """
-            Extract a single page from the PDF and apply provider-specific preprocessing.
+            Extract a single page from the PDF and apply provider-specific
+            preprocessing.
 
             Args:
                 page_num: Zero-indexed page number
@@ -197,7 +199,8 @@ def extract_pdf_pages_to_images(
             pdf_document.close()
 
     logger.info(
-        f"Successfully extracted {len(extracted_image_paths)} pages to {output_images_dir}."
+        f"Successfully extracted {len(extracted_image_paths)} pages"
+        f" to {output_images_dir}."
     )
     return extracted_image_paths
 

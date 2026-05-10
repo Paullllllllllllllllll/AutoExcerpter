@@ -22,10 +22,9 @@ This file complements test_base_llm_client.py by covering:
 
 from __future__ import annotations
 
-import statistics
 from collections import deque
 from typing import Any
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
 from langchain_core.messages import AIMessage
@@ -142,7 +141,9 @@ class TestInit:
 
     @patch("llm.base.get_chat_model")
     @patch("llm.base.get_api_timeout", return_value=600)
-    def test_init_provider_resolved_from_llm_config(self, mock_timeout, mock_get_chat) -> None:
+    def test_init_provider_resolved_from_llm_config(
+        self, mock_timeout, mock_get_chat
+    ) -> None:
         """When provider is None, it is resolved via LLMConfig."""
         mock_get_chat.return_value = MagicMock()
         client = LLMClientBase(
@@ -1175,7 +1176,8 @@ class TestReportTokenUsageHardened:
             client._report_token_usage(response, "test")
 
         warning_calls = [
-            call for call in mock_logger.warning.call_args_list
+            call
+            for call in mock_logger.warning.call_args_list
             if "no usable" in call[0][0].lower()
         ]
         assert len(warning_calls) == 1
@@ -1367,10 +1369,13 @@ class TestCalculateBackoff:
         client = _make_client()
 
         with (
-            patch("llm.base._RETRY_CONFIG", {
-                "backoff_base": 0.5,
-                "backoff_multipliers": {"rate_limit": 2.0, "timeout": 1.5},
-            }),
+            patch(
+                "llm.base._RETRY_CONFIG",
+                {
+                    "backoff_base": 0.5,
+                    "backoff_multipliers": {"rate_limit": 2.0, "timeout": 1.5},
+                },
+            ),
             patch("llm.base.random.uniform", return_value=0.75),
         ):
             # attempt=0, rate_limit: 0.5 * (2.0 ** 0) + 0.75 = 0.5 + 0.75 = 1.25
@@ -1382,10 +1387,13 @@ class TestCalculateBackoff:
         client = _make_client()
 
         with (
-            patch("llm.base._RETRY_CONFIG", {
-                "backoff_base": 1.0,
-                "backoff_multipliers": {"timeout": 2.0},
-            }),
+            patch(
+                "llm.base._RETRY_CONFIG",
+                {
+                    "backoff_base": 1.0,
+                    "backoff_multipliers": {"timeout": 2.0},
+                },
+            ),
             patch("llm.base.random.uniform", return_value=0.0),
         ):
             b0 = client._calculate_backoff(0, "timeout")  # 1.0 * (2^0) + 0 = 1.0
@@ -1400,10 +1408,13 @@ class TestCalculateBackoff:
         client = _make_client()
 
         with (
-            patch("llm.base._RETRY_CONFIG", {
-                "backoff_base": 0.5,
-                "backoff_multipliers": {},
-            }),
+            patch(
+                "llm.base._RETRY_CONFIG",
+                {
+                    "backoff_base": 0.5,
+                    "backoff_multipliers": {},
+                },
+            ),
             patch("llm.base.random.uniform", return_value=0.5),
         ):
             result = client._calculate_backoff(1, "unknown_type")
@@ -1499,7 +1510,7 @@ class TestInvokeWithRetry:
         with (
             patch.object(client, "_calculate_backoff", return_value=0.0),
             patch("llm.base.time.sleep"),
-            pytest.raises(Exception),
+            pytest.raises(Exception, match="timeout"),
         ):
             client._invoke_with_retry(mock_model, [], {}, "test")
 

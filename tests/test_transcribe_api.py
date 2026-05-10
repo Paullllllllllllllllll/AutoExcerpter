@@ -5,8 +5,6 @@ from __future__ import annotations
 import json
 from typing import Any
 
-import pytest
-
 from llm.transcription import TranscriptionManager
 
 
@@ -57,7 +55,10 @@ class TestTruncateAnalysis:
 
     def test_truncates_at_word_boundary(self) -> None:
         """Truncation prefers word boundaries."""
-        text = "This is a longer text that should be truncated at a word boundary for readability"
+        text = (
+            "This is a longer text that should be truncated at a word"
+            " boundary for readability"
+        )
         result = TranscriptionManager._truncate_analysis(text, max_chars=50)
 
         # Should end with "..." and not cut a word in the middle
@@ -81,15 +82,6 @@ class TestParseTranscriptionFromText:
 
     def test_no_transcribable_text_flag(self) -> None:
         """no_transcribable_text flag generates formatted message."""
-        json_response = json.dumps(
-            {
-                "image_analysis": "Page appears blank with faint marks",
-                "transcription": None,
-                "no_transcribable_text": True,
-                "transcription_not_possible": False,
-            }
-        )
-
         # Test using static methods
         img_name = TranscriptionManager._format_image_name("page_005.png")
         brief_reason = TranscriptionManager._truncate_analysis(
@@ -102,15 +94,6 @@ class TestParseTranscriptionFromText:
 
     def test_transcription_not_possible_flag(self) -> None:
         """transcription_not_possible flag generates formatted message."""
-        json_response = json.dumps(
-            {
-                "image_analysis": "Image is too blurry to read any text",
-                "transcription": None,
-                "no_transcribable_text": False,
-                "transcription_not_possible": True,
-            }
-        )
-
         img_name = TranscriptionManager._format_image_name("scan_042.jpg")
         brief_reason = TranscriptionManager._truncate_analysis(
             "Image is too blurry to read any text"
@@ -150,12 +133,14 @@ class TestValidateTranscriptionSchema:
 
     def test_valid_json(self) -> None:
         mgr = self._make_manager()
-        text = json.dumps({
-            "image_analysis": "text",
-            "transcription": "hello",
-            "no_transcribable_text": False,
-            "transcription_not_possible": False,
-        })
+        text = json.dumps(
+            {
+                "image_analysis": "text",
+                "transcription": "hello",
+                "no_transcribable_text": False,
+                "transcription_not_possible": False,
+            }
+        )
         is_valid, reason = mgr._validate_transcription_schema(text)
         assert is_valid is True
         assert reason == ""
@@ -175,12 +160,14 @@ class TestValidateTranscriptionSchema:
 
     def test_markdown_wrapped_json(self) -> None:
         mgr = self._make_manager()
-        inner = json.dumps({
-            "image_analysis": "x",
-            "transcription": "y",
-            "no_transcribable_text": False,
-            "transcription_not_possible": False,
-        })
+        inner = json.dumps(
+            {
+                "image_analysis": "x",
+                "transcription": "y",
+                "no_transcribable_text": False,
+                "transcription_not_possible": False,
+            }
+        )
         text = f"```json\n{inner}\n```"
         is_valid, reason = mgr._validate_transcription_schema(text)
         assert is_valid is True
@@ -194,9 +181,7 @@ class TestPlainTextParsing:
         from llm.types import CustomEndpointCapabilities
 
         mgr = TranscriptionManager.__new__(TranscriptionManager)
-        mgr.custom_capabilities = CustomEndpointCapabilities(
-            use_plain_text_prompt=True
-        )
+        mgr.custom_capabilities = CustomEndpointCapabilities(use_plain_text_prompt=True)
         return mgr
 
     def test_normal_text_returned_as_is(self) -> None:
@@ -254,7 +239,10 @@ class TestTranscriptionSchemaFlags:
     def test_no_transcribable_text_with_analysis(self) -> None:
         """no_transcribable_text should include image_analysis context."""
         response: dict[str, Any] = {
-            "image_analysis": "Single full-page grayscale photograph of a printed page. The page shows very faint, low-contrast text lines.",
+            "image_analysis": (
+                "Single full-page grayscale photograph of a printed page."
+                " The page shows very faint, low-contrast text lines."
+            ),
             "transcription": None,
             "no_transcribable_text": True,
             "transcription_not_possible": False,

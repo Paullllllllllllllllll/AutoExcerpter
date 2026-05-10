@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from config.loader import get_config_loader
 from config.constants import DEFAULT_CONCURRENT_REQUESTS as DEFAULT_CONCURRENT_REQUESTS
+from config.loader import get_config_loader
 from config.logger import setup_logger
 
 logger = setup_logger(__name__)

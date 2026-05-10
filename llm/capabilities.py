@@ -37,7 +37,9 @@ logger = logging.getLogger(__name__)
 # Type aliases
 ImageDetail = Literal["auto", "high", "low"]
 MediaResolution = Literal["low", "medium", "high", "ultra_high", "auto"]
-ProviderType = Literal["openai", "anthropic", "google", "openrouter", "custom", "unknown"]
+ProviderType = Literal[
+    "openai", "anthropic", "google", "openrouter", "custom", "unknown"
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -690,7 +692,8 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
 def _build_caps(
     model_name: str, family: str, base: dict[str, Any], overrides: dict[str, Any]
 ) -> ProviderCapabilities:
-    """Merge *base* defaults with *overrides* and return a ProviderCapabilities instance."""
+    """Merge *base* defaults with *overrides* and return a ProviderCapabilities
+    instance."""
     merged = {**base, **overrides}
     merged["model_name"] = model_name
     merged["family"] = family

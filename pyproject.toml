@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "autoexcerpter"
-version = "1.1.2"
+version = "1.2.0"
 description = "Document processing pipeline that transcribes and summarizes PDFs and image collections using vision-enabled LLMs"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -27,6 +27,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "mypy>=1.20",
+    "ruff>=0.15",
     "types-PyYAML>=6.0",
     "types-requests>=2.32",
     "pytest>=9.0",
@@ -79,7 +80,10 @@ extend-exclude = ["data/", "outputs/", "scratch", ".claude", "backup", "deprecat
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM"]
-ignore = []
+ignore = ["UP047"]
+
+[tool.ruff.lint.per-file-ignores]
+"cli/interaction.py" = ["E402"]
 
 [tool.ruff.format]
 quote-style = "double"

@@ -514,10 +514,7 @@ def _should_wrap_line(line: str) -> bool:
         return False
 
     # Display math ($$...$$)
-    if stripped.startswith("$$") or stripped.endswith("$$"):
-        return False
-
-    return True
+    return not (stripped.startswith("$$") or stripped.endswith("$$"))
 
 
 def compute_auto_wrap_width(text: str) -> int:
@@ -613,7 +610,6 @@ def wrap_long_lines(text: str, width: int) -> str:
         result_lines.append(indent + content)
 
     return "\n".join(result_lines) + "\n"
-
 
 
 # ============================================================================

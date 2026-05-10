@@ -1,11 +1,12 @@
 """Tests for llm/capabilities.py - Unified model capability detection."""
 
 import pytest
+
 from llm.capabilities import (
-    ProviderCapabilities,
     CapabilityError,
-    detect_provider,
+    ProviderCapabilities,
     detect_capabilities,
+    detect_provider,
     ensure_image_support,
 )
 

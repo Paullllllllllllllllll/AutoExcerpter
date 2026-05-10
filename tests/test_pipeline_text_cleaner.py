@@ -2,21 +2,20 @@
 
 from __future__ import annotations
 
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 from pipeline.text_cleaner import (
-    normalize_unicode,
     balance_dollar_signs,
+    clean_transcription,
     close_unclosed_braces,
+    compute_auto_wrap_width,
     fix_common_latex_commands,
     fix_latex_formulas,
+    get_text_cleaning_config,
     merge_hyphenation,
+    normalize_unicode,
     normalize_whitespace,
     wrap_long_lines,
-    compute_auto_wrap_width,
-    clean_transcription,
-    get_text_cleaning_config,
 )
 
 
@@ -75,7 +74,7 @@ class TestNormalizeUnicode:
         result = normalize_unicode(text)
         assert "\x00" not in result
         assert "\x01" not in result
-        assert "testword" == result
+        assert result == "testword"
 
     def test_aegean_icons_to_bullet(self) -> None:
         """Aegean icon characters are mapped to bullets."""
@@ -156,8 +155,8 @@ class TestCloseUnclosedBraces:
         """Orphan closing braces at start are handled."""
         text = "} orphan brace"
         result = close_unclosed_braces(text)
-        # The function attempts to remove orphan closing braces at start
-        # The result should be valid (either removed or preserved depending on heuristics)
+        # The function attempts to remove orphan closing braces at start.
+        # The result should be valid (removed or preserved depending on heuristics).
         assert isinstance(result, str)
 
 
@@ -307,7 +306,10 @@ class TestWrapLongLines:
 
     def test_long_line_wrapped(self) -> None:
         """Long lines are wrapped at word boundaries."""
-        text = "This is a very long line that should definitely be wrapped because it exceeds the specified width limit"
+        text = (
+            "This is a very long line that should definitely be wrapped"
+            " because it exceeds the specified width limit"
+        )
         result = wrap_long_lines(text, width=40)
         lines = result.strip().split("\n")
         for line in lines:
@@ -315,7 +317,10 @@ class TestWrapLongLines:
 
     def test_markdown_headings_not_wrapped(self) -> None:
         """Markdown headings are not wrapped."""
-        text = "# This is a very long heading that should not be wrapped even if it exceeds the width"
+        text = (
+            "# This is a very long heading that should not be wrapped"
+            " even if it exceeds the width"
+        )
         result = wrap_long_lines(text, width=40)
         assert text.strip() in result
 
@@ -368,7 +373,7 @@ class TestCleanTranscription:
     def test_empty_text_returns_empty(self) -> None:
         """Empty text returns empty."""
         assert clean_transcription("") == ""
-        assert clean_transcription(None) == None  # type: ignore
+        assert clean_transcription(None) is None  # type: ignore
 
     def test_disabled_returns_unchanged(self) -> None:
         """Disabled cleaning returns text unchanged."""
@@ -452,5 +457,3 @@ class TestGetTextCleaningConfig:
             assert "merge_hyphenation" in result
             assert "whitespace_normalization" in result
             assert "line_wrapping" in result
-
-

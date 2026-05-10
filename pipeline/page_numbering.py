@@ -5,9 +5,12 @@ documents with mixed Roman numeral (preface) and Arabic (main text) numbering.
 
 The key algorithm is per-section anchor-based adjustment:
 1. Group pages by section type (content, preface, abstract, appendix, etc.)
-2. For each section, find the longest consecutive sequence of model-detected page numbers
+
+2. For each section, find the longest consecutive sequence of model-detected page
+   numbers
 3. Use that sequence as the anchor and adjust all pages in that section accordingly
-4. Conservatively infer page numbers for isolated unnumbered pages between numbered pages
+4. Conservatively infer page numbers for isolated unnumbered pages between numbered
+   pages
 """
 
 from __future__ import annotations
@@ -48,7 +51,8 @@ class PageNumberProcessor:
             summary_result: Summary result dictionary.
 
         Returns:
-            Tuple of (model_page_number, page_number_type, page_types, is_genuinely_unnumbered).
+            Tuple of (model_page_number, page_number_type, page_types,
+            is_genuinely_unnumbered).
             page_number_type is one of: 'roman', 'arabic', 'none'.
             page_types is a list of page type classifications.
         """
@@ -147,7 +151,10 @@ class PageNumberProcessor:
         return adjusted_page
 
     def _infer_from_following_page(
-        self, sorted_summaries: list[dict[str, Any]], page_type: str, claimed_pages: set[int]
+        self,
+        sorted_summaries: list[dict[str, Any]],
+        page_type: str,
+        claimed_pages: set[int],
     ) -> int:
         """
         Infer page numbers for gaps between numbered pages.
@@ -207,9 +214,11 @@ class PageNumberProcessor:
                     claimed_pages.add(inferred_page)
                     inferred_count += 1
                     logger.info(
-                        f"Inferred {page_type} page {inferred_page} for unnumbered page at "
-                        f"document position {current['original_input_order_index']} "
-                        f"(gap between pages {prev_page['model_page_number_int']} and {next_page['model_page_number_int']})"
+                        f"Inferred {page_type} page {inferred_page} for unnumbered "
+                        f"page at document position "
+                        f"{current['original_input_order_index']} "
+                        f"(gap between pages {prev_page['model_page_number_int']}"
+                        f" and {next_page['model_page_number_int']})"
                     )
 
         return inferred_count
@@ -307,10 +316,12 @@ class PageNumberProcessor:
         Find the anchor point for a section based on longest consecutive sequence.
 
         Args:
-            section_pages: List of parsed summaries for this section (sorted by doc order).
+            section_pages: List of parsed summaries for this section
+                (sorted by doc order).
 
         Returns:
-            Tuple of (anchor_page_number, anchor_document_index) or (None, None) if no anchor.
+            Tuple of (anchor_page_number, anchor_document_index)
+            or (None, None) if no anchor.
         """
         if not section_pages:
             return None, None
@@ -351,9 +362,10 @@ class PageNumberProcessor:
         """
         Adjust page numbers based on per-section anchor logic.
 
-        For each section type (content, preface, abstract, appendix, figures_tables_sources),
-        finds the longest consecutive sequence of model-detected page numbers and uses that
-        as the anchor for adjusting all pages in that section.
+        For each section type (content, preface, abstract, appendix,
+        figures_tables_sources), finds the longest consecutive sequence of
+        model-detected page numbers and uses that as the anchor for adjusting
+        all pages in that section.
 
         Args:
             summary_results: List of summary results with page information.
@@ -397,7 +409,8 @@ class PageNumberProcessor:
             section_groups[section].append(p)
 
         logger.info(
-            f"Section distribution: {', '.join(f'{k}: {len(v)} pages' for k, v in section_groups.items())}"
+            "Section distribution: "
+            + ", ".join(f"{k}: {len(v)} pages" for k, v in section_groups.items())
         )
 
         # Find anchor for each section
@@ -409,7 +422,8 @@ class PageNumberProcessor:
             section_anchors[section] = (anchor_page, anchor_index)
             if anchor_page is not None:
                 logger.info(
-                    f"Section '{section}' anchor: page {anchor_page} at document index {anchor_index}"
+                    f"Section '{section}' anchor: page {anchor_page} "
+                    f"at document index {anchor_index}"
                 )
             else:
                 logger.info(f"Section '{section}': no valid anchor found")
@@ -419,7 +433,8 @@ class PageNumberProcessor:
         inferred_count = self.infer_unnumbered_page_numbers(parsed_summaries)
         if inferred_count > 0:
             logger.info(
-                f"Inferred page numbers for {inferred_count} isolated unnumbered page(s)"
+                f"Inferred page numbers for {inferred_count} "
+                "isolated unnumbered page(s)"
             )
 
         # Apply per-section page number adjustment

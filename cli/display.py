@@ -7,24 +7,24 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from pipeline.resume import ResumeResult
+from cli.interaction import (
+    Colors,
+    print_dim,
+    print_header,
+    print_highlight,
+    print_info,
+    print_section,
+    print_separator,
+    print_success,
+    print_warning,
+    prompt_selection,
+    prompt_yes_no,
+)
 from config import app as config
 from config.logger import setup_logger
 from llm.token_tracker import get_token_tracker
+from pipeline.resume import ResumeResult
 from pipeline.types import ItemSpec
-from cli.interaction import (
-    print_header,
-    print_section,
-    print_success,
-    print_warning,
-    print_info,
-    print_separator,
-    print_dim,
-    print_highlight,
-    prompt_selection,
-    prompt_yes_no,
-    Colors,
-)
 
 logger = setup_logger(__name__)
 
@@ -96,7 +96,8 @@ def _display_processing_summary(
         item_summary = "image folder(s)"
 
     print(
-        f"  Ready to process {Colors.BOLD}{Colors.OKCYAN}{len(selected_items)}{Colors.ENDC} {item_summary}"
+        f"  Ready to process {Colors.BOLD}{Colors.OKCYAN}"
+        f"{len(selected_items)}{Colors.ENDC} {item_summary}"
     )
     print()
 
@@ -106,15 +107,15 @@ def _display_processing_summary(
 
     # Document types
     if pdf_count > 0 and image_folder_count > 0:
-        print_info(f"    • Document types: PDFs and Image Folders")
+        print_info("    • Document types: PDFs and Image Folders")
     elif pdf_count > 0:
-        print_info(f"    • Document type: PDFs")
+        print_info("    • Document type: PDFs")
     else:
-        print_info(f"    • Document type: Image Folders")
+        print_info("    • Document type: Image Folders")
 
     # Summarization
     if config.SUMMARIZE:
-        print_info(f"    • Summarization: Enabled")
+        print_info("    • Summarization: Enabled")
         if summary_context:
             # Truncate long context for display
             display_context = (
@@ -124,9 +125,9 @@ def _display_processing_summary(
             )
             print_dim(f"      - Focus topics: {display_context}")
         else:
-            print_dim(f"      - Focus topics: Auto-resolved from context files")
+            print_dim("      - Focus topics: Auto-resolved from context files")
     else:
-        print_info(f"    • Summarization: Disabled (transcription only)")
+        print_info("    • Summarization: Disabled (transcription only)")
 
     print_separator()
 
@@ -239,7 +240,8 @@ def _display_processing_summary(
         token_tracker = get_token_tracker()
         stats = token_tracker.get_stats()
         print_info(
-            f"    • Current usage: {stats['tokens_used_today']:,}/{stats['daily_limit']:,} ({stats['usage_percentage']:.1f}%)"
+            f"    • Current usage: {stats['tokens_used_today']:,}"
+            f"/{stats['daily_limit']:,} ({stats['usage_percentage']:.1f}%)"
         )
         print_info(f"    • Remaining today: {stats['tokens_remaining']:,} tokens")
         print_separator()
@@ -285,11 +287,11 @@ def _display_completion_summary(
     if output_dir:
         print_info(f"    • Location: {output_dir}")
     else:
-        print_info(f"    • Location: Same directory as input files")
+        print_info("    • Location: Same directory as input files")
 
-    print_info(f"    • Transcriptions: .txt files")
+    print_info("    • Transcriptions: .txt files")
     if config.SUMMARIZE:
-        print_info(f"    • Summaries: .docx files")
+        print_info("    • Summaries: .docx files")
 
     print_separator()
 
@@ -301,7 +303,8 @@ def _display_completion_summary(
         token_tracker = get_token_tracker()
         stats = token_tracker.get_stats()
         print_info(
-            f"    • Total used today: {stats['tokens_used_today']:,}/{stats['daily_limit']:,} ({stats['usage_percentage']:.1f}%)"
+            f"    • Total used today: {stats['tokens_used_today']:,}"
+            f"/{stats['daily_limit']:,} ({stats['usage_percentage']:.1f}%)"
         )
         print_info(f"    • Remaining today: {stats['tokens_remaining']:,} tokens")
         print_separator()
@@ -316,10 +319,12 @@ def _log_token_limit_reached(
 ) -> None:
     """Log token limit reached message to appropriate output."""
     logger.warning(
-        f"Daily token limit reached: {stats['tokens_used_today']:,}/{stats['daily_limit']:,} tokens used"
+        f"Daily token limit reached: {stats['tokens_used_today']:,}"
+        f"/{stats['daily_limit']:,} tokens used"
     )
     logger.info(
-        f"Waiting until {reset_time.strftime('%Y-%m-%d %H:%M:%S')} ({hours}h {minutes}m) for token limit reset..."
+        f"Waiting until {reset_time.strftime('%Y-%m-%d %H:%M:%S')}"
+        f" ({hours}h {minutes}m) for token limit reset..."
     )
 
     if config.CLI_MODE:
@@ -327,10 +332,11 @@ def _log_token_limit_reached(
     else:
         print()
         print_separator(char="=")
-        print_warning(f"  Daily Token Limit Reached")
+        print_warning("  Daily Token Limit Reached")
         print_separator(char="=")
         print_info(
-            f"    • Tokens used: {stats['tokens_used_today']:,}/{stats['daily_limit']:,}"
+            f"    • Tokens used: {stats['tokens_used_today']:,}"
+            f"/{stats['daily_limit']:,}"
         )
         print_info(f"    • Reset time: {reset_time.strftime('%Y-%m-%d %H:%M:%S')}")
         print_info(f"    • Time remaining: {hours}h {minutes}m")
@@ -364,7 +370,8 @@ def _prompt_for_summary_context() -> str | None:
             return context_input
         else:
             print_dim(
-                "  No context provided. Will use file/folder/general context if available."
+                "  No context provided."
+                " Will use file/folder/general context if available."
             )
             return None
     except (KeyboardInterrupt, EOFError):
@@ -406,7 +413,8 @@ def _display_resume_info(
         print_highlight("  Resume Information:")
         print_separator()
         print_warning(
-            f"    • {len(skipped)} of {total_selected} item(s) already have output and will be skipped"
+            f"    • {len(skipped)} of {total_selected} item(s)"
+            " already have output and will be skipped"
         )
         print_info(f"    • {new_count} item(s) will be processed")
         print_dim(f"    • Resume mode: {resume_mode}")

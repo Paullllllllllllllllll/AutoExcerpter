@@ -9,10 +9,10 @@ from typing import Any
 from config.logger import setup_logger
 from rendering.citations import CitationManager, _format_page_range, enrich_if_enabled
 from rendering.summary import (
+    PAGE_TYPE_LABELS,
+    STRUCTURE_PAGE_TYPE_ORDER,
     prepare_summary_data,
     sanitize_for_xml,
-    STRUCTURE_PAGE_TYPE_ORDER,
-    PAGE_TYPE_LABELS,
 )
 
 logger = setup_logger(__name__)
@@ -49,7 +49,8 @@ def create_markdown_summary(
 
     lines.append(
         f"*Processed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | "
-        f"Content pages: {data.content_page_count} | Total pages: {len(filtered_results)}*"
+        f"Content pages: {data.content_page_count} | "
+        f"Total pages: {len(filtered_results)}*"
     )
     lines.append("")
 
@@ -95,9 +96,10 @@ def create_markdown_summary(
         lines.append("## Consolidated References")
         lines.append("")
         lines.append(
-            "*The following references were extracted from the document and consolidated. "
-            "Duplicate citations have been merged, showing all pages where each citation appears. "
-            "Where available, hyperlinks provide access to extended metadata via OpenAlex.*"
+            "*The following references were extracted from the document and "
+            "consolidated. Duplicate citations have been merged, showing all "
+            "pages where each citation appears. Where available, hyperlinks "
+            "provide access to extended metadata via OpenAlex.*"
         )
         lines.append("")
 

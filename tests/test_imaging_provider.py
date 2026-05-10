@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-import pytest
-
 from imaging._provider import (
     detect_model_type,
     get_image_config_section_name,
-    ModelType,
 )
 
 

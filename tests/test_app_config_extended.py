@@ -16,9 +16,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch, MagicMock
 
-import pytest
 import yaml
 
 # ---------------------------------------------------------------------------
@@ -28,10 +26,10 @@ import yaml
 # the private helpers.  The import succeeds because the CI/test environment
 # has at least one API key in the environment (or the conftest sets one).
 from config.app import (
-    _load_yaml_app_config,
-    _get_str,
-    _get_int,
     _get_bool,
+    _get_int,
+    _get_str,
+    _load_yaml_app_config,
 )
 
 
@@ -79,7 +77,9 @@ class TestLoadYamlAppConfig:
         result = _load_yaml_app_config()
         assert result == {}
 
-    def test_non_dict_yaml_returns_empty_dict(self, tmp_path: Path, monkeypatch) -> None:
+    def test_non_dict_yaml_returns_empty_dict(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
         """Returns empty dict when the YAML root is a list instead of a dict."""
         list_yaml = tmp_path / "list.yaml"
         list_yaml.write_text("- item1\n- item2\n", encoding="utf-8")

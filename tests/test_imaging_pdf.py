@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import patch, MagicMock
 from typing import Any
+from unittest.mock import MagicMock, patch
 
 import pytest
 from PIL import Image
@@ -45,8 +45,8 @@ class TestApplyImagePreprocessing:
         """Grayscale conversion is applied when enabled."""
         result = _apply_image_preprocessing(sample_pil_image, default_config, "openai")
 
-        # After grayscale and resize, mode should be L (grayscale) or RGB (if converted back)
-        # The resize_for_detail may create a new RGB canvas for box fitting
+        # After grayscale and resize, mode should be L (grayscale) or RGB
+        # (if converted back). resize_for_detail may create a new RGB canvas.
         assert result.mode in ("L", "RGB")
 
     def test_skips_grayscale_when_disabled(
@@ -198,7 +198,6 @@ class TestExtractPdfPagesToImages:
 
     def test_with_mock_pdf(self, temp_dir: Path) -> None:
         """Test with mocked PDF document."""
-        from imaging.pdf import extract_pdf_pages_to_images
 
         output_dir = temp_dir / "output"
         output_dir.mkdir()
@@ -236,12 +235,11 @@ class TestExtractPdfPagesToImages:
                 mock_loader.return_value = mock_config
 
                 # Mock tqdm to avoid progress bar in tests
-                with patch("imaging.pdf.tqdm", lambda x, **kwargs: x):
-                    with patch(
-                        "imaging.pdf.concurrent.futures.ThreadPoolExecutor"
-                    ):
-                        # The function should be callable
-                        pass
+                with (
+                    patch("imaging.pdf.tqdm", lambda x, **kwargs: x),
+                    patch("imaging.pdf.concurrent.futures.ThreadPoolExecutor"),
+                ):
+                    pass
 
 
 class TestPdfProcessorProviderDetection:

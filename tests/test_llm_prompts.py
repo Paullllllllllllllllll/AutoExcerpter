@@ -4,17 +4,17 @@ from __future__ import annotations
 
 import json
 from typing import Any
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 
 from llm.prompts import (
-    render_prompt_with_schema,
-    strip_markdown_code_block,
-    _replace_schema_at_marker,
-    _inject_context,
     SCHEMA_MARKER,
     SCHEMA_TOKEN_GENERIC,
+    _inject_context,
+    _replace_schema_at_marker,
+    render_prompt_with_schema,
+    strip_markdown_code_block,
 )
 
 
@@ -27,7 +27,7 @@ class TestRenderPromptStrategy3MarkerReplacement:
     def test_marker_present_replaces_existing_schema(self) -> None:
         """When marker and existing JSON block are present, replaces the block."""
         schema = {"type": "object", "properties": {"name": {"type": "string"}}}
-        prompt = "Transcribe this document.\n" "The JSON schema:\n" '{"old": "schema"}'
+        prompt = 'Transcribe this document.\nThe JSON schema:\n{"old": "schema"}'
 
         result = render_prompt_with_schema(prompt, schema)
 
@@ -221,7 +221,7 @@ class TestReplaceSchemaAtMarker:
         assert '{"appended": true}' in result
 
     def test_marker_no_closing_brace_appends(self) -> None:
-        """Schema is appended when opening brace exists but no closing brace after it."""
+        """Schema appended when opening brace exists but no closing brace after it."""
         # This scenario: rfind("}") returns -1 or <= start_brace
         # We need a case where there's an opening brace but the only closing
         # brace is before it (rfind returns something <= start_brace).
@@ -327,10 +327,16 @@ class TestStripMarkdownCodeBlock:
         assert strip_markdown_code_block('{"key": "value"}') == '{"key": "value"}'
 
     def test_json_fencing(self) -> None:
-        assert strip_markdown_code_block('```json\n{"key": "value"}\n```') == '{"key": "value"}'
+        assert (
+            strip_markdown_code_block('```json\n{"key": "value"}\n```')
+            == '{"key": "value"}'
+        )
 
     def test_plain_fencing(self) -> None:
-        assert strip_markdown_code_block('```\n{"key": "value"}\n```') == '{"key": "value"}'
+        assert (
+            strip_markdown_code_block('```\n{"key": "value"}\n```')
+            == '{"key": "value"}'
+        )
 
     def test_empty_string(self) -> None:
         assert strip_markdown_code_block("") == ""

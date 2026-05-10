@@ -11,17 +11,18 @@ without invoking the full processing pipeline.
 Processing states:
     COMPLETE: All expected output files exist (transcription + summaries if enabled).
     TRANSCRIPTION_ONLY: The .txt transcription exists but summary outputs are missing.
-    PARTIAL: A transcription JSONL log exists with entries (mid-document crash recovery).
+    PARTIAL: A transcription JSONL log exists with entries
+        (mid-document crash recovery).
     NONE: No output exists; the item must be processed from scratch.
 """
 
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from collections.abc import Callable
 from typing import Any
 
 from config.logger import setup_logger
@@ -186,7 +187,10 @@ class ResumeChecker:
                 output_dir=output_dir,
                 existing_outputs=existing,
                 missing_outputs=missing,
-                reason=f"transcription exists, missing: {', '.join(p.name for p in missing)}",
+                reason=(
+                    "transcription exists, missing: "
+                    + ", ".join(p.name for p in missing)
+                ),
             )
 
         # Check for partial processing (JSONL log exists in working directory)
@@ -233,7 +237,8 @@ class ResumeChecker:
 
 
 def load_completed_pages(log_path: Path) -> set[int] | None:
-    """Parse a transcription JSONL log and return indices of successfully completed pages.
+    """Parse a transcription JSONL log and return indices of successfully completed
+    pages.
 
     The log format is a JSON array where the first element is the header/metadata
     and subsequent elements are per-page transcription results.
@@ -260,7 +265,8 @@ def load_completed_pages(log_path: Path) -> set[int] | None:
         for entry in entries:
             if not isinstance(entry, dict):
                 continue
-            # Skip the header entry (has "input_item_name" but no "original_input_order_index")
+            # Skip the header entry (has "input_item_name" but no
+            # "original_input_order_index")
             if "original_input_order_index" not in entry:
                 continue
             # Only count entries without errors

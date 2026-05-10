@@ -7,12 +7,12 @@ from pathlib import Path
 import pytest
 
 from pipeline.scanner import (
+    _build_image_folder_items,
+    _build_pdf_item,
+    _collect_items_from_directory,
     is_pdf_file,
     is_supported_image,
     scan_input_path,
-    _collect_items_from_directory,
-    _build_pdf_item,
-    _build_image_folder_items,
 )
 from pipeline.types import ItemSpec
 

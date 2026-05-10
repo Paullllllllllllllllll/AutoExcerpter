@@ -4,16 +4,12 @@ This module tests hierarchical context resolution for summarization,
 including file-specific, folder-specific, and general context files.
 """
 
-import pytest
-from pathlib import Path
-from unittest.mock import patch, MagicMock
-
 from pipeline.context import (
-    resolve_summary_context,
-    format_context_for_prompt,
-    _read_and_validate_context,
-    DEFAULT_CONTEXT_SIZE_THRESHOLD,
     CONTEXT_SUFFIX,
+    DEFAULT_CONTEXT_SIZE_THRESHOLD,
+    _read_and_validate_context,
+    format_context_for_prompt,
+    resolve_summary_context,
 )
 
 
@@ -42,8 +38,8 @@ class TestResolveSummaryContext:
         file_context = tmp_path / "document_summary_context.txt"
         file_context.write_text("File-specific topics")
 
-        # Create folder-specific context (should be ignored)
-        folder_context = tmp_path.parent / f"{tmp_path.name}_summary_context.txt"
+        # Create folder-specific context path (not written; should be ignored)
+        tmp_path.parent / f"{tmp_path.name}_summary_context.txt"
 
         # Create general context (should be ignored)
         context_dir = tmp_path / "context" / "summary"
@@ -307,7 +303,10 @@ class TestIntegrationWithPromptUtils:
         """Context should be properly injected into prompts."""
         from llm.prompts import render_prompt_with_schema
 
-        prompt = "Instructions:\n- Rule 1\n- Pay attention to: {{CONTEXT}}\n\nThe JSON schema:\n{{SCHEMA}}"
+        prompt = (
+            "Instructions:\n- Rule 1\n- Pay attention to: {{CONTEXT}}"
+            "\n\nThe JSON schema:\n{{SCHEMA}}"
+        )
         schema = {"type": "object"}
         context = "Food History, Wages"
 
@@ -320,7 +319,10 @@ class TestIntegrationWithPromptUtils:
         """Context placeholder line should be removed when no context provided."""
         from llm.prompts import render_prompt_with_schema
 
-        prompt = "Instructions:\n- Rule 1\n- Pay attention to: {{CONTEXT}}\n\nThe JSON schema:\n{{SCHEMA}}"
+        prompt = (
+            "Instructions:\n- Rule 1\n- Pay attention to: {{CONTEXT}}"
+            "\n\nThe JSON schema:\n{{SCHEMA}}"
+        )
         schema = {"type": "object"}
 
         result = render_prompt_with_schema(prompt, schema, context=None)
@@ -332,7 +334,10 @@ class TestIntegrationWithPromptUtils:
         """Context placeholder line should be removed when context is empty string."""
         from llm.prompts import render_prompt_with_schema
 
-        prompt = "Instructions:\n- Rule 1\n- Pay attention to: {{CONTEXT}}\n\nThe JSON schema:\n{{SCHEMA}}"
+        prompt = (
+            "Instructions:\n- Rule 1\n- Pay attention to: {{CONTEXT}}"
+            "\n\nThe JSON schema:\n{{SCHEMA}}"
+        )
         schema = {"type": "object"}
 
         result = render_prompt_with_schema(prompt, schema, context="")

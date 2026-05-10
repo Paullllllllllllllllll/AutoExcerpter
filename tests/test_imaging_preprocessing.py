@@ -2,22 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Any
 import base64
-import io
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from typing import Any
+from unittest.mock import MagicMock, patch
 
 import pytest
 from PIL import Image
 
 from imaging.preprocessing import ImageProcessor
-from config.constants import (
-    DEFAULT_LOW_MAX_SIDE_PX,
-    DEFAULT_HIGH_TARGET_WIDTH,
-    DEFAULT_HIGH_TARGET_HEIGHT,
-    WHITE_BACKGROUND_COLOR,
-)
 
 
 class TestImageProcessorInit:
@@ -91,11 +84,14 @@ class TestImageProcessorInit:
         unsupported_file = temp_dir / "test.xyz"
         unsupported_file.write_text("fake image")
 
-        with patch(
-            "imaging.preprocessing.get_config_loader", return_value=mock_config_loader
+        with (
+            patch(
+                "imaging.preprocessing.get_config_loader",
+                return_value=mock_config_loader,
+            ),
+            pytest.raises(ValueError, match="Unsupported image format"),
         ):
-            with pytest.raises(ValueError, match="Unsupported image format"):
-                ImageProcessor(unsupported_file)
+            ImageProcessor(unsupported_file)
 
 
 class TestConvertToGrayscale:
@@ -132,7 +128,9 @@ class TestConvertToGrayscale:
 class TestHandleTransparency:
     """Tests for transparency handling."""
 
-    def test_rgba_to_rgb(self, sample_image_file: Path, mock_config_loader: MagicMock) -> None:
+    def test_rgba_to_rgb(
+        self, sample_image_file: Path, mock_config_loader: MagicMock
+    ) -> None:
         """RGBA image is converted to RGB with white background."""
         with patch(
             "imaging.preprocessing.get_config_loader", return_value=mock_config_loader
@@ -201,7 +199,9 @@ class TestResizeForDetail:
 
         assert max(result.size) <= 512
 
-    def test_low_detail_small_image_unchanged(self, openai_config: dict[str, Any]) -> None:
+    def test_low_detail_small_image_unchanged(
+        self, openai_config: dict[str, Any]
+    ) -> None:
         """Small images in low detail mode are unchanged."""
         small_image = Image.new("RGB", (300, 200))
         result = ImageProcessor.resize_for_detail(
@@ -220,7 +220,9 @@ class TestResizeForDetail:
         # Should fit within box and be padded to exact size
         assert result.size == (768, 1536)
 
-    def test_high_detail_anthropic_max_side(self, anthropic_config: dict[str, Any]) -> None:
+    def test_high_detail_anthropic_max_side(
+        self, anthropic_config: dict[str, Any]
+    ) -> None:
         """Anthropic high detail caps longest side without padding."""
         image = Image.new("RGB", (3000, 2000))
         result = ImageProcessor.resize_for_detail(
@@ -312,7 +314,9 @@ class TestPilImageToBase64:
         # JPEG magic bytes
         assert decoded[:2] == b"\xff\xd8"
 
-    def test_quality_parameter_affects_size(self, sample_rgb_image: Image.Image) -> None:
+    def test_quality_parameter_affects_size(
+        self, sample_rgb_image: Image.Image
+    ) -> None:
         """Different quality settings produce different sizes."""
         low_quality = ImageProcessor.pil_image_to_base64(
             sample_rgb_image, jpeg_quality=10
@@ -321,8 +325,8 @@ class TestPilImageToBase64:
             sample_rgb_image, jpeg_quality=100
         )
 
-        # Generally lower quality = smaller size, but for simple images the difference may be minimal
-        # At least verify both are valid base64 strings
+        # Generally lower quality = smaller size, but for simple images
+        # the difference may be minimal. Verify both are valid base64 strings.
         assert len(low_quality) > 0
         assert len(high_quality) > 0
         # Lower quality should generally be smaller or equal

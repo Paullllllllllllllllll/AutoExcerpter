@@ -42,11 +42,11 @@ except ImportError:
 import collections.abc
 
 from config.constants import (
-    EXIT_COMMANDS,
-    BACK_COMMANDS,
     ALL_COMMANDS,
+    BACK_COMMANDS,
     DIVIDER_CHAR,
     DIVIDER_LENGTH,
+    EXIT_COMMANDS,
 )
 
 T = TypeVar("T")
@@ -296,7 +296,8 @@ def prompt_selection(
     _safe_print(f"\n  {Colors.INFO}Selection options:{Colors.ENDC}")
     if allow_multiple:
         _safe_print(
-            f"    {Colors.DIM}- Enter numbers separated by commas (e.g., '1,3,5'){Colors.ENDC}"
+            f"    {Colors.DIM}- Enter numbers separated by commas"
+            f" (e.g., '1,3,5'){Colors.ENDC}"
         )
         _safe_print(
             f"    {Colors.DIM}- Enter a range with a dash (e.g., '1-5'){Colors.ENDC}"
@@ -345,8 +346,9 @@ def prompt_selection(
             # Parse selection
             selected_indices: set[int] = set()
 
-            # First, try to interpret as filename search (if not purely numeric/range pattern)
-            # This allows filenames with spaces, commas, etc. to be matched
+            # First, try to interpret as filename search (if not purely
+            # numeric/range pattern). This allows filenames with spaces,
+            # commas, etc. to be matched
             stripped_input = choice_str.strip()
 
             # Check if input looks like a numeric selection (numbers, ranges, commas)
@@ -362,7 +364,8 @@ def prompt_selection(
                     selected_indices.update(matched)
                 else:
                     raise ValueError(
-                        f"No items found matching '{stripped_input}'. Use numbers, ranges (e.g., 1-3), 'all', or a filename."
+                        f"No items found matching '{stripped_input}'."
+                        " Use numbers, ranges (e.g., 1-3), 'all', or a filename."
                     )
             else:
                 # Numeric selection: split by semicolon or comma
@@ -384,7 +387,8 @@ def prompt_selection(
 
                             if not (1 <= start <= end <= len(items)):
                                 raise ValueError(
-                                    f"Range {part} is invalid. Must be between 1 and {len(items)}."
+                                    f"Range {part} is invalid."
+                                    f" Must be between 1 and {len(items)}."
                                 )
 
                             selected_indices.update(range(start - 1, end))
@@ -397,7 +401,8 @@ def prompt_selection(
                         index = int(part) - 1
                         if not (0 <= index < len(items)):
                             raise ValueError(
-                                f"Selection {part} is out of range. Must be between 1 and {len(items)}."
+                                f"Selection {part} is out of range."
+                                f" Must be between 1 and {len(items)}."
                             )
                         selected_indices.add(index)
                         if not allow_multiple:
@@ -405,7 +410,8 @@ def prompt_selection(
 
                     else:
                         raise ValueError(
-                            f"Invalid input: '{part}'. Use numbers, ranges (e.g., 1-3), 'all', or a filename."
+                            f"Invalid input: '{part}'."
+                            " Use numbers, ranges (e.g., 1-3), 'all', or a filename."
                         )
 
             if not selected_indices:

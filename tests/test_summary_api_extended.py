@@ -14,9 +14,8 @@ from __future__ import annotations
 
 import json
 from collections import deque
-from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, mock_open, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -712,7 +711,7 @@ class TestGenerateSummary:
             mock_tracker.get_tokens_used_today.return_value = 500
             mock_tt.return_value = mock_tracker
 
-            result = mgr.generate_summary("Text.", 1)
+            mgr.generate_summary("Text.", 1)
 
         mock_tracker.add_tokens.assert_called_once_with(500)
 
@@ -827,11 +826,13 @@ class TestValidateSummarySchema:
 
     def test_valid_json(self) -> None:
         mgr = self._make_manager()
-        text = json.dumps({
-            "page_information": {"page_number_integer": 1},
-            "bullet_points": ["point"],
-            "references": None,
-        })
+        text = json.dumps(
+            {
+                "page_information": {"page_number_integer": 1},
+                "bullet_points": ["point"],
+                "references": None,
+            }
+        )
         is_valid, reason = mgr._validate_summary_schema(text)
         assert is_valid is True
         assert reason == ""
@@ -867,7 +868,11 @@ class TestSummaryBuildModelInputsCustomProvider:
 
         with patch(
             "llm.base.get_model_capabilities",
-            return_value={"max_tokens": True, "reasoning": False, "text_verbosity": False},
+            return_value={
+                "max_tokens": True,
+                "reasoning": False,
+                "text_verbosity": False,
+            },
         ):
             messages, _ = mgr._build_model_inputs("Sample text")
 

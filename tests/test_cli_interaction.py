@@ -8,8 +8,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
-from unittest.mock import patch
 
 import pytest
 
@@ -38,13 +36,15 @@ def sample_items() -> list[MockItem]:
         MockItem(Path(r"C:\Documents\Abbott A History Mistresses.pdf")),
         MockItem(
             Path(
-                r"C:\Documents\Mennell 1996 All manners of food eating and taste in England and France.pdf"
+                r"C:\Documents\Mennell 1996 All manners of food eating and taste"
+                r" in England and France.pdf"
             )
         ),
         MockItem(Path(r"C:\Documents\Albala 2003 Food in Early Modern Europe.pdf")),
         MockItem(
             Path(
-                r"C:\Documents\Albala 2013 Routledge International Handbook of Food Studies.pdf"
+                r"C:\Documents\Albala 2013 Routledge International Handbook"
+                r" of Food Studies.pdf"
             )
         ),
         MockItem(Path(r"C:\Documents\Ziegler The Black Death.pdf")),
@@ -133,8 +133,8 @@ class TestCLISelectionParsing:
         selected = _parse_cli_selection(sample_items, "3")  # type: ignore[arg-type]
         assert len(selected) == 1
         assert (
-            selected[0].path.name
-            == "Mennell 1996 All manners of food eating and taste in England and France.pdf"
+            selected[0].path.name == "Mennell 1996 All manners of food eating and taste"
+            " in England and France.pdf"
         )
 
     def test_parse_comma_separated_numbers(self, sample_items: list[MockItem]) -> None:
@@ -145,8 +145,8 @@ class TestCLISelectionParsing:
         assert len(selected) == 3
         assert selected[0].path.name == "Abbott A History Marriage.pdf"
         assert (
-            selected[1].path.name
-            == "Mennell 1996 All manners of food eating and taste in England and France.pdf"
+            selected[1].path.name == "Mennell 1996 All manners of food eating and taste"
+            " in England and France.pdf"
         )
         assert selected[2].path.name == "Ziegler The Black Death.pdf"
 
@@ -159,8 +159,8 @@ class TestCLISelectionParsing:
         assert selected[0].path.name == "Abbott A History Marriage.pdf"
         assert selected[1].path.name == "Abbott A History Mistresses.pdf"
         assert (
-            selected[2].path.name
-            == "Mennell 1996 All manners of food eating and taste in England and France.pdf"
+            selected[2].path.name == "Mennell 1996 All manners of food eating and taste"
+            " in England and France.pdf"
         )
 
     def test_parse_filename_pattern(self, sample_items: list[MockItem]) -> None:

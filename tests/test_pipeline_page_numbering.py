@@ -1,4 +1,4 @@
-"""Tests for pipeline.page_numbering module, specifically page number inference logic."""
+"""Tests for pipeline.page_numbering: page number inference logic."""
 
 from typing import Any
 
@@ -49,7 +49,7 @@ class TestInferUnnumberedPageNumbers:
         assert result == 0
 
     def test_no_inference_at_type_boundary(self, processor) -> None:
-        """Unnumbered page between Roman and Arabic should NOT be inferred (boundary)."""
+        """Unnumbered page between Roman and Arabic should NOT be inferred."""
         parsed_summaries: list[dict[str, Any]] = [
             {
                 "original_input_order_index": 0,
@@ -199,7 +199,8 @@ class TestInferUnnumberedPageNumbers:
         assert parsed_summaries[0]["is_genuinely_unnumbered"] is True
 
     def test_no_inference_without_surrounding_numbered_pages(self, processor) -> None:
-        """Unnumbered pages without numbered pages on BOTH sides should not be inferred."""
+        """Unnumbered pages lacking numbered neighbors on both sides are not
+        inferred."""
         parsed_summaries: list[dict[str, Any]] = [
             {
                 "original_input_order_index": 0,
@@ -619,9 +620,10 @@ class TestAdjustAndSortPageNumbers:
                 assert page_info["page_number_integer"] is None
                 assert page_info["page_number_type"] == "none"
             else:
-                assert (
-                    page_info["page_number_integer"] == expected
-                ), f"Page {i} expected {expected}, got {page_info['page_number_integer']}"
+                got = page_info["page_number_integer"]
+                assert page_info["page_number_integer"] == expected, (
+                    f"Page {i} expected {expected}, got {got}"
+                )
 
     def test_roman_and_arabic_separate_anchors(self, processor) -> None:
         """Roman and Arabic pages should use separate anchor points."""
@@ -669,7 +671,7 @@ class TestAdjustAndSortPageNumbers:
 
     def test_no_inference_at_type_boundary_in_adjustment(self, processor) -> None:
         """Unnumbered pages at type boundaries should stay unnumbered."""
-        # Page at index 1 is unnumbered between Roman and Arabic - should stay unnumbered
+        # Page at index 1 is unnumbered between Roman and Arabic — stays unnumbered.
         summary_results = [
             self._create_summary_result(0, 10, "roman", ["preface"]),
             self._create_summary_result(
@@ -698,14 +700,14 @@ class TestAdjustAndSortPageNumbers:
 
         result = processor.adjust_and_sort_page_numbers(summary_results)
 
-        # No consecutive sequence found, so fallback anchor is first page (page 1 at index 0)
-        # All pages should be adjusted relative to this: page = 1 + (index - 0)
+        # No consecutive sequence found; fallback anchor is first page (index 0).
+        # All pages adjusted relative to this: page = 1 + (index - 0).
         for i, r in enumerate(result):
             page_info = r["page_information"]
             expected = 1 + i  # 1, 2, 3, 4
-            assert (
-                page_info["page_number_integer"] == expected
-            ), f"Page {i} expected {expected}, got {page_info['page_number_integer']}"
+            assert page_info["page_number_integer"] == expected, (
+                f"Page {i} expected {expected}, got {page_info['page_number_integer']}"
+            )
 
     def test_preserves_document_order(self, processor) -> None:
         """Output should be sorted by original_input_order_index."""
@@ -753,9 +755,9 @@ class TestAdjustAndSortPageNumbers:
         # Pages should retain their consecutive numbering
         for i, r in enumerate(result):
             page_info = r["page_information"]
-            assert (
-                page_info["page_number_integer"] == i + 1
-            ), f"Page {i} expected {i+1}, got {page_info['page_number_integer']}"
+            assert page_info["page_number_integer"] == i + 1, (
+                f"Page {i} expected {i + 1}, got {page_info['page_number_integer']}"
+            )
             assert page_info["page_number_type"] == "arabic"
 
     def test_api_style_anchor_adjustment(self, processor) -> None:
@@ -781,9 +783,10 @@ class TestAdjustAndSortPageNumbers:
                 assert page_info["page_number_integer"] is None
                 assert page_info["page_number_type"] == "none"
             else:
-                assert (
-                    page_info["page_number_integer"] == expected
-                ), f"Page {i} expected {expected}, got {page_info['page_number_integer']}"
+                got = page_info["page_number_integer"]
+                assert page_info["page_number_integer"] == expected, (
+                    f"Page {i} expected {expected}, got {got}"
+                )
 
     def test_api_style_with_preface_and_content(self, processor) -> None:
         """Test mixed Roman (preface) and Arabic (content) pages with flat structure."""

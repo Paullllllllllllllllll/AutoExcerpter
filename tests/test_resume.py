@@ -6,11 +6,13 @@ Covers:
 - ResumeChecker (skip/overwrite modes, item-level and page-level detection)
 - load_completed_pages (JSON array parsing, incomplete log recovery)
 - load_transcription_results_from_log
-- Integration with main.py's _resolve_item_output_dir, _display_resume_info, _parse_execution_mode (cli.args)
+- Integration with main.py's _resolve_item_output_dir, _display_resume_info,
+  _parse_execution_mode (cli.args)
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -19,15 +21,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from pipeline.paths import create_safe_directory_name, create_safe_log_filename
 from pipeline.resume import (
     ProcessingState,
     ResumeChecker,
     ResumeResult,
+    _parse_log_entries,
     load_completed_pages,
     load_transcription_results_from_log,
-    _parse_log_entries,
 )
-from pipeline.paths import create_safe_directory_name, create_safe_log_filename
 
 
 # ============================================================================
@@ -166,7 +168,7 @@ class TestResumeCheckerOverwrite:
     def test_should_skip_always_returns_none(
         self, checker_overwrite: ResumeChecker, output_dir: Path, item_name: str
     ) -> None:
-        """In overwrite mode, should_skip always returns NONE regardless of existing files."""
+        """In overwrite mode, should_skip always returns NONE regardless of files."""
         # Create all output files
         _create_file(output_dir / f"{item_name}.txt")
         _create_file(output_dir / f"{item_name}.docx")
@@ -258,7 +260,7 @@ class TestResumeCheckerTranscriptionOnly:
     def test_txt_exists_but_summaries_missing(
         self, checker_skip: ResumeChecker, output_dir: Path, item_name: str
     ) -> None:
-        """State is TRANSCRIPTION_ONLY when .txt exists but summary files are missing."""
+        """State is TRANSCRIPTION_ONLY when .txt exists but summaries are missing."""
         _create_file(output_dir / f"{item_name}.txt")
 
         result = checker_skip.should_skip(item_name, output_dir)
@@ -313,7 +315,7 @@ class TestResumeCheckerPartial:
     def test_incomplete_log_recovered(
         self, checker_skip: ResumeChecker, output_dir: Path, item_name: str
     ) -> None:
-        """Incomplete JSON array (no closing bracket) is still parsed for page-level resume."""
+        """Unclosed JSON array is still parsed for page-level resume."""
         entries = [
             {"original_input_order_index": 0, "page": 1, "transcription": "text"},
         ]
@@ -716,15 +718,15 @@ class TestMainIntegration:
         assert overrides["summary_model"]["max_output_tokens"] == 7000
 
     def test_positive_int_validator(self) -> None:
-        """_positive_int accepts valid positive integers and rejects non-positive values."""
+        """_positive_int accepts positive integers and rejects non-positive values."""
         from cli.args import _positive_int
 
         assert _positive_int("7") == 7
-        with pytest.raises(Exception):
+        with pytest.raises(argparse.ArgumentTypeError, match="must be > 0"):
             _positive_int("0")
 
     def test_setup_argparse_cli_supports_named_paths_without_positionals(self) -> None:
-        """setup_argparse accepts named --input-path/--output-path without positional args."""
+        """setup_argparse accepts --input-path/--output-path without positionals."""
         from cli.args import setup_argparse
 
         with patch("cli.args.config") as mock_config:
@@ -750,11 +752,13 @@ class TestMainIntegration:
         """setup_argparse raises SystemExit when CLI mode has no input/output path."""
         from cli.args import setup_argparse
 
-        with patch("cli.args.config") as mock_config:
+        with (
+            patch("cli.args.config") as mock_config,
+            patch.object(sys, "argv", ["main.py", "--all"]),
+            pytest.raises(SystemExit),
+        ):
             mock_config.CLI_MODE = True
-            with patch.object(sys, "argv", ["main.py", "--all"]):
-                with pytest.raises(SystemExit):
-                    setup_argparse()
+            setup_argparse()
 
     def test_display_resume_info_no_skipped(self) -> None:
         """_display_resume_info returns True when no items are skipped."""
@@ -777,7 +781,7 @@ class TestMainIntegration:
         assert result is False
 
     def test_resolve_item_output_dir_colocated(self, tmp_path: Path) -> None:
-        """_resolve_item_output_dir returns input parent when INPUT_PATHS_IS_OUTPUT_PATH is True."""
+        """Returns input parent dir when INPUT_PATHS_IS_OUTPUT_PATH is True."""
         from main import _resolve_item_output_dir
 
         item = MagicMock()
@@ -791,7 +795,7 @@ class TestMainIntegration:
         assert result == tmp_path / "subdir"
 
     def test_resolve_item_output_dir_separate(self, tmp_path: Path) -> None:
-        """_resolve_item_output_dir returns base_output_dir when INPUT_PATHS_IS_OUTPUT_PATH is False."""
+        """Returns base_output_dir when INPUT_PATHS_IS_OUTPUT_PATH is False."""
         from main import _resolve_item_output_dir
 
         item = MagicMock()
@@ -809,8 +813,10 @@ class TestMainIntegration:
 # Edge Cases
 # ============================================================================
 class TestEdgeCases:
-    def test_long_item_name(self, checker_skip: ResumeChecker, output_dir: Path) -> None:
-        """Resume checker works with long item names that trigger safe-name truncation."""
+    def test_long_item_name(
+        self, checker_skip: ResumeChecker, output_dir: Path
+    ) -> None:
+        """Resume checker handles long names that trigger safe-name truncation."""
         long_name = "A" * 100
         _create_file(output_dir / f"{long_name}.txt")
         _create_file(output_dir / f"{long_name}.docx")
@@ -848,7 +854,7 @@ class TestEdgeCases:
     def test_filter_items_with_custom_objects(
         self, checker_skip: ResumeChecker, output_dir: Path
     ) -> None:
-        """filter_items works with arbitrary objects via name_func and output_dir_func."""
+        """filter_items works with arbitrary objects via name_func/output_dir_func."""
         # Create complete output for item with stem "Alpha"
         _create_file(output_dir / "Alpha.txt")
         _create_file(output_dir / "Alpha.docx")

@@ -6,11 +6,11 @@ used across the test suite.
 
 from __future__ import annotations
 
-import json
 import os
 import tempfile
+from collections.abc import Generator
 from pathlib import Path
-from typing import Any, Generator
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -35,7 +35,7 @@ def test_data_dir(project_root: Path) -> Path:
 
 
 @pytest.fixture
-def temp_dir() -> Generator[Path, None, None]:
+def temp_dir() -> Generator[Path]:
     """Create a temporary directory for test outputs."""
     with tempfile.TemporaryDirectory() as tmpdir:
         yield Path(tmpdir)
@@ -202,7 +202,8 @@ def sample_citations() -> list[str]:
     """Return sample citation strings for testing."""
     return [
         "Smith, J. (2020). Introduction to Testing. New York: Test Press.",
-        "Johnson, A., & Williams, B. (2019). Advanced Python Testing. London: Code Publishers.",
+        "Johnson, A., & Williams, B. (2019). Advanced Python Testing. "
+        "London: Code Publishers.",
         "Brown, C. (2021). Modern Software Development. Cambridge University Press.",
         "Smith, J. (2020). Introduction to Testing. New York: Test Press.",  # Duplicate
     ]
@@ -229,7 +230,7 @@ def mock_openalex_response() -> dict[str, Any]:
 # Environment Fixtures
 # ============================================================================
 @pytest.fixture
-def mock_api_keys() -> Generator[None, None, None]:
+def mock_api_keys() -> Generator[None]:
     """Set up mock API keys for testing."""
     with patch.dict(
         os.environ,

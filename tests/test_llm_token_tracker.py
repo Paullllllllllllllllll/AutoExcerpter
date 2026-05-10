@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 import llm.token_tracker as token_tracker
 
 
@@ -30,7 +28,9 @@ class TestDailyTokenTracker:
         )
         assert tracker2.get_tokens_used_today() == 10
 
-    def test_add_tokens_ignored_when_disabled_or_non_positive(self, tmp_path: Path) -> None:
+    def test_add_tokens_ignored_when_disabled_or_non_positive(
+        self, tmp_path: Path
+    ) -> None:
         tracker = token_tracker.DailyTokenTracker(
             daily_limit=100,
             enabled=False,

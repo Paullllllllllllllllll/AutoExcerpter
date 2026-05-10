@@ -19,7 +19,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 
@@ -392,7 +392,9 @@ class TestGetTokenTrackerSingleton:
         assert t.daily_limit == 500
         assert t.enabled is True
 
-    def test_second_call_returns_same_instance(self, monkeypatch, tmp_path: Path) -> None:
+    def test_second_call_returns_same_instance(
+        self, monkeypatch, tmp_path: Path
+    ) -> None:
         """Second call returns the same singleton instance."""
         monkeypatch.setattr(token_tracker, "_TOKEN_TRACKER_FILE", tmp_path / "s.json")
         monkeypatch.setattr(

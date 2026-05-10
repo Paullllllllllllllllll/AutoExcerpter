@@ -3,21 +3,21 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from cli.errors import (
-    ProcessingError,
-    ConfigurationError,
     APIError,
+    ConfigurationError,
     FileProcessingError,
+    ProcessingError,
     handle_critical_error,
     handle_recoverable_error,
     safe_execute,
-    validate_file_exists,
-    validate_directory_exists,
     validate_config_value,
+    validate_directory_exists,
+    validate_file_exists,
 )
 
 
@@ -158,7 +158,9 @@ class TestHandleRecoverableError:
     """Tests for handle_recoverable_error()."""
 
     @patch("cli.errors.print_warning")
-    def test_shows_user_message_when_enabled(self, mock_print_warning: MagicMock) -> None:
+    def test_shows_user_message_when_enabled(
+        self, mock_print_warning: MagicMock
+    ) -> None:
         """Warning is printed when show_user_message is True."""
         err = ValueError("minor issue")
         handle_recoverable_error(err, context="parsing", show_user_message=True)

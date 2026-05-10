@@ -1,7 +1,7 @@
 """Multi-provider LLM client using LangChain's unified interface.
 
-This module provides a provider-agnostic interface for interacting with various LLM providers
-through LangChain. It supports:
+This module provides a provider-agnostic interface for interacting with various LLM
+providers through LangChain. It supports:
 
 - OpenAI (GPT-4, GPT-5, o-series models)
 - Anthropic (Claude models)
@@ -15,7 +15,9 @@ Usage:
     >>> from llm.client import get_chat_model, LLMConfig
     >>> config = LLMConfig(model="gpt-5-mini", provider="openai")
     >>> model = get_chat_model(config)
-    >>> response = model.invoke([SystemMessage(content="..."), HumanMessage(content="...")])
+    >>> response = model.invoke(
+    ...     [SystemMessage(content="..."), HumanMessage(content="...")]
+    ... )
 
 Provider Detection:
 - If model string contains ":" (e.g., "openai:gpt-5"), provider is auto-detected
@@ -30,10 +32,10 @@ from typing import Any, Literal
 
 from langchain_core.language_models import BaseChatModel
 
+from config.logger import setup_logger
 from llm.capabilities import (
     detect_capabilities,
 )
-from config.logger import setup_logger
 
 logger = setup_logger(__name__)
 
@@ -110,7 +112,8 @@ class LLMConfig:
         provider: Provider name ("openai", "anthropic", "google", "openrouter")
         api_key: Optional API key (defaults to environment variable)
         timeout: Request timeout in seconds
-        max_retries: Maximum retry attempts. LangChain handles retry with exponential backoff.
+        max_retries: Maximum retry attempts. LangChain handles retry with exponential
+            backoff.
         temperature: Model temperature (0.0 - 2.0)
         max_tokens: Maximum output tokens
         service_tier: OpenAI service tier ("flex", "default", "auto")
@@ -198,9 +201,11 @@ def _get_api_key(
     # Custom provider: read env var name from model config
     if provider == "custom":
         from config.loader import get_config_loader
+
         model_cfg = get_config_loader().get_model_config()
         sections = (
-            (section_hint,) if section_hint
+            (section_hint,)
+            if section_hint
             else ("transcription_model", "summary_model")
         )
         for section_key in sections:
@@ -212,7 +217,7 @@ def _get_api_key(
                     api_key = os.environ.get(env_key)
                     if api_key:
                         return api_key
-        raise EnvironmentError(
+        raise OSError(
             "Custom endpoint API key not found. Set the environment "
             "variable specified in custom_endpoint.api_key_env_var."
         )
@@ -222,7 +227,7 @@ def _get_api_key(
 
     api_key = os.environ.get(env_key)
     if not api_key:
-        raise EnvironmentError(
+        raise OSError(
             f"API key not found for provider '{provider}'. "
             f"Please set the {env_key} environment variable."
         )
@@ -291,9 +296,11 @@ def get_chat_model(config: LLMConfig) -> BaseChatModel:
         return _create_openrouter_model(api_key, kwargs)
     elif provider == "custom":
         from config.loader import get_config_loader
+
         model_cfg = get_config_loader().get_model_config()
         sections = (
-            (config.section_hint,) if config.section_hint
+            (config.section_hint,)
+            if config.section_hint
             else ("transcription_model", "summary_model")
         )
         for section_key in sections:
@@ -304,8 +311,7 @@ def get_chat_model(config: LLMConfig) -> BaseChatModel:
                 if base_url:
                     return _create_custom_model(api_key, kwargs, base_url)
         raise ValueError(
-            "provider: custom requires custom_endpoint.base_url "
-            "in model config"
+            "provider: custom requires custom_endpoint.base_url in model config"
         )
     else:
         raise ValueError(f"Unsupported provider: {provider}")
@@ -326,7 +332,7 @@ def _create_openai_model(
         raise ImportError(
             "langchain-openai package is required for OpenAI models. "
             "Install with: pip install langchain-openai"
-        )
+        ) from None
 
     kwargs["api_key"] = api_key
 
@@ -337,7 +343,8 @@ def _create_openai_model(
     kwargs["use_responses_api"] = True
 
     logger.debug(
-        f"Creating OpenAI model: {kwargs.get('model')} (max_retries={kwargs.get('max_retries', 2)})"
+        f"Creating OpenAI model: {kwargs.get('model')} "
+        f"(max_retries={kwargs.get('max_retries', 2)})"
     )
     return ChatOpenAI(**kwargs)
 
@@ -350,7 +357,7 @@ def _create_anthropic_model(api_key: str, kwargs: dict[str, Any]) -> BaseChatMod
         raise ImportError(
             "langchain-anthropic package is required for Anthropic models. "
             "Install with: pip install langchain-anthropic"
-        )
+        ) from None
 
     kwargs["api_key"] = api_key
 
@@ -370,7 +377,7 @@ def _create_google_model(api_key: str, kwargs: dict[str, Any]) -> BaseChatModel:
         raise ImportError(
             "langchain-google-genai package is required for Google models. "
             "Install with: pip install langchain-google-genai"
-        )
+        ) from None
 
     kwargs["google_api_key"] = api_key
 
@@ -390,7 +397,7 @@ def _create_openrouter_model(api_key: str, kwargs: dict[str, Any]) -> BaseChatMo
         raise ImportError(
             "langchain-openai package is required for OpenRouter models. "
             "Install with: pip install langchain-openai"
-        )
+        ) from None
 
     kwargs["api_key"] = api_key
     kwargs["base_url"] = SUPPORTED_PROVIDERS["openrouter"]["base_url"]
@@ -417,15 +424,12 @@ def _create_custom_model(
         raise ImportError(
             "langchain-openai is required for custom endpoints. "
             "Install with: pip install langchain-openai"
-        )
+        ) from None
 
     kwargs["api_key"] = api_key
     kwargs["base_url"] = base_url
 
-    logger.debug(
-        f"Creating custom endpoint model: {kwargs.get('model')} "
-        f"at {base_url}"
-    )
+    logger.debug(f"Creating custom endpoint model: {kwargs.get('model')} at {base_url}")
     return ChatOpenAI(**kwargs)
 
 
@@ -463,7 +467,7 @@ def get_available_providers() -> list[ProviderType]:
     Returns:
         List of available provider names
     """
-    return [p for p in SUPPORTED_PROVIDERS.keys() if is_provider_available(p)]  # type: ignore
+    return [p for p in SUPPORTED_PROVIDERS if is_provider_available(p)]  # type: ignore
 
 
 # ============================================================================

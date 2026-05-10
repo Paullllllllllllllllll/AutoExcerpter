@@ -10,10 +10,10 @@ Generates formatted Word documents with structured summaries, including:
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from collections.abc import Callable
-from typing import Any, TypeAlias
+from typing import Any
 from xml.etree import ElementTree as ET
 
 import mathml2omml
@@ -26,22 +26,22 @@ from latex2mathml.converter import convert as latex_to_mathml
 
 from config import app as config
 from config.constants import (
-    MATH_NAMESPACE,
-    TITLE_HEADING_LEVEL,
-    PAGE_HEADING_LEVEL,
-    TITLE_SPACE_AFTER_PT,
-    PAGE_HEADING_SPACE_BEFORE_PT,
-    PAGE_HEADING_SPACE_AFTER_PT,
     BULLET_SPACE_AFTER_PT,
+    MATH_NAMESPACE,
+    PAGE_HEADING_LEVEL,
+    PAGE_HEADING_SPACE_AFTER_PT,
+    PAGE_HEADING_SPACE_BEFORE_PT,
     REF_INDENT_PT,
+    TITLE_HEADING_LEVEL,
+    TITLE_SPACE_AFTER_PT,
 )
 from config.logger import setup_logger
 from rendering.citations import CitationManager, _format_page_range, enrich_if_enabled
 from rendering.summary import (
+    PAGE_TYPE_LABELS,
+    STRUCTURE_PAGE_TYPE_ORDER,
     prepare_summary_data,
     sanitize_for_xml,
-    STRUCTURE_PAGE_TYPE_ORDER,
-    PAGE_TYPE_LABELS,
 )
 
 logger = setup_logger(__name__)
@@ -58,7 +58,8 @@ def parse_latex_in_text(text: str) -> list[tuple[str, str]]:
     - Nested braces within formulas
 
     Returns:
-        List of (content, type) tuples where type is 'text', 'latex_display', or 'latex_inline'.
+        List of (content, type) tuples where type is 'text', 'latex_display', or
+        'latex_inline'.
     """
     if not text:
         return [("", "text")]
@@ -71,7 +72,8 @@ def parse_latex_in_text(text: str) -> list[tuple[str, str]]:
 
     segments: list[tuple[str, str]] = []
 
-    # Pattern for display math $$...$$ (process first - greedy on delimiters, non-greedy on content)
+    # Pattern for display math $$...$$ (process first — greedy on delimiters,
+    # non-greedy on content)
     display_pattern = r"\$\$(.+?)\$\$"
 
     # Pattern for inline math $...$ (single $, non-greedy, must not be empty)
@@ -160,7 +162,8 @@ def _literal_rule(
     Callable[[str], str],
     str,
 ]:
-    """Create a (should_apply, transform, description) tuple for literal string rules."""
+    """Create a (should_apply, transform, description) tuple for literal string
+    rules."""
 
     def should_apply(text: str) -> bool:
         return old in text
@@ -174,10 +177,20 @@ def _literal_rule(
 def _simplify_delimiter_sizing(text: str) -> str:
     """Replace all delimiter size commands with plain delimiters."""
     sizes = [
-        "\\Big", "\\big", "\\bigg", "\\Bigg",
-        "\\Bigl", "\\Bigr", "\\bigl", "\\bigr",
-        "\\biggl", "\\biggr", "\\Biggl", "\\Biggr",
-        "\\bigm", "\\Bigm",
+        "\\Big",
+        "\\big",
+        "\\bigg",
+        "\\Bigg",
+        "\\Bigl",
+        "\\Bigr",
+        "\\bigl",
+        "\\bigr",
+        "\\biggl",
+        "\\biggr",
+        "\\Biggl",
+        "\\Biggr",
+        "\\bigm",
+        "\\Bigm",
     ]
     delims = ["(", ")", "[", "]", "|", "\\{", "\\}", "\\|", "."]
     for size in sizes:
@@ -202,7 +215,7 @@ def _simplify_auto_sizing(text: str) -> str:
     return text
 
 
-_LaTeXRule: TypeAlias = tuple[Callable[[str], bool], Callable[[str], str], str]
+type _LaTeXRule = tuple[Callable[[str], bool], Callable[[str], str], str]
 
 # Module-level list: each entry is (should_apply, transform, description)
 _LATEX_SIMPLIFICATIONS: list[_LaTeXRule] = [
@@ -210,8 +223,12 @@ _LATEX_SIMPLIFICATIONS: list[_LaTeXRule] = [
     _literal_rule("\\land", "\\wedge", "logical operator (\\land -> \\wedge)"),
     _literal_rule("\\lor", "\\vee", "logical operator (\\lor -> \\vee)"),
     _literal_rule("\\lnot", "\\neg", "logical operator (\\lnot -> \\neg)"),
-    _literal_rule("\\iff", "\\Leftrightarrow", "logical operator (\\iff -> \\Leftrightarrow)"),
-    _literal_rule("\\implies", "\\Rightarrow", "logical operator (\\implies -> \\Rightarrow)"),
+    _literal_rule(
+        "\\iff", "\\Leftrightarrow", "logical operator (\\iff -> \\Leftrightarrow)"
+    ),
+    _literal_rule(
+        "\\implies", "\\Rightarrow", "logical operator (\\implies -> \\Rightarrow)"
+    ),
     # Text commands
     _regex_rule(r"\\text\{([^}]*)\}", r"\\mathrm{\1}", "text -> mathrm"),
     _regex_rule(r"\\textrm\{([^}]*)\}", r"\\mathrm{\1}", "textrm -> mathrm"),
@@ -219,18 +236,35 @@ _LATEX_SIMPLIFICATIONS: list[_LaTeXRule] = [
     _regex_rule(r"\\textbf\{([^}]*)\}", r"\\mathbf{\1}", "textbf -> mathbf"),
     # Accent macros
     _regex_rule(r"\\bar\{([^}]+)\}", r"\\overline{\1}", "accent (bar -> overline)"),
-    _regex_rule(r"\\tilde\{([^}]+)\}", r"\\widetilde{\1}", "accent (tilde -> widetilde)"),
+    _regex_rule(
+        r"\\tilde\{([^}]+)\}", r"\\widetilde{\1}", "accent (tilde -> widetilde)"
+    ),
     _regex_rule(r"\\hat\{([^}]+)\}", r"\\widehat{\1}", "accent (hat -> widehat)"),
-    _regex_rule(r"\\vec\{([^}]+)\}", r"\\overrightarrow{\1}", "accent (vec -> overrightarrow)"),
+    _regex_rule(
+        r"\\vec\{([^}]+)\}", r"\\overrightarrow{\1}", "accent (vec -> overrightarrow)"
+    ),
     _regex_rule(r"\\dot\{([^}]+)\}", r"\1", "accent (dot removed)"),
     _regex_rule(r"\\ddot\{([^}]+)\}", r"\1", "accent (ddot removed)"),
     # Delimiter sizing (complex transform)
     (
         lambda text: any(
             f"{s}{d}" in text
-            for s in ["\\Big", "\\big", "\\bigg", "\\Bigg", "\\Bigl", "\\Bigr",
-                       "\\bigl", "\\bigr", "\\biggl", "\\biggr", "\\Biggl",
-                       "\\Biggr", "\\bigm", "\\Bigm"]
+            for s in [
+                "\\Big",
+                "\\big",
+                "\\bigg",
+                "\\Bigg",
+                "\\Bigl",
+                "\\Bigr",
+                "\\bigl",
+                "\\bigr",
+                "\\biggl",
+                "\\biggr",
+                "\\Biggl",
+                "\\Biggr",
+                "\\bigm",
+                "\\Bigm",
+            ]
             for d in ["(", ")", "[", "]", "|", "\\{", "\\}", "\\|", "."]
         ),
         _simplify_delimiter_sizing,
@@ -244,9 +278,13 @@ _LATEX_SIMPLIFICATIONS: list[_LaTeXRule] = [
     ),
     # Overbrace/underbrace
     _regex_rule(r"\\overbrace\{([^}]+)\}\^?\{?[^}]*\}?", r"\1", "overbrace simplified"),
-    _regex_rule(r"\\underbrace\{([^}]+)\}_?\{?[^}]*\}?", r"\1", "underbrace simplified"),
+    _regex_rule(
+        r"\\underbrace\{([^}]+)\}_?\{?[^}]*\}?", r"\1", "underbrace simplified"
+    ),
     _regex_rule(r"\\overleftarrow\{([^}]+)\}", r"\1", "overleftarrow simplified"),
-    _regex_rule(r"\\overrightarrow\{([^}]+)\}", r"\\vec{\1}", "overrightarrow simplified"),
+    _regex_rule(
+        r"\\overrightarrow\{([^}]+)\}", r"\\vec{\1}", "overrightarrow simplified"
+    ),
     _regex_rule(r"\\underleftarrow\{([^}]+)\}", r"\1", "underleftarrow simplified"),
     _regex_rule(r"\\underrightarrow\{([^}]+)\}", r"\1", "underrightarrow simplified"),
     # Phantoms
@@ -264,13 +302,34 @@ _LATEX_SIMPLIFICATIONS: list[_LaTeXRule] = [
     _regex_rule(r"\\vspace\{[^}]*\}", "", "vspace normalized"),
     _regex_rule(r"\\mspace\{[^}]*\}", " ", "mspace normalized"),
     # Operatorname
-    _regex_rule(r"\\operatorname\{([^}]+)\}", r"\\mathrm{\1}", "operatorname -> mathrm"),
+    _regex_rule(
+        r"\\operatorname\{([^}]+)\}", r"\\mathrm{\1}", "operatorname -> mathrm"
+    ),
     # Environments
-    _regex_rule(r"\\begin\{align\*?\}(.+?)\\end\{align\*?\}", r"\1", "align env unwrapped", re.DOTALL),
-    _regex_rule(r"\\begin\{gather\*?\}(.+?)\\end\{gather\*?\}", r"\1", "gather env unwrapped", re.DOTALL),
-    _regex_rule(r"\\begin\{equation\*?\}(.+?)\\end\{equation\*?\}", r"\1", "equation env unwrapped", re.DOTALL),
-    _regex_rule(r"\\begin\{split\}(.+?)\\end\{split\}", r"\1", "split env unwrapped", re.DOTALL),
-    _regex_rule(r"\\begin\{cases\}(.+?)\\end\{cases\}", r"\1", "cases env unwrapped", re.DOTALL),
+    _regex_rule(
+        r"\\begin\{align\*?\}(.+?)\\end\{align\*?\}",
+        r"\1",
+        "align env unwrapped",
+        re.DOTALL,
+    ),
+    _regex_rule(
+        r"\\begin\{gather\*?\}(.+?)\\end\{gather\*?\}",
+        r"\1",
+        "gather env unwrapped",
+        re.DOTALL,
+    ),
+    _regex_rule(
+        r"\\begin\{equation\*?\}(.+?)\\end\{equation\*?\}",
+        r"\1",
+        "equation env unwrapped",
+        re.DOTALL,
+    ),
+    _regex_rule(
+        r"\\begin\{split\}(.+?)\\end\{split\}", r"\1", "split env unwrapped", re.DOTALL
+    ),
+    _regex_rule(
+        r"\\begin\{cases\}(.+?)\\end\{cases\}", r"\1", "cases env unwrapped", re.DOTALL
+    ),
     # Alignment markers
     (
         lambda text: "&" in text or "\\\\" in text,
@@ -329,7 +388,7 @@ def sanitize_omml_xml(omml_markup: str) -> str:
                 (m.start(), m.end()) for m in re.finditer(pattern, fixed_markup)
             ]
 
-            for start, end in reversed(positions):
+            for _start, end in reversed(positions):
                 after_tag = fixed_markup[end:]
                 close_prop = after_tag.find("</m:groupChrPr>")
                 close_group = after_tag.find("</m:groupChr>")
@@ -380,9 +439,11 @@ def sanitize_omml_xml(omml_markup: str) -> str:
 
                     fixed_markup3 = re.sub(
                         r"<m:groupChr>\s*<m:groupChrPr[^>]*>.*?</m:groupChr>",
-                        lambda m: m.group(0)
-                        .replace("<m:groupChrPr", "<!--m:groupChrPr")
-                        .replace("</m:groupChrPr>", "-->"),
+                        lambda m: (
+                            m.group(0)
+                            .replace("<m:groupChrPr", "<!--m:groupChrPr")
+                            .replace("</m:groupChrPr>", "-->")
+                        ),
                         omml_markup,
                         flags=re.DOTALL,
                     )
@@ -400,7 +461,8 @@ def sanitize_omml_xml(omml_markup: str) -> str:
 
 
 def add_math_to_paragraph(paragraph: Any, latex_code: str) -> None:
-    """Add a mathematical formula to a paragraph using OMML for native Word equation rendering."""
+    """Add a mathematical formula to a paragraph using OMML for native Word equation
+    rendering."""
     try:
         mathml = latex_to_mathml(latex_code)
         omml_markup = mathml2omml.convert(mathml)
@@ -426,7 +488,10 @@ def add_math_to_paragraph(paragraph: Any, latex_code: str) -> None:
                 "XML parsing failed, attempting to sanitize OMML: %s", parse_error
             )
             sanitized_omml = sanitize_omml_xml(omml_markup)
-            sanitized_para = f'<m:oMathPara xmlns:m="{MATH_NAMESPACE}">{sanitized_omml}</m:oMathPara>'
+            sanitized_para = (
+                f'<m:oMathPara xmlns:m="{MATH_NAMESPACE}">'
+                f"{sanitized_omml}</m:oMathPara>"
+            )
             omml_element = parse_xml(sanitized_para)
 
         paragraph._p.append(omml_element)
@@ -455,7 +520,10 @@ def add_math_to_paragraph(paragraph: Any, latex_code: str) -> None:
                         f'<m:oMath xmlns:m="{MATH_NAMESPACE}">{omml_markup}</m:oMath>'
                     )
 
-                omml_para = f'<m:oMathPara xmlns:m="{MATH_NAMESPACE}">{omml_markup}</m:oMathPara>'
+                omml_para = (
+                    f'<m:oMathPara xmlns:m="{MATH_NAMESPACE}">'
+                    f"{omml_markup}</m:oMathPara>"
+                )
                 omml_element = parse_xml(omml_para)
                 paragraph._p.append(omml_element)
                 logger.info("Successfully converted simplified LaTeX")
@@ -536,10 +604,10 @@ def create_docx_summary(
     title.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
     title.paragraph_format.space_after = Pt(TITLE_SPACE_AFTER_PT)
 
-    metadata = "Processed: %s | Content pages: %s | Total pages: %s" % (
-        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        data.content_page_count,
-        len(filtered_results),
+    metadata = (
+        f"Processed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        f" | Content pages: {data.content_page_count}"
+        f" | Total pages: {len(filtered_results)}"
     )
     meta_paragraph = document.add_paragraph(metadata)
     meta_paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
@@ -566,17 +634,15 @@ def create_docx_summary(
 
     # === SECTION 3: Content Summaries ===
     for page_item in data.page_render_items:
-            page_heading = document.add_heading(page_item.heading_text, PAGE_HEADING_LEVEL)
-            page_heading.paragraph_format.space_before = Pt(
-                PAGE_HEADING_SPACE_BEFORE_PT
-            )
-            page_heading.paragraph_format.space_after = Pt(PAGE_HEADING_SPACE_AFTER_PT)
+        page_heading = document.add_heading(page_item.heading_text, PAGE_HEADING_LEVEL)
+        page_heading.paragraph_format.space_before = Pt(PAGE_HEADING_SPACE_BEFORE_PT)
+        page_heading.paragraph_format.space_after = Pt(PAGE_HEADING_SPACE_AFTER_PT)
 
-            for point in page_item.bullet_points:
-                paragraph = document.add_paragraph(style="List Bullet")
-                paragraph.paragraph_format.space_before = Pt(0)
-                paragraph.paragraph_format.space_after = Pt(BULLET_SPACE_AFTER_PT)
-                add_formatted_text_to_paragraph(paragraph, point)
+        for point in page_item.bullet_points:
+            paragraph = document.add_paragraph(style="List Bullet")
+            paragraph.paragraph_format.space_before = Pt(0)
+            paragraph.paragraph_format.space_after = Pt(BULLET_SPACE_AFTER_PT)
+            add_formatted_text_to_paragraph(paragraph, point)
 
     # === SECTION 4: Consolidated References ===
     if citation_manager.citations:
@@ -597,9 +663,10 @@ def create_docx_summary(
         ref_main_heading.paragraph_format.space_after = Pt(PAGE_HEADING_SPACE_AFTER_PT)
 
         note_text = (
-            "The following references were extracted from the document and consolidated. "
-            "Duplicate citations have been merged, showing all pages where each citation appears. "
-            "Where available, hyperlinks provide access to extended metadata via OpenAlex."
+            "The following references were extracted from the document and "
+            "consolidated. Duplicate citations have been merged, showing all "
+            "pages where each citation appears. Where available, hyperlinks "
+            "provide access to extended metadata via OpenAlex."
         )
         note_paragraph = document.add_paragraph(note_text)
         note_paragraph.paragraph_format.space_after = Pt(PAGE_HEADING_SPACE_AFTER_PT)

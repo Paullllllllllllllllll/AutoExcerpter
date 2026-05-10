@@ -17,27 +17,27 @@ The client handles:
 
 from __future__ import annotations
 
+import base64
+import contextlib
 import json
 import re
 import time
-import base64
 from pathlib import Path
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from config.accessors import get_rate_limits
-from llm.base import LLMClientBase
-from llm.client import ProviderType, get_model_capabilities
-from llm.rate_limit import RateLimiter
-from llm.prompts import render_prompt_with_schema, strip_markdown_code_block
-from imaging import ImageProcessor
 from config.loader import PROMPTS_DIR, SCHEMAS_DIR
 from config.logger import setup_logger
+from imaging import ImageProcessor
+from llm.base import LLMClientBase
+from llm.client import ProviderType, get_model_capabilities
+from llm.prompts import render_prompt_with_schema, strip_markdown_code_block
+from llm.rate_limit import RateLimiter
+from llm.types import CustomEndpointCapabilities
 
 logger = setup_logger(__name__)
-
-from llm.types import CustomEndpointCapabilities
 
 # Constants
 TRANSCRIPTION_SCHEMA_FILE = "transcription_schema.json"
@@ -46,8 +46,12 @@ PLAIN_TEXT_PROMPT_FILE = "transcription_plain_text_prompt.txt"
 
 # Required top-level keys in the transcription JSON schema response
 TRANSCRIPTION_REQUIRED_KEYS = frozenset(
-    {"image_analysis", "transcription", "no_transcribable_text",
-     "transcription_not_possible"}
+    {
+        "image_analysis",
+        "transcription",
+        "no_transcribable_text",
+        "transcription_not_possible",
+    }
 )
 
 
@@ -93,7 +97,11 @@ class TranscriptionManager(LLMClientBase):
         if rate_limiter is None:
             rate_limiter = RateLimiter(get_rate_limits())
         super().__init__(
-            model_name, provider, api_key, timeout, rate_limiter,
+            model_name,
+            provider,
+            api_key,
+            timeout,
+            rate_limiter,
             section_hint="transcription_model",
         )
 
@@ -109,7 +117,8 @@ class TranscriptionManager(LLMClientBase):
         if not has_multimodal:
             logger.warning(
                 f"Model '{model_name}' may not support multimodal (image) input. "
-                "Image transcription may fail. Consider using gpt-5, gpt-4o, claude, or gemini."
+                "Image transcription may fail. "
+                "Consider using gpt-5, gpt-4o, claude, or gemini."
             )
 
         # Load schema and system prompt
@@ -153,11 +162,9 @@ class TranscriptionManager(LLMClientBase):
             else:
                 # Modes A/C: load schema as usual
                 prompt_file = SYSTEM_PROMPT_FILE
-                schema_path = (
-                    SCHEMAS_DIR / TRANSCRIPTION_SCHEMA_FILE
-                ).resolve()
+                schema_path = (SCHEMAS_DIR / TRANSCRIPTION_SCHEMA_FILE).resolve()
                 if schema_path.exists():
-                    with open(schema_path, "r", encoding="utf-8") as f:
+                    with open(schema_path, encoding="utf-8") as f:
                         self.transcription_schema = json.load(f)
                     logger.info(
                         f"Loaded transcription schema from "
@@ -165,9 +172,7 @@ class TranscriptionManager(LLMClientBase):
                         f"({len(json.dumps(self.transcription_schema))} bytes)"
                     )
                 else:
-                    logger.error(
-                        f"Transcription schema not found at {schema_path}"
-                    )
+                    logger.error(f"Transcription schema not found at {schema_path}")
                     raise FileNotFoundError(
                         f"Required schema file missing: {schema_path}"
                     )
@@ -175,7 +180,7 @@ class TranscriptionManager(LLMClientBase):
             # Load prompt
             prompt_path = (PROMPTS_DIR / prompt_file).resolve()
             if prompt_path.exists():
-                with open(prompt_path, "r", encoding="utf-8") as f:
+                with open(prompt_path, encoding="utf-8") as f:
                     raw_prompt = f.read()
 
                 if self.is_plain_text_mode:
@@ -373,7 +378,9 @@ class TranscriptionManager(LLMClientBase):
         # Fallback: return original text
         return text
 
-    def _build_model_inputs(self, base64_image: str) -> tuple[list[Any], dict[str, Any]]:
+    def _build_model_inputs(
+        self, base64_image: str
+    ) -> tuple[list[Any], dict[str, Any]]:
         """Build messages and invocation kwargs for the chat model."""
         system_msg = SystemMessage(content=self.system_prompt)
 
@@ -478,7 +485,9 @@ class TranscriptionManager(LLMClientBase):
 
                 # Application-level retry with per-attempt token tracking
                 response = self._invoke_with_retry(
-                    structured_model, messages, invoke_kwargs,
+                    structured_model,
+                    messages,
+                    invoke_kwargs,
                     f"Transcription for {image_path.name}",
                 )
 
@@ -498,9 +507,7 @@ class TranscriptionManager(LLMClientBase):
                 # Active in standard mode (Modes A/C) when response must be
                 # valid JSON conforming to the transcription schema.
                 if not self.is_plain_text_mode:
-                    is_valid, reason = self._validate_transcription_schema(
-                        raw_text
-                    )
+                    is_valid, reason = self._validate_transcription_schema(raw_text)
                     if not is_valid:
                         should_retry, backoff_time, max_attempts = (
                             self._should_retry_for_schema_flag(
@@ -532,15 +539,11 @@ class TranscriptionManager(LLMClientBase):
                             self._should_retry_for_schema_flag(
                                 "no_transcribable_text",
                                 True,
-                                schema_retry_attempts[
-                                    "no_transcribable_text"
-                                ],
+                                schema_retry_attempts["no_transcribable_text"],
                             )
                         )
                         if should_retry:
-                            schema_retry_attempts[
-                                "no_transcribable_text"
-                            ] += 1
+                            schema_retry_attempts["no_transcribable_text"] += 1
                             logger.warning(
                                 f"Sentinel '[no transcribable text]' for "
                                 f"{image_path.name}. Retrying "
@@ -555,15 +558,11 @@ class TranscriptionManager(LLMClientBase):
                             self._should_retry_for_schema_flag(
                                 "transcription_not_possible",
                                 True,
-                                schema_retry_attempts[
-                                    "transcription_not_possible"
-                                ],
+                                schema_retry_attempts["transcription_not_possible"],
                             )
                         )
                         if should_retry:
-                            schema_retry_attempts[
-                                "transcription_not_possible"
-                            ] += 1
+                            schema_retry_attempts["transcription_not_possible"] += 1
                             logger.warning(
                                 f"Sentinel '[transcription not possible]' for "
                                 f"{image_path.name}. Retrying "
@@ -577,10 +576,8 @@ class TranscriptionManager(LLMClientBase):
                 if not self.is_plain_text_mode:
                     # Parse the raw text as JSON to check for schema flags
                     parsed_response = None
-                    try:
+                    with contextlib.suppress(json.JSONDecodeError, TypeError):
                         parsed_response = json.loads(raw_text)
-                    except (json.JSONDecodeError, TypeError):
-                        pass
 
                     # Check for schema-specific retry conditions
                     if isinstance(parsed_response, dict):
@@ -596,9 +593,10 @@ class TranscriptionManager(LLMClientBase):
                             if should_retry:
                                 schema_retry_attempts["no_transcribable_text"] += 1
                                 logger.warning(
-                                    f"Schema flag 'no_transcribable_text' detected for {image_path.name}. "
-                                    f"Retrying ({schema_retry_attempts['no_transcribable_text']}/{max_attempts}) "
-                                    f"in {backoff_time:.2f}s..."
+                                    "Schema flag 'no_transcribable_text' detected "
+                                    f"for {image_path.name}. Retrying "
+                                    f"({schema_retry_attempts['no_transcribable_text']}"
+                                    f"/{max_attempts}) in {backoff_time:.2f}s..."
                                 )
                                 time.sleep(backoff_time)
                                 continue
@@ -615,9 +613,10 @@ class TranscriptionManager(LLMClientBase):
                             if should_retry:
                                 schema_retry_attempts["transcription_not_possible"] += 1
                                 logger.warning(
-                                    f"Schema flag 'transcription_not_possible' detected for {image_path.name}. "
-                                    f"Retrying ({schema_retry_attempts['transcription_not_possible']}/{max_attempts}) "
-                                    f"in {backoff_time:.2f}s..."
+                                    "Schema flag 'transcription_not_possible' detected "
+                                    f"for {image_path.name}. Retrying "
+                                    f"({schema_retry_attempts['transcription_not_possible']}"
+                                    f"/{max_attempts}) in {backoff_time:.2f}s..."
                                 )
                                 time.sleep(backoff_time)
                                 continue

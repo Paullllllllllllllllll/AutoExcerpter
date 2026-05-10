@@ -2,20 +2,16 @@
 
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
-
-import pytest
-import yaml
+from unittest.mock import patch
 
 from config.loader import (
-    ConfigLoader,
-    get_config_loader,
-    PROJECT_ROOT,
     CONFIG_DIR,
+    PROJECT_ROOT,
     PROMPTS_DIR,
     SCHEMAS_DIR,
+    ConfigLoader,
+    get_config_loader,
 )
 
 

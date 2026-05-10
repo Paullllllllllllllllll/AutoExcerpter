@@ -1,6 +1,7 @@
 """Configuration loader for YAML-based settings.
 
-This module provides centralized configuration loading for the AutoExcerpter application.
+This module provides centralized configuration loading for the AutoExcerpter
+application.
 It loads YAML configuration files from config/defaults/ and provides type-safe access
 to configuration values.
 
@@ -111,7 +112,8 @@ class ConfigLoader:
 
             if not isinstance(data, dict):
                 logger.warning(
-                    f"Config file {filename} did not contain a dictionary. Using empty config."
+                    f"Config file {filename} did not contain a dictionary."
+                    " Using empty config."
                 )
                 return {}
 

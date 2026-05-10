@@ -11,15 +11,15 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch, MagicMock, PropertyMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from PIL import Image
 
 from imaging.pdf import (
+    _apply_image_preprocessing,
     extract_pdf_pages_to_images,
     get_image_paths_from_folder,
-    _apply_image_preprocessing,
 )
 
 

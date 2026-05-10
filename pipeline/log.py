@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import threading
 from datetime import datetime
@@ -41,10 +42,8 @@ def _close_log_handle(log_path: Path) -> None:
     if existing is None:
         return
     handle, _lock = existing
-    try:
+    with contextlib.suppress(OSError):
         handle.close()
-    except OSError:
-        pass
 
 
 def initialize_log_file(

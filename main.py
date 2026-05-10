@@ -2,7 +2,8 @@
 
 This script:
 1. Processes PDFs by extracting each page as an image, or processes images from a folder
-2. Transcribes the images via configurable LLM providers (OpenAI, Anthropic, Google, OpenRouter)
+2. Transcribes the images via configurable LLM providers
+   (OpenAI, Anthropic, Google, OpenRouter)
 3. Optionally sends the transcribed text to an LLM for structured summarization
 4. Saves transcriptions to TXT and summaries to DOCX/Markdown
 5. Verifies page numbering coherence
@@ -15,11 +16,11 @@ import sys
 from pathlib import Path
 
 from cli.args import (
-    setup_argparse,
     _apply_app_config_overrides,
     _build_cli_model_overrides,
     _parse_cli_selection,
     _parse_execution_mode,
+    setup_argparse,
 )
 from cli.display import (
     _display_completion_summary,
@@ -28,26 +29,25 @@ from cli.display import (
     _prompt_for_summary_context,
     prompt_for_item_selection,
 )
+from cli.errors import handle_critical_error
+from cli.interaction import (
+    exit_program,
+    print_dim,
+    print_info,
+    print_section,
+    print_success,
+    print_warning,
+)
 from cli.loop import (
     _check_and_wait_for_token_limit,
     _process_single_item,
 )
-from pipeline import ProcessingState, ResumeChecker, ResumeResult
 from config import app as config
 from config.loader import get_config_loader
-from cli.errors import handle_critical_error
-from pipeline import scan_input_path
 from config.logger import setup_logger
 from llm.token_tracker import get_token_tracker
+from pipeline import ProcessingState, ResumeChecker, ResumeResult, scan_input_path
 from pipeline.types import ItemSpec
-from cli.interaction import (
-    print_section,
-    print_success,
-    print_warning,
-    print_info,
-    print_dim,
-    exit_program,
-)
 
 logger = setup_logger(__name__)
 
@@ -73,12 +73,13 @@ def _select_items_for_processing(
                 logger.error(f"No items found matching '{select_pattern}'")
                 return []
         elif len(all_items) == 1:
-            logger.info(f"Processing single item in CLI mode")
+            logger.info("Processing single item in CLI mode")
             return list(all_items)
         else:
-            # If multiple items found but --all/--select not specified, process only the first
+            # If multiple items found but --all/--select not specified, first only
             logger.info(
-                f"Processing first item (use --all or --select to process specific items)"
+                "Processing first item "
+                "(use --all or --select to process specific items)"
             )
             return [all_items[0]]
     else:
@@ -240,7 +241,8 @@ def _log_token_usage(context: str = "") -> None:
     )
     if not context and not config.CLI_MODE:
         print_info(
-            f"Daily token usage: {stats['tokens_used_today']:,}/{stats['daily_limit']:,} "
+            f"Daily token usage: "
+            f"{stats['tokens_used_today']:,}/{stats['daily_limit']:,} "
             f"({stats['usage_percentage']:.1f}%)"
         )
 
@@ -259,11 +261,13 @@ def _run_processing_loop(
     for index, item_spec in enumerate(items_to_process, start=1):
         if not _check_and_wait_for_token_limit():
             logger.info(
-                f"Processing stopped by user. Processed {processed_count}/{total_to_process} items."
+                f"Processing stopped by user. "
+                f"Processed {processed_count}/{total_to_process} items."
             )
             if not config.CLI_MODE:
                 print_warning(
-                    f"\nProcessing stopped. Completed {processed_count}/{total_to_process} items."
+                    f"\nProcessing stopped. "
+                    f"Completed {processed_count}/{total_to_process} items."
                 )
             break
 

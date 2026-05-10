@@ -13,12 +13,14 @@ This module provides the foundational LLM client implementation with:
 3. **Schema-Specific Retries**: Optional retries based on model-returned flags
    in responses (e.g., no_transcribable_text, page_type_null_bullets).
 
-4. **Rate Limiting Integration**: Works with RateLimiter to throttle requests and prevent
-   API quota exhaustion (complementary to application-level retry).
+4. **Rate Limiting Integration**: Works with RateLimiter to throttle requests and
+   prevent API quota exhaustion (complementary to application-level retry).
 
-5. **Configuration Loading**: Dynamically loads model parameters from YAML configuration files.
+5. **Configuration Loading**: Dynamically loads model parameters from YAML configuration
+   files.
 
-6. **Statistics Tracking**: Monitors request success rates, processing times, and error patterns.
+6. **Statistics Tracking**: Monitors request success rates, processing times, and error
+   patterns.
 """
 
 from __future__ import annotations
@@ -34,15 +36,15 @@ from typing import TYPE_CHECKING, Any
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage
 
-from llm.client import (
-    LLMConfig,
-    get_chat_model,
-    get_model_capabilities,
-    ProviderType,
-)
 from config.accessors import get_api_timeout, get_service_tier
 from config.loader import get_config_loader
 from config.logger import setup_logger
+from llm.client import (
+    LLMConfig,
+    ProviderType,
+    get_chat_model,
+    get_model_capabilities,
+)
 from llm.token_tracker import get_token_tracker
 
 if TYPE_CHECKING:
@@ -55,7 +57,9 @@ def _load_retry_config() -> dict[str, Any]:
     """Load retry and backoff configuration from concurrency.yaml."""
     try:
         config_loader = get_config_loader()
-        retry_cfg: dict[str, Any] = config_loader.get_concurrency_config().get("retry", {})
+        retry_cfg: dict[str, Any] = config_loader.get_concurrency_config().get(
+            "retry", {}
+        )
 
         if not retry_cfg:
             logger.debug("No retry config found in concurrency.yaml, using defaults")
@@ -107,7 +111,7 @@ def _sanitize_schema_for_anthropic(schema: dict[str, Any]) -> dict[str, Any]:
         if "type" in node and isinstance(node["type"], list):
             non_null = [t for t in node["type"] if t != "null"]
             node["type"] = non_null[0] if non_null else "string"
-        for key, value in node.items():
+        for _key, value in node.items():
             if isinstance(value, dict):
                 _walk(value)
             elif isinstance(value, list):
@@ -141,9 +145,7 @@ def _extract_from_aimessage(data: Any) -> str | None:
 
     result = "".join(parts).strip()
     if not result:
-        logger.warning(
-            "Empty content extracted from LangChain AIMessage response."
-        )
+        logger.warning("Empty content extracted from LangChain AIMessage response.")
     return result
 
 
@@ -172,9 +174,7 @@ def _extract_from_nested_output(data: Any) -> str | None:
     try:
         obj = data
         if not isinstance(obj, dict):
-            conv = getattr(data, "to_dict", None) or getattr(
-                data, "model_dump", None
-            )
+            conv = getattr(data, "to_dict", None) or getattr(data, "model_dump", None)
             if callable(conv):
                 obj = conv()
 
@@ -199,10 +199,12 @@ def _extract_from_nested_output(data: Any) -> str | None:
         result = "".join(parts).strip()
 
         if not result:
+            output_type = "list" if isinstance(output, list) else type(output).__name__
+            output_items = len(output) if isinstance(output, list) else 0
             logger.warning(
                 "Empty content extracted from API response. "
-                f"Response structure: output={'list' if isinstance(output, list) else type(output).__name__}, "
-                f"items={len(output) if isinstance(output, list) else 0}"
+                f"Response structure: output={output_type}, "
+                f"items={output_items}"
             )
 
         return result
@@ -259,7 +261,8 @@ class LLMClientBase:
     - Model configuration loading from YAML
     - Request statistics tracking
 
-    Subclasses should implement specific API endpoint logic (transcription, summarization, etc.)
+    Subclasses should implement specific API endpoint logic
+    (transcription, summarization, etc.)
     """
 
     model_name: str
@@ -298,7 +301,8 @@ class LLMClientBase:
             api_key: Optional API key. If None, uses environment variable.
             timeout: Request timeout in seconds.
             rate_limiter: Optional RateLimiter instance for request throttling.
-            max_retries: Max retry attempts. LangChain handles exponential backoff automatically.
+            max_retries: Max retry attempts. LangChain handles exponential backoff
+                automatically.
             service_tier: OpenAI service tier ("flex", "default", "auto"). OpenAI-only.
             section_hint: YAML config section for custom endpoint disambiguation.
         """
@@ -489,13 +493,8 @@ class LLMClientBase:
 
         if self.provider == "anthropic":
             capabilities = get_model_capabilities(self.model_name)
-            if (
-                capabilities.get("structured_output", False)
-                and self._output_schema
-            ):
-                schema = self._output_schema.get(
-                    "schema", self._output_schema
-                )
+            if capabilities.get("structured_output", False) and self._output_schema:
+                schema = self._output_schema.get("schema", self._output_schema)
                 if isinstance(schema, dict) and schema:
                     schema = _sanitize_schema_for_anthropic(schema)
                     if "title" not in schema:
@@ -556,9 +555,7 @@ class LLMClientBase:
                     chat_completions_format = {
                         "type": "json_schema",
                         "json_schema": {
-                            k: v
-                            for k, v in text_format.items()
-                            if k != "type"
+                            k: v for k, v in text_format.items() if k != "type"
                         },
                     }
                     invoke_kwargs["response_format"] = chat_completions_format
@@ -577,9 +574,7 @@ class LLMClientBase:
                     else self._output_schema
                 )
                 if isinstance(schema_obj, dict) and schema_obj:
-                    invoke_kwargs.setdefault(
-                        "response_mime_type", "application/json"
-                    )
+                    invoke_kwargs.setdefault("response_mime_type", "application/json")
                     invoke_kwargs.setdefault("response_schema", schema_obj)
 
     def _report_token_usage(self, response: Any, context_label: str) -> None:
@@ -587,7 +582,8 @@ class LLMClientBase:
 
         Args:
             response: LangChain model response with usage_metadata.
-            context_label: Description for the log message (e.g. "Transcription for page_001.png").
+            context_label: Description for the log message
+                (e.g. "Transcription for page_001.png").
         """
         try:
             target = response
@@ -613,19 +609,19 @@ class LLMClientBase:
                 token_tracker = get_token_tracker()
                 token_tracker.add_tokens(total_tokens)
                 logger.debug(
-                    f"[TOKEN] {context_label}: "
-                    f"added {total_tokens} tokens (total now: {token_tracker.get_tokens_used_today():,})"
+                    f"[TOKEN] {context_label}: added {total_tokens} tokens "
+                    f"(total now: {token_tracker.get_tokens_used_today():,})"
                 )
             else:
                 logger.warning(
                     f"[TOKEN] {context_label}: no usable token counts in usage_metadata"
                 )
         except (AttributeError, TypeError, ValueError) as e:
-            logger.warning(
-                f"Error reporting token usage for {context_label}: {e}"
-            )
+            logger.warning(f"Error reporting token usage for {context_label}: {e}")
 
-    def _extract_tokens_from_exception(self, exc: Exception, context_label: str) -> None:
+    def _extract_tokens_from_exception(
+        self, exc: Exception, context_label: str
+    ) -> None:
         """Extract token usage from a failed API call's exception.
 
         Provider SDK exceptions often carry usage data in ``body.usage`` or
@@ -656,9 +652,7 @@ class LLMClientBase:
                         pass
 
             if not isinstance(usage, dict):
-                logger.debug(
-                    f"[TOKEN] {context_label}: no usage data in exception"
-                )
+                logger.debug(f"[TOKEN] {context_label}: no usage data in exception")
                 return
 
             # Try total_tokens, then prompt_tokens+completion_tokens (OpenAI),
@@ -667,19 +661,28 @@ class LLMClientBase:
             if not isinstance(total, int) or total <= 0:
                 prompt = usage.get("prompt_tokens", 0)
                 completion = usage.get("completion_tokens", 0)
-                if isinstance(prompt, int) and isinstance(completion, int) and (prompt + completion) > 0:
+                if (
+                    isinstance(prompt, int)
+                    and isinstance(completion, int)
+                    and (prompt + completion) > 0
+                ):
                     total = prompt + completion
                 else:
                     inp = usage.get("input_tokens", 0)
                     out = usage.get("output_tokens", 0)
-                    if isinstance(inp, int) and isinstance(out, int) and (inp + out) > 0:
+                    if (
+                        isinstance(inp, int)
+                        and isinstance(out, int)
+                        and (inp + out) > 0
+                    ):
                         total = inp + out
 
             if isinstance(total, int) and total > 0:
                 token_tracker = get_token_tracker()
                 token_tracker.add_tokens(total)
                 logger.info(
-                    f"[TOKEN] {context_label}: recovered {total} tokens from failed request "
+                    f"[TOKEN] {context_label}: recovered {total} tokens"
+                    " from failed request "
                     f"(total now: {token_tracker.get_tokens_used_today():,})"
                 )
             else:
@@ -732,7 +735,8 @@ class LLMClientBase:
 
         Args:
             attempt: Zero-based attempt number.
-            error_type: One of ``"rate_limit"``, ``"server_error"``, ``"timeout"``, ``"other"``.
+            error_type: One of ``"rate_limit"``, ``"server_error"``, ``"timeout"``,
+                ``"other"``.
 
         Returns:
             Backoff delay in seconds.
@@ -742,7 +746,7 @@ class LLMClientBase:
         multiplier = multipliers.get(error_type, 2.0)
 
         jitter = random.uniform(JITTER_MIN, JITTER_MAX)
-        return float(backoff_base * (multiplier ** attempt) + jitter)
+        return float(backoff_base * (multiplier**attempt) + jitter)
 
     def _invoke_with_retry(
         self,
@@ -761,7 +765,8 @@ class LLMClientBase:
             structured_model: Chat model (possibly with structured output).
             messages: List of LangChain messages.
             invoke_kwargs: Additional kwargs for ``invoke()``.
-            context_label: Description for log messages (e.g. "Transcription for page_001.png").
+            context_label: Description for log messages
+                (e.g. "Transcription for page_001.png").
 
         Returns:
             The model response on success.
@@ -794,7 +799,8 @@ class LLMClientBase:
 
                 backoff = self._calculate_backoff(attempt, error_type)
                 logger.warning(
-                    f"Retryable {error_type} on attempt {attempt + 1}/{self.max_retries + 1} "
+                    f"Retryable {error_type} on attempt"
+                    f" {attempt + 1}/{self.max_retries + 1} "
                     f"for {context_label}: {type(e).__name__}. "
                     f"Retrying in {backoff:.1f}s..."
                 )
@@ -833,7 +839,8 @@ class LLMClientBase:
 
             if schema_retries:
                 logger.debug(
-                    f"Loaded schema retry config for {api_type}: {list(schema_retries.keys())}"
+                    f"Loaded schema retry config for {api_type}: "
+                    f"{list(schema_retries.keys())}"
                 )
             else:
                 logger.debug(f"No schema retry config found for {api_type}")
@@ -912,9 +919,8 @@ class LLMClientBase:
                     logger.debug(f"Added reasoning params for {self.model_name}")
 
         # Anthropic-specific: extended thinking (Claude 4.5+, Opus models)
-        elif (
-            self.provider == "anthropic"
-            and capabilities.get("extended_thinking", False)
+        elif self.provider == "anthropic" and capabilities.get(
+            "extended_thinking", False
         ):
             if "reasoning" in self.model_config:
                 reasoning_cfg = self.model_config["reasoning"]
@@ -949,8 +955,7 @@ class LLMClientBase:
 
         elif "reasoning" in self.model_config:
             logger.debug(
-                f"Skipping reasoning params for {self.model_name} "
-                f"(not supported)"
+                f"Skipping reasoning params for {self.model_name} (not supported)"
             )
 
         # OpenAI-specific: text verbosity parameters (only GPT-5 family)

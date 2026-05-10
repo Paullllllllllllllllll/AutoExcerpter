@@ -24,7 +24,8 @@ this module does NOT raise if no API keys are set; the check happens at
 first actual use.
 
 Note: Model configuration is centralized in model.yaml
-Note: API concurrency settings (rate_limits, api_timeout, service_tier) are in concurrency.yaml
+Note: API concurrency settings (rate_limits, api_timeout, service_tier) are in
+concurrency.yaml
 """
 
 from __future__ import annotations
@@ -169,11 +170,7 @@ _PROVIDER_ENV_VARS: dict[str, str] = {
 
 def get_available_providers() -> list[str]:
     """Return the list of providers whose API key is currently set."""
-    return [
-        name
-        for name, env in _PROVIDER_ENV_VARS.items()
-        if os.environ.get(env)
-    ]
+    return [name for name, env in _PROVIDER_ENV_VARS.items() if os.environ.get(env)]
 
 
 def require_api_key(provider: str) -> str:
@@ -185,17 +182,18 @@ def require_api_key(provider: str) -> str:
     """
     env_var = _PROVIDER_ENV_VARS.get(provider.lower())
     if env_var is None:
-        raise EnvironmentError(
+        raise OSError(
             f"Unknown provider: {provider!r}. "
             f"Known providers: {sorted(_PROVIDER_ENV_VARS)}"
         )
     key = os.environ.get(env_var)
     if not key:
-        raise EnvironmentError(
+        raise OSError(
             f"No API key for provider {provider!r}. "
             f"Please set the {env_var} environment variable."
         )
     return key
+
 
 # --- Daily Token Limit ---
 DAILY_TOKEN_LIMIT_ENABLED = _get_bool(_TOKEN_LIMIT, "enabled", False)

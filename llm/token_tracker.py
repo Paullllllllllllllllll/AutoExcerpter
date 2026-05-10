@@ -77,7 +77,8 @@ class DailyTokenTracker:
         Args:
             daily_limit: Maximum tokens allowed per day.
             enabled: Whether token limiting is enabled.
-            state_file: Path to persistent state file (default: .autoexcerpter_token_state.json).
+            state_file: Path to persistent state file
+                (default: .autoexcerpter_token_state.json).
         """
         self.daily_limit = daily_limit
         self.enabled = enabled
@@ -113,7 +114,7 @@ class DailyTokenTracker:
             return
 
         try:
-            with open(self.state_file, "r", encoding="utf-8") as f:
+            with open(self.state_file, encoding="utf-8") as f:
                 state = json.load(f)
 
             saved_date = state.get("date", "")

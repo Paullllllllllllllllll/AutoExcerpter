@@ -16,8 +16,6 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock
 
-import pytest
-
 import config.accessors as ch
 
 
@@ -88,7 +86,8 @@ class TestConvenienceWrappers:
     """Tests for transcription/summary concurrency convenience functions."""
 
     def test_get_transcription_concurrency(self, monkeypatch) -> None:
-        """get_transcription_concurrency delegates to get_api_concurrency('transcription')."""
+        """get_transcription_concurrency delegates to get_api_concurrency(
+        'transcription')."""
         cfg = {
             "api_requests": {
                 "transcription": {"concurrency_limit": 8, "delay_between_tasks": 0.02},

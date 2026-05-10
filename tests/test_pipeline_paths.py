@@ -5,13 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 from pipeline.paths import (
+    HASH_LENGTH,
+    MAX_SAFE_NAME_LENGTH,
     create_safe_log_filename,
     ensure_path_safe,
-    MAX_SAFE_NAME_LENGTH,
-    HASH_LENGTH,
 )
 
 
@@ -104,9 +102,9 @@ class TestCreateSafeLogFilename:
         ]
         for name in names:
             result = create_safe_log_filename(name, "transcription")
-            assert (
-                len(result) <= MAX_SAFE_NAME_LENGTH
-            ), f"Filename too long ({len(result)} chars) for input: {name[:40]}..."
+            assert len(result) <= MAX_SAFE_NAME_LENGTH, (
+                f"Filename too long ({len(result)} chars) for input: {name[:40]}..."
+            )
 
 
 # ============================================================================

@@ -8,11 +8,11 @@ from __future__ import annotations
 
 import sys
 import traceback
-from typing import Any, TypeVar
 from collections.abc import Callable
+from typing import Any, TypeVar
 
-from config.logger import setup_logger
 from cli.interaction import print_error, print_warning
+from config.logger import setup_logger
 
 logger = setup_logger(__name__)
 

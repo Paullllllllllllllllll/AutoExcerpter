@@ -3,22 +3,22 @@
 from __future__ import annotations
 
 import os
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+from llm.capabilities import detect_capabilities
 from llm.client import (
+    SUPPORTED_PROVIDERS,
     LLMConfig,
+    _get_api_key,
+    _infer_provider,
+    get_available_providers,
     get_chat_model,
     get_model_capabilities,
     get_provider_for_model,
     is_provider_available,
-    get_available_providers,
-    SUPPORTED_PROVIDERS,
-    _infer_provider,
-    _get_api_key,
 )
-from llm.capabilities import detect_capabilities
 
 
 class TestLLMConfig:
@@ -147,7 +147,7 @@ class TestGetModelCapabilities:
         assert caps.get("multimodal") is True
 
     def test_claude_extended_thinking(self) -> None:
-        """Claude 4.5 opus/sonnet/haiku have extended thinking (all are reasoning models)."""
+        """Claude 4.5 opus/sonnet/haiku support extended thinking (reasoning models)."""
         opus_caps = get_model_capabilities("claude-opus-4-5")
         sonnet_caps = get_model_capabilities("claude-sonnet-4-5")
         haiku_caps = get_model_capabilities("claude-haiku-4-5")
@@ -199,9 +199,11 @@ class TestGetApiKey:
 
     def test_raises_on_missing_key(self) -> None:
         """Raises EnvironmentError when key not found."""
-        with patch.dict(os.environ, {}, clear=True):
-            with pytest.raises(EnvironmentError, match="API key not found"):
-                _get_api_key("openai", None)
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            pytest.raises(EnvironmentError, match="API key not found"),
+        ):
+            _get_api_key("openai", None)
 
     def test_custom_section_hint_transcription(self) -> None:
         """section_hint selects the correct custom endpoint key."""
@@ -215,12 +217,13 @@ class TestGetApiKey:
                 "custom_endpoint": {"api_key_env_var": "SUM_KEY"},
             },
         }
-        with patch(
-            "config.loader.get_config_loader"
-        ) as mock_loader, patch.dict(
-            os.environ,
-            {"TRANS_KEY": "trans-val", "SUM_KEY": "sum-val"},
-            clear=True,
+        with (
+            patch("config.loader.get_config_loader") as mock_loader,
+            patch.dict(
+                os.environ,
+                {"TRANS_KEY": "trans-val", "SUM_KEY": "sum-val"},
+                clear=True,
+            ),
         ):
             mock_loader.return_value.get_model_config.return_value = mock_cfg
             result = _get_api_key("custom", None, section_hint="transcription_model")
@@ -238,12 +241,13 @@ class TestGetApiKey:
                 "custom_endpoint": {"api_key_env_var": "SUM_KEY"},
             },
         }
-        with patch(
-            "config.loader.get_config_loader"
-        ) as mock_loader, patch.dict(
-            os.environ,
-            {"TRANS_KEY": "trans-val", "SUM_KEY": "sum-val"},
-            clear=True,
+        with (
+            patch("config.loader.get_config_loader") as mock_loader,
+            patch.dict(
+                os.environ,
+                {"TRANS_KEY": "trans-val", "SUM_KEY": "sum-val"},
+                clear=True,
+            ),
         ):
             mock_loader.return_value.get_model_config.return_value = mock_cfg
             result = _get_api_key("custom", None, section_hint="summary_model")
@@ -261,12 +265,13 @@ class TestGetApiKey:
                 "custom_endpoint": {"api_key_env_var": "SUM_KEY"},
             },
         }
-        with patch(
-            "config.loader.get_config_loader"
-        ) as mock_loader, patch.dict(
-            os.environ,
-            {"TRANS_KEY": "trans-val", "SUM_KEY": "sum-val"},
-            clear=True,
+        with (
+            patch("config.loader.get_config_loader") as mock_loader,
+            patch.dict(
+                os.environ,
+                {"TRANS_KEY": "trans-val", "SUM_KEY": "sum-val"},
+                clear=True,
+            ),
         ):
             mock_loader.return_value.get_model_config.return_value = mock_cfg
             result = _get_api_key("custom", None)
@@ -282,7 +287,7 @@ class TestGetChatModel:
             mock_class.return_value = MagicMock()
 
             config = LLMConfig(model="gpt-5-mini", provider="openai")
-            model = get_chat_model(config)
+            get_chat_model(config)
 
             mock_class.assert_called_once()
             call_kwargs = mock_class.call_args[1]
@@ -295,7 +300,7 @@ class TestGetChatModel:
             mock_class.return_value = MagicMock()
 
             config = LLMConfig(model="claude-3-opus", provider="anthropic")
-            model = get_chat_model(config)
+            get_chat_model(config)
 
             mock_class.assert_called_once()
 
@@ -305,7 +310,7 @@ class TestGetChatModel:
             mock_class.return_value = MagicMock()
 
             config = LLMConfig(model="gemini-2.5-flash", provider="google")
-            model = get_chat_model(config)
+            get_chat_model(config)
 
             mock_class.assert_called_once()
 
@@ -315,7 +320,7 @@ class TestGetChatModel:
             mock_class.return_value = MagicMock()
 
             config = LLMConfig(model="anthropic/claude-3-opus", provider="openrouter")
-            model = get_chat_model(config)
+            get_chat_model(config)
 
             call_kwargs = mock_class.call_args[1]
             assert call_kwargs["base_url"] == "https://openrouter.ai/api/v1"
@@ -408,7 +413,7 @@ class TestSupportedProviders:
 
     def test_provider_has_required_keys(self) -> None:
         """Each provider has required configuration keys."""
-        for provider, config in SUPPORTED_PROVIDERS.items():
+        for _provider, config in SUPPORTED_PROVIDERS.items():
             assert "package" in config
             assert "class" in config
             assert "env_key" in config

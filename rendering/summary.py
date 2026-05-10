@@ -65,6 +65,7 @@ def int_to_roman(num: int) -> str:
 # Text Sanitization
 # ============================================================================
 
+
 def sanitize_for_xml(text: str | None) -> str:
     """Return XML-safe text for DOCX output by removing control characters."""
     if not text:
@@ -76,6 +77,7 @@ def sanitize_for_xml(text: str | None) -> str:
 # ============================================================================
 # Summary Data Extraction (shared by DOCX and Markdown writers)
 # ============================================================================
+
 
 def _extract_summary_payload(result: dict[str, Any]) -> dict[str, Any]:
     """Return the summary payload dict from flat structure.
@@ -99,7 +101,8 @@ def _page_information(summary_data: dict[str, Any]) -> dict[str, Any]:
         - page_number_integer: The numeric page number (or "?" if null/missing)
         - page_number_type: 'roman', 'arabic', or 'none'
         - page_types: List of content classifications (content, bibliography, etc.)
-        - is_unnumbered: Boolean flag derived from page_number_type == 'none' or null integer
+        - is_unnumbered: Boolean flag derived from page_number_type == 'none' or
+          null integer
     """
     page_info = summary_data.get("page_information", {})
 
@@ -213,6 +216,7 @@ def _is_meaningful_summary(summary_data: dict[str, Any]) -> bool:
 # Shared Summary Preparation (used by DOCX and Markdown writers)
 # ============================================================================
 
+
 @dataclass
 class PageRenderData:
     """Pre-computed rendering data for a single summary page."""
@@ -253,7 +257,8 @@ def prepare_summary_data(
 
     Args:
         summary_results: Raw summary results from the API.
-        citation_manager: A :class:`CitationManager` instance (passed in for testability).
+        citation_manager: A :class:`CitationManager` instance (passed in for
+            testability).
 
     Returns:
         A :class:`SummaryData` instance with all prepared data.
@@ -317,6 +322,7 @@ def prepare_summary_data(
 # Page Heading Formatting (shared by DOCX and Markdown writers)
 # ============================================================================
 
+
 def format_page_heading(
     page_number: int | str,
     page_number_type: str,
@@ -350,6 +356,7 @@ def format_page_heading(
 # ============================================================================
 # Content Filtering
 # ============================================================================
+
 
 def filter_empty_pages(
     summary_results: list[dict[str, Any]],

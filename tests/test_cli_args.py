@@ -23,7 +23,6 @@ from cli.args import (
 from config import app as config
 from pipeline.types import ItemSpec
 
-
 # ============================================================================
 # Helpers
 # ============================================================================

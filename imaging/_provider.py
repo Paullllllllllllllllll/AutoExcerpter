@@ -1,7 +1,7 @@
 """Model detection utilities for provider-specific image processing.
 
-Provides utilities for detecting the underlying model type from provider and model names,
-particularly useful when using models through OpenRouter or other proxy services.
+Provides utilities for detecting the underlying model type from provider and model
+names, particularly useful when using models through OpenRouter or other proxy services.
 
 This enables correct image preprocessing even when using models via OpenRouter.
 For example, 'google/gemini-2.5-flash' via OpenRouter should use Google config.
@@ -21,7 +21,8 @@ def detect_model_type(provider: str, model_name: str | None = None) -> ModelType
     For example, 'google/gemini-2.5-flash' via OpenRouter should use Google config.
 
     Args:
-        provider: The LLM provider name (e.g., 'openai', 'anthropic', 'google', 'openrouter')
+        provider: The LLM provider name (e.g., 'openai', 'anthropic', 'google',
+            'openrouter')
         model_name: The model name (e.g., 'gpt-4o', 'claude-3-opus', 'gemini-2.5-flash')
 
     Returns:
@@ -65,14 +66,12 @@ def get_image_config_section_name(model_type: ModelType) -> str:
     Returns:
         Config section name (e.g., 'google_image_processing', 'api_image_processing')
     """
-    if model_type == "custom":
-        return "custom_image_processing"
-    elif model_type == "google":
-        return "google_image_processing"
-    elif model_type == "anthropic":
-        return "anthropic_image_processing"
-    else:
-        return "api_image_processing"
+    section_map: dict[str, str] = {
+        "custom": "custom_image_processing",
+        "google": "google_image_processing",
+        "anthropic": "anthropic_image_processing",
+    }
+    return section_map.get(model_type, "api_image_processing")
 
 
 # ============================================================================

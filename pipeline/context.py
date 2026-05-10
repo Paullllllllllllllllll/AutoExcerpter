@@ -36,13 +36,15 @@ def resolve_summary_context(
 
     Searches for context in this order:
     1. File-specific: <filename>_summary_context.txt in the same directory as input_file
-    2. Folder-specific: <parent_folder_name>_summary_context.txt in grandparent directory
+    2. Folder-specific: <parent_folder_name>_summary_context.txt in grandparent
+       directory
     3. General fallback: context/summary/general.txt
 
     Parameters
     ----------
     input_file : Path | None
-        Path to the input file (PDF or image folder) for file/folder-specific context
+        Path to the input file (PDF or image folder) for file/folder-specific
+        context
     global_context_dir : Path | None
         Override for the global context directory (defaults to PROJECT_ROOT/context)
     size_threshold : int
@@ -118,8 +120,9 @@ def _read_and_validate_context(
 
         if len(content) > size_threshold:
             logger.warning(
-                f"Context file '{context_path.name}' is large ({len(content):,} chars). "
-                f"Consider reducing to under {size_threshold:,} chars for optimal performance."
+                f"Context file '{context_path.name}' is large "
+                f"({len(content):,} chars). Consider reducing to under "
+                f"{size_threshold:,} chars for optimal performance."
             )
 
         return content

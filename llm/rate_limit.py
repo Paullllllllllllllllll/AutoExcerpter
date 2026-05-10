@@ -5,15 +5,16 @@ It tracks requests across multiple time windows and automatically adjusts wait t
 based on error patterns.
 
 Key Features:
-1. **Multi-Window Rate Limiting**: Enforces multiple concurrent rate limits (e.g.,
-   per-second, per-minute, per-hour) to comply with API quotas
+1. **Multi-Window Rate Limiting**: Enforces multiple concurrent rate limits
+   (e.g., per-second, per-minute, per-hour) to comply with API quotas
 
 2. **Adaptive Backoff**: Dynamically adjusts wait times based on consecutive errors:
    - Increases multiplier on rate limit/server errors
    - Gradually decreases on successful requests
    - Prevents thundering herd with jitter
 
-3. **Thread-Safe**: Uses locks to ensure thread-safe operation in concurrent environments
+3. **Thread-Safe**: Uses locks to ensure thread-safe operation in concurrent
+   environments
 
 4. **Statistics Tracking**: Monitors total requests, wait times, current rates, and
    error patterns for performance analysis
@@ -40,12 +41,12 @@ from collections import deque
 from typing import Any
 
 from config.constants import (
-    MIN_SLEEP_TIME,
-    MAX_SLEEP_TIME,
-    ERROR_MULTIPLIER_DECREASE_RATE,
-    ERROR_MULTIPLIER_INCREASE_RATE_LIMIT,
-    ERROR_MULTIPLIER_INCREASE_OTHER,
     CONSECUTIVE_ERRORS_THRESHOLD,
+    ERROR_MULTIPLIER_DECREASE_RATE,
+    ERROR_MULTIPLIER_INCREASE_OTHER,
+    ERROR_MULTIPLIER_INCREASE_RATE_LIMIT,
+    MAX_SLEEP_TIME,
+    MIN_SLEEP_TIME,
 )
 
 
@@ -76,7 +77,8 @@ class RateLimiter:
         Initialize the rate limiter.
 
         Args:
-            limits: List of (max_requests, time_window_seconds) tuples defining rate limits
+            limits: List of (max_requests, time_window_seconds) tuples defining
+                rate limits
         """
         self.limits = limits
         self.request_timestamps: list[deque[float]] = [
@@ -188,7 +190,8 @@ class RateLimiter:
         Get current rate limiter statistics.
 
         Returns:
-            Dictionary containing statistics about requests, wait times, and current state
+            Dictionary containing statistics about requests, wait times, and current
+            state
         """
         with self.lock:
             now = time.time()

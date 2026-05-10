@@ -11,19 +11,19 @@ from pathlib import Path
 from typing import Any
 
 from cli.display import _log_token_limit_reached
-from pipeline import ItemTranscriber
-from config import app as config
 from cli.errors import handle_critical_error
-from config.logger import setup_logger
-from llm.token_tracker import get_token_tracker, DailyTokenTracker
-from pipeline.types import ItemSpec
 from cli.interaction import (
-    print_success,
-    print_warning,
-    print_separator,
     print_dim,
     print_highlight,
+    print_separator,
+    print_success,
+    print_warning,
 )
+from config import app as config
+from config.logger import setup_logger
+from llm.token_tracker import DailyTokenTracker, get_token_tracker
+from pipeline import ItemTranscriber
+from pipeline.types import ItemSpec
 
 logger = setup_logger(__name__)
 
@@ -46,7 +46,8 @@ def _process_single_item(
         base_output_dir: Base directory for outputs.
         summary_context: Optional context for guiding summarization focus.
         resume_mode: Resume mode ("skip" or "overwrite").
-        completed_page_indices: Set of page indices already completed (for page-level resume).
+        completed_page_indices: Set of page indices already completed
+            (for page-level resume).
 
     Returns:
         True if processing succeeded, False otherwise.
@@ -70,7 +71,8 @@ def _process_single_item(
         print_info(f"    • Type: {item_spec.kind.replace('_', ' ').title()}")
         if completed_page_indices:
             print_dim(
-                f"    • Resuming: {len(completed_page_indices)} page(s) already transcribed"
+                f"    • Resuming: {len(completed_page_indices)}"
+                " page(s) already transcribed"
             )
         print()
 
@@ -105,7 +107,8 @@ def _process_single_item(
 
     finally:
         # Clean up temporary working directory if configured
-        # In resume mode ("skip"), retain working dir to preserve JSONL logs for future resumes
+        # In resume mode ("skip"), retain working dir to preserve JSONL logs
+        # for future resumes
         should_cleanup_working_dir = (
             config.DELETE_TEMP_WORKING_DIR and resume_mode != "skip"
         )
@@ -168,7 +171,9 @@ def _check_and_wait_for_token_limit() -> bool:
         return False
 
 
-def _wait_for_token_reset(token_tracker: DailyTokenTracker, seconds_until_reset: int) -> bool:
+def _wait_for_token_reset(
+    token_tracker: DailyTokenTracker, seconds_until_reset: int
+) -> bool:
     """Wait for token limit reset with cancellation support."""
     elapsed = 0
     sleep_interval = 1  # Check every second for responsiveness
@@ -226,5 +231,6 @@ def _user_requested_cancel() -> bool:
                 return True
         return False
     except Exception:
-        # If any error occurs (e.g., select not supported), fall back to KeyboardInterrupt handling.
+        # If any error occurs (e.g., select not supported), fall back to
+        # KeyboardInterrupt handling.
         return False

@@ -17,63 +17,56 @@ Covers:
 
 from __future__ import annotations
 
+import contextlib
 import json
-from datetime import datetime
-from pathlib import Path
 from collections.abc import Generator
+from pathlib import Path
 from typing import Any
-from unittest.mock import patch, MagicMock, call
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from rendering.docx import (
-    create_docx_summary,
-    sanitize_omml_xml,
-    add_math_to_paragraph,
-    add_formatted_text_to_paragraph,
-    add_hyperlink,
-)
-from rendering.summary import (
-    format_page_heading,
-    sanitize_for_xml,
-    _should_render_bullets,
-    _get_structure_types,
-    filter_empty_pages,
-)
-from rendering.citations import _format_page_range
-from rendering.text import write_transcription_to_text
 from pipeline.log import (
-    initialize_log_file,
-    append_to_log,
-    finalize_log_file,
-    _close_log_handle,
     _LOG_HANDLES,
     _LOG_HANDLES_GUARD,
+    append_to_log,
+    finalize_log_file,
+    initialize_log_file,
+)
+from rendering.citations import _format_page_range
+from rendering.docx import (
+    add_formatted_text_to_paragraph,
+    add_hyperlink,
+    create_docx_summary,
+    sanitize_omml_xml,
 )
 from rendering.markdown import create_markdown_summary
+from rendering.summary import (
+    _get_structure_types,
+    _should_render_bullets,
+    filter_empty_pages,
+    format_page_heading,
+)
+from rendering.text import write_transcription_to_text
 
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
 @pytest.fixture(autouse=True)
-def _clear_log_handles() -> Generator[None, None, None]:
+def _clear_log_handles() -> Generator[None]:
     """Clear the module-level log handle cache before each test."""
     with _LOG_HANDLES_GUARD:
-        for key, (handle, _lock) in list(_LOG_HANDLES.items()):
-            try:
+        for _key, (handle, _lock) in list(_LOG_HANDLES.items()):
+            with contextlib.suppress(Exception):
                 handle.close()
-            except Exception:
-                pass
         _LOG_HANDLES.clear()
     yield
     # Clean up after test
     with _LOG_HANDLES_GUARD:
-        for key, (handle, _lock) in list(_LOG_HANDLES.items()):
-            try:
+        for _key, (handle, _lock) in list(_LOG_HANDLES.items()):
+            with contextlib.suppress(Exception):
                 handle.close()
-            except Exception:
-                pass
         _LOG_HANDLES.clear()
 
 
@@ -444,9 +437,7 @@ class TestFormatPageHeadingDocx:
 
     def test_figures_tables_prefix(self) -> None:
         """Figures/tables page type adds prefix."""
-        result = format_page_heading(
-            50, "arabic", ["figures_tables_sources"], False
-        )
+        result = format_page_heading(50, "arabic", ["figures_tables_sources"], False)
         assert result == "[Figures/Tables] Page 50"
 
 
@@ -496,7 +487,9 @@ class TestCreateDocxSummary:
 
     @patch("rendering.docx.CitationManager")
     @patch("rendering.docx.Document")
-    def test_creates_docx_file(self, mock_doc_class, mock_cm_class, tmp_path: Path) -> None:
+    def test_creates_docx_file(
+        self, mock_doc_class, mock_cm_class, tmp_path: Path
+    ) -> None:
         """create_docx_summary calls Document and saves to output_path."""
         output_path = tmp_path / "summary.docx"
         mock_doc = MagicMock()
@@ -639,7 +632,9 @@ class TestCreateMarkdownSummaryExtended:
     """Extended edge case tests for create_markdown_summary."""
 
     @patch("rendering.markdown.CitationManager")
-    def test_structure_section_for_toc_pages(self, mock_cm_class, tmp_path: Path) -> None:
+    def test_structure_section_for_toc_pages(
+        self, mock_cm_class, tmp_path: Path
+    ) -> None:
         """Table of contents pages appear in the Document Structure section."""
         output_path = tmp_path / "summary.md"
 

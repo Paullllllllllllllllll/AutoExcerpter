@@ -10,19 +10,19 @@ from pathlib import Path
 import pytest
 
 from config.logger import (
-    setup_logger,
-    setup_console_handler,
-    setup_file_handler,
-    set_log_level,
     DEFAULT_LOG_LEVEL,
-    USER_LOG_LEVEL,
     DETAILED_FORMAT,
     SIMPLE_FORMAT,
+    USER_LOG_LEVEL,
+    set_log_level,
+    setup_console_handler,
+    setup_file_handler,
+    setup_logger,
 )
 
 
 @pytest.fixture(autouse=True)
-def _cleanup_test_loggers() -> Generator[None, None, None]:
+def _cleanup_test_loggers() -> Generator[None]:
     """Remove test loggers after each test to avoid handler accumulation."""
     yield
     # Clean up any loggers created during tests
