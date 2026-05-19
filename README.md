@@ -1,4 +1,4 @@
-# AutoExcerpter v1.2.0
+# AutoExcerpter v1.2.1
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -636,6 +636,12 @@ linting and formatting across the entire codebase.
 
 ## Changelog
 
+- **v1.2.1** (19 May 2026) -- dependency refresh from
+    environment-wide CVE audit: bump `langchain-core`
+    1.3.2 -> 1.4.0 (RCE on deserialization); `langsmith`
+    0.7.36 -> 0.8.5 (unsafe deserialization; full fix to
+    1.0.x deferred pending upstream constraint relaxation);
+    `urllib3` 2.6.3 -> 2.7.0.
 - **v1.2.0** (10 May 2026) -- apply ruff linting and formatting
     across all source and test files; add `ruff>=0.15` to dev
     dependencies; resolve 404 lint violations.
