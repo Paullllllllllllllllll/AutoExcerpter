@@ -15,6 +15,7 @@ from pipeline.text_cleaner import (
     merge_hyphenation,
     normalize_unicode,
     normalize_whitespace,
+    should_keep_hyphen,
     wrap_long_lines,
 )
 
@@ -243,6 +244,45 @@ class TestMergeHyphenation:
         text = "normal text without hyphenation"
         assert merge_hyphenation(text) == text
 
+    def test_ordinary_word_break_merged(self) -> None:
+        """Ordinary line-break hyphenation of a normal word is merged."""
+        assert merge_hyphenation("concep-\ntion") == "conception"
+        assert merge_hyphenation("Manage-\nment") == "Management"
+        assert merge_hyphenation("apprecia-\ntion") == "appreciation"
+
+    def test_genuine_compound_prefix_kept(self) -> None:
+        """A known compound prefix keeps its hyphen (keep-when-unsure)."""
+        assert "-" in merge_hyphenation("co-\nordinating")
+        assert "-" in merge_hyphenation("self-\nevident")
+        assert "-" in merge_hyphenation("non-\ntrivial")
+
+
+class TestShouldKeepHyphen:
+    """Tests for the conservative compound-hyphen guard."""
+
+    def test_ordinary_lowercase_break_merges(self) -> None:
+        """Ordinary lowercase fragments are merged (keep returns False)."""
+        assert should_keep_hyphen("concep", "tion") is False
+        assert should_keep_hyphen("Manage", "ment") is False
+
+    def test_compound_prefix_kept(self) -> None:
+        """Known compound prefixes are kept."""
+        assert should_keep_hyphen("co", "ordinating") is True
+        assert should_keep_hyphen("self", "evident") is True
+
+    def test_capitalized_continuation_kept(self) -> None:
+        """A capitalized continuation is treated as a proper compound."""
+        assert should_keep_hyphen("Jean", "Baptiste") is True
+
+    def test_all_caps_split_merges(self) -> None:
+        """An all-caps word split mid-word merges (not a compound)."""
+        assert should_keep_hyphen("KNOWL", "EDGE") is False
+        assert should_keep_hyphen("MAJ", "ESTY") is False
+
+    def test_digit_adjacent_kept(self) -> None:
+        """Digit-adjacent hyphens are kept (not word hyphenation)."""
+        assert should_keep_hyphen("page", "42") is True
+
 
 class TestNormalizeWhitespace:
     """Tests for whitespace normalization."""
@@ -399,8 +439,8 @@ class TestCleanTranscription:
         result = clean_transcription(text)
         assert "   " not in result or "    " not in result
 
-    def test_hyphenation_merging_disabled_by_default(self) -> None:
-        """Hyphenation merging is disabled by default."""
+    def test_hyphenation_merging_respects_explicit_disable(self) -> None:
+        """Hyphenation merging is skipped when explicitly disabled."""
         text = "demon-\nstration"
         config = {
             "enabled": True,
@@ -413,6 +453,20 @@ class TestCleanTranscription:
         result = clean_transcription(text, config)
         # Should still have hyphen since merging is disabled
         assert "-" in result
+
+    def test_hyphenation_merged_when_enabled(self) -> None:
+        """Ordinary line-break hyphenation is merged when enabled."""
+        text = "demon-\nstration"
+        config = {
+            "enabled": True,
+            "unicode_normalization": False,
+            "latex_fixing": {"enabled": False},
+            "merge_hyphenation": True,
+            "whitespace_normalization": {"enabled": False},
+            "line_wrapping": {"enabled": False},
+        }
+        result = clean_transcription(text, config)
+        assert result == "demonstration"
 
     def test_line_wrapping_disabled_by_default(self) -> None:
         """Line wrapping is disabled by default."""
@@ -457,3 +511,14 @@ class TestGetTextCleaningConfig:
             assert "merge_hyphenation" in result
             assert "whitespace_normalization" in result
             assert "line_wrapping" in result
+
+    def test_safe_defaults_merge_on_wrap_off(self) -> None:
+        """Defaults merge hyphenation and keep line wrapping disabled."""
+        with patch("pipeline.text_cleaner.get_config_loader") as mock:
+            mock_loader = MagicMock()
+            mock_loader.get_image_processing_config.return_value = {}
+            mock.return_value = mock_loader
+
+            result = get_text_cleaning_config()
+            assert result["merge_hyphenation"] is True
+            assert result["line_wrapping"]["enabled"] is False

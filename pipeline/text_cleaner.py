@@ -71,6 +71,33 @@ LATEX_COMMAND_FIXES = [
 # Regex pattern for hyphenated line breaks
 _HYPHEN_PATTERN = re.compile(r"(\w{3,})-\n(\w{2,})")
 
+# Prefixes that are almost always genuinely hyphenated. Following the
+# conservative "keep the hyphen when unsure" policy, a line-break hyphen whose
+# left fragment is one of these is preserved (for example "co-ordinating",
+# "self-evident") rather than merged. The set is deliberately small and
+# high-precision: common word-initial syllables such as "con", "pre" or "de"
+# are excluded because line-break hyphenation of ordinary words (for example
+# "concep-tion") far outnumbers genuine compounds starting that way.
+HYPHEN_KEEP_PREFIXES = frozenset(
+    {
+        "co",
+        "self",
+        "non",
+        "anti",
+        "pseudo",
+        "quasi",
+        "semi",
+        "multi",
+        "cross",
+        "well",
+        "ill",
+        "half",
+        "vice",
+        "all",
+        "neo",
+    }
+)
+
 
 # ============================================================================
 # Configuration
@@ -98,7 +125,7 @@ def get_text_cleaning_config() -> dict[str, Any]:
                 "fix_common_commands": True,
             },
         ),
-        "merge_hyphenation": cleaning_cfg.get("merge_hyphenation", False),
+        "merge_hyphenation": cleaning_cfg.get("merge_hyphenation", True),
         "whitespace_normalization": cleaning_cfg.get(
             "whitespace_normalization",
             {
@@ -381,13 +408,46 @@ def fix_latex_formulas(text: str, config: dict[str, Any]) -> str:
 # ============================================================================
 
 
+def should_keep_hyphen(left: str, right: str) -> bool:
+    """Decide whether a line-break hyphen is a genuine compound to keep.
+
+    Implements the conservative "keep the hyphen when unsure" policy. The
+    hyphen is kept (the word is treated as a real hyphenated compound) when:
+    the characters adjacent to the hyphen are not both lowercase letters (for
+    example "Jean-Baptiste", "page-42"); or the alphabetic fragment ending at
+    the hyphen is one of ``HYPHEN_KEEP_PREFIXES``. Otherwise the break is
+    treated as wrap/line-break hyphenation and the word should be merged.
+
+    Args:
+        left: The fragment before the hyphen (for example "Manage", "co").
+        right: The continuation fragment after the line break (for example
+            "ment", "ordinating").
+
+    Returns:
+        True to keep the hyphen, False to merge into a single word.
+    """
+    if not left or not right:
+        return True
+    if not (left[-1].isalpha() and right[0].isalpha()):
+        return True
+    if not (left[-1].islower() and right[0].islower()):
+        # Uppercase-adjacent. An all-caps word split mid-word (e.g. "KNOWL-EDGE",
+        # "MAJ-ESTY") is not a compound and should merge; a Title-case pairing
+        # (e.g. "Jean-Baptiste", "18th-Century") is a genuine compound to keep.
+        return not (left.isupper() and right.isupper())
+    match = re.search(r"[A-Za-z]+$", left)
+    prefix_word = match.group(0).lower() if match else left.lower()
+    return prefix_word in HYPHEN_KEEP_PREFIXES
+
+
 def merge_hyphenation(text: str) -> str:
     """Merge words split across lines with a hyphen.
 
     Example: "politi-\\nche" -> "politiche"
 
-    Uses conservative heuristics to avoid damaging genuine hyphenated
-    compounds like "Jean-Baptiste" (only merges lowercase fragments).
+    Uses the conservative ``should_keep_hyphen`` guard to avoid damaging
+    genuine hyphenated compounds like "Jean-Baptiste" or "co-ordinating",
+    while still merging ordinary line-break hyphenation like "Manage-\\nment".
 
     Args:
         text: Text with potential line-break hyphenation.
@@ -398,16 +458,10 @@ def merge_hyphenation(text: str) -> str:
 
     def _replace(match: re.Match[str]) -> str:
         left, right = match.group(1), match.group(2)
-        # Only merge if both ends are lowercase letters
-        if (
-            left[-1].isalpha()
-            and right[0].isalpha()
-            and left[-1].islower()
-            and right[0].islower()
-        ):
-            return left + right
-        # Keep original hyphenation
-        return left + "-\n" + right
+        if should_keep_hyphen(left, right):
+            # Keep original hyphenation (compound or ambiguous fragment)
+            return left + "-\n" + right
+        return left + right
 
     return _HYPHEN_PATTERN.sub(_replace, text)
 
@@ -671,6 +725,12 @@ def clean_transcription(text: str, config: dict[str, Any] | None = None) -> str:
     # 5. Line wrapping (off by default)
     wrap_config = config.get("line_wrapping", {})
     if wrap_config.get("enabled", False):
+        logger.warning(
+            "Line wrapping is enabled; it re-wraps already laid-out LLM "
+            "transcription text and is the known cause of spurious mid-paragraph "
+            "line breaks. It is usually not needed for LLM output -- consider "
+            "setting text_cleaning.line_wrapping.enabled to false."
+        )
         if wrap_config.get("auto_width", False):
             width = compute_auto_wrap_width(text)
         else:
@@ -690,6 +750,7 @@ __all__ = [
     "normalize_unicode",
     "fix_latex_formulas",
     "merge_hyphenation",
+    "should_keep_hyphen",
     "normalize_whitespace",
     "wrap_long_lines",
 ]

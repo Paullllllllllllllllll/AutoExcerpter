@@ -1,4 +1,4 @@
-# AutoExcerpter v1.2.1
+# AutoExcerpter v1.3.0
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -636,6 +636,14 @@ linting and formatting across the entire codebase.
 
 ## Changelog
 
+- **v1.3.0** (29 May 2026) -- fix spurious mid-paragraph line
+    breaks: disable `text_cleaning.line_wrapping` by default (it
+    re-wrapped already laid-out LLM output into short orphan lines)
+    and enable a conservative `merge_hyphenation` with a
+    compound-preserving guard (`should_keep_hyphen`); warn when
+    wrapping is enabled. Add `scripts/repair_layout`, a
+    deterministic line-break repairer with a content-preservation
+    verifier for fixing affected transcription files in place.
 - **v1.2.1** (19 May 2026) -- dependency refresh from
     environment-wide CVE audit: bump `langchain-core`
     1.3.2 -> 1.4.0 (RCE on deserialization); `langsmith`
