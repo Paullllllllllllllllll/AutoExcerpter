@@ -69,16 +69,13 @@ def _collect_items_from_directory(path_to_scan: Path) -> Iterable[ItemSpec]:
     for root, dirs, files in os.walk(path_to_scan):
         current_dir = Path(root)
 
-        # Collect PDF files
+        # Collect PDF files and images in a single pass (a file is at most one
+        # of the two)
         for file_name in files:
             file_path = current_dir / file_name
             if is_pdf_file(file_path):
                 items.append(_build_pdf_item(file_path))
-
-        # Collect images for image folder detection
-        for file_name in files:
-            file_path = current_dir / file_name
-            if is_supported_image(file_path):
+            elif is_supported_image(file_path):
                 image_folders.setdefault(current_dir, []).append(file_path)
 
         # Skip descending into directories that contain images

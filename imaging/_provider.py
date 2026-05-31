@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from typing import Literal
 
+from config.constants import OPENAI_MODEL_PREFIXES
+
 ModelType = Literal["openai", "google", "anthropic", "custom"]
 
 
@@ -49,8 +51,8 @@ def detect_model_type(provider: str, model_name: str | None = None) -> ModelType
         # Anthropic models
         if "claude" in model_name or "anthropic/" in model_name:
             return "anthropic"
-        # OpenAI models
-        if any(x in model_name for x in ["gpt-", "o1", "o3", "o4", "openai/"]):
+        # OpenAI models (shared prefix list plus the OpenRouter proxy prefix)
+        if any(x in model_name for x in (*OPENAI_MODEL_PREFIXES, "openai/")):
             return "openai"
 
     # Default to OpenAI-style config

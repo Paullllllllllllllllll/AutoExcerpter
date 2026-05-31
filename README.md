@@ -1,4 +1,4 @@
-# AutoExcerpter v1.3.0
+# AutoExcerpter v1.4.0
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -636,6 +636,16 @@ linting and formatting across the entire codebase.
 
 ## Changelog
 
+- **v1.4.0** (31 May 2026) -- low-risk code-review cleanups
+    (behavior-preserving): route `config.accessors` fallbacks
+    through `constants` (`DEFAULT_RATE_LIMITS`, `DEFAULT_TARGET_DPI`,
+    `DEFAULT_OPENAI_TIMEOUT`); add a `MAX_ERROR_MULTIPLIER` constant
+    and reference it in `RateLimiter`; reuse `OPENAI_MODEL_PREFIXES`
+    in `imaging._provider` model detection; collapse the duplicate
+    per-directory file scan in `pipeline.scanner` into a single pass;
+    log instead of silently swallowing the `output_text` extractor
+    fallback in `llm.base`; document the `RateLimiter.get_stats`
+    per-poll reset side effect.
 - **v1.3.0** (29 May 2026) -- fix spurious mid-paragraph line
     breaks: disable `text_cleaning.line_wrapping` by default (it
     re-wrapped already laid-out LLM output into short orphan lines)

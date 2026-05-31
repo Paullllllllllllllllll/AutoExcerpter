@@ -45,6 +45,7 @@ from config.constants import (
     ERROR_MULTIPLIER_DECREASE_RATE,
     ERROR_MULTIPLIER_INCREASE_OTHER,
     ERROR_MULTIPLIER_INCREASE_RATE_LIMIT,
+    MAX_ERROR_MULTIPLIER,
     MAX_SLEEP_TIME,
     MIN_SLEEP_TIME,
 )
@@ -95,7 +96,7 @@ class RateLimiter:
         # Adaptive backoff
         self.consecutive_errors = 0
         self.error_multiplier = 1.0
-        self.max_error_multiplier = 5.0
+        self.max_error_multiplier = MAX_ERROR_MULTIPLIER
 
     def wait_for_capacity(self) -> float:
         """
@@ -188,6 +189,13 @@ class RateLimiter:
     def get_stats(self) -> dict[str, Any]:
         """
         Get current rate limiter statistics.
+
+        Note:
+            This is not a pure query: ``current_rate`` is measured over the
+            window since the previous call, so invoking this method resets the
+            per-poll counters (``last_stats_update`` and
+            ``request_count_since_last_update``). Two consecutive calls will
+            therefore report different ``current_rate`` values.
 
         Returns:
             Dictionary containing statistics about requests, wait times, and current

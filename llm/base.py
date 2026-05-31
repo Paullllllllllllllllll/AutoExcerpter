@@ -155,8 +155,10 @@ def _extract_from_output_attribute(data: Any) -> str | None:
         text_attr = getattr(data, "output_text", None)
         if isinstance(text_attr, str) and text_attr.strip():
             return text_attr.strip()
-    except Exception:
-        pass
+    except Exception as e:
+        # Defensive: attribute access on exotic SDK objects may raise; fall
+        # through to the next extractor but keep the cause observable.
+        logger.debug(f"output_text attribute extraction failed: {e}")
     return None
 
 

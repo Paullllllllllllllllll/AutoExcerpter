@@ -9,6 +9,11 @@ from __future__ import annotations
 from typing import Any
 
 from config.constants import DEFAULT_CONCURRENT_REQUESTS as DEFAULT_CONCURRENT_REQUESTS
+from config.constants import (
+    DEFAULT_OPENAI_TIMEOUT,
+    DEFAULT_RATE_LIMITS,
+    DEFAULT_TARGET_DPI,
+)
 from config.loader import get_config_loader
 from config.logger import setup_logger
 
@@ -101,7 +106,7 @@ def get_api_timeout() -> int:
     timeout: Any = _get_config_value(
         "get_concurrency_config",
         ["api_requests", "api_timeout"],
-        default=900,
+        default=DEFAULT_OPENAI_TIMEOUT,
         log_context="API timeout",
     )
     return int(timeout)
@@ -113,7 +118,7 @@ def get_rate_limits() -> list[tuple[int, int]]:
     Returns:
         List of (max_requests, time_window_seconds) tuples.
     """
-    default_limits = [(120, 1), (15000, 60), (15000, 3600)]
+    default_limits = list(DEFAULT_RATE_LIMITS)
     try:
         cfg_loader = get_config_loader()
         concurrency_cfg = cfg_loader.get_concurrency_config()
@@ -141,7 +146,7 @@ def get_target_dpi() -> int:
     dpi: Any = _get_config_value(
         "get_image_processing_config",
         ["api_image_processing", "target_dpi"],
-        default=300,
+        default=DEFAULT_TARGET_DPI,
         log_context="target DPI",
     )
     return int(dpi)
