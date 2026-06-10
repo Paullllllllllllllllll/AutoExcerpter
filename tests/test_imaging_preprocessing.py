@@ -1,194 +1,46 @@
-"""Tests for imaging/preprocessing.py - Image processing utilities."""
+"""Tests for imaging/preprocessing.py - static image preprocessing core."""
 
 from __future__ import annotations
 
-import base64
-from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, patch
 
 import pytest
 from PIL import Image
 
-from imaging.preprocessing import ImageProcessor
+from imaging.preprocessing import (
+    DEFAULT_ANTHROPIC_HIGH_MAX_SIDE,
+    ImageProcessor,
+    _get_resampling_filter,
+)
 
 
-class TestImageProcessorInit:
-    """Tests for ImageProcessor initialization."""
-
-    def test_init_with_valid_image(
-        self, sample_image_file: Path, mock_config_loader: MagicMock
-    ) -> None:
-        """ImageProcessor initializes with valid image path."""
-        with patch(
-            "imaging.preprocessing.get_config_loader", return_value=mock_config_loader
-        ):
-            processor = ImageProcessor(sample_image_file)
-            assert processor.image_path == sample_image_file
-            assert processor.provider == "openai"
-
-    def test_init_with_openai_provider(
-        self, sample_image_file: Path, mock_config_loader: MagicMock
-    ) -> None:
-        """OpenAI provider is detected correctly."""
-        with patch(
-            "imaging.preprocessing.get_config_loader", return_value=mock_config_loader
-        ):
-            processor = ImageProcessor(
-                sample_image_file, provider="openai", model_name="gpt-5"
-            )
-            assert processor.model_type == "openai"
-
-    def test_init_with_google_provider(
-        self, sample_image_file: Path, mock_config_loader: MagicMock
-    ) -> None:
-        """Google provider is detected correctly."""
-        with patch(
-            "imaging.preprocessing.get_config_loader", return_value=mock_config_loader
-        ):
-            processor = ImageProcessor(
-                sample_image_file, provider="google", model_name="gemini-2.5-flash"
-            )
-            assert processor.model_type == "google"
-
-    def test_init_with_anthropic_provider(
-        self, sample_image_file: Path, mock_config_loader: MagicMock
-    ) -> None:
-        """Anthropic provider is detected correctly."""
-        with patch(
-            "imaging.preprocessing.get_config_loader", return_value=mock_config_loader
-        ):
-            processor = ImageProcessor(
-                sample_image_file, provider="anthropic", model_name="claude-sonnet-4-5"
-            )
-            assert processor.model_type == "anthropic"
-
-    def test_init_with_openrouter_google_model(
-        self, sample_image_file: Path, mock_config_loader: MagicMock
-    ) -> None:
-        """OpenRouter with Google model uses Google config."""
-        with patch(
-            "imaging.preprocessing.get_config_loader", return_value=mock_config_loader
-        ):
-            processor = ImageProcessor(
-                sample_image_file,
-                provider="openrouter",
-                model_name="google/gemini-2.5-flash",
-            )
-            assert processor.model_type == "google"
-
-    def test_init_unsupported_format_raises(
-        self, temp_dir: Path, mock_config_loader: MagicMock
-    ) -> None:
-        """Unsupported image format raises ValueError."""
-        unsupported_file = temp_dir / "test.xyz"
-        unsupported_file.write_text("fake image")
-
-        with (
-            patch(
-                "imaging.preprocessing.get_config_loader",
-                return_value=mock_config_loader,
-            ),
-            pytest.raises(ValueError, match="Unsupported image format"),
-        ):
-            ImageProcessor(unsupported_file)
+@pytest.fixture
+def openai_config() -> dict[str, Any]:
+    """OpenAI image config for testing."""
+    return {
+        "grayscale_conversion": True,
+        "handle_transparency": True,
+        "llm_detail": "high",
+        "low_max_side_px": 512,
+        "high_target_box": [768, 1536],
+        "resize_profile": "auto",
+    }
 
 
-class TestConvertToGrayscale:
-    """Tests for grayscale conversion."""
-
-    def test_rgb_to_grayscale(
-        self, sample_image_file: Path, mock_config_loader: MagicMock
-    ) -> None:
-        """RGB image is converted to grayscale when enabled."""
-        with patch(
-            "imaging.preprocessing.get_config_loader", return_value=mock_config_loader
-        ):
-            processor = ImageProcessor(sample_image_file)
-            rgb_image = Image.new("RGB", (100, 100), color=(128, 64, 192))
-
-            result = processor.convert_to_grayscale(rgb_image)
-            assert result.mode == "L"
-
-    def test_grayscale_disabled(self, sample_image_file: Path) -> None:
-        """Grayscale conversion skipped when disabled."""
-        mock_loader = MagicMock()
-        mock_loader.get_image_processing_config.return_value = {
-            "api_image_processing": {"grayscale_conversion": False}
-        }
-
-        with patch("imaging.preprocessing.get_config_loader", return_value=mock_loader):
-            processor = ImageProcessor(sample_image_file)
-            rgb_image = Image.new("RGB", (100, 100), color=(128, 64, 192))
-
-            result = processor.convert_to_grayscale(rgb_image)
-            assert result.mode == "RGB"
-
-
-class TestHandleTransparency:
-    """Tests for transparency handling."""
-
-    def test_rgba_to_rgb(
-        self, sample_image_file: Path, mock_config_loader: MagicMock
-    ) -> None:
-        """RGBA image is converted to RGB with white background."""
-        with patch(
-            "imaging.preprocessing.get_config_loader", return_value=mock_config_loader
-        ):
-            processor = ImageProcessor(sample_image_file)
-            rgba_image = Image.new("RGBA", (100, 100), color=(128, 64, 192, 128))
-
-            result = processor.handle_transparency(rgba_image)
-            assert result.mode == "RGB"
-
-    def test_rgb_unchanged(
-        self, sample_image_file: Path, mock_config_loader: MagicMock
-    ) -> None:
-        """RGB image without transparency is unchanged."""
-        with patch(
-            "imaging.preprocessing.get_config_loader", return_value=mock_config_loader
-        ):
-            processor = ImageProcessor(sample_image_file)
-            rgb_image = Image.new("RGB", (100, 100), color=(128, 64, 192))
-
-            result = processor.handle_transparency(rgb_image)
-            assert result.mode == "RGB"
-
-    def test_transparency_handling_disabled(self, sample_image_file: Path) -> None:
-        """Transparency handling skipped when disabled."""
-        mock_loader = MagicMock()
-        mock_loader.get_image_processing_config.return_value = {
-            "api_image_processing": {"handle_transparency": False}
-        }
-
-        with patch("imaging.preprocessing.get_config_loader", return_value=mock_loader):
-            processor = ImageProcessor(sample_image_file)
-            rgba_image = Image.new("RGBA", (100, 100), color=(128, 64, 192, 128))
-
-            result = processor.handle_transparency(rgba_image)
-            assert result.mode == "RGBA"
+@pytest.fixture
+def anthropic_config() -> dict[str, Any]:
+    """Anthropic image config for testing."""
+    return {
+        "grayscale_conversion": True,
+        "handle_transparency": True,
+        "low_max_side_px": 512,
+        "high_max_side_px": 1568,
+        "resize_profile": "auto",
+    }
 
 
 class TestResizeForDetail:
     """Tests for detail-based resizing."""
-
-    @pytest.fixture
-    def openai_config(self) -> dict[str, Any]:
-        """OpenAI image config for testing."""
-        return {
-            "low_max_side_px": 512,
-            "high_target_box": [768, 1536],
-            "resize_profile": "auto",
-        }
-
-    @pytest.fixture
-    def anthropic_config(self) -> dict[str, Any]:
-        """Anthropic image config for testing."""
-        return {
-            "low_max_side_px": 512,
-            "high_max_side_px": 1568,
-            "resize_profile": "auto",
-        }
 
     def test_low_detail_caps_size(self, openai_config: dict[str, Any]) -> None:
         """Low detail caps longest side to max_side_px."""
@@ -217,7 +69,6 @@ class TestResizeForDetail:
             image, "high", openai_config, "openai"
         )
 
-        # Should fit within box and be padded to exact size
         assert result.size == (768, 1536)
 
     def test_high_detail_anthropic_max_side(
@@ -229,9 +80,7 @@ class TestResizeForDetail:
             image, "high", anthropic_config, "anthropic"
         )
 
-        # Should cap longest side to 1568, preserve aspect ratio
         assert max(result.size) <= 1568
-        # Should NOT be padded to a specific size
         assert result.size != (768, 1536)
 
     def test_resize_profile_none_skips_resize(self) -> None:
@@ -251,187 +100,180 @@ class TestResizeForDetail:
 
         assert result.size == (768, 1536)
 
-
-class TestProcessImageToMemory:
-    """Tests for in-memory image processing."""
-
-    def test_returns_pil_image(
-        self, sample_image_file: Path, mock_config_loader: MagicMock
+    def test_unknown_detail_treated_as_high(
+        self, openai_config: dict[str, Any]
     ) -> None:
-        """process_image_to_memory returns a PIL Image."""
-        with patch(
-            "imaging.preprocessing.get_config_loader", return_value=mock_config_loader
-        ):
-            processor = ImageProcessor(sample_image_file)
-            result = processor.process_image_to_memory()
-
-            assert isinstance(result, Image.Image)
-
-    def test_applies_grayscale(
-        self, sample_image_file: Path, mock_config_loader: MagicMock
-    ) -> None:
-        """In-memory processing applies grayscale conversion."""
-        with patch(
-            "imaging.preprocessing.get_config_loader", return_value=mock_config_loader
-        ):
-            processor = ImageProcessor(sample_image_file)
-            result = processor.process_image_to_memory()
-
-            # Result mode depends on resize strategy - may be L or RGB after processing
-            assert result.mode in ("L", "RGB")
-
-    def test_handles_transparency(
-        self, sample_png_with_transparency: Path, mock_config_loader: MagicMock
-    ) -> None:
-        """In-memory processing handles transparency."""
-        with patch(
-            "imaging.preprocessing.get_config_loader", return_value=mock_config_loader
-        ):
-            processor = ImageProcessor(sample_png_with_transparency)
-            result = processor.process_image_to_memory()
-
-            # Should not have alpha channel
-            assert result.mode in ("RGB", "L")
-
-
-class TestPilImageToBase64:
-    """Tests for PIL to base64 conversion."""
-
-    def test_returns_valid_base64(self, sample_rgb_image: Image.Image) -> None:
-        """Conversion returns valid base64 string."""
-        result = ImageProcessor.pil_image_to_base64(sample_rgb_image)
-
-        assert isinstance(result, str)
-        # Should be valid base64
-        decoded = base64.b64decode(result)
-        assert len(decoded) > 0
-
-    def test_output_is_jpeg(self, sample_rgb_image: Image.Image) -> None:
-        """Output is JPEG format."""
-        result = ImageProcessor.pil_image_to_base64(sample_rgb_image)
-        decoded = base64.b64decode(result)
-
-        # JPEG magic bytes
-        assert decoded[:2] == b"\xff\xd8"
-
-    def test_quality_parameter_affects_size(
-        self, sample_rgb_image: Image.Image
-    ) -> None:
-        """Different quality settings produce different sizes."""
-        low_quality = ImageProcessor.pil_image_to_base64(
-            sample_rgb_image, jpeg_quality=10
-        )
-        high_quality = ImageProcessor.pil_image_to_base64(
-            sample_rgb_image, jpeg_quality=100
+        """Unknown detail values fall back to high-detail behavior."""
+        image = Image.new("RGB", (2000, 1500))
+        result = ImageProcessor.resize_for_detail(
+            image, "nonsense", openai_config, "openai"
         )
 
-        # Generally lower quality = smaller size, but for simple images
-        # the difference may be minimal. Verify both are valid base64 strings.
-        assert len(low_quality) > 0
-        assert len(high_quality) > 0
-        # Lower quality should generally be smaller or equal
-        assert len(low_quality) <= len(high_quality)
-
-    def test_converts_mode_if_needed(self) -> None:
-        """RGBA images are converted to RGB for JPEG."""
-        rgba_image = Image.new("RGBA", (100, 100), color=(128, 64, 192, 128))
-        result = ImageProcessor.pil_image_to_base64(rgba_image)
-
-        # Should succeed (JPEG doesn't support RGBA)
-        assert isinstance(result, str)
+        assert result.size == (768, 1536)
 
 
-class TestProcessImage:
-    """Tests for process_image (file output)."""
+class TestResizeHelpers:
+    """Tests for the static resize helper methods."""
 
-    def test_saves_to_jpg(
-        self, sample_image_file: Path, temp_dir: Path, mock_config_loader: MagicMock
+    def test_resize_max_side_preserves_aspect_ratio(self) -> None:
+        """_resize_max_side preserves the aspect ratio."""
+        image = Image.new("RGB", (2000, 1000))
+        result = ImageProcessor._resize_max_side(image, 500)
+
+        assert result.size == (500, 250)
+
+    def test_resize_max_side_no_upscale(self) -> None:
+        """Images already within the cap are returned unchanged."""
+        image = Image.new("RGB", (300, 200))
+        result = ImageProcessor._resize_max_side(image, 500)
+
+        assert result is image
+
+    def test_resize_low_detail_uses_config_cap(self) -> None:
+        """_resize_low_detail reads low_max_side_px from the config."""
+        image = Image.new("RGB", (1000, 800))
+        result = ImageProcessor._resize_low_detail(image, {"low_max_side_px": 250})
+
+        assert max(result.size) <= 250
+
+    def test_resize_box_fit_pads_grayscale_canvas(self) -> None:
+        """Box fitting an L-mode image keeps the canvas grayscale."""
+        image = Image.new("L", (2000, 1500), color=128)
+        result = ImageProcessor._resize_box_fit(image, {"high_target_box": [768, 1536]})
+
+        assert result.size == (768, 1536)
+        assert result.mode == "L"
+
+    def test_resize_box_fit_invalid_box_uses_defaults(self) -> None:
+        """An invalid high_target_box falls back to default dimensions."""
+        from config.constants import (
+            DEFAULT_HIGH_TARGET_HEIGHT,
+            DEFAULT_HIGH_TARGET_WIDTH,
+        )
+
+        image = Image.new("RGB", (2000, 1500))
+        result = ImageProcessor._resize_box_fit(image, {"high_target_box": "not-a-box"})
+
+        assert result.size == (DEFAULT_HIGH_TARGET_WIDTH, DEFAULT_HIGH_TARGET_HEIGHT)
+
+    def test_resize_anthropic_high_default_cap(self) -> None:
+        """Anthropic high resize defaults to the module-level max side."""
+        image = Image.new("RGB", (4000, 3000))
+        result = ImageProcessor._resize_anthropic_high(image, {})
+
+        assert max(result.size) <= DEFAULT_ANTHROPIC_HIGH_MAX_SIDE
+
+    def test_get_resampling_filter_returns_resampling(self) -> None:
+        """_get_resampling_filter returns a valid PIL resampling member."""
+        assert _get_resampling_filter() in (
+            Image.Resampling.BILINEAR,
+            Image.Resampling.LANCZOS,
+        )
+
+
+class TestPreprocessPilImage:
+    """Tests for the shared preprocess_pil_image() core."""
+
+    def test_grayscale_applied_when_enabled(
+        self, openai_config: dict[str, Any]
     ) -> None:
-        """process_image saves output as JPEG."""
-        with patch(
-            "imaging.preprocessing.get_config_loader", return_value=mock_config_loader
-        ):
-            processor = ImageProcessor(sample_image_file)
-            output_path = temp_dir / "output.jpg"
+        """RGB input is converted to grayscale when enabled."""
+        image = Image.new("RGB", (1000, 1500), color=(128, 64, 192))
+        result = ImageProcessor.preprocess_pil_image(image, openai_config, "openai")
 
-            result = processor.process_image(output_path)
+        assert result.mode == "L"
 
-            assert output_path.exists()
-            assert "Processed and saved" in result
-
-    def test_creates_jpg_even_if_png_requested(
-        self, sample_image_file: Path, temp_dir: Path, mock_config_loader: MagicMock
+    def test_grayscale_skipped_when_disabled(
+        self, openai_config: dict[str, Any]
     ) -> None:
-        """Output is always JPEG regardless of requested extension."""
-        with patch(
-            "imaging.preprocessing.get_config_loader", return_value=mock_config_loader
-        ):
-            processor = ImageProcessor(sample_image_file)
-            output_path = temp_dir / "output.png"
+        """RGB input stays RGB when grayscale conversion is disabled."""
+        openai_config["grayscale_conversion"] = False
+        image = Image.new("RGB", (1000, 1500), color=(128, 64, 192))
+        result = ImageProcessor.preprocess_pil_image(image, openai_config, "openai")
 
-            processor.process_image(output_path)
+        assert result.mode == "RGB"
 
-            # Should create .jpg file
-            jpg_path = output_path.with_suffix(".jpg")
-            assert jpg_path.exists()
-
-    def test_handles_processing_error(
-        self, temp_dir: Path, mock_config_loader: MagicMock
+    def test_transparency_flattened_to_white(
+        self, openai_config: dict[str, Any]
     ) -> None:
-        """Handles errors during image processing gracefully."""
-        fake_image_path = temp_dir / "fake.jpg"
-        fake_image_path.write_bytes(b"not an image")
+        """RGBA input is pasted onto a white background."""
+        openai_config["grayscale_conversion"] = False
+        image = Image.new("RGBA", (800, 600), color=(128, 64, 192, 128))
+        result = ImageProcessor.preprocess_pil_image(image, openai_config, "openai")
 
-        with patch(
-            "imaging.preprocessing.get_config_loader", return_value=mock_config_loader
-        ):
-            processor = ImageProcessor(fake_image_path)
-            output_path = temp_dir / "output.jpg"
+        assert result.mode == "RGB"
 
-            result = processor.process_image(output_path)
-
-            assert "Failed to process" in result
-
-
-class TestGetDetailParam:
-    """Tests for _get_detail_param method."""
-
-    def test_openai_returns_llm_detail(
-        self, sample_image_file: Path, mock_config_loader: MagicMock
+    def test_palette_mode_with_transparency(
+        self, openai_config: dict[str, Any]
     ) -> None:
-        """OpenAI provider returns llm_detail config value."""
-        with patch(
-            "imaging.preprocessing.get_config_loader", return_value=mock_config_loader
-        ):
-            processor = ImageProcessor(sample_image_file, provider="openai")
-            result = processor._get_detail_param()
+        """Palette mode image with transparency info is handled."""
+        openai_config["grayscale_conversion"] = False
+        image = Image.new("P", (100, 100))
+        image.info["transparency"] = 0
+        result = ImageProcessor.preprocess_pil_image(image, openai_config, "openai")
 
-            assert result == "high"
+        assert result.mode == "RGB"
 
-    def test_google_returns_media_resolution(
-        self, sample_image_file: Path, mock_config_loader: MagicMock
+    def test_la_mode_transparency(self, openai_config: dict[str, Any]) -> None:
+        """LA (grayscale with alpha) mode transparency is handled."""
+        openai_config["grayscale_conversion"] = False
+        image = Image.new("LA", (100, 100))
+        result = ImageProcessor.preprocess_pil_image(image, openai_config, "openai")
+
+        assert result.mode == "RGB"
+
+    def test_transparency_kept_when_disabled(
+        self, openai_config: dict[str, Any]
     ) -> None:
-        """Google provider returns media_resolution config value."""
-        with patch(
-            "imaging.preprocessing.get_config_loader", return_value=mock_config_loader
-        ):
-            processor = ImageProcessor(
-                sample_image_file, provider="google", model_name="gemini-2.5-flash"
-            )
-            result = processor._get_detail_param()
+        """Transparency handling is skipped when disabled."""
+        openai_config["handle_transparency"] = False
+        openai_config["grayscale_conversion"] = False
+        openai_config["resize_profile"] = "none"
+        image = Image.new("RGBA", (100, 100), color=(128, 64, 192, 128))
+        result = ImageProcessor.preprocess_pil_image(image, openai_config, "openai")
 
-            assert result == "high"
+        assert result.mode == "RGBA"
 
-    def test_anthropic_returns_resize_profile(
-        self, sample_image_file: Path, mock_config_loader: MagicMock
+    def test_openai_box_fit_applied(self, openai_config: dict[str, Any]) -> None:
+        """OpenAI input is fitted into the configured target box."""
+        image = Image.new("RGB", (1000, 1500))
+        result = ImageProcessor.preprocess_pil_image(image, openai_config, "openai")
+
+        assert result.size == (768, 1536)
+
+    def test_google_uses_media_resolution(self) -> None:
+        """Google model type reads the media_resolution config key."""
+        cfg = {
+            "grayscale_conversion": False,
+            "handle_transparency": False,
+            "media_resolution": "low",
+            "low_max_side_px": 256,
+            "high_target_box": [768, 768],
+        }
+        image = Image.new("RGB", (1000, 1000))
+        result = ImageProcessor.preprocess_pil_image(image, cfg, "google")
+
+        assert max(result.size) <= 256
+
+    def test_anthropic_uses_resize_profile(
+        self, anthropic_config: dict[str, Any]
     ) -> None:
-        """Anthropic provider returns resize_profile config value."""
-        with patch(
-            "imaging.preprocessing.get_config_loader", return_value=mock_config_loader
-        ):
-            processor = ImageProcessor(
-                sample_image_file, provider="anthropic", model_name="claude-3-opus"
-            )
-            result = processor._get_detail_param()
+        """Anthropic model type caps the longest side without padding."""
+        anthropic_config["grayscale_conversion"] = False
+        image = Image.new("RGB", (2000, 3000))
+        result = ImageProcessor.preprocess_pil_image(
+            image, anthropic_config, "anthropic"
+        )
 
-            assert result == "auto"
+        assert max(result.size) <= 1568
+
+    def test_grayscale_already_grayscale_noop(
+        self, openai_config: dict[str, Any]
+    ) -> None:
+        """Grayscale conversion on an already grayscale image is a no-op."""
+        openai_config["resize_profile"] = "none"
+        image = Image.new("L", (100, 100), color=128)
+        result = ImageProcessor.preprocess_pil_image(image, openai_config, "openai")
+
+        assert result.mode == "L"
+        assert result.size == (100, 100)

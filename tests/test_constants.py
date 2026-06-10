@@ -31,7 +31,6 @@ from config.constants import (
     EXIT_COMMANDS,
     # Math Conversion
     MATH_NAMESPACE,
-    MAX_EXTRACTION_WORKERS,
     MAX_SLEEP_TIME,
     # Rate Limiter
     MIN_SLEEP_TIME,
@@ -116,11 +115,6 @@ class TestImageProcessingDefaults:
         assert isinstance(WHITE_BACKGROUND_COLOR, tuple)
         assert len(WHITE_BACKGROUND_COLOR) == 3
         assert all(0 <= c <= 255 for c in WHITE_BACKGROUND_COLOR)
-
-    def test_max_extraction_workers_positive(self) -> None:
-        """MAX_EXTRACTION_WORKERS is positive."""
-        assert isinstance(MAX_EXTRACTION_WORKERS, int)
-        assert MAX_EXTRACTION_WORKERS > 0
 
     def test_pdf_dpi_conversion_factor_positive(self) -> None:
         """PDF_DPI_CONVERSION_FACTOR is positive."""

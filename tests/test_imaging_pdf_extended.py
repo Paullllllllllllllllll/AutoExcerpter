@@ -1,14 +1,19 @@
-"""Extended tests for imaging/pdf.py - coverage gap filling.
+"""Extended tests for `PdfPayloadSource` — provenance and config coverage.
 
 Covers:
-- extract_pdf_pages_to_images: mock fitz, page extraction, error handling,
-  empty PDF, single page, grayscale toggle, provider-specific config
-- get_image_paths_from_folder: empty folder, mixed files, supported/unsupported,
-  subdirectories ignored
+- payload sha256 stability across repeated builds of the same page
+- building an arbitrary page without touching its neighbors
+- grayscale vs color rendering paths driven by the config dict
+- provider-specific config section resolution (Google, Anthropic)
+- file_provenance() contents including the source PDF hash
 """
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import io
+from collections.abc import Callable, Generator
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -16,522 +21,207 @@ from unittest.mock import MagicMock, patch
 import pytest
 from PIL import Image
 
-from imaging.pdf import (
-    _apply_image_preprocessing,
-    extract_pdf_pages_to_images,
-    get_image_paths_from_folder,
-)
+from imaging.payload import PdfPayloadSource
 
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-@pytest.fixture
-def output_dir(tmp_path: Path) -> Path:
-    """Create and return an output directory for extracted images."""
-    d = tmp_path / "output_images"
-    d.mkdir()
-    return d
+def _loader_with(sections: dict[str, dict[str, Any]]) -> MagicMock:
+    """Build a mock ConfigLoader returning the given image-processing sections."""
+    loader = MagicMock()
+    loader.get_image_processing_config.return_value = sections
+    return loader
 
 
 @pytest.fixture
-def mock_img_cfg() -> dict[str, Any]:
-    """Return a default image processing config dict for OpenAI."""
-    return {
-        "target_dpi": 300,
-        "jpeg_quality": 95,
-        "grayscale_conversion": True,
-        "handle_transparency": True,
-        "llm_detail": "high",
-        "low_max_side_px": 512,
-        "high_target_box": [768, 1536],
-    }
+def patched_payload_config(
+    mock_config_loader: MagicMock,
+) -> Generator[MagicMock]:
+    """Patch the payload module's config loader with the mock configuration."""
+    with patch("imaging.payload.get_config_loader", return_value=mock_config_loader):
+        yield mock_config_loader
 
 
-def _build_mock_pixmap(width: int, height: int, mode: str = "RGB") -> MagicMock:
-    """Build a mock fitz Pixmap that can produce PIL Image bytes."""
-    mock_pix = MagicMock()
-    mock_pix.width = width
-    mock_pix.height = height
-    if mode == "L":
-        mock_pix.samples = bytes([128] * width * height)
-    else:
-        mock_pix.samples = bytes([128] * width * height * 3)
-    return mock_pix
+class TestPayloadDeterminism:
+    """Hash stability and page independence."""
 
-
-def _build_mock_pdf_document(
-    num_pages: int, pix_width: int = 100, pix_height: int = 150, grayscale: bool = True
-) -> MagicMock:
-    """Build a mock fitz.Document with the given number of pages."""
-    mock_doc = MagicMock()
-    mock_doc.__len__ = MagicMock(return_value=num_pages)
-
-    mock_page = MagicMock()
-    if grayscale:
-        mock_pix = _build_mock_pixmap(pix_width, pix_height, mode="L")
-    else:
-        mock_pix = _build_mock_pixmap(pix_width, pix_height, mode="RGB")
-    mock_page.get_pixmap.return_value = mock_pix
-    mock_doc.__getitem__ = MagicMock(return_value=mock_page)
-
-    return mock_doc
-
-
-# ============================================================================
-# extract_pdf_pages_to_images
-# ============================================================================
-class TestExtractPdfPagesToImages:
-    """Tests for extract_pdf_pages_to_images() with mocked fitz."""
-
-    @patch("imaging.pdf._apply_image_preprocessing")
-    @patch("imaging.pdf.get_config_loader")
-    @patch("imaging.pdf.fitz")
-    def test_extracts_all_pages(
-        self, mock_fitz, mock_loader, mock_preprocess, output_dir: Path, mock_img_cfg
+    def test_sha256_stable_across_two_builds(
+        self, make_pdf: Callable[..., Path], patched_payload_config: MagicMock
     ) -> None:
-        """Extracts all pages from a multi-page PDF."""
-        num_pages = 3
-        mock_doc = _build_mock_pdf_document(num_pages)
-        mock_fitz.open.return_value = mock_doc
-        mock_fitz.Matrix.return_value = MagicMock()
-        mock_fitz.csGRAY = MagicMock()
+        """Building the same page twice yields identical bytes and hashes."""
+        pdf_path = make_pdf("stable.pdf", num_pages=2)
+        source = PdfPayloadSource(pdf_path)
+        with source:
+            first = source.build_payload(0)
+            second = source.build_payload(0)
 
-        cfg_loader = MagicMock()
-        cfg_loader.get_image_processing_config.return_value = {
-            "api_image_processing": mock_img_cfg,
-        }
-        mock_loader.return_value = cfg_loader
+        assert first.base64 == second.base64
+        assert first.provenance["sha256"] == second.provenance["sha256"]
 
-        # Make preprocessing return a saveable PIL image
-        fake_img = Image.new("L", (100, 150), color=128)
-        mock_preprocess.return_value = fake_img
-
-        pdf_path = output_dir.parent / "test.pdf"
-        pdf_path.touch()
-
-        with patch("imaging.pdf.tqdm", lambda x, **kw: x):
-            paths = extract_pdf_pages_to_images(
-                pdf_path, output_dir, provider="openai", model_name="gpt-5-mini"
-            )
-
-        assert len(paths) == num_pages
-        for p in paths:
-            assert p.exists()
-            assert p.suffix == ".jpg"
-
-        mock_doc.close.assert_called_once()
-
-    @patch("imaging.pdf.get_config_loader")
-    @patch("imaging.pdf.fitz")
-    def test_empty_pdf_returns_empty_list(
-        self, mock_fitz, mock_loader, output_dir: Path
+    def test_single_page_build_is_independent(
+        self, make_pdf: Callable[..., Path], patched_payload_config: MagicMock
     ) -> None:
-        """Empty PDF (0 pages) returns an empty list."""
-        mock_doc = _build_mock_pdf_document(0)
-        mock_fitz.open.return_value = mock_doc
+        """Building only page index 2 of 3 works without touching the others."""
+        pdf_path = make_pdf("three.pdf", num_pages=3)
+        source = PdfPayloadSource(pdf_path)
+        with source:
+            payload = source.build_payload(2)
 
-        cfg_loader = MagicMock()
-        cfg_loader.get_image_processing_config.return_value = {
-            "api_image_processing": {}
-        }
-        mock_loader.return_value = cfg_loader
+        assert payload.original_input_order_index == 2
+        assert payload.sequence_number == 3
+        assert payload.image_name == "page_0003.jpg"
+        assert payload.provenance["byte_size"] > 0
 
-        pdf_path = output_dir.parent / "empty.pdf"
-        pdf_path.touch()
-
-        paths = extract_pdf_pages_to_images(pdf_path, output_dir)
-
-        assert paths == []
-        mock_doc.close.assert_called_once()
-
-    @patch("imaging.pdf._apply_image_preprocessing")
-    @patch("imaging.pdf.get_config_loader")
-    @patch("imaging.pdf.fitz")
-    def test_single_page_pdf(
-        self, mock_fitz, mock_loader, mock_preprocess, output_dir: Path, mock_img_cfg
+    def test_distinct_pages_have_distinct_hashes(
+        self, make_pdf: Callable[..., Path], patched_payload_config: MagicMock
     ) -> None:
-        """Single-page PDF produces one output image."""
-        mock_doc = _build_mock_pdf_document(1)
-        mock_fitz.open.return_value = mock_doc
-        mock_fitz.Matrix.return_value = MagicMock()
-        mock_fitz.csGRAY = MagicMock()
+        """Pages with different content produce different payload hashes."""
+        pdf_path = make_pdf("distinct.pdf", num_pages=2)
+        source = PdfPayloadSource(pdf_path)
+        with source:
+            first = source.build_payload(0)
+            second = source.build_payload(1)
 
-        cfg_loader = MagicMock()
-        cfg_loader.get_image_processing_config.return_value = {
-            "api_image_processing": mock_img_cfg,
-        }
-        mock_loader.return_value = cfg_loader
+        assert first.provenance["sha256"] != second.provenance["sha256"]
 
-        fake_img = Image.new("L", (100, 150), color=128)
-        mock_preprocess.return_value = fake_img
 
-        pdf_path = output_dir.parent / "single.pdf"
-        pdf_path.touch()
+class TestConfigPaths:
+    """Grayscale/color rendering and provider-specific config sections."""
 
-        with patch("imaging.pdf.tqdm", lambda x, **kw: x):
-            paths = extract_pdf_pages_to_images(pdf_path, output_dir)
-
-        assert len(paths) == 1
-        assert paths[0].name == "page_0001.jpg"
-
-    @patch("imaging.pdf.get_config_loader")
-    @patch("imaging.pdf.fitz")
-    def test_fitz_open_error_returns_empty_list(
-        self, mock_fitz, mock_loader, output_dir: Path
+    def test_grayscale_enabled_produces_l_mode_jpeg(
+        self, make_pdf: Callable[..., Path], patched_payload_config: MagicMock
     ) -> None:
-        """If fitz.open raises an exception, returns an empty list."""
-        mock_fitz.open.side_effect = RuntimeError("Cannot open PDF")
+        """With grayscale_conversion enabled, the encoded JPEG is grayscale."""
+        pdf_path = make_pdf("gray.pdf", num_pages=1)
+        source = PdfPayloadSource(pdf_path)
+        with source:
+            payload = source.build_payload(0)
 
-        cfg_loader = MagicMock()
-        cfg_loader.get_image_processing_config.return_value = {}
-        mock_loader.return_value = cfg_loader
+        with Image.open(io.BytesIO(base64.b64decode(payload.base64))) as img:
+            assert img.mode == "L"
 
-        pdf_path = output_dir.parent / "bad.pdf"
-        pdf_path.touch()
-
-        paths = extract_pdf_pages_to_images(pdf_path, output_dir)
-
-        assert paths == []
-
-    @patch("imaging.pdf._apply_image_preprocessing")
-    @patch("imaging.pdf.get_config_loader")
-    @patch("imaging.pdf.fitz")
-    def test_page_extraction_error_skips_page(
-        self, mock_fitz, mock_loader, mock_preprocess, output_dir: Path, mock_img_cfg
+    def test_grayscale_disabled_produces_rgb_jpeg(
+        self, make_pdf: Callable[..., Path]
     ) -> None:
-        """If a single page fails, it is skipped but other pages succeed."""
-        # Build a 2-page document where page 0 fails
-        mock_doc = MagicMock()
-        mock_doc.__len__ = MagicMock(return_value=2)
-
-        good_page = MagicMock()
-        good_pix = _build_mock_pixmap(100, 150, mode="L")
-        good_page.get_pixmap.return_value = good_pix
-
-        bad_page = MagicMock()
-        bad_page.get_pixmap.side_effect = RuntimeError("Page corrupt")
-
-        def getitem(idx: int) -> MagicMock:
-            if idx == 0:
-                return bad_page
-            return good_page
-
-        mock_doc.__getitem__ = MagicMock(side_effect=getitem)
-        mock_fitz.open.return_value = mock_doc
-        mock_fitz.Matrix.return_value = MagicMock()
-        mock_fitz.csGRAY = MagicMock()
-
-        cfg_loader = MagicMock()
-        cfg_loader.get_image_processing_config.return_value = {
-            "api_image_processing": mock_img_cfg,
-        }
-        mock_loader.return_value = cfg_loader
-
-        fake_img = Image.new("L", (100, 150), color=128)
-        mock_preprocess.return_value = fake_img
-
-        pdf_path = output_dir.parent / "partial.pdf"
-        pdf_path.touch()
-
-        with patch("imaging.pdf.tqdm", lambda x, **kw: x):
-            paths = extract_pdf_pages_to_images(pdf_path, output_dir)
-
-        # Only page 1 should succeed (page 0 failed)
-        assert len(paths) == 1
-        assert "page_0002" in paths[0].name
-
-    @patch("imaging.pdf._apply_image_preprocessing")
-    @patch("imaging.pdf.get_config_loader")
-    @patch("imaging.pdf.fitz")
-    def test_grayscale_disabled_uses_rgb(
-        self, mock_fitz, mock_loader, mock_preprocess, output_dir: Path
-    ) -> None:
-        """When grayscale_conversion is False, RGB pixmap is requested."""
-        mock_doc = _build_mock_pdf_document(1, grayscale=False)
-        mock_fitz.open.return_value = mock_doc
-        mock_fitz.Matrix.return_value = MagicMock()
-
-        cfg = {
-            "api_image_processing": {
-                "target_dpi": 300,
-                "jpeg_quality": 95,
-                "grayscale_conversion": False,
-                "handle_transparency": True,
-                "llm_detail": "high",
-                "low_max_side_px": 512,
-                "high_target_box": [768, 1536],
+        """With grayscale_conversion disabled, the encoded JPEG stays RGB."""
+        loader = _loader_with(
+            {
+                "api_image_processing": {
+                    "target_dpi": 150,
+                    "jpeg_quality": 90,
+                    "grayscale_conversion": False,
+                    "handle_transparency": True,
+                    "llm_detail": "high",
+                    "low_max_side_px": 512,
+                    "high_target_box": [768, 1536],
+                }
             }
-        }
-        cfg_loader = MagicMock()
-        cfg_loader.get_image_processing_config.return_value = cfg
-        mock_loader.return_value = cfg_loader
+        )
+        pdf_path = make_pdf("color.pdf", num_pages=1)
 
-        fake_img = Image.new("RGB", (100, 150), color=(128, 128, 128))
-        mock_preprocess.return_value = fake_img
+        with patch("imaging.payload.get_config_loader", return_value=loader):
+            source = PdfPayloadSource(pdf_path)
+        with source:
+            payload = source.build_payload(0)
 
-        pdf_path = output_dir.parent / "rgb.pdf"
-        pdf_path.touch()
+        with Image.open(io.BytesIO(base64.b64decode(payload.base64))) as img:
+            assert img.mode == "RGB"
+        assert payload.provenance["effective_dpi"] == 150
 
-        with patch("imaging.pdf.tqdm", lambda x, **kw: x):
-            paths = extract_pdf_pages_to_images(pdf_path, output_dir)
-
-        assert len(paths) == 1
-        # Verify that get_pixmap was called without csGRAY
-        page = mock_doc.__getitem__.return_value
-        call_kwargs = page.get_pixmap.call_args
-        # When grayscale is False, colorspace should not be csGRAY
-        if call_kwargs.kwargs.get("colorspace") is not None:
-            assert call_kwargs.kwargs["colorspace"] != mock_fitz.csGRAY
-
-    @patch("imaging.pdf._apply_image_preprocessing")
-    @patch("imaging.pdf.get_config_loader")
-    @patch("imaging.pdf.fitz")
-    def test_google_provider_config_section(
-        self, mock_fitz, mock_loader, mock_preprocess, output_dir: Path
+    def test_google_provider_reads_google_section(
+        self, make_pdf: Callable[..., Path]
     ) -> None:
-        """Google provider reads from google_image_processing section."""
-        mock_doc = _build_mock_pdf_document(1)
-        mock_fitz.open.return_value = mock_doc
-        mock_fitz.Matrix.return_value = MagicMock()
-        mock_fitz.csGRAY = MagicMock()
+        """Google provider resolves google_image_processing config."""
+        loader = _loader_with(
+            {
+                "google_image_processing": {
+                    "target_dpi": 200,
+                    "jpeg_quality": 90,
+                    "grayscale_conversion": True,
+                    "handle_transparency": True,
+                    "media_resolution": "high",
+                    "low_max_side_px": 512,
+                    "high_target_box": [768, 768],
+                }
+            }
+        )
+        pdf_path = make_pdf("google.pdf", num_pages=1)
 
-        google_cfg = {
-            "target_dpi": 200,
-            "jpeg_quality": 90,
-            "grayscale_conversion": True,
-            "handle_transparency": True,
-            "media_resolution": "high",
-            "low_max_side_px": 512,
-            "high_target_box": [768, 768],
-        }
-        cfg_loader = MagicMock()
-        cfg_loader.get_image_processing_config.return_value = {
-            "google_image_processing": google_cfg,
-        }
-        mock_loader.return_value = cfg_loader
-
-        fake_img = Image.new("L", (100, 150), color=128)
-        mock_preprocess.return_value = fake_img
-
-        pdf_path = output_dir.parent / "google.pdf"
-        pdf_path.touch()
-
-        with patch("imaging.pdf.tqdm", lambda x, **kw: x):
-            paths = extract_pdf_pages_to_images(
-                pdf_path, output_dir, provider="google", model_name="gemini-2.5-flash"
+        with patch("imaging.payload.get_config_loader", return_value=loader):
+            source = PdfPayloadSource(
+                pdf_path, provider="google", model_name="gemini-2.5-flash"
             )
+        with source:
+            assert source.target_dpi == 200
+            payload = source.build_payload(0)
 
-        assert len(paths) == 1
+        assert payload.provenance["effective_dpi"] == 200
+        provenance = source.file_provenance()
+        assert provenance["image_config_section"] == "google_image_processing"
 
-    @patch("imaging.pdf._apply_image_preprocessing")
-    @patch("imaging.pdf.get_config_loader")
-    @patch("imaging.pdf.fitz")
-    def test_anthropic_provider_config_section(
-        self, mock_fitz, mock_loader, mock_preprocess, output_dir: Path
+    def test_anthropic_provider_reads_anthropic_section(
+        self, make_pdf: Callable[..., Path]
     ) -> None:
-        """Anthropic provider reads from anthropic_image_processing section."""
-        mock_doc = _build_mock_pdf_document(1)
-        mock_fitz.open.return_value = mock_doc
-        mock_fitz.Matrix.return_value = MagicMock()
-        mock_fitz.csGRAY = MagicMock()
+        """Anthropic provider resolves anthropic_image_processing config."""
+        loader = _loader_with(
+            {
+                "anthropic_image_processing": {
+                    "target_dpi": 300,
+                    "jpeg_quality": 95,
+                    "grayscale_conversion": True,
+                    "handle_transparency": True,
+                    "resize_profile": "auto",
+                    "low_max_side_px": 512,
+                    "high_max_side_px": 1568,
+                }
+            }
+        )
+        pdf_path = make_pdf("anthropic.pdf", num_pages=1)
 
-        anthropic_cfg = {
-            "target_dpi": 300,
-            "jpeg_quality": 95,
-            "grayscale_conversion": True,
-            "handle_transparency": True,
-            "resize_profile": "auto",
-            "low_max_side_px": 512,
-            "high_max_side_px": 1568,
-        }
-        cfg_loader = MagicMock()
-        cfg_loader.get_image_processing_config.return_value = {
-            "anthropic_image_processing": anthropic_cfg,
-        }
-        mock_loader.return_value = cfg_loader
-
-        fake_img = Image.new("L", (100, 150), color=128)
-        mock_preprocess.return_value = fake_img
-
-        pdf_path = output_dir.parent / "anthropic.pdf"
-        pdf_path.touch()
-
-        with patch("imaging.pdf.tqdm", lambda x, **kw: x):
-            paths = extract_pdf_pages_to_images(
-                pdf_path, output_dir, provider="anthropic", model_name="claude-3-opus"
+        with patch("imaging.payload.get_config_loader", return_value=loader):
+            source = PdfPayloadSource(
+                pdf_path, provider="anthropic", model_name="claude-3-opus"
             )
+        with source:
+            payload = source.build_payload(0)
+            provenance = source.file_provenance()
 
-        assert len(paths) == 1
+        assert max(payload.provenance["width"], payload.provenance["height"]) <= 1568
+        assert provenance["image_config_section"] == "anthropic_image_processing"
 
+    def test_missing_section_falls_back_to_defaults(
+        self, make_pdf: Callable[..., Path]
+    ) -> None:
+        """An absent config section yields default DPI and JPEG quality."""
+        from config.constants import DEFAULT_JPEG_QUALITY, DEFAULT_TARGET_DPI
 
-# ============================================================================
-# get_image_paths_from_folder (extended)
-# ============================================================================
-class TestGetImagePathsFromFolderExtended:
-    """Extended tests for get_image_paths_from_folder()."""
+        loader = _loader_with({})
+        pdf_path = make_pdf("defaults.pdf", num_pages=1)
 
-    def test_empty_folder_returns_empty(self, tmp_path: Path) -> None:
-        """Empty folder returns an empty list."""
-        paths = get_image_paths_from_folder(tmp_path)
-        assert paths == []
-
-    def test_all_supported_extensions(self, tmp_path: Path) -> None:
-        """All supported image extensions are found."""
-        supported = [".jpg", ".jpeg", ".png", ".tiff", ".tif", ".bmp", ".gif", ".webp"]
-        for ext in supported:
-            (tmp_path / f"img{ext}").touch()
-
-        paths = get_image_paths_from_folder(tmp_path)
-        assert len(paths) == len(supported)
-
-    def test_unsupported_extensions_ignored(self, tmp_path: Path) -> None:
-        """Non-image files are ignored."""
-        (tmp_path / "document.pdf").touch()
-        (tmp_path / "script.py").touch()
-        (tmp_path / "data.csv").touch()
-        (tmp_path / "readme.md").touch()
-        (tmp_path / "image.jpg").touch()
-
-        paths = get_image_paths_from_folder(tmp_path)
-        assert len(paths) == 1
-        assert paths[0].name == "image.jpg"
-
-    def test_mixed_supported_and_unsupported(self, tmp_path: Path) -> None:
-        """Only supported files are returned from a mixed folder."""
-        (tmp_path / "a.jpg").touch()
-        (tmp_path / "b.png").touch()
-        (tmp_path / "c.txt").touch()
-        (tmp_path / "d.json").touch()
-        (tmp_path / "e.tiff").touch()
-
-        paths = get_image_paths_from_folder(tmp_path)
-        assert len(paths) == 3
-        names = [p.name for p in paths]
-        assert "a.jpg" in names
-        assert "b.png" in names
-        assert "e.tiff" in names
-
-    def test_case_insensitive_extensions(self, tmp_path: Path) -> None:
-        """Upper and mixed case extensions are matched."""
-        (tmp_path / "img1.JPG").touch()
-        (tmp_path / "img2.Png").touch()
-        (tmp_path / "img3.TIFF").touch()
-
-        paths = get_image_paths_from_folder(tmp_path)
-        assert len(paths) == 3
-
-    def test_results_sorted_by_name(self, tmp_path: Path) -> None:
-        """Results are sorted alphabetically by filename."""
-        (tmp_path / "z_image.jpg").touch()
-        (tmp_path / "a_image.jpg").touch()
-        (tmp_path / "m_image.jpg").touch()
-
-        paths = get_image_paths_from_folder(tmp_path)
-        names = [p.name for p in paths]
-        assert names == sorted(names)
-
-    def test_subdirectories_not_included(self, tmp_path: Path) -> None:
-        """Subdirectories are not included in results (glob('*') is non-recursive)."""
-        sub = tmp_path / "subdir"
-        sub.mkdir()
-        (sub / "nested.jpg").touch()
-        (tmp_path / "top_level.jpg").touch()
-
-        paths = get_image_paths_from_folder(tmp_path)
-        assert len(paths) == 1
-        assert paths[0].name == "top_level.jpg"
-
-    def test_folder_with_only_unsupported_files(self, tmp_path: Path) -> None:
-        """Folder containing only unsupported files returns empty list."""
-        (tmp_path / "readme.txt").touch()
-        (tmp_path / "notes.md").touch()
-        (tmp_path / "data.xml").touch()
-
-        paths = get_image_paths_from_folder(tmp_path)
-        assert paths == []
+        with patch("imaging.payload.get_config_loader", return_value=loader):
+            source = PdfPayloadSource(pdf_path)
+            try:
+                assert source.target_dpi == DEFAULT_TARGET_DPI
+                assert source.jpeg_quality == DEFAULT_JPEG_QUALITY
+            finally:
+                source.close()
 
 
-# ============================================================================
-# _apply_image_preprocessing (extended model type tests)
-# ============================================================================
-class TestApplyImagePreprocessingExtended:
-    """Extended tests for _apply_image_preprocessing with different model types."""
+class TestFileProvenance:
+    """Tests for PdfPayloadSource.file_provenance()."""
 
-    def test_palette_mode_with_transparency(self) -> None:
-        """Palette mode image with transparency info is handled."""
-        img = Image.new("P", (100, 100))
-        img.info["transparency"] = 0
+    def test_file_provenance_keys_and_hash(
+        self, make_pdf: Callable[..., Path], patched_payload_config: MagicMock
+    ) -> None:
+        """file_provenance includes the correct PDF hash and config record."""
+        pdf_path = make_pdf("prov.pdf", num_pages=2)
+        source = PdfPayloadSource(pdf_path)
+        with source:
+            provenance = source.file_provenance()
 
-        cfg = {
-            "grayscale_conversion": False,
-            "handle_transparency": True,
-            "llm_detail": "high",
-            "low_max_side_px": 512,
-            "high_target_box": [768, 1536],
-        }
-
-        result = _apply_image_preprocessing(img, cfg, "openai")
-        assert result.mode == "RGB"
-
-    def test_la_mode_transparency(self) -> None:
-        """LA (grayscale with alpha) mode transparency is handled."""
-        img = Image.new("LA", (100, 100))
-
-        cfg = {
-            "grayscale_conversion": False,
-            "handle_transparency": True,
-            "llm_detail": "high",
-            "low_max_side_px": 512,
-            "high_target_box": [768, 1536],
-        }
-
-        result = _apply_image_preprocessing(img, cfg, "openai")
-        assert result.mode == "RGB"
-
-    def test_google_uses_media_resolution(self) -> None:
-        """Google model type reads media_resolution config key."""
-        img = Image.new("RGB", (500, 500))
-
-        cfg = {
-            "grayscale_conversion": False,
-            "handle_transparency": False,
-            "media_resolution": "high",
-            "low_max_side_px": 512,
-            "high_target_box": [768, 768],
-        }
-
-        result = _apply_image_preprocessing(img, cfg, "google")
-        assert result.size is not None
-
-    def test_anthropic_uses_resize_profile(self) -> None:
-        """Anthropic model type reads resize_profile config key."""
-        img = Image.new("RGB", (2000, 3000))
-
-        cfg = {
-            "grayscale_conversion": False,
-            "handle_transparency": False,
-            "resize_profile": "auto",
-            "low_max_side_px": 512,
-            "high_max_side_px": 1568,
-        }
-
-        result = _apply_image_preprocessing(img, cfg, "anthropic")
-        # Max side should be capped
-        assert max(result.size) <= 1568
-
-    def test_grayscale_already_grayscale(self) -> None:
-        """Grayscale conversion on an already grayscale image is a no-op."""
-        img = Image.new("L", (100, 100))
-
-        cfg = {
-            "grayscale_conversion": True,
-            "handle_transparency": False,
-            "llm_detail": "high",
-            "low_max_side_px": 512,
-            "high_target_box": [768, 1536],
-        }
-
-        result = _apply_image_preprocessing(img, cfg, "openai")
-        # Should still be grayscale (or converted to RGB for box fitting)
-        assert result.mode in ("L", "RGB")
+        expected_sha = hashlib.sha256(pdf_path.read_bytes()).hexdigest()
+        assert provenance["source_file"] == str(pdf_path)
+        assert provenance["source_sha256"] == expected_sha
+        assert provenance["target_dpi"] == 300
+        assert provenance["image_config_section"] == "api_image_processing"
+        assert isinstance(provenance["image_config"], dict)
+        assert provenance["pymupdf_version"]
+        assert provenance["pillow_version"]

@@ -3,15 +3,16 @@
 This file complements test_transcribe_api.py by covering:
 - TranscriptionManager.__init__() with mocked dependencies
 - _load_schema_and_prompt() — success, missing schema, missing prompt
-- _extract_sequence_number() — various filename patterns
 - _format_image_name() and _truncate_analysis() — edge cases
 - _parse_transcription_from_text() — all branches
 - _build_model_inputs() — per-provider message building
-- transcribe_image() — success, preprocessing error, API error, schema retry
+- transcribe_payload() — success, API error, schema retry
 """
 
 from __future__ import annotations
 
+import base64
+import io
 import json
 from collections import deque
 from collections.abc import Generator
@@ -20,8 +21,29 @@ from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from PIL import Image
 
+from imaging.payload import PagePayload
 from llm.transcription import TranscriptionManager
+
+
+def _make_payload(
+    image_name: str = "page_0003.jpg", sequence_number: int = 3
+) -> PagePayload:
+    """Build a PagePayload around a tiny in-memory JPEG."""
+    img = Image.new("RGB", (10, 10), color="white")
+    buffer = io.BytesIO()
+    img.save(buffer, format="JPEG")
+    return PagePayload(
+        base64=base64.b64encode(buffer.getvalue()).decode("utf-8"),
+        image_name=image_name,
+        sequence_number=sequence_number,
+        original_input_order_index=sequence_number - 1,
+        provenance={},
+        source_file="test.pdf",
+        page_index=sequence_number - 1,
+    )
+
 
 # ============================================================================
 # Helpers
@@ -225,44 +247,6 @@ class TestLoadSchemaAndPrompt:
             pytest.raises(FileNotFoundError, match="Required prompt file"),
         ):
             mgr._load_schema_and_prompt()
-
-
-# ============================================================================
-# _extract_sequence_number
-# ============================================================================
-class TestExtractSequenceNumber:
-    """Tests for _extract_sequence_number()."""
-
-    def test_page_0001(self) -> None:
-        """Extracts number from page_0001.jpg."""
-        mgr = _make_manager()
-        assert mgr._extract_sequence_number(Path("page_0001.jpg")) == 1
-
-    def test_image_42(self) -> None:
-        """Extracts number from image_42.png."""
-        mgr = _make_manager()
-        assert mgr._extract_sequence_number(Path("image_42.png")) == 42
-
-    def test_no_numbers(self) -> None:
-        """Returns 0 when no numbers in filename."""
-        mgr = _make_manager()
-        assert mgr._extract_sequence_number(Path("title_page.jpg")) == 0
-
-    def test_multiple_numbers_takes_last(self) -> None:
-        """Takes the last number from the stem."""
-        mgr = _make_manager()
-        assert mgr._extract_sequence_number(Path("doc_2024_page_005.jpg")) == 5
-
-    def test_number_only_stem(self) -> None:
-        """Handles filename that is only a number."""
-        mgr = _make_manager()
-        assert mgr._extract_sequence_number(Path("0010.jpg")) == 10
-
-    def test_complex_path(self) -> None:
-        """Works with full path objects."""
-        mgr = _make_manager()
-        p = Path("/some/deep/path/scan_page_0123.tiff")
-        assert mgr._extract_sequence_number(p) == 123
 
 
 # ============================================================================
@@ -482,24 +466,14 @@ class TestBuildModelInputs:
 
 
 # ============================================================================
-# transcribe_image
+# transcribe_payload
 # ============================================================================
-class TestTranscribeImage:
-    """Tests for transcribe_image()."""
+class TestTranscribePayload:
+    """Tests for transcribe_payload()."""
 
-    def test_successful_transcription(self, tmp_path) -> None:
+    def test_successful_transcription(self) -> None:
         """Successful transcription returns expected result dict."""
-        image_path = tmp_path / "images" / "page_0003.jpg"
-        image_path.parent.mkdir(parents=True)
-        # Create a small JPEG file
-        from PIL import Image
-
-        img = Image.new("RGB", (100, 100), color="white")
-        img.save(image_path, "JPEG")
-
-        # The image is .jpg in an "images" dir under a *_working_files parent
-        # but parent.parent.name does NOT end with _working_files in tmp_path,
-        # so it will go through ImageProcessor path. Let's mock that.
+        payload = _make_payload("page_0003.jpg", sequence_number=3)
         mgr = _make_manager(provider="openai")
 
         mock_response = AIMessage(
@@ -523,47 +497,56 @@ class TestTranscribeImage:
                 mgr, "_get_structured_chat_model", return_value=mock_structured
             ),
             patch.object(mgr, "_build_model_inputs", return_value=([], {})),
-            patch("llm.transcription.ImageProcessor") as mock_ip_cls,
             patch("llm.base.get_token_tracker") as mock_tt,
         ):
-            mock_processor = MagicMock()
-            mock_processor.process_image_to_memory.return_value = img
-            mock_processor.img_cfg = {"jpeg_quality": 95}
-            mock_ip_cls.return_value = mock_processor
-            mock_ip_cls.pil_image_to_base64.return_value = "fakebase64"
-
             mock_tracker = MagicMock()
             mock_tracker.get_tokens_used_today.return_value = 100
             mock_tt.return_value = mock_tracker
 
-            result = mgr.transcribe_image(image_path)
+            result = mgr.transcribe_payload(payload)
 
         assert result["image"] == "page_0003.jpg"
         assert result["sequence_number"] == 3
         assert result["transcription"] == "Hello world."
+        assert result["provider"] == "openai"
         assert "processing_time" in result
 
-    def test_preprocessing_error(self, tmp_path) -> None:
-        """Preprocessing error returns error result."""
-        image_path = tmp_path / "broken_image.png"
-        image_path.write_bytes(b"not an image")
+    def test_uses_payload_base64(self) -> None:
+        """The payload's base64 string is passed to _build_model_inputs."""
+        payload = _make_payload("page_0001.jpg", sequence_number=1)
+        mgr = _make_manager(provider="openai")
 
-        mgr = _make_manager()
+        mock_response = AIMessage(
+            content=json.dumps(
+                {
+                    "transcription": "ok",
+                    "no_transcribable_text": False,
+                    "transcription_not_possible": False,
+                    "image_analysis": "x",
+                }
+            )
+        )
+        mock_response.usage_metadata = None
+        mock_response.response_metadata = {}
 
-        with patch(
-            "llm.transcription.ImageProcessor",
-            side_effect=RuntimeError("cannot process"),
+        mock_structured = MagicMock()
+        mock_structured.invoke.return_value = mock_response
+
+        with (
+            patch.object(
+                mgr, "_get_structured_chat_model", return_value=mock_structured
+            ),
+            patch.object(
+                mgr, "_build_model_inputs", return_value=([], {})
+            ) as mock_build,
         ):
-            result = mgr.transcribe_image(image_path)
+            mgr.transcribe_payload(payload)
 
-        assert "preprocessing error" in result["transcription"]
-        assert result["error_type"] == "preprocessing_failure"
+        mock_build.assert_called_with(payload.base64)
 
-    def test_api_error(self, tmp_path) -> None:
+    def test_api_error(self) -> None:
         """API error after LangChain retries returns error result."""
-        image_path = tmp_path / "page_0001.png"
-        image_path.write_bytes(b"\x89PNG")
-
+        payload = _make_payload("page_0001.jpg", sequence_number=1)
         mgr = _make_manager(provider="openai")
 
         mock_structured = MagicMock()
@@ -574,28 +557,16 @@ class TestTranscribeImage:
                 mgr, "_get_structured_chat_model", return_value=mock_structured
             ),
             patch.object(mgr, "_build_model_inputs", return_value=([], {})),
-            patch("llm.transcription.ImageProcessor") as mock_ip_cls,
         ):
-            mock_processor = MagicMock()
-            from PIL import Image
-
-            mock_processor.process_image_to_memory.return_value = Image.new(
-                "RGB", (10, 10)
-            )
-            mock_processor.img_cfg = {"jpeg_quality": 95}
-            mock_ip_cls.return_value = mock_processor
-            mock_ip_cls.pil_image_to_base64.return_value = "fakebase64"
-
-            result = mgr.transcribe_image(image_path)
+            result = mgr.transcribe_payload(payload)
 
         assert "transcription error" in result["transcription"]
         assert result["error_type"] == "api_failure"
         assert mgr.failed_requests == 1
 
-    def test_schema_retry_loop_no_transcribable_text(self, tmp_path) -> None:
+    def test_schema_retry_loop_no_transcribable_text(self) -> None:
         """Schema retry when no_transcribable_text flag is detected."""
-        image_path = tmp_path / "page_0001.png"
-        image_path.write_bytes(b"\x89PNG")
+        payload = _make_payload("page_0001.jpg", sequence_number=1)
 
         mgr = _make_manager(
             provider="openai",
@@ -642,61 +613,13 @@ class TestTranscribeImage:
                 mgr, "_get_structured_chat_model", return_value=mock_structured
             ),
             patch.object(mgr, "_build_model_inputs", return_value=([], {})),
-            patch("llm.transcription.ImageProcessor") as mock_ip_cls,
             patch("llm.transcription.time.sleep"),
             patch("llm.base.random.uniform", return_value=1.0),
         ):
-            from PIL import Image
-
-            mock_processor = MagicMock()
-            mock_processor.process_image_to_memory.return_value = Image.new(
-                "RGB", (10, 10)
-            )
-            mock_processor.img_cfg = {"jpeg_quality": 95}
-            mock_ip_cls.return_value = mock_processor
-            mock_ip_cls.pil_image_to_base64.return_value = "fakebase64"
-
-            result = mgr.transcribe_image(image_path, max_schema_retries=3)
+            result = mgr.transcribe_payload(payload, max_schema_retries=3)
 
         assert result["transcription"] == "Got it this time."
-
-    def test_direct_jpeg_in_working_files(self, tmp_path) -> None:
-        """JPEG in images/ under *_working_files/ skips ImageProcessor."""
-        working = tmp_path / "book_working_files" / "images"
-        working.mkdir(parents=True)
-        image_path = working / "page_0001.jpg"
-        # Write minimal JPEG bytes
-        from PIL import Image
-
-        img = Image.new("RGB", (10, 10))
-        img.save(image_path, "JPEG")
-
-        mgr = _make_manager(provider="openai")
-
-        mock_response = AIMessage(
-            content=json.dumps(
-                {
-                    "transcription": "Direct JPEG read.",
-                    "no_transcribable_text": False,
-                    "transcription_not_possible": False,
-                }
-            )
-        )
-        mock_response.usage_metadata = None
-        mock_response.response_metadata = {}
-
-        mock_structured = MagicMock()
-        mock_structured.invoke.return_value = mock_response
-
-        with (
-            patch.object(
-                mgr, "_get_structured_chat_model", return_value=mock_structured
-            ),
-            patch.object(mgr, "_build_model_inputs", return_value=([], {})),
-        ):
-            result = mgr.transcribe_image(image_path)
-
-        assert result["transcription"] == "Direct JPEG read."
+        assert result["schema_retries"]["no_transcribable_text"] == 1
 
     def test_get_stats_includes_service_tier(self) -> None:
         """get_stats() includes service_tier from transcription manager."""
@@ -708,44 +631,14 @@ class TestTranscribeImage:
 
 
 # ============================================================================
-# _extract_sequence_number edge cases
+# transcribe_payload uses _invoke_with_retry
 # ============================================================================
-class TestExtractSequenceNumberEdgeCases:
-    """Edge cases for _extract_sequence_number."""
+class TestTranscribePayloadUsesInvokeWithRetry:
+    """Verify transcribe_payload delegates to _invoke_with_retry."""
 
-    def test_stem_with_underscores_only(self) -> None:
-        """Filename with underscores but no digits returns 0."""
-        mgr = _make_manager()
-        assert mgr._extract_sequence_number(Path("some_file_name.jpg")) == 0
-
-    def test_leading_zeros(self) -> None:
-        """Leading zeros are handled correctly."""
-        mgr = _make_manager()
-        assert mgr._extract_sequence_number(Path("page_0007.jpg")) == 7
-
-    def test_large_number(self) -> None:
-        """Large sequence numbers work."""
-        mgr = _make_manager()
-        assert mgr._extract_sequence_number(Path("page_99999.jpg")) == 99999
-
-    def test_mixed_text_and_numbers(self) -> None:
-        """Mixed text extracts last numeric segment."""
-        mgr = _make_manager()
-        result = mgr._extract_sequence_number(Path("vol2_ch3_page_15.png"))
-        assert result == 15
-
-
-# ============================================================================
-# transcribe_image uses _invoke_with_retry
-# ============================================================================
-class TestTranscribeImageUsesInvokeWithRetry:
-    """Verify transcribe_image delegates to _invoke_with_retry."""
-
-    def test_transcribe_calls_invoke_with_retry(self, tmp_path) -> None:
-        """transcribe_image uses _invoke_with_retry instead of direct invoke."""
-        image_path = tmp_path / "page_0001.png"
-        image_path.write_bytes(b"\x89PNG")
-
+    def test_transcribe_calls_invoke_with_retry(self) -> None:
+        """transcribe_payload uses _invoke_with_retry instead of direct invoke."""
+        payload = _make_payload("page_0001.jpg", sequence_number=1)
         mgr = _make_manager(provider="openai")
 
         mock_response = AIMessage(
@@ -754,6 +647,7 @@ class TestTranscribeImageUsesInvokeWithRetry:
                     "transcription": "Retry-based transcription.",
                     "no_transcribable_text": False,
                     "transcription_not_possible": False,
+                    "image_analysis": "x",
                 }
             )
         )
@@ -765,24 +659,13 @@ class TestTranscribeImageUsesInvokeWithRetry:
                 mgr, "_invoke_with_retry", return_value=mock_response
             ) as mock_invoke,
             patch.object(mgr, "_build_model_inputs", return_value=([], {})),
-            patch("llm.transcription.ImageProcessor") as mock_ip_cls,
             patch("llm.base.get_token_tracker") as mock_tt,
         ):
-            from PIL import Image
-
-            mock_processor = MagicMock()
-            mock_processor.process_image_to_memory.return_value = Image.new(
-                "RGB", (10, 10)
-            )
-            mock_processor.img_cfg = {"jpeg_quality": 95}
-            mock_ip_cls.return_value = mock_processor
-            mock_ip_cls.pil_image_to_base64.return_value = "fakebase64"
-
             mock_tracker = MagicMock()
             mock_tracker.get_tokens_used_today.return_value = 100
             mock_tt.return_value = mock_tracker
 
-            result = mgr.transcribe_image(image_path)
+            result = mgr.transcribe_payload(payload)
 
         mock_invoke.assert_called_once()
         assert result["transcription"] == "Retry-based transcription."

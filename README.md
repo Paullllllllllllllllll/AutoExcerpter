@@ -1,4 +1,4 @@
-# AutoExcerpter v1.4.0
+# AutoExcerpter v1.5.0
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -156,9 +156,16 @@ Three capability patterns are available:
 ## How It Works
 
 1. **Scan** the input directory for PDFs and image folders.
-2. **Extract** PDF pages as high-resolution images (PyMuPDF).
-3. **Preprocess** images in memory (grayscale, transparency
-   handling, resize, JPEG encode).
+2. **Stream** each page fully in memory: render the PDF page
+   (PyMuPDF) or load the source image on demand in the
+   transcription worker, preprocess (grayscale, transparency
+   handling, resize), and JPEG/base64-encode -- no temporary
+   image files are written to disk. Already-transcribed pages
+   are skipped before rendering when resuming.
+3. **Record provenance**: each log entry carries the SHA-256,
+   dimensions, byte size, and effective DPI of the exact image
+   sent to the API; the log header records the source-file
+   SHA-256, library versions, and the image-config snapshot.
 4. **Transcribe** each page via LangChain with structured JSON
    schema and capability-guarded parameters.
 5. **Summarize** (optional) transcribed text into bullet-point
@@ -517,7 +524,8 @@ For each processed document:
 3. **`<name>_summary.md`** -- Markdown summary with LaTeX
    preserved as-is for MathJax/KaTeX compatibility.
 4. **`<name>_working_files/`** -- JSONL logs for transcription
-   and summarization (per-page metadata, timing, retries).
+   and summarization (per-page metadata, timing, retries, image
+   provenance; file-level provenance in the header).
    Auto-deleted when `delete_temp_working_dir: true`.
 
 ## Project Structure
@@ -545,8 +553,9 @@ AutoExcerpter/
 │   ├── prompts.py                   # Prompt rendering + response parsing
 │   └── resources/                   # Prompt templates and JSON schemas
 ├── imaging/                         # PDF rendering + image preprocessing
-│   ├── pdf.py                       # Page extraction via PyMuPDF
-│   └── preprocessing.py             # In-memory image pipeline
+│   ├── payload.py                   # Streaming page payload sources (PyMuPDF)
+│   ├── pdf.py                       # Image folder scanning
+│   └── preprocessing.py             # In-memory preprocessing core
 ├── rendering/                       # Output writers
 │   ├── text.py                      # .txt transcription writer
 │   ├── docx.py                      # .docx summary writer
@@ -569,7 +578,7 @@ AutoExcerpter/
 │   ├── loop.py                      # Per-item processing loop
 │   └── errors.py                    # Domain exceptions
 ├── context/summary/general.txt      # Default summarization topics
-├── tests/                           # Test suite (1,207 tests)
+├── tests/                           # Test suite (1,232 tests)
 ├── pyproject.toml                   # Project metadata and dependencies
 └── uv.lock                         # Pinned dependency lockfile
 ```
@@ -636,6 +645,31 @@ linting and formatting across the entire codebase.
 
 ## Changelog
 
+- **v1.5.0** (10 June 2026) -- streaming in-memory image
+    pipeline: PDF pages are rendered, preprocessed, and
+    base64-encoded on demand inside the transcription workers
+    (lock-guarded PyMuPDF access) instead of being extracted
+    up front into `_working_files/images/`; no temporary image
+    files are written anymore. Page-level resume now filters
+    BEFORE rendering, so resuming a mostly-done PDF no longer
+    re-renders every page. New `imaging/payload.py` with
+    `PagePayload`, `PdfPayloadSource`, and `FolderPayloadSource`;
+    `TranscriptionManager.transcribe_image(path)` replaced by
+    `transcribe_payload(payload)`. Full reproducibility records:
+    per-page `image_provenance` (SHA-256/dimensions/byte
+    size/effective DPI of the exact JPEG sent) and a
+    `file_provenance` log-header block (source SHA-256, PyMuPDF/
+    Pillow versions, image-config snapshot). Behavior change:
+    pages that fail to render are now recorded as
+    `[preprocessing error: ...]` pages in the outputs instead of
+    being silently dropped. Removed dead disk-image machinery
+    (`extract_pdf_pages_to_images`, file-based
+    `ImageProcessor` instance API, `MAX_EXTRACTION_WORKERS`).
+    Bug fix: on page-level resume, previously completed pages
+    were lost from the final `.txt` because the transcription
+    log was truncated before prior results were re-read; prior
+    results are now snapshotted before log reinitialization and
+    re-appended to the fresh log.
 - **v1.4.0** (31 May 2026) -- low-risk code-review cleanups
     (behavior-preserving): route `config.accessors` fallbacks
     through `constants` (`DEFAULT_RATE_LIMITS`, `DEFAULT_TARGET_DPI`,

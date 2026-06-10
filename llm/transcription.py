@@ -7,8 +7,8 @@ supporting multiple LLM providers:
 - Google (Gemini models)
 - OpenRouter (access to multiple providers)
 
-The client handles:
-- Image preprocessing and base64 encoding
+The client consumes preprocessed in-memory page payloads
+(``imaging.payload.PagePayload``) and handles:
 - Structured JSON output parsing
 - Dual-level retry logic (API errors + schema validation)
 - Rate limiting integration
@@ -17,12 +17,9 @@ The client handles:
 
 from __future__ import annotations
 
-import base64
 import contextlib
 import json
-import re
 import time
-from pathlib import Path
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -30,7 +27,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from config.accessors import get_rate_limits
 from config.loader import PROMPTS_DIR, SCHEMAS_DIR
 from config.logger import setup_logger
-from imaging import ImageProcessor
+from imaging.payload import PagePayload
 from llm.base import LLMClientBase
 from llm.client import ProviderType, get_model_capabilities
 from llm.prompts import render_prompt_with_schema, strip_markdown_code_block
@@ -60,8 +57,8 @@ class TranscriptionManager(LLMClientBase):
     Transcribes images using LangChain with structured outputs.
 
     This class handles image transcription using various LLM providers through
-    LangChain's unified interface. Images are preprocessed and encoded in-memory
-    before being sent to the API.
+    LangChain's unified interface. It consumes ``PagePayload`` objects that
+    were preprocessed and base64-encoded upstream by ``imaging.payload``.
 
     Supports:
     - OpenAI with Responses API structured outputs
@@ -214,33 +211,6 @@ class TranscriptionManager(LLMClientBase):
         except (FileNotFoundError, json.JSONDecodeError, OSError) as e:
             logger.error(f"Error loading schema/prompt: {e}")
             raise
-
-    def _extract_sequence_number(self, image_path: Path) -> int:
-        """
-        Extract page/sequence number from image filename.
-
-        Args:
-            image_path: Path to the image file.
-
-        Returns:
-            Extracted sequence number, or 0 if not found.
-        """
-        try:
-            # Pattern: page_0001 -> 1
-            stem = image_path.stem
-            parts = stem.split("_")
-            last = parts[-1]
-            if last.isdigit():
-                return int(last)
-        except (ValueError, IndexError):
-            pass
-
-        # Fallback: extract last number from filename
-        try:
-            nums = [int(s) for s in re.findall(r"\d+", image_path.stem)]
-            return nums[-1] if nums else 0
-        except (ValueError, IndexError):
-            return 0
 
     @staticmethod
     def _format_image_name(image_name: str | None) -> str:
@@ -427,45 +397,16 @@ class TranscriptionManager(LLMClientBase):
 
         return [system_msg, user_msg], invoke_kwargs
 
-    def transcribe_image(
+    def transcribe_payload(
         self,
-        image_path: Path,
+        payload: PagePayload,
         max_schema_retries: int = 3,
     ) -> dict[str, Any]:
-        """Transcribe a single image using the configured LLM provider."""
+        """Transcribe a preprocessed in-memory page payload."""
         start_time = time.time()
-        sequence_number = self._extract_sequence_number(image_path)
-
-        # Preprocess and encode image in-memory
-        try:
-            if (
-                image_path.suffix.lower() in (".jpg", ".jpeg")
-                and image_path.parent.name == "images"
-                and image_path.parent.parent.name.endswith("_working_files")
-                and image_path.name.startswith("page_")
-            ):
-                base64_image = base64.b64encode(image_path.read_bytes()).decode("utf-8")
-            else:
-                image_processor = ImageProcessor(
-                    image_path,
-                    provider=self.provider or "openai",
-                    model_name=self.model_name,
-                )
-                pil_image = image_processor.process_image_to_memory()
-                jpeg_quality = int(image_processor.img_cfg.get("jpeg_quality", 95))
-                base64_image = ImageProcessor.pil_image_to_base64(
-                    pil_image, jpeg_quality
-                )
-        except Exception as e:
-            logger.error(f"Error preprocessing image {image_path.name}: {e}")
-            return {
-                "image": image_path.name,
-                "sequence_number": sequence_number,
-                "transcription": f"[preprocessing error: {e}]",
-                "processing_time": round(time.time() - start_time, 2),
-                "error": str(e),
-                "error_type": "preprocessing_failure",
-            }
+        image_name = payload.image_name
+        sequence_number = payload.sequence_number
+        base64_image = payload.base64
 
         schema_retry_attempts: dict[str, int] = {
             "validation_failure": 0,
@@ -488,7 +429,7 @@ class TranscriptionManager(LLMClientBase):
                     structured_model,
                     messages,
                     invoke_kwargs,
-                    f"Transcription for {image_path.name}",
+                    f"Transcription for {image_name}",
                 )
 
                 # Success - extract and parse response
@@ -497,9 +438,7 @@ class TranscriptionManager(LLMClientBase):
                 self._report_success()
 
                 # Report token usage (built into LangChain's response metadata)
-                self._report_token_usage(
-                    response, f"Transcription for {image_path.name}"
-                )
+                self._report_token_usage(response, f"Transcription for {image_name}")
 
                 raw_text = self._extract_output_text(response)
 
@@ -519,7 +458,7 @@ class TranscriptionManager(LLMClientBase):
                         if should_retry:
                             schema_retry_attempts["validation_failure"] += 1
                             logger.warning(
-                                f"Validation failure for {image_path.name}: "
+                                f"Validation failure for {image_name}: "
                                 f"{reason}. Retrying "
                                 f"({schema_retry_attempts['validation_failure']}"
                                 f"/{max_attempts}) in {backoff_time:.2f}s..."
@@ -528,7 +467,7 @@ class TranscriptionManager(LLMClientBase):
                             continue
 
                 transcription = self._parse_transcription_from_text(
-                    raw_text, image_path.name
+                    raw_text, image_name
                 )
 
                 # --- Plain-text mode: sentinel-based retries ---
@@ -546,7 +485,7 @@ class TranscriptionManager(LLMClientBase):
                             schema_retry_attempts["no_transcribable_text"] += 1
                             logger.warning(
                                 f"Sentinel '[no transcribable text]' for "
-                                f"{image_path.name}. Retrying "
+                                f"{image_name}. Retrying "
                                 f"({schema_retry_attempts['no_transcribable_text']}"
                                 f"/{max_attempts}) in {backoff_time:.2f}s..."
                             )
@@ -565,7 +504,7 @@ class TranscriptionManager(LLMClientBase):
                             schema_retry_attempts["transcription_not_possible"] += 1
                             logger.warning(
                                 f"Sentinel '[transcription not possible]' for "
-                                f"{image_path.name}. Retrying "
+                                f"{image_name}. Retrying "
                                 f"({schema_retry_attempts['transcription_not_possible']}"
                                 f"/{max_attempts}) in {backoff_time:.2f}s..."
                             )
@@ -594,7 +533,7 @@ class TranscriptionManager(LLMClientBase):
                                 schema_retry_attempts["no_transcribable_text"] += 1
                                 logger.warning(
                                     "Schema flag 'no_transcribable_text' detected "
-                                    f"for {image_path.name}. Retrying "
+                                    f"for {image_name}. Retrying "
                                     f"({schema_retry_attempts['no_transcribable_text']}"
                                     f"/{max_attempts}) in {backoff_time:.2f}s..."
                                 )
@@ -614,7 +553,7 @@ class TranscriptionManager(LLMClientBase):
                                 schema_retry_attempts["transcription_not_possible"] += 1
                                 logger.warning(
                                     "Schema flag 'transcription_not_possible' detected "
-                                    f"for {image_path.name}. Retrying "
+                                    f"for {image_name}. Retrying "
                                     f"({schema_retry_attempts['transcription_not_possible']}"
                                     f"/{max_attempts}) in {backoff_time:.2f}s..."
                                 )
@@ -622,7 +561,7 @@ class TranscriptionManager(LLMClientBase):
                                 continue
 
                 result = {
-                    "image": image_path.name,
+                    "image": image_name,
                     "sequence_number": sequence_number,
                     "transcription": transcription,
                     "processing_time": round(processing_time, 2),
@@ -640,11 +579,11 @@ class TranscriptionManager(LLMClientBase):
                 # _invoke_with_retry has exhausted all retries if we get here
                 self.failed_requests += 1
                 logger.error(
-                    f"Transcription API error for {image_path.name} after retries: "
+                    f"Transcription API error for {image_name} after retries: "
                     f"{type(e).__name__} - {e}"
                 )
                 return {
-                    "image": image_path.name,
+                    "image": image_name,
                     "sequence_number": sequence_number,
                     "transcription": f"[transcription error: {e}]",
                     "processing_time": round(time.time() - start_time, 2),
@@ -655,11 +594,9 @@ class TranscriptionManager(LLMClientBase):
 
         # Fallback if schema retry loop exits (all schema retries exhausted)
         return {
-            "image": image_path.name,
+            "image": image_name,
             "sequence_number": sequence_number,
-            "transcription": self._parse_transcription_from_text(
-                raw_text, image_path.name
-            ),
+            "transcription": self._parse_transcription_from_text(raw_text, image_name),
             "processing_time": round(time.time() - start_time, 2),
             "schema_retries": schema_retry_attempts.copy(),
             "provider": self.provider,

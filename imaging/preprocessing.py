@@ -1,8 +1,9 @@
 """Image preprocessing utilities for OCR optimization.
 
-This module provides image processing functionality optimized for multiple LLM Vision
-APIs (OpenAI, Google Gemini, Anthropic Claude) and OCR quality. All processing can be
-done in-memory to avoid disk I/O overhead.
+This module provides the in-memory preprocessing core used by the streaming
+transcription pipeline (``imaging.payload``). Processing is optimized for
+multiple LLM Vision APIs (OpenAI, Google Gemini, Anthropic Claude) and OCR
+quality; nothing is written to disk.
 
 Key Features:
 1. **Provider-Specific Preprocessing**: Different resize strategies per provider:
@@ -10,31 +11,19 @@ Key Features:
    - Google Gemini: Box fitting optimized for 768px tiles
    - Anthropic Claude: Max-side capping (1568px, no padding)
 
-2. **In-Memory Processing**: Process images without intermediate disk writes using
-   PIL and base64 encoding
-
-3. **Configurable Preprocessing**:
+2. **Configurable Preprocessing**:
    - Grayscale conversion for better OCR
    - Transparency handling (paste on white background)
    - Intelligent resizing based on detail level (low/high/auto)
-   - JPEG compression with configurable quality
 
-4. **Configuration-Driven**: All settings loaded from image_processing.yaml
-   with provider-specific sections (api_image_processing, google_image_processing,
-   anthropic_image_processing)
-
-5. **OpenRouter Passthrough**: Automatically detects underlying model type when
-   using models via OpenRouter (e.g., 'google/gemini-2.5-flash' uses Google config)
-
-The ImageProcessor class handles individual image processing with full configuration
-support, while static methods provide utilities for batch operations.
+3. **Configuration-Driven**: All settings come from provider-specific
+   sections of image_processing.yaml (api_image_processing,
+   google_image_processing, anthropic_image_processing), resolved upstream
+   by the payload sources.
 """
 
 from __future__ import annotations
 
-import base64
-import io
-from pathlib import Path
 from typing import Any
 
 from PIL import Image, ImageOps
@@ -42,18 +31,13 @@ from PIL import Image, ImageOps
 from config.constants import (
     DEFAULT_HIGH_TARGET_HEIGHT,
     DEFAULT_HIGH_TARGET_WIDTH,
-    DEFAULT_JPEG_QUALITY,
     DEFAULT_LOW_MAX_SIDE_PX,
     SUPPORTED_IMAGE_EXTENSIONS,
     WHITE_BACKGROUND_COLOR,
 )
 from config.loader import get_config_loader
 from config.logger import setup_logger
-from imaging._provider import (
-    ModelType,
-    detect_model_type,
-    get_image_config_section_name,
-)
+from imaging._provider import ModelType
 
 logger = setup_logger(__name__)
 
@@ -82,61 +66,7 @@ def _get_resampling_filter() -> Image.Resampling:
 # Image Processing Class
 # ============================================================================
 class ImageProcessor:
-    image_path: Path
-    provider: str
-    model_name: str
-    model_type: ModelType
-    image_config: dict[str, Any]
-    img_cfg: dict[str, Any]
-
-    def __init__(
-        self,
-        image_path: Path,
-        provider: str = "openai",
-        model_name: str = "",
-    ) -> None:
-        """
-        Initialize the ImageProcessor with provider-specific configuration.
-
-        Args:
-            image_path: The path to the image file.
-            provider: Provider name (openai, google, anthropic, openrouter)
-            model_name: Model name for detecting underlying model type when using
-                       OpenRouter (e.g., 'google/gemini-2.5-flash' uses Google config)
-
-        Raises:
-            ValueError: If the image format is not supported.
-        """
-        if image_path.suffix.lower() not in SUPPORTED_IMAGE_EXTENSIONS:
-            logger.error(f"Unsupported image format: {image_path.suffix}")
-            raise ValueError(f"Unsupported image format: {image_path.suffix}")
-        self.image_path = image_path
-        self.provider = provider.lower()
-        self.model_name = model_name.lower() if model_name else ""
-
-        # Detect underlying model type (for OpenRouter passthrough)
-        self.model_type: ModelType = detect_model_type(self.provider, self.model_name)
-
-        config_loader = get_config_loader()
-        # Full config dict (contains provider-specific sections)
-        self.image_config = config_loader.get_image_processing_config()
-
-        # Get provider-specific config section
-        section_name = get_image_config_section_name(self.model_type)
-        self.img_cfg = self.image_config.get(section_name, {})
-
-        logger.debug(
-            f"ImageProcessor initialized: provider={self.provider}, "
-            f"model_type={self.model_type}, config_section={section_name}"
-        )
-
-    def convert_to_grayscale(self, image: Image.Image) -> Image.Image:
-        """Convert the image to grayscale if enabled."""
-        if self.img_cfg.get("grayscale_conversion", True):
-            if image.mode == "L":
-                return image
-            return ImageOps.grayscale(image)
-        return image
+    """Static in-memory preprocessing core (transparency, grayscale, resize)."""
 
     @staticmethod
     def resize_for_detail(
@@ -244,26 +174,6 @@ class ImageProcessor:
         max_side = int(img_cfg.get("high_max_side_px", DEFAULT_ANTHROPIC_HIGH_MAX_SIDE))
         return ImageProcessor._resize_max_side(image, max_side)
 
-    def handle_transparency(self, image: Image.Image) -> Image.Image:
-        """Handle transparency by pasting the image onto a white background."""
-        if self.img_cfg.get("handle_transparency", True) and (
-            image.mode in ("RGBA", "LA")
-            or (image.mode == "P" and "transparency" in image.info)
-        ):
-            background = Image.new("RGB", image.size, WHITE_BACKGROUND_COLOR)
-            background.paste(image, mask=image.split()[-1])
-            return background
-        return image
-
-    def _get_detail_param(self) -> str:
-        """Get the detail/resolution parameter based on model type."""
-        if self.model_type == "google":
-            return self.img_cfg.get("media_resolution", "high") or "high"
-        elif self.model_type == "anthropic":
-            return self.img_cfg.get("resize_profile", "auto") or "auto"
-        else:
-            return self.img_cfg.get("llm_detail", "high") or "high"
-
     @staticmethod
     def preprocess_pil_image(
         pil_img: Image.Image,
@@ -273,8 +183,8 @@ class ImageProcessor:
         """Apply preprocessing steps to an in-memory PIL image.
 
         Performs: transparency handling -> grayscale -> resize (provider-specific).
-        This is the shared preprocessing core used by both file-based and
-        in-memory pipelines (e.g. PDF page extraction).
+        This is the shared preprocessing core used by the PDF and image-folder
+        payload sources.
 
         Args:
             pil_img: PIL Image to preprocess.
@@ -310,65 +220,6 @@ class ImageProcessor:
         pil_img = ImageProcessor.resize_for_detail(pil_img, detail, img_cfg, model_type)
 
         return pil_img
-
-    def process_image(self, output_path: Path) -> str:
-        """Process the image and save it to the given output path with compression."""
-        try:
-            with Image.open(self.image_path) as img_file:
-                img: Image.Image = self.handle_transparency(img_file)
-                img = self.convert_to_grayscale(img)
-
-                # Choose resizing based on model type and appropriate config param
-                detail = self._get_detail_param()
-                img = ImageProcessor.resize_for_detail(
-                    img, detail, self.img_cfg, self.model_type
-                )
-
-                # Force output to JPEG with configurable quality
-                jpg_output_path = output_path.with_suffix(".jpg")
-                jpeg_quality = int(
-                    self.img_cfg.get("jpeg_quality", DEFAULT_JPEG_QUALITY)
-                )
-                img.save(jpg_output_path, format="JPEG", quality=jpeg_quality)
-                logger.debug(
-                    f"Saved processed image {jpg_output_path.name} size={img.size} "
-                    f"quality={jpeg_quality} detail={detail}"
-                    f" model_type={self.model_type}"
-                )
-            return f"Processed and saved: {jpg_output_path.name}"
-        except Exception as e:
-            logger.error(f"Error processing image {self.image_path.name}: {e}")
-            return f"Failed to process {self.image_path.name}: {e}"
-
-    def process_image_to_memory(self) -> Image.Image:
-        """Process the image and return the PIL Image object in-memory."""
-        with Image.open(self.image_path) as img_file:
-            img_file.load()
-            img = ImageProcessor.preprocess_pil_image(
-                img_file, self.img_cfg, self.model_type
-            )
-
-            # Convert to RGB if grayscale for JPEG encoding
-            if img.mode not in ("RGB", "L"):
-                img = img.convert("RGB")
-
-            logger.debug(
-                f"Processed image {self.image_path.name} in-memory: size={img.size} "
-                f"model_type={self.model_type}"
-            )
-            return img
-
-    @staticmethod
-    def pil_image_to_base64(
-        img: Image.Image, jpeg_quality: int = DEFAULT_JPEG_QUALITY
-    ) -> str:
-        """Convert a PIL Image to base64-encoded JPEG string."""
-        buffer = io.BytesIO()
-        # Ensure image is in RGB mode for JPEG
-        if img.mode not in ("RGB", "L"):
-            img = img.convert("RGB")
-        img.save(buffer, format="JPEG", quality=jpeg_quality)
-        return base64.b64encode(buffer.getbuffer()).decode("utf-8")
 
 
 # ============================================================================

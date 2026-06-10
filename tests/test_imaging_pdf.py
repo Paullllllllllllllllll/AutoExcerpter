@@ -1,129 +1,126 @@
-"""Tests for imaging/pdf.py - PDF and image processing utilities."""
+"""Tests for the PDF side of the streaming imaging pipeline.
+
+Covers basic `PdfPayloadSource` behavior (length, naming contract, payload
+construction, lifecycle) plus `get_image_paths_from_folder` and the
+provider-to-config-section mapping. Extended provenance and config-path
+coverage lives in test_imaging_pdf_extended.py.
+"""
 
 from __future__ import annotations
 
+import base64
+import hashlib
+from collections.abc import Callable, Generator
 from pathlib import Path
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
-from PIL import Image
 
-from imaging.pdf import (
-    _apply_image_preprocessing,
-    get_image_paths_from_folder,
-)
+from imaging.payload import PdfPayloadSource
+from imaging.pdf import get_image_paths_from_folder
 
 
-class TestApplyImagePreprocessing:
-    """Tests for _apply_image_preprocessing function."""
+@pytest.fixture
+def patched_payload_config(
+    mock_config_loader: MagicMock,
+) -> Generator[MagicMock]:
+    """Patch the payload module's config loader with the mock configuration."""
+    with patch("imaging.payload.get_config_loader", return_value=mock_config_loader):
+        yield mock_config_loader
 
-    @pytest.fixture
-    def sample_pil_image(self) -> Image.Image:
-        """Create a sample PIL image for testing."""
-        return Image.new("RGB", (1000, 1500), color=(128, 128, 128))
 
-    @pytest.fixture
-    def rgba_pil_image(self) -> Image.Image:
-        """Create a sample RGBA image with transparency."""
-        return Image.new("RGBA", (800, 600), color=(128, 128, 128, 128))
+class TestPdfPayloadSourceBasics:
+    """Basic contract tests for PdfPayloadSource."""
 
-    @pytest.fixture
-    def default_config(self) -> dict[str, Any]:
-        """Default image processing config."""
-        return {
-            "grayscale_conversion": True,
-            "handle_transparency": True,
-            "llm_detail": "high",
-            "low_max_side_px": 512,
-            "high_target_box": [768, 1536],
-        }
-
-    def test_applies_grayscale_when_enabled(
-        self, sample_pil_image: Image.Image, default_config: dict[str, Any]
+    def test_len_matches_page_count(
+        self, make_pdf: Callable[..., Path], patched_payload_config: MagicMock
     ) -> None:
-        """Grayscale conversion is applied when enabled."""
-        result = _apply_image_preprocessing(sample_pil_image, default_config, "openai")
+        """__len__ returns the number of pages in the PDF."""
+        pdf_path = make_pdf("three.pdf", num_pages=3)
+        source = PdfPayloadSource(pdf_path)
+        with source:
+            assert len(source) == 3
 
-        # After grayscale and resize, mode should be L (grayscale) or RGB
-        # (if converted back). resize_for_detail may create a new RGB canvas.
-        assert result.mode in ("L", "RGB")
+    def test_image_name_naming_contract(self) -> None:
+        """image_name follows the legacy page_NNNN.jpg naming contract."""
+        assert PdfPayloadSource.image_name(0) == "page_0001.jpg"
+        assert PdfPayloadSource.image_name(1) == "page_0002.jpg"
+        assert PdfPayloadSource.image_name(41) == "page_0042.jpg"
 
-    def test_skips_grayscale_when_disabled(
-        self, sample_pil_image: Image.Image, default_config: dict[str, Any]
+    def test_build_payload_indices_and_names(
+        self, make_pdf: Callable[..., Path], patched_payload_config: MagicMock
     ) -> None:
-        """Grayscale conversion is skipped when disabled."""
-        default_config["grayscale_conversion"] = False
+        """build_payload returns absolute indices and 1-based sequence numbers."""
+        pdf_path = make_pdf("three.pdf", num_pages=3)
+        source = PdfPayloadSource(pdf_path)
+        with source:
+            payload = source.build_payload(1)
 
-        result = _apply_image_preprocessing(sample_pil_image, default_config, "openai")
+        assert payload.original_input_order_index == 1
+        assert payload.sequence_number == 2
+        assert payload.page_index == 1
+        assert payload.image_name == "page_0002.jpg"
+        assert payload.source_file == str(pdf_path)
 
-        assert result.mode == "RGB"
-
-    def test_handles_transparency(
-        self, rgba_pil_image: Image.Image, default_config: dict[str, Any]
+    def test_build_payload_provenance_populated(
+        self, make_pdf: Callable[..., Path], patched_payload_config: MagicMock
     ) -> None:
-        """Transparency is handled by pasting on white background."""
-        default_config["grayscale_conversion"] = False
+        """Provenance records hash, dimensions, byte size, and effective DPI."""
+        pdf_path = make_pdf("one.pdf", num_pages=1)
+        source = PdfPayloadSource(pdf_path)
+        with source:
+            payload = source.build_payload(0)
 
-        result = _apply_image_preprocessing(rgba_pil_image, default_config, "openai")
+        decoded = base64.b64decode(payload.base64)
+        provenance = payload.provenance
+        assert provenance["sha256"] == hashlib.sha256(decoded).hexdigest()
+        assert provenance["byte_size"] == len(decoded)
+        assert provenance["width"] > 0
+        assert provenance["height"] > 0
+        assert provenance["effective_dpi"] == 300
 
-        # Should no longer have alpha channel
-        assert result.mode == "RGB"
-
-    def test_skips_transparency_when_disabled(
-        self, rgba_pil_image: Image.Image, default_config: dict[str, Any]
+    def test_close_then_build_raises(
+        self, make_pdf: Callable[..., Path], patched_payload_config: MagicMock
     ) -> None:
-        """Transparency handling is skipped when disabled."""
-        default_config["handle_transparency"] = False
-        default_config["grayscale_conversion"] = False
+        """build_payload after close() raises RuntimeError."""
+        pdf_path = make_pdf("one.pdf", num_pages=1)
+        source = PdfPayloadSource(pdf_path)
+        source.close()
 
-        result = _apply_image_preprocessing(rgba_pil_image, default_config, "openai")
+        with pytest.raises(RuntimeError, match="closed"):
+            source.build_payload(0)
 
-        # Mode might still change due to resize, but transparency not explicitly handled
-        assert result.size is not None
-
-    def test_openai_resize_strategy(
-        self, sample_pil_image: Image.Image, default_config: dict[str, Any]
+    def test_close_is_idempotent(
+        self, make_pdf: Callable[..., Path], patched_payload_config: MagicMock
     ) -> None:
-        """OpenAI uses box fit resize strategy."""
-        default_config["grayscale_conversion"] = False
+        """Calling close() twice does not raise."""
+        pdf_path = make_pdf("one.pdf", num_pages=1)
+        source = PdfPayloadSource(pdf_path)
+        source.close()
+        source.close()
+        assert len(source) == 0
 
-        result = _apply_image_preprocessing(sample_pil_image, default_config, "openai")
+    def test_context_manager_closes_source(
+        self, make_pdf: Callable[..., Path], patched_payload_config: MagicMock
+    ) -> None:
+        """Leaving the context manager closes the document."""
+        pdf_path = make_pdf("one.pdf", num_pages=1)
+        source = PdfPayloadSource(pdf_path)
+        with source:
+            assert len(source) == 1
 
-        # Should fit into target box
-        assert result.size == (768, 1536)
+        with pytest.raises(RuntimeError, match="closed"):
+            source.build_payload(0)
 
-    def test_google_resize_strategy(self, sample_pil_image: Image.Image) -> None:
-        """Google uses its own resize strategy."""
-        google_config = {
-            "grayscale_conversion": False,
-            "handle_transparency": True,
-            "media_resolution": "high",
-            "low_max_side_px": 512,
-            "high_target_box": [768, 768],
-        }
+    def test_corrupt_pdf_raises_in_constructor(
+        self, tmp_path: Path, patched_payload_config: MagicMock
+    ) -> None:
+        """An invalid PDF file makes the constructor raise."""
+        bad_pdf = tmp_path / "corrupt.pdf"
+        bad_pdf.write_bytes(b"this is definitely not a PDF")
 
-        result = _apply_image_preprocessing(sample_pil_image, google_config, "google")
-
-        # Should fit into Google's target box
-        assert max(result.size) <= 768 or result.size == (768, 768)
-
-    def test_anthropic_resize_strategy(self, sample_pil_image: Image.Image) -> None:
-        """Anthropic uses max-side capping without padding."""
-        anthropic_config = {
-            "grayscale_conversion": False,
-            "handle_transparency": True,
-            "resize_profile": "auto",
-            "low_max_side_px": 512,
-            "high_max_side_px": 1568,
-        }
-
-        result = _apply_image_preprocessing(
-            sample_pil_image, anthropic_config, "anthropic"
-        )
-
-        # Should cap longest side
-        assert max(result.size) <= 1568
+        with pytest.raises((RuntimeError, ValueError)):
+            PdfPayloadSource(bad_pdf)
 
 
 class TestGetImagePathsFromFolder:
@@ -187,63 +184,8 @@ class TestGetImagePathsFromFolder:
         assert len(paths) == 2
 
 
-class TestExtractPdfPagesToImages:
-    """Tests for extract_pdf_pages_to_images function (mocked)."""
-
-    def test_function_exists(self) -> None:
-        """Function exists and is importable."""
-        from imaging.pdf import extract_pdf_pages_to_images
-
-        assert callable(extract_pdf_pages_to_images)
-
-    def test_with_mock_pdf(self, temp_dir: Path) -> None:
-        """Test with mocked PDF document."""
-
-        output_dir = temp_dir / "output"
-        output_dir.mkdir()
-
-        # Mock fitz (PyMuPDF)
-        with patch("imaging.pdf.fitz") as mock_fitz:
-            # Create mock PDF document
-            mock_doc = MagicMock()
-            mock_doc.__len__ = MagicMock(return_value=2)
-            mock_doc.__getitem__ = MagicMock()
-
-            # Create mock page with pixmap
-            mock_page = MagicMock()
-            mock_pixmap = MagicMock()
-            mock_pixmap.width = 100
-            mock_pixmap.height = 150
-            mock_pixmap.samples = bytes([128] * 100 * 150 * 3)
-            mock_page.get_pixmap.return_value = mock_pixmap
-            mock_doc.__getitem__.return_value = mock_page
-
-            mock_fitz.open.return_value = mock_doc
-            mock_fitz.Matrix.return_value = MagicMock()
-
-            # Mock config loader
-            with patch("imaging.pdf.get_config_loader") as mock_loader:
-                mock_config = MagicMock()
-                mock_config.get_image_processing_config.return_value = {
-                    "api_image_processing": {
-                        "target_dpi": 300,
-                        "jpeg_quality": 95,
-                        "grayscale_conversion": False,
-                        "handle_transparency": True,
-                    }
-                }
-                mock_loader.return_value = mock_config
-
-                # Mock tqdm to avoid progress bar in tests
-                with (
-                    patch("imaging.pdf.tqdm", lambda x, **kwargs: x),
-                    patch("imaging.pdf.concurrent.futures.ThreadPoolExecutor"),
-                ):
-                    pass
-
-
 class TestPdfProcessorProviderDetection:
-    """Tests for provider detection in PDF processor."""
+    """Tests for provider detection used by the payload sources."""
 
     def test_openai_provider_uses_correct_config(self) -> None:
         """OpenAI provider uses api_image_processing config."""
@@ -276,7 +218,6 @@ class TestPdfProcessorProviderDetection:
         """OpenRouter correctly detects underlying model type."""
         from imaging._provider import detect_model_type, get_image_config_section_name
 
-        # OpenRouter with Google model
         model_type = detect_model_type("openrouter", "google/gemini-2.5-flash")
         section = get_image_config_section_name(model_type)
 

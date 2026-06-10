@@ -55,6 +55,7 @@ def initialize_log_file(
     model_name: str,
     extraction_dpi: int | None = None,
     concurrency_limit: int | None = None,
+    file_provenance: dict[str, Any] | None = None,
 ) -> bool:
     """Create the per-item log file header as the start of a JSON array."""
     # Determine if this is an OpenAI model for flex processing metadata
@@ -79,6 +80,8 @@ def initialize_log_file(
         "total_images": total_images,
         "configuration": configuration,
     }
+    if file_provenance is not None:
+        payload["file_provenance"] = file_provenance
 
     try:
         _close_log_handle(log_path)

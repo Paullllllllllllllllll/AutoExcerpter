@@ -2,21 +2,24 @@
 
 Public interface:
 
-- ``extract_pdf_pages_to_images(pdf_path, output_dir, provider, model_name)`` — render
-  a PDF to JPEG pages with provider-specific preprocessing.
-- ``get_image_paths_from_folder(folder_path)`` — return the sorted list of supported
-  images in a folder.
-- ``ImageProcessor`` — in-memory image preprocessing engine used by the LLM
-  transcription path.
+- ``PagePayload`` — immutable in-memory unit of work (base64 JPEG + provenance).
+- ``PdfPayloadSource`` / ``FolderPayloadSource`` — lazy streaming payload
+  producers for PDFs and image folders.
+- ``get_image_paths_from_folder(folder_path)`` — return the sorted list of
+  supported images in a folder.
+- ``ImageProcessor`` — static in-memory image preprocessing core.
 
 Model-type helpers live in ``imaging._provider`` and are package-private.
 """
 
-from imaging.pdf import extract_pdf_pages_to_images, get_image_paths_from_folder
+from imaging.payload import FolderPayloadSource, PagePayload, PdfPayloadSource
+from imaging.pdf import get_image_paths_from_folder
 from imaging.preprocessing import ImageProcessor
 
 __all__ = [
-    "extract_pdf_pages_to_images",
+    "PagePayload",
+    "PdfPayloadSource",
+    "FolderPayloadSource",
     "get_image_paths_from_folder",
     "ImageProcessor",
 ]

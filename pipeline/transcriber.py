@@ -11,7 +11,6 @@ from tqdm import tqdm
 from config import app as config
 from config.accessors import (
     get_api_timeout,
-    get_target_dpi,
     get_transcription_concurrency,
 )
 from config.constants import (
@@ -25,7 +24,7 @@ from config.constants import (
 )
 from config.loader import get_config_loader
 from config.logger import setup_logger
-from imaging import extract_pdf_pages_to_images, get_image_paths_from_folder
+from imaging.payload import FolderPayloadSource, PagePayload, PdfPayloadSource
 from llm import SummaryManager, TranscriptionManager
 from llm.types import CustomEndpointCapabilities
 from pipeline.context import format_context_for_prompt, resolve_summary_context
@@ -50,7 +49,7 @@ class ItemTranscriber:
         input_path: Source path of the item to process.
         input_type: Either "pdf" or "image_folder".
         base_output_dir: Base directory where outputs and working files are written.
-        working_dir: Item-specific working directory containing images and logs.
+        working_dir: Item-specific working directory containing logs.
         transcribe_manager: Manages image transcription via LLM API.
         summary_manager: Manages summarization via LLM API (if enabled).
         summary_context: Optional context string for guiding summarization focus.
@@ -82,9 +81,6 @@ class ItemTranscriber:
         self.working_dir = self.base_output_dir / safe_working_dir_name
         self.working_dir.mkdir(parents=True, exist_ok=True)
 
-        self.images_dir = self.working_dir / "images"  # Temp images for this item
-        self.images_dir.mkdir(exist_ok=True)
-
         # Use safe log filenames to avoid path length issues
         safe_transcription_log_name = create_safe_log_filename(
             self.name, "transcription"
@@ -96,6 +92,10 @@ class ItemTranscriber:
         self.total_items_to_transcribe = 0
         self.start_time_processing: float | None = None
         self.transcription_times: list[float] = []  # For successful transcriptions
+
+        # Snapshot of prior page results for page-level resume, loaded by
+        # process_item before the log file is reinitialized (truncated).
+        self._prior_transcription_results: list[dict[str, Any]] = []
 
         # Load model configuration from model.yaml
         config_loader = get_config_loader()
@@ -183,19 +183,19 @@ class ItemTranscriber:
         # Image preprocessing is handled within imaging.preprocessing inside the
         # transcription manager.
 
-    def _get_list_of_images_to_transcribe(self) -> list[Path]:
+    def _create_payload_source(self) -> PdfPayloadSource | FolderPayloadSource:
+        """Create the lazy in-memory payload source for this item."""
         if self.input_type == "pdf":
-            # Pass provider info for provider-specific image preprocessing
-            return extract_pdf_pages_to_images(
+            return PdfPayloadSource(
                 self.input_path,
-                self.images_dir,
                 provider=self.transcription_provider,
                 model_name=self.transcription_model,
             )
-        elif self.input_type == "image_folder":
-            # For image folders, we process images directly from their source path.
-            return get_image_paths_from_folder(self.input_path)
-        return []
+        return FolderPayloadSource(
+            self.input_path,
+            provider=self.transcription_provider,
+            model_name=self.transcription_model,
+        )
 
     def _build_summary_result(
         self,
@@ -340,32 +340,53 @@ class ItemTranscriber:
 
     def _process_single_page(
         self,
-        args_tuple: tuple[int, Any],
+        original_input_order_index: int,
+        source: PdfPayloadSource | FolderPayloadSource,
         transcription_results: list[dict[str, Any]],
         summary_results: list[dict[str, Any]],
         total_images: int,
         processed_count_ref: list[int],
     ) -> dict[str, Any] | None:
-        """Transcribe and optionally summarize a single page image.
+        """Render/load, transcribe, and optionally summarize a single page.
 
         Appends results to the shared lists and increments the processed counter.
         """
-        original_input_order_index, img_path = args_tuple
+        image_name = f"page index {original_input_order_index}"
         try:
-            transcription_result_raw = self.transcribe_manager.transcribe_image(
-                img_path
-            )
-            transcription_result = {
-                **transcription_result_raw,
-                "original_input_order_index": original_input_order_index,
-            }
+            image_name = source.image_name(original_input_order_index)
+
+            payload: PagePayload | None = None
+            try:
+                payload = source.build_payload(original_input_order_index)
+            except Exception as e:
+                # Render/preprocess failure: record an error page, skip the API
+                logger.error(f"Error preparing page {image_name}: {e}")
+                transcription_result: dict[str, Any] = {
+                    "image": image_name,
+                    "sequence_number": original_input_order_index + 1,
+                    "transcription": f"[preprocessing error: {e}]",
+                    "processing_time": 0.0,
+                    "error": str(e),
+                    "error_type": "preprocessing_failure",
+                    "provider": self.transcription_provider,
+                    "original_input_order_index": original_input_order_index,
+                }
+            else:
+                transcription_result = {
+                    **self.transcribe_manager.transcribe_payload(payload),
+                    "original_input_order_index": original_input_order_index,
+                    "source_file": payload.source_file,
+                    "image_provenance": payload.provenance,
+                }
+                if payload.page_index is not None:
+                    transcription_result["page_index"] = payload.page_index
 
             if "error" not in transcription_result:
                 raw_text = transcription_result.get("transcription", "")
                 transcription_result["transcription"] = clean_transcription(raw_text)
 
             summary_result = self._summarize_transcription(
-                transcription_result, original_input_order_index, img_path.name
+                transcription_result, original_input_order_index, image_name
             )
             if summary_result is not None:
                 append_to_log(self.summary_log_path, summary_result)
@@ -396,11 +417,11 @@ class ItemTranscriber:
             return transcription_result
 
         except Exception as e:
-            logger.exception(f"Critical error during task for {img_path.name}: {e}")
+            logger.exception(f"Critical error during task for {image_name}: {e}")
             seq_num = original_input_order_index + 1
             error_result: dict[str, Any] = {
                 "page": seq_num,
-                "image": img_path.name,
+                "image": image_name,
                 "transcription": f"[CRITICAL ERROR] Unhandled in task: {e}",
                 "error": str(e),
                 "original_input_order_index": original_input_order_index,
@@ -410,39 +431,45 @@ class ItemTranscriber:
             return error_result
 
     def _transcribe_and_summarize(
-        self, image_paths: list[Path]
+        self, source: PdfPayloadSource | FolderPayloadSource
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         transcription_results: list[dict[str, Any]] = []
         summary_results: list[dict[str, Any]] = []
-        total_images = len(image_paths)
+        total_images = len(source)
 
-        # --- Page-level resume: pre-load completed results and filter ---
-        image_paths_with_indices = list(enumerate(image_paths))
+        # --- Page-level resume: pre-load completed results and filter the
+        # pending index list BEFORE any page is rendered ---
+        pending_indices = list(range(total_images))
         skipped_page_count = 0
 
         if self.completed_page_indices:
-            prior_results = load_transcription_results_from_log(self.log_path)
+            # Prior results were snapshotted by process_item BEFORE the log
+            # file was reinitialized (which truncates it); fall back to the
+            # log for callers that did not go through process_item.
+            prior_results = self._prior_transcription_results or (
+                load_transcription_results_from_log(self.log_path)
+            )
             if prior_results:
                 for entry in prior_results:
                     idx = entry.get("original_input_order_index")
                     if isinstance(idx, int) and idx in self.completed_page_indices:
                         transcription_results.append(entry)
+                        # Re-append to the freshly initialized log so a later
+                        # crash + resume still sees these pages as completed.
+                        append_to_log(self.log_path, entry)
 
-            pending = [
-                (idx, path)
-                for idx, path in image_paths_with_indices
-                if idx not in self.completed_page_indices
+            pending_indices = [
+                idx for idx in pending_indices if idx not in self.completed_page_indices
             ]
-            skipped_page_count = len(image_paths_with_indices) - len(pending)
-            image_paths_with_indices = pending
+            skipped_page_count = total_images - len(pending_indices)
 
             if skipped_page_count > 0:
                 logger.info(
                     f"Page-level resume: {skipped_page_count} page(s) already "
-                    f"transcribed, {len(pending)} page(s) remaining"
+                    f"transcribed, {len(pending_indices)} page(s) remaining"
                 )
 
-        if not image_paths_with_indices:
+        if not pending_indices:
             logger.info(
                 "All pages already transcribed (page-level resume). "
                 "Skipping transcription."
@@ -458,7 +485,7 @@ class ItemTranscriber:
         )
         logger.info(
             f"Starting transcription{suffix} of "
-            f"{len(image_paths_with_indices)} images{resume_note}..."
+            f"{len(pending_indices)} images{resume_note}..."
         )
 
         if config.SUMMARIZE and self.summary_manager:
@@ -477,7 +504,7 @@ class ItemTranscriber:
         processed_count_ref = [0]
 
         max_workers, _ = get_transcription_concurrency()
-        max_workers = min(max_workers, len(image_paths))
+        max_workers = min(max_workers, len(pending_indices))
         if max_workers <= 0:
             max_workers = 1
 
@@ -486,16 +513,17 @@ class ItemTranscriber:
             list(
                 tqdm(
                     executor.map(
-                        lambda args: self._process_single_page(
-                            args,
+                        lambda idx: self._process_single_page(
+                            idx,
+                            source,
                             transcription_results,
                             summary_results,
                             total_images,
                             processed_count_ref,
                         ),
-                        image_paths_with_indices,
+                        pending_indices,
                     ),
-                    total=total_images,
+                    total=len(pending_indices),
                     desc="Processing images",
                 )
             )
@@ -552,10 +580,16 @@ class ItemTranscriber:
         logger.info(f"Processing {self.name} ({item_type_str})")
         self.start_time_processing = time.time()
 
-        # Prepare images (extract from PDF or list from folder)
-        image_paths_to_process = self._get_list_of_images_to_transcribe()
+        # Open the lazy payload source (PDF document or image folder listing);
+        # no page is rendered until a transcription worker requests it.
+        try:
+            source = self._create_payload_source()
+        except Exception as e:
+            logger.exception(f"Failed to open input for {self.name}: {e}")
+            return
 
-        if not image_paths_to_process:
+        if len(source) == 0:
+            source.close()
             logger.info(
                 f"No images found or extracted for {self.name}. Aborting this item."
             )
@@ -570,18 +604,22 @@ class ItemTranscriber:
                 )
             return
 
-        self.total_items_to_transcribe = len(image_paths_to_process)
+        self.total_items_to_transcribe = len(source)
         suffix = " and summarization" if config.SUMMARIZE else ""
         logger.info(
             f"Prepared {self.total_items_to_transcribe} images "
             f"for transcription{suffix}."
         )
 
-        # Initialize log file with a header
-        # read target_dpi from modules config for logging
-        target_dpi = None
-        if self.input_type == "pdf":
-            target_dpi = get_target_dpi()
+        # Snapshot prior page results BEFORE the log file is reinitialized
+        # below (initialize_log_file truncates it).
+        if self.completed_page_indices:
+            self._prior_transcription_results = (
+                load_transcription_results_from_log(self.log_path) or []
+            )
+
+        # Initialize log file with a header (incl. file-level provenance)
+        target_dpi = source.target_dpi if isinstance(source, PdfPayloadSource) else None
         actual_concurrency, _ = get_transcription_concurrency()
         initialize_log_file(
             self.log_path,
@@ -592,17 +630,16 @@ class ItemTranscriber:
             self.transcription_model,
             target_dpi,
             concurrency_limit=actual_concurrency,
+            file_provenance=source.file_provenance(),
         )
 
-        # Initialize variables that will be used in finally block
-        should_cleanup = False
         transcription_results: list[dict[str, Any]] = []
         summary_results: list[dict[str, Any]] = []
 
         try:
             # Process all images - transcribe and summarize
             transcription_results, summary_results = self._transcribe_and_summarize(
-                image_paths_to_process
+                source
             )
 
             # Final processing and output
@@ -697,30 +734,10 @@ class ItemTranscriber:
             )
             logger.info(f"  Detailed logs: {self.log_path}{detail_suffix}")
 
-            # Determine if we should cleanup images directory
-            # Only delete if we have successful outputs (transcription and/or summary)
-            if self.output_txt_path.exists():
-                # We have a transcription output
-                should_cleanup = True
-            if config.SUMMARIZE and (
-                (config.OUTPUT_DOCX and self.output_summary_docx_path.exists())
-                or (config.OUTPUT_MARKDOWN and self.output_summary_md_path.exists())
-            ):
-                should_cleanup = True
-
         finally:
             # Always finalize log files by closing JSON arrays, even if errors occurred
             finalize_log_file(self.log_path)
             if config.SUMMARIZE:
                 finalize_log_file(self.summary_log_path)
 
-            # Cleanup: Delete images directory after successful processing
-            if should_cleanup and self.images_dir.exists():
-                try:
-                    # Delete the images directory and all its contents
-                    shutil.rmtree(self.images_dir)
-                    logger.info(f"  Cleaned up images directory: {self.images_dir}")
-                except Exception as e:
-                    logger.warning(
-                        f"  Could not delete images directory {self.images_dir}: {e}"
-                    )
+            source.close()

@@ -8,11 +8,12 @@ from __future__ import annotations
 
 import os
 import tempfile
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import fitz  # PyMuPDF
 import pytest
 from PIL import Image
 
@@ -79,6 +80,26 @@ def sample_png_with_transparency(
     image_path = temp_dir / "test_transparent.png"
     sample_rgba_image.save(image_path, "PNG")
     return image_path
+
+
+# ============================================================================
+# PDF Fixtures
+# ============================================================================
+@pytest.fixture
+def make_pdf(tmp_path: Path) -> Callable[..., Path]:
+    """Return a factory that writes a tiny PDF with the given page count."""
+
+    def _make(name: str = "doc.pdf", num_pages: int = 1) -> Path:
+        pdf_path = tmp_path / name
+        doc = fitz.open()
+        for i in range(num_pages):
+            page = doc.new_page(width=200, height=300)
+            page.insert_text((50, 100), f"Page {i + 1}")
+        doc.save(pdf_path)
+        doc.close()
+        return pdf_path
+
+    return _make
 
 
 # ============================================================================
