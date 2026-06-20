@@ -1,4 +1,4 @@
-# AutoExcerpter v1.5.0
+# AutoExcerpter v1.6.0
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -645,6 +645,21 @@ linting and formatting across the entire codebase.
 
 ## Changelog
 
+- **v1.6.0** (20 June 2026) -- Refreshed dependencies under the conservative,
+    majors-gated policy. Upgraded the LangChain stack within its current majors
+    (langchain-core 1.4.0 -> 1.4.8, langchain-openai 1.2.1 -> 1.3.2,
+    langchain-anthropic 1.4.1 -> 1.4.6, langchain-google-genai 4.2.2 -> 4.2.5)
+    along with requests (2.33.1 -> 2.34.2), tqdm (4.67.3 -> 4.68.3), and the dev
+    tools pytest (9.0.3 -> 9.1.1), ruff (0.15.12 -> 0.15.18), types-PyYAML, and
+    types-requests. Raised the >= floors for tqdm, langchain-core,
+    langchain-openai, requests, and pytest accordingly. Held the mypy major at
+    1.20.2 (2.1.0 would be a major jump) and pinned it to <2 so the resolver
+    cannot advance it; the transitive google-genai likewise stays on its 1.x
+    line. No dependencies were removed (the confirmed-unused set was empty) and
+    no missing runtime dependency was added (the lone guarded colorama import
+    has a graceful fallback and is not a hard requirement). Regenerated uv.lock
+    and synced the environment; all runtime imports and the dev toolchain
+    verified clean.
 - **v1.5.0** (10 June 2026) -- streaming in-memory image
     pipeline: PDF pages are rendered, preprocessed, and
     base64-encoded on demand inside the transcription workers
