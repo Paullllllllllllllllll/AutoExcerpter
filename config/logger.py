@@ -34,7 +34,6 @@ DEFAULT_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 def setup_logger(
     name: str,
     level: int = DEFAULT_LOG_LEVEL,
-    format_string: str | None = None,
     date_format: str | None = None,
     verbose: bool = False,
 ) -> logging.Logger:
@@ -47,7 +46,6 @@ def setup_logger(
     Args:
         name: Name for the logger (typically __name__ from the calling module)
         level: Logging level for file/detailed logging (default: INFO)
-        format_string: Custom format string for log messages
         date_format: Custom date format for timestamps
         verbose: If True, show all logs on console; if False, only warnings/errors
 

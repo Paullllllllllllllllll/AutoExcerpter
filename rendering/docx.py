@@ -460,22 +460,27 @@ def sanitize_omml_xml(omml_markup: str) -> str:
         return omml_markup
 
 
+def _ensure_omml_namespace(omml_markup: str) -> str:
+    """Ensure the OMML markup carries the math namespace and an <m:oMath> root."""
+    if "xmlns:m" not in omml_markup.split("\n", 1)[0]:
+        omml_markup = omml_markup.replace(
+            "<m:oMath",
+            f'<m:oMath xmlns:m="{MATH_NAMESPACE}"',
+            1,
+        )
+
+    if not omml_markup.strip().startswith("<m:oMath"):
+        omml_markup = f'<m:oMath xmlns:m="{MATH_NAMESPACE}">{omml_markup}</m:oMath>'
+
+    return omml_markup
+
+
 def add_math_to_paragraph(paragraph: Any, latex_code: str) -> None:
     """Add a mathematical formula to a paragraph using OMML for native Word equation
     rendering."""
     try:
         mathml = latex_to_mathml(latex_code)
-        omml_markup = mathml2omml.convert(mathml)
-
-        if "xmlns:m" not in omml_markup.split("\n", 1)[0]:
-            omml_markup = omml_markup.replace(
-                "<m:oMath",
-                f'<m:oMath xmlns:m="{MATH_NAMESPACE}"',
-                1,
-            )
-
-        if not omml_markup.strip().startswith("<m:oMath"):
-            omml_markup = f'<m:oMath xmlns:m="{MATH_NAMESPACE}">{omml_markup}</m:oMath>'
+        omml_markup = _ensure_omml_namespace(mathml2omml.convert(mathml))
 
         omml_para = (
             f'<m:oMathPara xmlns:m="{MATH_NAMESPACE}">{omml_markup}</m:oMathPara>'
@@ -506,19 +511,7 @@ def add_math_to_paragraph(paragraph: Any, latex_code: str) -> None:
                     ", ".join(simplifications),
                 )
                 mathml = latex_to_mathml(simplified_latex)
-                omml_markup = mathml2omml.convert(mathml)
-
-                if "xmlns:m" not in omml_markup.split("\n", 1)[0]:
-                    omml_markup = omml_markup.replace(
-                        "<m:oMath",
-                        f'<m:oMath xmlns:m="{MATH_NAMESPACE}"',
-                        1,
-                    )
-
-                if not omml_markup.strip().startswith("<m:oMath"):
-                    omml_markup = (
-                        f'<m:oMath xmlns:m="{MATH_NAMESPACE}">{omml_markup}</m:oMath>'
-                    )
+                omml_markup = _ensure_omml_namespace(mathml2omml.convert(mathml))
 
                 omml_para = (
                     f'<m:oMathPara xmlns:m="{MATH_NAMESPACE}">'

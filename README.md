@@ -1,4 +1,4 @@
-# AutoExcerpter v1.6.0
+# AutoExcerpter v1.7.0
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -645,6 +645,16 @@ linting and formatting across the entire codebase.
 
 ## Changelog
 
+- **v1.7.0** (20 June 2026) -- Removed two pieces of confirmed dead code: the unused
+    format_string parameter of setup_logger in config/logger.py and the unused
+    model_page_number parameter of the private _build_summary_result method in
+    pipeline/transcriber.py, along with its sole call-site argument. Consolidated two
+    within-module duplications: the repeated OMML namespace-ensuring logic in
+    rendering/docx.py was extracted into a private _ensure_omml_namespace helper called
+    from both branches of add_math_to_paragraph, and the byte-identical _ANTHROPIC_BASE
+    and _OPENROUTER_BASE capability dicts in llm/capabilities.py now build through a
+    private _non_openai_base factory. All resulting values are byte-identical to the
+    originals; runtime behavior is unchanged.
 - **v1.6.0** (20 June 2026) -- Refreshed dependencies under the conservative,
     majors-gated policy. Upgraded the LangChain stack within its current majors
     (langchain-core 1.4.0 -> 1.4.8, langchain-openai 1.2.1 -> 1.3.2,

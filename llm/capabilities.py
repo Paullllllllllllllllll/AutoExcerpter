@@ -210,20 +210,39 @@ _OPENAI_STANDARD_BASE: dict[str, Any] = dict(
     max_output_tokens=16384,
 )
 
-_ANTHROPIC_BASE: dict[str, Any] = dict(
+
+def _non_openai_base(
+    provider_name: str,
+    max_context_tokens: int,
+    max_output_tokens: int,
+) -> dict[str, Any]:
+    """Build the shared capability defaults for non-OpenAI chat providers.
+
+    Anthropic and OpenRouter share the same flags (no image-detail control,
+    temperature/top_p but no penalties) and differ only in the provider name
+    and context/output token limits.
+    """
+    return dict(
+        provider_name=provider_name,
+        supports_vision=True,
+        supports_image_detail=False,
+        default_image_detail="auto",
+        supports_structured_output=True,
+        supports_json_mode=True,
+        is_reasoning_model=False,
+        supports_reasoning_effort=False,
+        supports_text_verbosity=False,
+        supports_temperature=True,
+        supports_top_p=True,
+        supports_frequency_penalty=False,
+        supports_presence_penalty=False,
+        max_context_tokens=max_context_tokens,
+        max_output_tokens=max_output_tokens,
+    )
+
+
+_ANTHROPIC_BASE: dict[str, Any] = _non_openai_base(
     provider_name="anthropic",
-    supports_vision=True,
-    supports_image_detail=False,
-    default_image_detail="auto",
-    supports_structured_output=True,
-    supports_json_mode=True,
-    is_reasoning_model=False,
-    supports_reasoning_effort=False,
-    supports_text_verbosity=False,
-    supports_temperature=True,
-    supports_top_p=True,
-    supports_frequency_penalty=False,
-    supports_presence_penalty=False,
     max_context_tokens=200000,
     max_output_tokens=8192,
 )
@@ -248,20 +267,8 @@ _GOOGLE_BASE: dict[str, Any] = dict(
     max_output_tokens=8192,
 )
 
-_OPENROUTER_BASE: dict[str, Any] = dict(
+_OPENROUTER_BASE: dict[str, Any] = _non_openai_base(
     provider_name="openrouter",
-    supports_vision=True,
-    supports_image_detail=False,
-    default_image_detail="auto",
-    supports_structured_output=True,
-    supports_json_mode=True,
-    is_reasoning_model=False,
-    supports_reasoning_effort=False,
-    supports_text_verbosity=False,
-    supports_temperature=True,
-    supports_top_p=True,
-    supports_frequency_penalty=False,
-    supports_presence_penalty=False,
     max_context_tokens=128000,
     max_output_tokens=4096,
 )

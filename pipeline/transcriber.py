@@ -203,7 +203,6 @@ class ItemTranscriber:
         image_name: str,
         summary_payload: dict[str, Any],
         page_number: int | None,
-        model_page_number: int | None,
         error_message: str | None = None,
     ) -> dict[str, Any]:
         """Create a consistent flat summary result structure for downstream consumers.
@@ -334,7 +333,6 @@ class ItemTranscriber:
             img_name,
             summary_data,
             page_num_to_use,
-            page_num_model,
             summary_error,
         )
 
