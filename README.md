@@ -1,4 +1,4 @@
-# AutoExcerpter v1.8.0
+# AutoExcerpter v1.9.0
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -644,6 +644,12 @@ pre-existing mypy strict-mode errors. v1.2.0 applies ruff
 linting and formatting across the entire codebase.
 
 ## Changelog
+
+- **v1.9.0** (21 June 2026) -- Refreshed the transitive google-genai dependency to
+    the 2.x major (`google-genai` 1.73.1 -> 2.9.0), pulled via
+    `langchain-google-genai` (unchanged). AutoExcerpter uses the Google path only
+    through the LangChain wrapper; the wrapper imports clean under 2.x and all
+    1,232 tests pass.
 
 - **v1.8.0** (21 June 2026) -- Adopted mypy 2.x for static type checking.
     Relaxed the dev pin from `mypy>=1.20,<2` to `mypy>=2.1` and refreshed the
