@@ -88,3 +88,23 @@ ignore = ["UP047"]
 [tool.ruff.format]
 quote-style = "double"
 docstring-code-format = false
+
+[tool.deptry]
+# Treat the dev extra as development dependencies (pytest, mypy, ruff, and the
+# type stubs are not imported in the shipped source tree).
+pep621_dev_dependency_groups = ["dev"]
+# tests/ carries analysis-only imports that are intentionally undeclared.
+extend_exclude = ["tests"]
+
+[tool.deptry.per_rule_ignores]
+# colorama is an optional, guarded import (graceful fallback when absent) and is
+# intentionally not a hard runtime dependency.
+DEP003 = ["colorama"]
+
+[tool.deptry.package_module_name_map]
+# Distributions whose import name differs from the package name; declaring these
+# keeps scans accurate even when deptry runs outside the project venv.
+PyYAML = ["yaml"]
+PyMuPDF = ["fitz"]
+Pillow = ["PIL"]
+python-docx = ["docx"]
