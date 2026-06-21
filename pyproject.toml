@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "autoexcerpter"
-version = "1.7.0"
+version = "1.8.0"
 description = "Document processing pipeline that transcribes and summarizes PDFs and image collections using vision-enabled LLMs"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -26,7 +26,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "mypy>=1.20,<2",
+    "mypy>=2.1",
     "ruff>=0.15",
     "types-PyYAML>=6.0",
     "types-requests>=2.32",

@@ -1,4 +1,4 @@
-# AutoExcerpter v1.7.0
+# AutoExcerpter v1.8.0
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -644,6 +644,11 @@ pre-existing mypy strict-mode errors. v1.2.0 applies ruff
 linting and formatting across the entire codebase.
 
 ## Changelog
+
+- **v1.8.0** (21 June 2026) -- Adopted mypy 2.x for static type checking.
+    Relaxed the dev pin from `mypy>=1.20,<2` to `mypy>=2.1` and refreshed the
+    lockfile. The full source tree type-checks clean under mypy 2.1.0 and all
+    1,232 tests pass; no runtime code changed.
 
 - **v1.7.0** (20 June 2026) -- Removed two pieces of confirmed dead code: the unused
     format_string parameter of setup_logger in config/logger.py and the unused
