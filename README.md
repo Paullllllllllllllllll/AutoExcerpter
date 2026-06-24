@@ -634,19 +634,16 @@ your provider's status page, or open an issue on the repository.
 
 ## Versioning
 
-This project uses semantic versioning. The commit history was
-squashed to a single baseline commit at v1.0.0 on 25 April
-2026. All prior development history was consolidated; version
-numbers before v1.0.0 do not exist. v1.1.0 migrates the
-project to `pyproject.toml` as the single source of truth for
-dependencies and tooling configuration. v1.1.1 resolves all
-pre-existing mypy strict-mode errors. v1.2.0 applies ruff
-linting and formatting across the entire codebase.
+This project follows semantic versioning (`MAJOR.MINOR.PATCH`). The version in
+`pyproject.toml` is the single source of truth; it is mirrored in the title
+heading above and tagged in git as `vX.Y.Z`. The commit history was squashed to
+a single baseline commit at v1.0.0 on 25 April 2026; version numbers before
+v1.0.0 do not exist.
 
 ## Changelog
 
-- **v1.9.0** (21 June 2026) -- Refreshed the transitive google-genai dependency to
-    the 2.x major (`google-genai` 1.73.1 -> 2.9.0), pulled via
+- **v1.9.0** (21 June 2026) -- Refreshed the transitive google-genai dependency
+    to the 2.x major (`google-genai` 1.73.1 -> 2.9.0), pulled via
     `langchain-google-genai` (unchanged). AutoExcerpter uses the Google path only
     through the LangChain wrapper; the wrapper imports clean under 2.x and all
     1,232 tests pass.
@@ -656,92 +653,90 @@ linting and formatting across the entire codebase.
     lockfile. The full source tree type-checks clean under mypy 2.1.0 and all
     1,232 tests pass; no runtime code changed.
 
-- **v1.7.0** (20 June 2026) -- Removed two pieces of confirmed dead code: the unused
-    format_string parameter of setup_logger in config/logger.py and the unused
-    model_page_number parameter of the private _build_summary_result method in
-    pipeline/transcriber.py, along with its sole call-site argument. Consolidated two
-    within-module duplications: the repeated OMML namespace-ensuring logic in
-    rendering/docx.py was extracted into a private _ensure_omml_namespace helper called
-    from both branches of add_math_to_paragraph, and the byte-identical _ANTHROPIC_BASE
-    and _OPENROUTER_BASE capability dicts in llm/capabilities.py now build through a
-    private _non_openai_base factory. All resulting values are byte-identical to the
-    originals; runtime behavior is unchanged.
+- **v1.7.0** (20 June 2026) -- Removed two pieces of confirmed dead code: the
+    unused format_string parameter of setup_logger in `config/logger.py` and the
+    unused model_page_number parameter of the private `_build_summary_result`
+    method in `pipeline/transcriber.py`, along with its sole call-site argument.
+    Consolidated two within-module duplications: the repeated OMML
+    namespace-ensuring logic in `rendering/docx.py` was extracted into a private
+    `_ensure_omml_namespace` helper called from both branches of
+    add_math_to_paragraph, and the byte-identical `_ANTHROPIC_BASE` and
+    `_OPENROUTER_BASE` capability dicts in `llm/capabilities.py` now build through
+    a private `_non_openai_base` factory. All resulting values are byte-identical
+    to the originals; runtime behavior is unchanged.
+
 - **v1.6.0** (20 June 2026) -- Refreshed dependencies under the conservative,
     majors-gated policy. Upgraded the LangChain stack within its current majors
-    (langchain-core 1.4.0 -> 1.4.8, langchain-openai 1.2.1 -> 1.3.2,
-    langchain-anthropic 1.4.1 -> 1.4.6, langchain-google-genai 4.2.2 -> 4.2.5)
-    along with requests (2.33.1 -> 2.34.2), tqdm (4.67.3 -> 4.68.3), and the dev
-    tools pytest (9.0.3 -> 9.1.1), ruff (0.15.12 -> 0.15.18), types-PyYAML, and
-    types-requests. Raised the >= floors for tqdm, langchain-core,
-    langchain-openai, requests, and pytest accordingly. Held the mypy major at
-    1.20.2 (2.1.0 would be a major jump) and pinned it to <2 so the resolver
-    cannot advance it; the transitive google-genai likewise stays on its 1.x
-    line. No dependencies were removed (the confirmed-unused set was empty) and
-    no missing runtime dependency was added (the lone guarded colorama import
-    has a graceful fallback and is not a hard requirement). Regenerated uv.lock
-    and synced the environment; all runtime imports and the dev toolchain
-    verified clean.
-- **v1.5.0** (10 June 2026) -- streaming in-memory image
-    pipeline: PDF pages are rendered, preprocessed, and
-    base64-encoded on demand inside the transcription workers
-    (lock-guarded PyMuPDF access) instead of being extracted
-    up front into `_working_files/images/`; no temporary image
-    files are written anymore. Page-level resume now filters
-    BEFORE rendering, so resuming a mostly-done PDF no longer
-    re-renders every page. New `imaging/payload.py` with
-    `PagePayload`, `PdfPayloadSource`, and `FolderPayloadSource`;
+    (`langchain-core` 1.4.0 -> 1.4.8, `langchain-openai` 1.2.1 -> 1.3.2,
+    `langchain-anthropic` 1.4.1 -> 1.4.6, `langchain-google-genai` 4.2.2 ->
+    4.2.5) along with `requests` (2.33.1 -> 2.34.2), `tqdm` (4.67.3 -> 4.68.3),
+    and the dev tools `pytest` (9.0.3 -> 9.1.1), `ruff` (0.15.12 -> 0.15.18),
+    `types-PyYAML`, and `types-requests`. Raised the >= floors for `tqdm`,
+    `langchain-core`, `langchain-openai`, `requests`, and `pytest` accordingly.
+    Held the mypy major at 1.20.2 (2.1.0 would be a major jump) and pinned it to
+    <2 so the resolver cannot advance it; the transitive `google-genai` likewise
+    stays on its 1.x line. No dependencies were removed (the confirmed-unused set
+    was empty) and no missing runtime dependency was added (the lone guarded
+    colorama import has a graceful fallback and is not a hard requirement).
+    Regenerated uv.lock and synced the environment; all runtime imports and the
+    dev toolchain verified clean.
+
+- **v1.5.0** (10 June 2026) -- Streaming in-memory image pipeline: PDF pages are
+    rendered, preprocessed, and base64-encoded on demand inside the transcription
+    workers (lock-guarded PyMuPDF access) instead of being extracted up front into
+    `_working_files/images/`; no temporary image files are written anymore.
+    Page-level resume now filters BEFORE rendering, so resuming a mostly-done PDF
+    no longer re-renders every page. New `imaging/payload.py` with `PagePayload`,
+    `PdfPayloadSource`, and `FolderPayloadSource`;
     `TranscriptionManager.transcribe_image(path)` replaced by
-    `transcribe_payload(payload)`. Full reproducibility records:
-    per-page `image_provenance` (SHA-256/dimensions/byte
-    size/effective DPI of the exact JPEG sent) and a
-    `file_provenance` log-header block (source SHA-256, PyMuPDF/
-    Pillow versions, image-config snapshot). Behavior change:
-    pages that fail to render are now recorded as
-    `[preprocessing error: ...]` pages in the outputs instead of
-    being silently dropped. Removed dead disk-image machinery
-    (`extract_pdf_pages_to_images`, file-based
-    `ImageProcessor` instance API, `MAX_EXTRACTION_WORKERS`).
-    Bug fix: on page-level resume, previously completed pages
-    were lost from the final `.txt` because the transcription
-    log was truncated before prior results were re-read; prior
-    results are now snapshotted before log reinitialization and
-    re-appended to the fresh log.
-- **v1.4.0** (31 May 2026) -- low-risk code-review cleanups
-    (behavior-preserving): route `config.accessors` fallbacks
-    through `constants` (`DEFAULT_RATE_LIMITS`, `DEFAULT_TARGET_DPI`,
-    `DEFAULT_OPENAI_TIMEOUT`); add a `MAX_ERROR_MULTIPLIER` constant
-    and reference it in `RateLimiter`; reuse `OPENAI_MODEL_PREFIXES`
-    in `imaging._provider` model detection; collapse the duplicate
-    per-directory file scan in `pipeline.scanner` into a single pass;
-    log instead of silently swallowing the `output_text` extractor
-    fallback in `llm.base`; document the `RateLimiter.get_stats`
-    per-poll reset side effect.
-- **v1.3.0** (29 May 2026) -- fix spurious mid-paragraph line
-    breaks: disable `text_cleaning.line_wrapping` by default (it
-    re-wrapped already laid-out LLM output into short orphan lines)
-    and enable a conservative `merge_hyphenation` with a
-    compound-preserving guard (`should_keep_hyphen`); warn when
-    wrapping is enabled. Add `scripts/repair_layout`, a
-    deterministic line-break repairer with a content-preservation
-    verifier for fixing affected transcription files in place.
-- **v1.2.1** (19 May 2026) -- dependency refresh from
-    environment-wide CVE audit: bump `langchain-core`
-    1.3.2 -> 1.4.0 (RCE on deserialization); `langsmith`
-    0.7.36 -> 0.8.5 (unsafe deserialization; full fix to
-    1.0.x deferred pending upstream constraint relaxation);
-    `urllib3` 2.6.3 -> 2.7.0.
-- **v1.2.0** (10 May 2026) -- apply ruff linting and formatting
-    across all source and test files; add `ruff>=0.15` to dev
-    dependencies; resolve 404 lint violations.
-- **v1.1.2** (10 May 2026) -- add ruff linter and formatter
-    configuration; gitignore `CLAUDE.md`.
-- **v1.1.1** (10 May 2026) -- resolve all pre-existing mypy
-    strict-mode errors across the codebase.
-- **v1.1.0** (10 May 2026) -- migrate build system to
-    `pyproject.toml` and `uv`; remove `requirements.txt`,
-    `mypy.ini`, and `pytest.ini`.
-- **v1.0.0** (25 April 2026) -- initial public release;
-    squashed baseline.
+    `transcribe_payload(payload)`. Full reproducibility records: per-page
+    `image_provenance` (SHA-256/dimensions/byte size/effective DPI of the exact
+    JPEG sent) and a `file_provenance` log-header block (source SHA-256,
+    PyMuPDF/Pillow versions, image-config snapshot). Behavior change: pages that
+    fail to render are now recorded as `[preprocessing error: ...]` pages in the
+    outputs instead of being silently dropped. Removed dead disk-image machinery
+    (`extract_pdf_pages_to_images`, file-based `ImageProcessor` instance API,
+    `MAX_EXTRACTION_WORKERS`). Bug fix: on page-level resume, previously completed
+    pages were lost from the final `.txt` because the transcription log was
+    truncated before prior results were re-read; prior results are now snapshotted
+    before log reinitialization and re-appended to the fresh log.
+
+- **v1.4.0** (31 May 2026) -- Low-risk code-review cleanups (behavior-preserving):
+    route `config.accessors` fallbacks through `constants` (`DEFAULT_RATE_LIMITS`,
+    `DEFAULT_TARGET_DPI`, `DEFAULT_OPENAI_TIMEOUT`); add a `MAX_ERROR_MULTIPLIER`
+    constant and reference it in `RateLimiter`; reuse `OPENAI_MODEL_PREFIXES` in
+    `imaging._provider` model detection; collapse the duplicate per-directory file
+    scan in `pipeline.scanner` into a single pass; log instead of silently
+    swallowing the `output_text` extractor fallback in `llm.base`; document the
+    `RateLimiter.get_stats` per-poll reset side effect.
+
+- **v1.3.0** (29 May 2026) -- Fix spurious mid-paragraph line breaks: disable
+    `text_cleaning.line_wrapping` by default (it re-wrapped already laid-out LLM
+    output into short orphan lines) and enable a conservative `merge_hyphenation`
+    with a compound-preserving guard (`should_keep_hyphen`); warn when wrapping is
+    enabled. Add `scripts/repair_layout`, a deterministic line-break repairer with
+    a content-preservation verifier for fixing affected transcription files in
+    place.
+
+- **v1.2.1** (19 May 2026) -- Dependency refresh from environment-wide CVE audit:
+    bump `langchain-core` 1.3.2 -> 1.4.0 (RCE on deserialization); `langsmith`
+    0.7.36 -> 0.8.5 (unsafe deserialization; full fix to 1.0.x deferred pending
+    upstream constraint relaxation); `urllib3` 2.6.3 -> 2.7.0.
+
+- **v1.2.0** (10 May 2026) -- Apply ruff linting and formatting across all source
+    and test files; add `ruff>=0.15` to dev dependencies; resolve 404 lint
+    violations.
+
+- **v1.1.2** (10 May 2026) -- Add ruff linter and formatter configuration;
+    gitignore `CLAUDE.md`.
+
+- **v1.1.1** (10 May 2026) -- Resolve all pre-existing mypy strict-mode errors
+    across the codebase.
+
+- **v1.1.0** (10 May 2026) -- Migrate build system to `pyproject.toml` and `uv`;
+    remove `requirements.txt`, `mypy.ini`, and `pytest.ini`.
+
+- **v1.0.0** (25 April 2026) -- Initial public release; squashed baseline.
 
 ## Contributing
 
