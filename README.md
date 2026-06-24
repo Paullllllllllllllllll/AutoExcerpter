@@ -1,4 +1,4 @@
-# AutoExcerpter v1.9.0
+# AutoExcerpter v1.10.0
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -641,6 +641,18 @@ a single baseline commit at v1.0.0 on 25 April 2026; version numbers before
 v1.0.0 do not exist.
 
 ## Changelog
+
+- **v1.10.0** (24 June 2026) -- The daily token limit is now enforced at the
+    page level, not just between files. When the limit is enabled, each page
+    reserves a combined transcription + summary estimate (a self-calibrating
+    rolling average) before any API call, so concurrent worker threads cannot
+    collectively overshoot; once the budget is exhausted mid-file the run drains
+    in-flight pages, waits for the daily reset, and re-runs the still-pending
+    pages from the log. A page is reserved and skipped atomically, so resume
+    never sees a transcribed-but-unsummarized page. Configured concurrency is
+    unchanged when budget is plentiful. Two optional `daily_token_limit`
+    settings tune the estimate (`chunk_estimate_seed`, `estimate_smoothing`).
+    All 1241 tests pass.
 
 - **v1.9.0** (21 June 2026) -- Refreshed the transitive google-genai dependency
     to the 2.x major (`google-genai` 1.73.1 -> 2.9.0), pulled via

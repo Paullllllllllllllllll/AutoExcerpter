@@ -115,3 +115,84 @@ class TestGetTokenTrackerSingleton:
         assert t1 is t2
         assert t1.daily_limit == 123
         assert t1.enabled is True
+
+
+class TestChunkReservation:
+    """Page-level reservation gate: try_reserve / release / EWMA estimate."""
+
+    def test_disabled_returns_zero_and_never_denies(self, tmp_path: Path) -> None:
+        t = token_tracker.DailyTokenTracker(
+            daily_limit=100,
+            enabled=False,
+            state_file=tmp_path / "s.json",
+            chunk_estimate_seed=10,
+        )
+        assert t.try_reserve() == 0
+        assert t.try_reserve(999_999) == 0
+        t.release(0)  # no-op when disabled (must not raise)
+
+    def test_reserve_within_and_beyond_budget(self, tmp_path: Path) -> None:
+        t = token_tracker.DailyTokenTracker(
+            daily_limit=100,
+            enabled=True,
+            state_file=tmp_path / "s.json",
+            chunk_estimate_seed=10,
+        )
+        # Seed EWMA is 10, so a bare reservation claims 10.
+        assert t.try_reserve() == 10
+        # An explicit estimate above the EWMA claims the estimate.
+        assert t.try_reserve(50) == 50
+        # reserved is now 60; remaining headroom is 40, so a 50 will not fit.
+        assert t.try_reserve(50) is None
+        # 40 fits exactly, bringing reserved to the limit.
+        assert t.try_reserve(40) == 40
+        assert t.try_reserve(1) is None
+
+    def test_release_restores_headroom(self, tmp_path: Path) -> None:
+        t = token_tracker.DailyTokenTracker(
+            daily_limit=100,
+            enabled=True,
+            state_file=tmp_path / "s.json",
+            chunk_estimate_seed=10,
+        )
+        assert t.try_reserve(100) == 100
+        assert t.try_reserve(1) is None
+        t.release(100)
+        assert t.try_reserve(50) == 50
+
+    def test_committed_plus_reserved_never_exceeds_limit(self, tmp_path: Path) -> None:
+        # smoothing=0 freezes the EWMA at the seed so this test isolates the
+        # committed-plus-reserved arithmetic from estimate drift.
+        t = token_tracker.DailyTokenTracker(
+            daily_limit=100,
+            enabled=True,
+            state_file=tmp_path / "s.json",
+            chunk_estimate_seed=10,
+            estimate_smoothing=0.0,
+        )
+        t.add_tokens(60)  # committed usage
+        assert t.try_reserve(30) == 30  # 60 + 30 = 90, fits
+        assert t.try_reserve(20) is None  # 90 + 20 = 110, denied
+        assert t.try_reserve(10) == 10  # 90 + 10 = 100, exact fit
+
+    def test_add_tokens_updates_ewma(self, tmp_path: Path) -> None:
+        t = token_tracker.DailyTokenTracker(
+            daily_limit=10**9,
+            enabled=True,
+            state_file=tmp_path / "s.json",
+            chunk_estimate_seed=100,
+            estimate_smoothing=0.5,
+        )
+        # EWMA = 0.5 * 1100 + 0.5 * 100 = 600
+        t.add_tokens(1100)
+        assert t.try_reserve() == 600
+
+    def test_reserve_uses_max_of_estimate_and_ewma(self, tmp_path: Path) -> None:
+        t = token_tracker.DailyTokenTracker(
+            daily_limit=10**9,
+            enabled=True,
+            state_file=tmp_path / "s.json",
+            chunk_estimate_seed=100,
+        )
+        assert t.try_reserve(5000) == 5000  # estimate above EWMA wins
+        assert t.try_reserve(10) == 100  # estimate below EWMA floors at EWMA

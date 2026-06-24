@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import shutil
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -26,6 +27,7 @@ from config.loader import get_config_loader
 from config.logger import setup_logger
 from imaging.payload import FolderPayloadSource, PagePayload, PdfPayloadSource
 from llm import SummaryManager, TranscriptionManager
+from llm.token_tracker import get_token_tracker, wait_for_token_reset
 from llm.types import CustomEndpointCapabilities
 from pipeline.context import format_context_for_prompt, resolve_summary_context
 from pipeline.log import append_to_log, finalize_log_file, initialize_log_file
@@ -69,6 +71,11 @@ class ItemTranscriber:
         self.name = self.input_path.stem
         self.resume_mode = resume_mode
         self.completed_page_indices = completed_page_indices or set()
+
+        # Page-level token-budget gate state, consulted by _process_single_page
+        # and driven by the re-pass loop in _transcribe_and_summarize.
+        self._token_tracker = get_token_tracker()
+        self._budget_exhausted = threading.Event()
 
         self.base_output_dir = base_output_dir
         self.output_txt_path = self.base_output_dir / f"{self.name}.txt"
@@ -348,7 +355,20 @@ class ItemTranscriber:
         """Render/load, transcribe, and optionally summarize a single page.
 
         Appends results to the shared lists and increments the processed counter.
+        Returns None without touching the shared lists or logs when the page is
+        deferred by the token-budget gate, so the resume path re-runs it later.
         """
+        # Whole-page budget gate: reserve a combined transcription + summary
+        # estimate up front. If it cannot fit the remaining daily budget, defer
+        # the entire page (no API call, no log, no result) so resume re-runs it
+        # after the daily reset. try_reserve returns 0 when limiting is disabled.
+        if self._budget_exhausted.is_set():
+            return None
+        reserved = self._token_tracker.try_reserve()
+        if reserved is None:
+            self._budget_exhausted.set()
+            return None
+
         image_name = f"page index {original_input_order_index}"
         try:
             image_name = source.image_name(original_input_order_index)
@@ -427,6 +447,10 @@ class ItemTranscriber:
             transcription_results.append(error_result)
             processed_count_ref[0] += 1
             return error_result
+        finally:
+            # Release the reservation; actual usage was committed via
+            # add_tokens inside the provider layer during the calls above.
+            self._token_tracker.release(reserved)
 
     def _transcribe_and_summarize(
         self, source: PdfPayloadSource | FolderPayloadSource
@@ -501,30 +525,83 @@ class ItemTranscriber:
         # Mutable counter shared across threads (replaces nonlocal)
         processed_count_ref = [0]
 
-        max_workers, _ = get_transcription_concurrency()
-        max_workers = min(max_workers, len(pending_indices))
-        if max_workers <= 0:
-            max_workers = 1
+        # Page-level token-budget loop: each pass transcribes pages until the
+        # daily budget is exhausted (the gate in _process_single_page sets
+        # _budget_exhausted and defers the rest), then drains the pool, waits
+        # for the daily reset, and re-passes over the still-pending pages.
+        # Deferred pages write no log/result, so resume re-runs exactly them.
+        pending = list(pending_indices)
+        stalled_resets = 0
+        while pending:
+            self._budget_exhausted.clear()
+            max_workers, _ = get_transcription_concurrency()
+            max_workers = min(max_workers, len(pending))
+            if max_workers <= 0:
+                max_workers = 1
 
-        logger.info(f"Using {max_workers} concurrent workers for transcription")
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            list(
-                tqdm(
-                    executor.map(
-                        lambda idx: self._process_single_page(
-                            idx,
-                            source,
-                            transcription_results,
-                            summary_results,
-                            total_images,
-                            processed_count_ref,
+            logger.info(f"Using {max_workers} concurrent workers for transcription")
+            with concurrent.futures.ThreadPoolExecutor(
+                max_workers=max_workers
+            ) as executor:
+                list(
+                    tqdm(
+                        executor.map(
+                            lambda idx: self._process_single_page(
+                                idx,
+                                source,
+                                transcription_results,
+                                summary_results,
+                                total_images,
+                                processed_count_ref,
+                            ),
+                            pending,
                         ),
-                        pending_indices,
-                    ),
-                    total=len(pending_indices),
-                    desc="Processing images",
+                        total=len(pending),
+                        desc="Processing images",
+                    )
                 )
+
+            if not self._budget_exhausted.is_set():
+                break
+
+            # Recompute the still-pending pages: those not yet recorded in the
+            # transcription results (deferred pages appended nothing).
+            done = {
+                r.get("original_input_order_index")
+                for r in transcription_results
+                if isinstance(r, dict)
+            }
+            remaining = [idx for idx in pending if idx not in done]
+            made_progress = len(remaining) < len(pending)
+            pending = remaining
+            if not pending:
+                break
+
+            logger.warning(
+                "Daily token budget reached; %d page(s) deferred. "
+                "Waiting for daily reset...",
+                len(pending),
             )
+            if not wait_for_token_reset():
+                logger.info(
+                    "Token-limit wait cancelled; %d page(s) left for a later run.",
+                    len(pending),
+                )
+                break
+
+            # Safeguard: if a reset still yields no progress twice running, a
+            # page cannot fit the available daily budget; stop rather than loop.
+            if not made_progress:
+                stalled_resets += 1
+                if stalled_resets >= 2:
+                    logger.warning(
+                        "A page cannot fit the daily token budget; stopping. "
+                        "Raise daily_tokens to process the remaining %d page(s).",
+                        len(pending),
+                    )
+                    break
+            else:
+                stalled_resets = 0
 
         transcription_results.sort(key=lambda x: x.get("original_input_order_index", 0))
         return transcription_results, summary_results

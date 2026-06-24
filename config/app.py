@@ -198,6 +198,9 @@ def require_api_key(provider: str) -> str:
 # --- Daily Token Limit ---
 DAILY_TOKEN_LIMIT_ENABLED = _get_bool(_TOKEN_LIMIT, "enabled", False)
 DAILY_TOKEN_LIMIT = _get_int(_TOKEN_LIMIT, "daily_tokens", 10000000)
+# Chunk/page-level enforcement tuning (see llm/token_tracker.DailyTokenTracker).
+DAILY_TOKEN_CHUNK_ESTIMATE_SEED = _get_int(_TOKEN_LIMIT, "chunk_estimate_seed", 25000)
+DAILY_TOKEN_ESTIMATE_SMOOTHING = float(_TOKEN_LIMIT.get("estimate_smoothing", 0.3))
 
 # ============================================================================
 # Logging

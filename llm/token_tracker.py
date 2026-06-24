@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -38,7 +39,12 @@ from typing import Any
 from config import app as config
 from config.logger import setup_logger
 
-__all__ = ["DailyTokenTracker", "get_token_tracker", "config"]
+__all__ = [
+    "DailyTokenTracker",
+    "get_token_tracker",
+    "wait_for_token_reset",
+    "config",
+]
 
 logger = setup_logger(__name__)
 
@@ -70,6 +76,8 @@ class DailyTokenTracker:
         daily_limit: int,
         enabled: bool = True,
         state_file: Path | None = None,
+        chunk_estimate_seed: int = 25_000,
+        estimate_smoothing: float = 0.3,
     ) -> None:
         """
         Initialize the token tracker.
@@ -79,6 +87,11 @@ class DailyTokenTracker:
             enabled: Whether token limiting is enabled.
             state_file: Path to persistent state file
                 (default: .autoexcerpter_token_state.json).
+            chunk_estimate_seed: Cold-start estimate (in tokens) of how many
+                tokens one page (transcription + optional summary) consumes,
+                used by try_reserve() before any usage has been observed.
+            estimate_smoothing: EWMA smoothing factor (0-1) applied to observed
+                per-call token usage; higher reacts faster to recent calls.
         """
         self.daily_limit = daily_limit
         self.enabled = enabled
@@ -90,6 +103,16 @@ class DailyTokenTracker:
         # Token tracking state
         self._current_date: str = ""  # Format: YYYY-MM-DD
         self._tokens_used_today: int = 0
+
+        # Page-level reservation state (in-memory only; transient per run).
+        # _tokens_reserved is headroom claimed by in-flight pages that have not
+        # yet committed actual usage via add_tokens(); the admission check in
+        # try_reserve() subtracts both committed and reserved tokens so that
+        # concurrent worker threads cannot collectively overshoot the limit.
+        self._tokens_reserved: int = 0
+        self._seed: int = max(1, int(chunk_estimate_seed))
+        self._alpha: float = min(1.0, max(0.0, float(estimate_smoothing)))
+        self._ewma: float = float(self._seed)
 
         # Load existing state from disk
         self._load_state()
@@ -193,12 +216,53 @@ class DailyTokenTracker:
         with self._lock:
             self._check_and_reset_if_new_day()
             self._tokens_used_today += tokens
+            # Update the rolling per-call estimate used by try_reserve().
+            self._ewma = self._alpha * tokens + (1.0 - self._alpha) * self._ewma
             self._save_state()
 
             logger.debug(
                 f"Added {tokens:,} tokens. "
                 f"Daily total: {self._tokens_used_today:,}/{self.daily_limit:,}"
             )
+
+    def try_reserve(self, estimate: int | None = None) -> int | None:
+        """Reserve estimated tokens for one page before launching it.
+
+        The estimate is the larger of the caller-supplied hint and the rolling
+        EWMA of observed per-call usage. Image pages have no cheap pre-count, so
+        callers typically pass no hint and rely on the EWMA.
+
+        Returns the reserved amount, ``0`` when limiting is disabled (admit
+        freely, nothing to release), or ``None`` when the remaining budget
+        cannot cover the estimate (caller should stop admitting new work). A
+        non-zero reservation must be matched by a later :meth:`release` of the
+        same amount once the page completes.
+        """
+        if not self.enabled:
+            return 0
+
+        with self._lock:
+            self._check_and_reset_if_new_day()
+            est = max(int(estimate or 0), max(1, round(self._ewma)))
+            available = (
+                self.daily_limit - self._tokens_used_today - self._tokens_reserved
+            )
+            if est > available:
+                return None
+            self._tokens_reserved += est
+            return est
+
+    def release(self, amount: int) -> None:
+        """Release a reservation made by :meth:`try_reserve` after the page.
+
+        Actual usage is committed separately via :meth:`add_tokens`; releasing
+        only frees the transient headroom the reservation was holding.
+        """
+        if not self.enabled or amount <= 0:
+            return
+
+        with self._lock:
+            self._tokens_reserved = max(0, self._tokens_reserved - amount)
 
     def get_tokens_used_today(self) -> int:
         """
@@ -340,6 +404,47 @@ def get_token_tracker() -> DailyTokenTracker:
                 _tracker_instance = DailyTokenTracker(
                     daily_limit=config.DAILY_TOKEN_LIMIT,
                     enabled=config.DAILY_TOKEN_LIMIT_ENABLED,
+                    chunk_estimate_seed=config.DAILY_TOKEN_CHUNK_ESTIMATE_SEED,
+                    estimate_smoothing=config.DAILY_TOKEN_ESTIMATE_SMOOTHING,
                 )
 
     return _tracker_instance
+
+
+def wait_for_token_reset() -> bool:
+    """Block until the daily token limit resets, or the user interrupts.
+
+    Lives here (not in cli/) so the threaded transcription pipeline can wait
+    mid-item without importing the CLI layer (which imports the pipeline).
+    Returns True when the limit has reset and processing may resume, or
+    immediately when the limit is not currently reached; returns False if a
+    KeyboardInterrupt cancels the wait.
+    """
+    tracker = get_token_tracker()
+    if not tracker.enabled or not tracker.is_limit_reached():
+        return True
+
+    seconds_until_reset = tracker.get_seconds_until_reset()
+    reset_time = tracker.get_reset_time()
+    stats = tracker.get_stats()
+    logger.warning(
+        "Daily token limit reached: %s/%s tokens used. Waiting until %s for reset...",
+        f"{stats['tokens_used_today']:,}",
+        f"{stats['daily_limit']:,}",
+        reset_time.strftime("%Y-%m-%d %H:%M:%S"),
+    )
+
+    elapsed = 0
+    try:
+        while elapsed < seconds_until_reset:
+            interval = min(1, max(0, seconds_until_reset - elapsed))
+            time.sleep(interval)
+            elapsed += interval
+            if not tracker.is_limit_reached():
+                logger.info("Token limit has been reset. Resuming processing.")
+                return True
+        logger.info("Token limit has been reset. Resuming processing.")
+        return True
+    except KeyboardInterrupt:
+        logger.info("Token-limit wait cancelled by user.")
+        return False
