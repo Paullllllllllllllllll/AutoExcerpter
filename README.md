@@ -1,4 +1,4 @@
-# AutoExcerpter v1.11.0
+# AutoExcerpter v1.12.0
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -203,8 +203,18 @@ export OPENROUTER_API_KEY="your-key"    # optional
 On Windows, use `set` instead of `export`, or configure via
 System Properties.
 
-Configure paths in `config/defaults/app.yaml` and models in
-`config/defaults/model.yaml` (see [Configuration](#configuration)).
+On a fresh clone the application runs immediately using the scrubbed
+`*.example.yaml` templates that ship with the repository. Each missing real
+config triggers one informational log line pointing you to the example file.
+To customize, copy the relevant example and edit it:
+
+```bash
+cp config/defaults/app.example.yaml config/defaults/app.yaml
+cp config/defaults/model.example.yaml config/defaults/model.yaml
+# repeat for concurrency, image_processing, api_keys as needed
+```
+
+See [Configuration](#configuration) for all available settings.
 
 For development, install all dependencies including dev extras:
 
@@ -317,14 +327,27 @@ processed items are skipped automatically (override with
 
 ## Configuration
 
-Four YAML files in `config/defaults/` (all gitignored):
+Each config file ships in two forms:
 
-| File | Purpose |
-|---|---|
-| `app.yaml` | Paths, feature toggles, citations, daily token limit |
-| `model.yaml` | LLM provider/model for transcription and summary |
-| `concurrency.yaml` | Rate limits, retries, parallelism, service tier |
-| `image_processing.yaml` | DPI, grayscale, resize, JPEG quality, text cleaning |
+- **`<name>.example.yaml`** (tracked) -- scrubbed template with conservative
+  defaults. Loaded automatically when the real file is absent; a single INFO
+  log line tells you to copy and customize it.
+- **`<name>.yaml`** (gitignored) -- your private, machine-specific settings.
+  Takes precedence over the example when present.
+
+To start from a template, copy it and remove the `.example` infix:
+
+```bash
+cp config/defaults/app.example.yaml config/defaults/app.yaml
+```
+
+| Real file | Example template | Purpose |
+|---|---|---|
+| `app.yaml` | `app.example.yaml` | Paths, feature toggles, citations, daily token limit |
+| `model.yaml` | `model.example.yaml` | LLM provider/model for transcription and summary |
+| `concurrency.yaml` | `concurrency.example.yaml` | Rate limits, retries, parallelism, service tier |
+| `image_processing.yaml` | `image_processing.example.yaml` | DPI, grayscale, resize, JPEG quality, text cleaning |
+| `api_keys.yaml` | `api_keys.example.yaml` | Provider to env-var-name mapping (optional) |
 
 ### Basic Configuration (app.yaml)
 
@@ -641,6 +664,20 @@ a single baseline commit at v1.0.0 on 25 April 2026; version numbers before
 v1.0.0 do not exist.
 
 ## Changelog
+
+- **v1.12.0** (28 June 2026) -- Ship scrubbed `*.example.yaml` config templates
+    with conservative defaults so a fresh clone runs with clear guidance instead
+    of silently using a stale personal path. Each real config (`app.yaml`,
+    `model.yaml`, `concurrency.yaml`, `image_processing.yaml`, `api_keys.yaml`)
+    now has a tracked sibling with conservative defaults (gpt-5.4-mini at medium
+    effort, low concurrency limits, daily token limit disabled). The loaders in
+    `config/loader.py` and `config/app.py` fall back to the example when the real
+    file is absent and log one INFO line naming the example file. The gitignore
+    rule is consolidated from five per-file lines to a single pattern
+    (`config/defaults/*.yaml` with `!config/defaults/*.example.yaml`). The
+    hardcoded personal fallback path for `INPUT_FOLDER_PATH`/`OUTPUT_FOLDER_PATH`
+    is scrubbed to `''`, and the "no items found" message now names the config
+    file and suggests the copy command.
 
 - **v1.11.0** (28 June 2026) -- Added an optional `api_keys.yaml` config that maps
     each LLM provider to the NAME of the environment variable holding its API key,

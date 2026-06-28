@@ -139,13 +139,17 @@ def _setup_and_scan(
     all_items_to_consider = scan_input_path(input_path_arg)
 
     if not all_items_to_consider:
+        _hint = (
+            "Set input_folder_path in config/defaults/app.yaml "
+            "(copy app.example.yaml) or pass --input."
+        )
         if config.CLI_MODE:
-            logger.error(f"No items found to process in: {input_path_arg}")
+            logger.error("No items found to process in: %s. %s", input_path_arg, _hint)
             sys.exit(1)
         else:
             from cli.interaction import print_error
 
-            print_error("No items found to process. Please check your input path.")
+            print_error(f"No items found to process in: {input_path_arg}. {_hint}")
             logger.debug("No items found in: %s", input_path_arg)
             sys.exit(0)
 

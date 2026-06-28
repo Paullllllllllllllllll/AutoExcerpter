@@ -52,20 +52,38 @@ _APP_CONFIG_PATH = _CONFIG_DIR / "defaults" / "app.yaml"
 # Configuration Loading Functions
 # ============================================================================
 def _load_yaml_app_config() -> dict[str, Any]:
-    """
-    Load the application config YAML.
+    """Load the application config YAML.
+
+    Resolution order:
+    1. Real file (``config/defaults/app.yaml``).
+    2. Bundled example (``config/defaults/app.example.yaml``) with an
+       informational message prompting the user to copy and customize it.
+    3. Neither present: return {} with a WARNING.
 
     Returns:
         Configuration dictionary, or empty dict on error
     """
-    if not _APP_CONFIG_PATH.exists():
-        logger.warning(
-            f"App config file not found: {_APP_CONFIG_PATH}. Using defaults."
-        )
-        return {}
+    app_config_path = _APP_CONFIG_PATH
+
+    if not app_config_path.exists():
+        # Look for the bundled example next to the expected real file.
+        stem = app_config_path.stem
+        example_path = app_config_path.parent / f"{stem}.example.yaml"
+        if example_path.exists():
+            logger.info(
+                f"Config '{app_config_path.name}' not found; using bundled "
+                f"defaults from '{example_path.name}'. Copy it to "
+                f"'{app_config_path.name}' and edit it to set your own values."
+            )
+            app_config_path = example_path
+        else:
+            logger.warning(
+                f"App config file not found: {_APP_CONFIG_PATH}. Using defaults."
+            )
+            return {}
 
     try:
-        with _APP_CONFIG_PATH.open("r", encoding="utf-8") as f:
+        with app_config_path.open("r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
 
         if not isinstance(data, dict):
@@ -133,12 +151,8 @@ OUTPUT_DOCX = _get_bool(_SUMMARY_OUTPUT, "docx", True)
 OUTPUT_MARKDOWN = _get_bool(_SUMMARY_OUTPUT, "markdown", True)
 
 # --- File Paths ---
-INPUT_FOLDER_PATH = _get_str(
-    _APP_CFG, "input_folder_path", r"C:\Users\paulg\OneDrive\Desktop\New Literature"
-)
-OUTPUT_FOLDER_PATH = _get_str(
-    _APP_CFG, "output_folder_path", r"C:\Users\paulg\OneDrive\Desktop\New Literature"
-)
+INPUT_FOLDER_PATH = _get_str(_APP_CFG, "input_folder_path", "")
+OUTPUT_FOLDER_PATH = _get_str(_APP_CFG, "output_folder_path", "")
 INPUT_PATHS_IS_OUTPUT_PATH = _get_bool(_APP_CFG, "input_paths_is_output_path", False)
 
 # --- Cleanup Settings ---

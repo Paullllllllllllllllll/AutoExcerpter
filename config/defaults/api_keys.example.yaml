@@ -1,0 +1,26 @@
+# =============================================================================
+# API Key Environment-Variable Mapping -- EXAMPLE / BUNDLED DEFAULTS
+# =============================================================================
+# This file ships with the repository as a scrubbed template.
+# On a fresh clone it is loaded automatically when api_keys.yaml is absent.
+#
+# To customize: copy this file to api_keys.yaml (same directory) and edit it.
+#   cp config/defaults/api_keys.example.yaml config/defaults/api_keys.yaml
+#
+# Maps each LLM provider to the NAME of the environment variable that holds its
+# API key. This lets you swap which key a provider uses between runs by editing
+# one value here instead of changing your environment. For example, set
+# "openai: OPENAI_API_KEY_2" to point OpenAI at a second key.
+#
+# This file holds environment-variable NAMES only, never the keys themselves.
+#
+# It is entirely optional. A missing file, a missing provider entry, or an empty
+# value falls back to the default environment-variable name shown below, so
+# omitting it behaves exactly as before.
+#
+# Loaded by: config/loader.py (ConfigLoader.get_api_keys_config)
+
+openai: OPENAI_API_KEY
+anthropic: ANTHROPIC_API_KEY
+google: GOOGLE_API_KEY
+openrouter: OPENROUTER_API_KEY

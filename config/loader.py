@@ -103,12 +103,30 @@ class ConfigLoader:
         self._api_keys = self._load_yaml_config("api_keys.yaml")
 
     def _load_yaml_config(self, filename: str) -> dict[str, Any]:
-        """Load a single YAML configuration file."""
+        """Load a single YAML configuration file.
+
+        Resolution order:
+        1. Real file (``config/defaults/<filename>``).
+        2. Bundled example (``config/defaults/<stem>.example.yaml``) with an
+           informational message prompting the user to copy and customize it.
+        3. Neither present: return {} with a WARNING.
+        """
         config_path = CONFIG_DIR / filename
 
         if not config_path.exists():
-            logger.debug(f"Config file not found: {config_path}")
-            return {}
+            stem = Path(filename).stem
+            example_filename = f"{stem}.example.yaml"
+            example_path = CONFIG_DIR / example_filename
+            if example_path.exists():
+                logger.info(
+                    f"Config '{filename}' not found; using bundled defaults from "
+                    f"'{example_filename}'. Copy it to '{filename}' and edit it "
+                    "to set your own values."
+                )
+                config_path = example_path
+            else:
+                logger.warning(f"Config file not found: {filename}")
+                return {}
 
         try:
             with config_path.open("r", encoding="utf-8") as f:

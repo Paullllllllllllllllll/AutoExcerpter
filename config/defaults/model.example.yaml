@@ -1,0 +1,108 @@
+# =============================================================================
+# Model Configuration -- EXAMPLE / BUNDLED DEFAULTS
+# =============================================================================
+# This file ships with the repository as a scrubbed template.
+# On a fresh clone it is loaded automatically when model.yaml is absent.
+#
+# To customize: copy this file to model.yaml (same directory) and edit it.
+#   cp config/defaults/model.example.yaml config/defaults/model.yaml
+#
+# LLM settings for transcription and summarization phases.
+#
+# Related config files:
+#   - app.yaml: Application settings and feature toggles
+#   - concurrency.yaml: API rate limits, retries, and parallelism
+#   - image_processing.yaml: Image preprocessing settings
+#
+# Supported Providers:
+#   openai     - GPT-5.4 (pro/mini/nano), GPT-5.3, GPT-5.2, GPT-5, GPT-4.1, GPT-4o, o-series
+#   anthropic  - Claude 4.7, 4.6, 4.5, Claude 4, Claude 3
+#   google     - Gemini 3.1, 3, 2.5, 2.0, 1.5
+#   openrouter - Multi-provider proxy
+#
+# Provider Detection:
+#   Explicit: "provider:model" format (e.g., "openai:gpt-5-mini")
+#   Automatic: Inferred from prefix (gpt- = openai, claude- = anthropic, etc.)
+
+# =============================================================================
+# Transcription Model
+# =============================================================================
+# Used for OCR/image-to-text conversion
+transcription_model:
+  name: "gpt-5.4-mini"
+  provider: "openai"
+  max_output_tokens: 128000
+  reasoning:
+    effort: medium  # none | low | medium | high | xhigh (GPT-5.2+: default is none)
+  text:
+    verbosity: medium  # low | medium | high
+  temperature: 1.0  # 0.0-2.0 (null = provider default; only with reasoning: none)
+
+# =============================================================================
+# Summary Model
+# =============================================================================
+# Used for generating structured summaries from transcriptions
+summary_model:
+  name: "gpt-5.4-mini"
+  provider: "openai"
+  max_output_tokens: 128000
+  reasoning:
+    effort: medium  # none | low | medium | high | xhigh (GPT-5.2+: default is none)
+  text:
+    verbosity: low  # Lower verbosity for concise summaries
+  temperature: 1.0
+
+# =============================================================================
+# Provider Examples
+# =============================================================================
+# Anthropic Claude 4.5 (with extended thinking):
+#   transcription_model:
+#     name: "claude-sonnet-4-5-20250929"
+#     provider: "anthropic"
+#     max_output_tokens: 16384
+#     reasoning:
+#       effort: medium  # Maps to budget_tokens: 4096
+#     temperature: 1.0  # Required for extended thinking
+#
+# Google Gemini 2.5 (with thinking mode):
+#   transcription_model:
+#     name: "gemini-2.5-flash"
+#     provider: "google"
+#     max_output_tokens: 32768
+#     reasoning:
+#       effort: high  # Maps to thinking_level: "high"
+#     temperature: 0.0
+#
+# Google Gemini 2.0 (no thinking mode):
+#   transcription_model:
+#     name: "gemini-2.0-flash"
+#     provider: "google"
+#     max_output_tokens: 8192
+#     temperature: 0.0
+#
+# OpenRouter (access any model):
+#   transcription_model:
+#     name: "anthropic/claude-sonnet-4-5"
+#     provider: "openrouter"
+#     max_output_tokens: 8192
+#     reasoning:
+#       effort: medium
+#
+# Custom OpenAI-compatible endpoint (Pattern B -- plain text prompt).
+# Three capability patterns are supported:
+#   A: supports_structured_output: true,  use_plain_text_prompt: false
+#   B: supports_structured_output: false, use_plain_text_prompt: true
+#   C: supports_structured_output: false, use_plain_text_prompt: false
+#
+#   transcription_model:
+#     provider: custom
+#     name: "org/your-model-name"
+#     custom_endpoint:
+#       base_url: "https://your-custom-endpoint.example.com/v1/"
+#       api_key_env_var: "YOUR_API_KEY"
+#       capabilities:
+#         supports_vision: true
+#         supports_structured_output: false
+#         use_plain_text_prompt: true
+#     max_output_tokens: 4096
+#     temperature: 0.0
