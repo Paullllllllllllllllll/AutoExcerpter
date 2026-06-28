@@ -116,6 +116,26 @@ class TestConfigLoaderLoadConfigs:
         assert result == {}
 
 
+class TestApiKeysConfig:
+    """Tests for the optional api_keys.yaml mapping."""
+
+    def test_get_api_keys_config_empty_when_absent(self, temp_dir: Path) -> None:
+        """get_api_keys_config returns {} when api_keys.yaml is absent."""
+        loader = ConfigLoader()
+
+        # Point CONFIG_DIR at an empty directory so no api_keys.yaml exists.
+        with patch("config.loader.CONFIG_DIR", temp_dir):
+            loader.load_configs()
+
+        assert loader.get_api_keys_config() == {}
+
+    def test_get_api_keys_config_default_for_fresh_loader(self) -> None:
+        """A fresh loader exposes an empty mapping before loading."""
+        loader = ConfigLoader()
+
+        assert loader.get_api_keys_config() == {}
+
+
 class TestConfigLoaderGetters:
     """Tests for configuration getter methods."""
 

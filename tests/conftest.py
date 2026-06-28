@@ -211,6 +211,7 @@ def mock_config_loader(
     mock_loader.get_image_processing_config.return_value = mock_image_processing_config
     mock_loader.get_concurrency_config.return_value = mock_concurrency_config
     mock_loader.get_model_config.return_value = mock_model_config
+    mock_loader.get_api_keys_config.return_value = {}
     mock_loader.is_loaded.return_value = True
     return mock_loader
 
@@ -260,6 +261,8 @@ def mock_api_keys() -> Generator[None]:
             "ANTHROPIC_API_KEY": "test-anthropic-key",
             "GOOGLE_API_KEY": "test-google-key",
             "OPENROUTER_API_KEY": "test-openrouter-key",
+            # Alternate key for testing api_keys.yaml provider remapping.
+            "OPENAI_API_KEY_2": "test-openai-key-2",
         },
     ):
         yield

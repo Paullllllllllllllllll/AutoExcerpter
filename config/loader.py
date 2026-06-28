@@ -9,6 +9,7 @@ Supported Configuration Files:
 1. **image_processing.yaml**: Image preprocessing settings (DPI, quality, resize, etc.)
 2. **concurrency.yaml**: API concurrency, service tiers, and retry configuration
 3. **model.yaml**: Model-specific parameters (GPT-5 settings, reasoning effort, etc.)
+4. **api_keys.yaml**: Optional per-provider API-key environment-variable mapping
 
 Usage Pattern:
     >>> from config.loader import ConfigLoader
@@ -82,6 +83,7 @@ class ConfigLoader:
         self._image_processing: dict[str, Any] = {}
         self._concurrency: dict[str, Any] = {}
         self._model: dict[str, Any] = {}
+        self._api_keys: dict[str, Any] = {}
 
     def load_configs(self) -> None:
         """
@@ -91,12 +93,14 @@ class ConfigLoader:
         - image_processing.yaml: Image preprocessing settings
         - concurrency.yaml: Concurrency and service tier settings
         - model.yaml: Model-specific settings (optional)
+        - api_keys.yaml: Per-provider API-key env-var mapping (optional)
 
         Errors during loading are logged but do not raise exceptions.
         """
         self._image_processing = self._load_yaml_config("image_processing.yaml")
         self._concurrency = self._load_yaml_config("concurrency.yaml")
         self._model = self._load_yaml_config("model.yaml")
+        self._api_keys = self._load_yaml_config("api_keys.yaml")
 
     def _load_yaml_config(self, filename: str) -> dict[str, Any]:
         """Load a single YAML configuration file."""
@@ -138,6 +142,15 @@ class ConfigLoader:
         """Get the model configuration."""
         return dict(self._model)
 
+    def get_api_keys_config(self) -> dict[str, Any]:
+        """Get the API-key environment-variable mapping.
+
+        Returns a provider -> env-var-name mapping loaded from the optional
+        ``api_keys.yaml``. Returns an empty dict when the file is absent, so
+        callers fall back to their default env-var names.
+        """
+        return dict(self._api_keys)
+
     def apply_model_overrides(self, overrides: dict[str, Any]) -> None:
         """Apply runtime overrides to the loaded model configuration.
 
@@ -172,12 +185,26 @@ def get_config_loader() -> ConfigLoader:
     return _config_loader_instance
 
 
+def resolve_env_var(provider: str, default_env_var: str) -> str:
+    """Resolve the env-var name holding *provider*'s API key.
+
+    Consults the optional ``api_keys.yaml`` mapping. When the file, the
+    provider entry, or its value is absent or empty, *default_env_var* is
+    returned unchanged, so the default behavior is fully preserved.
+    """
+    mapped = get_config_loader().get_api_keys_config().get(provider)
+    if isinstance(mapped, str) and mapped.strip():
+        return mapped
+    return default_env_var
+
+
 # ============================================================================
 # Public API
 # ============================================================================
 __all__ = [
     "ConfigLoader",
     "get_config_loader",
+    "resolve_env_var",
     "PROJECT_ROOT",
     "CONFIG_DIR",
     "PROMPTS_DIR",

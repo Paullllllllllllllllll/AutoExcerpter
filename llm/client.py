@@ -225,6 +225,12 @@ def _get_api_key(
     provider_info = SUPPORTED_PROVIDERS.get(provider, {})
     env_key = provider_info.get("env_key", f"{provider.upper()}_API_KEY")
 
+    # Optional per-provider remap: api_keys.yaml may point a provider at a
+    # different env-var name (defaults apply when omitted).
+    from config.loader import resolve_env_var
+
+    env_key = resolve_env_var(provider, env_key)
+
     api_key = os.environ.get(env_key)
     if not api_key:
         raise OSError(

@@ -169,8 +169,18 @@ _PROVIDER_ENV_VARS: dict[str, str] = {
 
 
 def get_available_providers() -> list[str]:
-    """Return the list of providers whose API key is currently set."""
-    return [name for name, env in _PROVIDER_ENV_VARS.items() if os.environ.get(env)]
+    """Return the list of providers whose API key is currently set.
+
+    Honors the optional ``api_keys.yaml`` remapping so that availability
+    agrees with the key actually resolved at call time.
+    """
+    from config.loader import resolve_env_var
+
+    return [
+        name
+        for name, env in _PROVIDER_ENV_VARS.items()
+        if os.environ.get(resolve_env_var(name, env))
+    ]
 
 
 def require_api_key(provider: str) -> str:
@@ -178,14 +188,19 @@ def require_api_key(provider: str) -> str:
 
     Preferred call site: just before the first LLM invocation, so that
     configuration errors surface with a clear, actionable message rather than
-    crashing at module import.
+    crashing at module import. The optional ``api_keys.yaml`` mapping may
+    remap the provider to a different env-var name (defaults apply when
+    omitted).
     """
-    env_var = _PROVIDER_ENV_VARS.get(provider.lower())
-    if env_var is None:
+    from config.loader import resolve_env_var
+
+    default_env_var = _PROVIDER_ENV_VARS.get(provider.lower())
+    if default_env_var is None:
         raise OSError(
             f"Unknown provider: {provider!r}. "
             f"Known providers: {sorted(_PROVIDER_ENV_VARS)}"
         )
+    env_var = resolve_env_var(provider.lower(), default_env_var)
     key = os.environ.get(env_var)
     if not key:
         raise OSError(

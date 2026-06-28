@@ -1,4 +1,4 @@
-# AutoExcerpter v1.10.0
+# AutoExcerpter v1.11.0
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -641,6 +641,15 @@ a single baseline commit at v1.0.0 on 25 April 2026; version numbers before
 v1.0.0 do not exist.
 
 ## Changelog
+
+- **v1.11.0** (28 June 2026) -- Added an optional `api_keys.yaml` config that maps
+    each LLM provider to the NAME of the environment variable holding its API key,
+    so a key can be swapped between runs (for example `openai: OPENAI_API_KEY_2`) by
+    editing one file rather than the environment. The file is fully backward
+    compatible: a missing file, a missing provider entry, or an empty value falls
+    back to the default env-var name, so existing setups are unaffected. The loader
+    exposes the mapping via `get_api_keys_config()`, and both key resolution and the
+    provider-availability probes honor it. All 1246 tests pass.
 
 - **v1.10.0** (24 June 2026) -- The daily token limit is now enforced at the
     page level, not just between files. When the limit is enabled, each page

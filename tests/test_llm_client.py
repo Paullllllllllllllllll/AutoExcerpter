@@ -205,6 +205,29 @@ class TestGetApiKey:
         ):
             _get_api_key("openai", None)
 
+    def test_api_keys_yaml_remaps_provider(self, mock_api_keys) -> None:
+        """api_keys.yaml may remap a provider to a custom env-var name."""
+        with patch("config.loader.get_config_loader") as mock_loader:
+            mock_loader.return_value.get_api_keys_config.return_value = {
+                "openai": "OPENAI_API_KEY_2"
+            }
+            result = _get_api_key("openai", None)
+            assert result == "test-openai-key-2"
+
+    def test_api_keys_yaml_fallback_to_default(self, mock_api_keys) -> None:
+        """With no mapping entry, the default env-var name is used."""
+        with patch("config.loader.get_config_loader") as mock_loader:
+            mock_loader.return_value.get_api_keys_config.return_value = {}
+            result = _get_api_key("openai", None)
+            assert result == "test-openai-key"
+
+    def test_api_keys_yaml_empty_value_falls_back(self, mock_api_keys) -> None:
+        """An empty mapping value falls back to the default env-var name."""
+        with patch("config.loader.get_config_loader") as mock_loader:
+            mock_loader.return_value.get_api_keys_config.return_value = {"openai": ""}
+            result = _get_api_key("openai", None)
+            assert result == "test-openai-key"
+
     def test_custom_section_hint_transcription(self) -> None:
         """section_hint selects the correct custom endpoint key."""
         mock_cfg = {
