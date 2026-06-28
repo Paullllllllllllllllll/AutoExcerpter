@@ -9,6 +9,7 @@ config/defaults/app.yaml
 config/defaults/concurrency.yaml
 config/defaults/image_processing.yaml
 config/defaults/model.yaml
+config/defaults/api_keys.yaml
 
 .coverage
 .windsurf
