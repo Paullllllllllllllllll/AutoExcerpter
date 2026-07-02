@@ -19,6 +19,24 @@ from PIL import Image
 
 
 # ============================================================================
+# State isolation (autouse)
+# ============================================================================
+@pytest.fixture(autouse=True)
+def _isolate_state_dir(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Point the user-level state dir at a temp dir for every test.
+
+    Keeps the persistent OpenAlex cache and token-budget state out of the real
+    ``~/.autoexcerpter`` and prevents cross-test pollution via those files.
+    """
+    from config import app as app_config
+
+    state_dir = tmp_path_factory.mktemp("state")
+    monkeypatch.setattr(app_config, "STATE_DIR", str(state_dir), raising=False)
+
+
+# ============================================================================
 # Path Fixtures
 # ============================================================================
 @pytest.fixture

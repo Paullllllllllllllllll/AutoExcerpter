@@ -1,4 +1,4 @@
-# AutoExcerpter v1.12.0
+# AutoExcerpter v1.13.0
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -276,6 +276,19 @@ python main.py <input> <output> [options]
 | `--summarize` / `--no-summarize` | Override app.yaml at runtime |
 | `--cleanup` / `--no-cleanup` | Override temp dir deletion |
 | `--resume` / `--force` | Resume or force-reprocess |
+| `--retranscribe` | Re-transcribe resumable items instead of reusing logged transcriptions |
+| `--cli` / `--interactive` | Force execution mode, overriding `cli_mode` in `app.yaml` |
+| `--json` | Emit one machine-readable JSON run-summary line on stdout at exit |
+| `--dry-run` | Discover inputs and classify resume state without any API calls or writes |
+
+**Agent contract.** The primary entry point aggregates per-item status and
+sets the process exit code: `0` = all requested items succeeded; `1` = one or
+more items failed or were partial; `2` = usage/config error (including a
+non-TTY invocation of interactive mode, or multiple discovered items with
+neither `--all` nor `--select`); `130` = user interrupt. `--cli` /
+`--interactive` let an agent drive the tool without editing the gitignored
+YAML. `--dry-run` reports the planned actions (and, with `--json`, a JSON
+plan) and exits without side effects.
 
 **Model overrides** (global or per-phase with
 `--transcription-` / `--summary-` prefix):
@@ -519,37 +532,58 @@ Each context file is plain text with one topic per line.
 
 ### Citation Management
 
-Configured in `app.yaml` under `citation`. The citation manager
-deduplicates via normalized text hashing, consolidates page
-ranges, and enriches metadata through the OpenAlex API (free, no
-key required). Set `openalex_email` for faster polite-pool
-responses.
+Configured in `app.yaml` under `citation`. Extracted citations are folded
+(accents, case, curly quotes, `&`) and keyed structurally by
+`(author, year, volume, title)`, so different editions never collapse
+together. A conservative fuzzy pass then merges near-identical variants only
+within a `(first-author surname, year)` block, gated by `merge_ratio`
+(SequenceMatcher) or `merge_jaccard` (token-set); differing years or volumes
+never merge, and every merge is logged. Page ranges are consolidated (including
+`unnumbered` pages). OpenAlex enrichment (free, no key required; set
+`openalex_email` for the faster polite pool) runs exactly once per document and
+is shared by both writers. A candidate links only when title-word overlap
+clears `match_title_overlap` AND a corroborating signal matches (publication
+year within +/-1 of a cited year, or the candidate author surname appears in
+the citation) -- preferring no link over a wrong one. Every OpenAlex request
+counts against `max_api_requests`, and results are cached across runs in the
+state directory.
+
+### State Directory
+
+Daily token-budget state and the persistent OpenAlex cache live under a
+user-level directory (`~/.autoexcerpter` by default), overridable via
+`paths.state_dir` in `app.yaml`. A legacy `.autoexcerpter_token_state.json` in
+the working directory is adopted once when the user-level file is absent.
 
 ### Daily Token Limit
 
-Configured in `app.yaml` under `daily_token_limit`. Tracks
-`total_tokens` from every API call, persists state to
-`.autoexcerpter_token_state.json`, and resets at local midnight.
-When the limit is reached, processing pauses with a countdown;
-type `q` + Enter to cancel.
+Configured in `app.yaml` under `daily_token_limit`. Tracks `total_tokens` from
+every API call, persists debounced state to `token_state.json` in the state
+directory, and resets at local midnight. The budget is enforced per page
+(transcription plus optional summary reserved together); when it cannot fit
+another page, in-flight pages drain, the run waits for the reset, then resumes
+the still-pending pages from the log. An item is never marked complete while
+its log shows pages missing.
 
 ## Output Files
 
-For each processed document:
+For each processed document (`<name>` is the input file/folder stem):
 
 1. **`<name>.txt`** -- verbatim transcription with metadata
    header, LaTeX math, XML-style page tags, and preserved
    structural elements.
-2. **`<name>_summary.docx`** -- formatted Word summary with
+2. **`<name>.docx`** -- formatted Word summary with
    bullet-point extracts, LaTeX converted to native Word
    equations (MathML/OMML), and a consolidated bibliography with
    clickable DOI hyperlinks.
-3. **`<name>_summary.md`** -- Markdown summary with LaTeX
+3. **`<name>.md`** -- Markdown summary with LaTeX
    preserved as-is for MathJax/KaTeX compatibility.
-4. **`<name>_working_files/`** -- JSONL logs for transcription
-   and summarization (per-page metadata, timing, retries, image
-   provenance; file-level provenance in the header).
-   Auto-deleted when `delete_temp_working_dir: true`.
+4. **`<name>_working_files/`** -- versioned JSONL logs for
+   transcription and summarization (one JSON object per line;
+   per-page metadata, timing, retries, image provenance;
+   file-level provenance in the header). Resume refuses logs
+   lacking the current format-version marker. Auto-deleted when
+   `delete_temp_working_dir: true`.
 
 ## Project Structure
 
@@ -664,6 +698,41 @@ a single baseline commit at v1.0.0 on 25 April 2026; version numbers before
 v1.0.0 do not exist.
 
 ## Changelog
+
+- **v1.13.0** (2 July 2026) -- Hardening release closing the resume and
+    citation defects found in a full production audit. Page-level resume now
+    snapshots both working logs and reuses or regenerates each completed
+    page's summary, so a crashed run no longer yields outputs covering only
+    post-crash pages; summary-only resume reuses logged transcriptions with
+    zero transcription API calls, warns on model mismatch (recorded in the
+    output metadata), and `--retranscribe` forces a fresh pass. The
+    token-budget path now waits when the remaining budget cannot fit a page,
+    and an item is never marked COMPLETE while the log covers fewer pages
+    than the document; working logs move to true JSONL with a format-version
+    marker, crash-truncated tail lines are dropped on parse, and unversioned
+    logs are refused for resume. Citations are overhauled: Unicode folding
+    and structured keys (author, year, volume, title) end diacritic and
+    author-form duplicates while different volumes and years never merge; a
+    conservative consolidation pass (thresholds configurable under
+    `citation:`) fuzzy-merges within author-year blocks and logs every
+    merge; enrichment runs once per item through a single CitationManager
+    shared by both writers, links require title overlap plus a year-or-author
+    cross-check, every OpenAlex request counts against `max_api_requests`, a
+    persistent cache in the state dir is reused across items and runs,
+    citations on unnumbered pages are kept, and the bibliography sorts
+    stably by folded author, year, and title. Temperature is wired
+    (capability-guarded), Anthropic output tokens default from the
+    capability registry, one shared rate limiter per provider spans
+    transcription and summary, and the dead summary-concurrency keys are
+    removed. The CLI adopts the agent contract: exit codes 0/1/2/130, a
+    `--json` run summary, `--dry-run`, `--cli`/`--interactive` overrides, a
+    non-TTY guard, an explicit error for multiple items without
+    `--all`/`--select`, and reporting of unmatched `--select` parts. Token
+    state and the citation cache live under `~/.autoexcerpter` (configurable
+    via `paths.state_dir`) with one-time legacy adoption; blank-page
+    sentinels match the transcription layer's actual markers; the final
+    `.txt` keeps document order for error pages; the scanner no longer emits
+    nested duplicates of image folders; README output names are corrected.
 
 - **v1.12.0** (28 June 2026) -- Ship scrubbed `*.example.yaml` config templates
     with conservative defaults so a fresh clone runs with clear guidance instead

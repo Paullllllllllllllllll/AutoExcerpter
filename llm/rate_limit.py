@@ -227,6 +227,33 @@ class RateLimiter:
 
 
 # ============================================================================
+# Shared per-provider rate limiters
+# ============================================================================
+# One RateLimiter per provider, shared across the transcription and summary
+# managers so their combined request rate honors the configured caps (each
+# manager building its own limiter doubled the effective rate).
+_SHARED_LIMITERS: dict[str, RateLimiter] = {}
+_SHARED_LIMITERS_LOCK = threading.Lock()
+
+
+def get_shared_rate_limiter(provider: str | None) -> RateLimiter:
+    """Return the process-wide RateLimiter shared by a provider's clients.
+
+    Managers for the same provider (transcription + inline summary) receive the
+    same instance so their requests draw on one set of rate-limit windows.
+    """
+    from config.accessors import get_rate_limits
+
+    key = provider or "default"
+    with _SHARED_LIMITERS_LOCK:
+        limiter = _SHARED_LIMITERS.get(key)
+        if limiter is None:
+            limiter = RateLimiter(get_rate_limits())
+            _SHARED_LIMITERS[key] = limiter
+        return limiter
+
+
+# ============================================================================
 # Public API
 # ============================================================================
-__all__ = ["RateLimiter"]
+__all__ = ["RateLimiter", "get_shared_rate_limiter"]

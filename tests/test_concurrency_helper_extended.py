@@ -101,21 +101,6 @@ class TestConvenienceWrappers:
         assert workers == 8
         assert delay == 0.02
 
-    def test_get_summary_concurrency(self, monkeypatch) -> None:
-        """get_summary_concurrency delegates to get_api_concurrency('summary')."""
-        cfg = {
-            "api_requests": {
-                "summary": {"concurrency_limit": 12, "delay_between_tasks": 0.03},
-            }
-        }
-        monkeypatch.setattr(
-            ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg=cfg)
-        )
-
-        workers, delay = ch.get_summary_concurrency()
-        assert workers == 12
-        assert delay == 0.03
-
     def test_get_transcription_concurrency_error_fallback(self, monkeypatch) -> None:
         """get_transcription_concurrency returns defaults on error."""
         loader = MagicMock()

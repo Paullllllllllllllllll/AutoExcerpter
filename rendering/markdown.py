@@ -19,7 +19,11 @@ logger = setup_logger(__name__)
 
 
 def create_markdown_summary(
-    summary_results: list[dict[str, Any]], output_path: Path, document_name: str
+    summary_results: list[dict[str, Any]],
+    output_path: Path,
+    document_name: str,
+    citation_manager: CitationManager | None = None,
+    data: Any = None,
 ) -> None:
     """Create a Markdown summary document from structured summary results.
 
@@ -33,11 +37,21 @@ def create_markdown_summary(
         summary_results: List of summary result dictionaries from the API.
         output_path: Path where the markdown file will be written.
         document_name: Name of the source document for the title.
+        citation_manager: Optional pre-built, consolidated, and enriched citation
+            manager shared with the DOCX writer. Built and enriched here when
+            omitted.
+        data: Optional pre-computed :class:`SummaryData` paired with
+            *citation_manager*.
     """
     from config import app as config
 
-    citation_manager = CitationManager(polite_pool_email=config.CITATION_OPENALEX_EMAIL)
-    data = prepare_summary_data(summary_results, citation_manager)
+    if citation_manager is None or data is None:
+        citation_manager = CitationManager(
+            polite_pool_email=config.CITATION_OPENALEX_EMAIL
+        )
+        data = prepare_summary_data(summary_results, citation_manager)
+        citation_manager.consolidate()
+        enrich_if_enabled(citation_manager)
     filtered_results = data.filtered_results
     page_type_pages = data.page_type_pages
 
@@ -88,8 +102,6 @@ def create_markdown_summary(
             "Processing %d unique citations for consolidated references section",
             len(citation_manager.citations),
         )
-
-        enrich_if_enabled(citation_manager)
 
         lines.append("---")
         lines.append("")

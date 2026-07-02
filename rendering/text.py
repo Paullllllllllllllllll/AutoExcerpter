@@ -18,8 +18,14 @@ def write_transcription_to_text(
     item_type: str,
     total_elapsed_time: float,
     source_path: Path,
+    metadata_notes: list[str] | None = None,
 ) -> bool:
-    """Persist transcription output as a text file alongside basic metadata."""
+    """Persist transcription output as a text file alongside basic metadata.
+
+    Args:
+        metadata_notes: Optional extra provenance lines recorded in the header
+            (e.g. a summary-only-resume model mismatch).
+    """
     elapsed_str = str(timedelta(seconds=int(total_elapsed_time)))
     successes = sum(1 for result in transcription_results if "error" not in result)
     failures = len(transcription_results) - successes
@@ -37,6 +43,8 @@ def write_transcription_to_text(
             )
             file_handle.write(f"# Successfully transcribed: {successes}\n")
             file_handle.write(f"# Failed items: {failures}\n")
+            for note in metadata_notes or []:
+                file_handle.write(f"# Note: {note}\n")
             file_handle.write(
                 f"# Total processing time for this item: {elapsed_str}\n\n"
             )

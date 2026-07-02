@@ -79,7 +79,7 @@ class TestSummaryManagerInit:
     @patch("llm.base.get_chat_model")
     @patch("llm.base.get_api_timeout", return_value=300)
     @patch("llm.summary.get_api_timeout", return_value=300)
-    @patch("llm.summary.get_rate_limits", return_value=[(120, 1)])
+    @patch("llm.summary.get_shared_rate_limiter")
     @patch("llm.summary.RateLimiter")
     def test_init_sets_key_attributes(
         self,
@@ -134,7 +134,7 @@ class TestSummaryManagerInit:
     @patch("llm.base.get_chat_model")
     @patch("llm.base.get_api_timeout", return_value=300)
     @patch("llm.summary.get_api_timeout", return_value=300)
-    @patch("llm.summary.get_rate_limits", return_value=[(120, 1)])
+    @patch("llm.summary.get_shared_rate_limiter")
     @patch("llm.summary.RateLimiter")
     def test_init_no_context(
         self,

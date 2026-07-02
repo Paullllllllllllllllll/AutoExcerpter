@@ -215,13 +215,23 @@ class TestCitationManagerDOI:
         assert len(result) <= 100  # Max length enforced
 
     def test_verify_citation_match_true(self) -> None:
-        """Matching citation returns True."""
+        """Matching citation with a corroborating year returns True."""
+        manager = CitationManager()
+
+        citation = "Smith, J. (2020). Introduction to Testing."
+        # Strict linking: title overlap AND (year +/-1 OR author surname).
+        work_data = {"title": "Introduction to Testing", "publication_year": 2020}
+
+        assert manager._verify_citation_match(citation, work_data) is True
+
+    def test_verify_citation_match_requires_corroboration(self) -> None:
+        """Title overlap alone (no year/author signal) does not link."""
         manager = CitationManager()
 
         citation = "Smith, J. (2020). Introduction to Testing."
         work_data = {"title": "Introduction to Testing"}
 
-        assert manager._verify_citation_match(citation, work_data) is True
+        assert manager._verify_citation_match(citation, work_data) is False
 
     def test_verify_citation_match_false(self) -> None:
         """Non-matching citation returns False."""

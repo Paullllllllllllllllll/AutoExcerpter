@@ -57,8 +57,32 @@ delete_temp_working_dir: true  # Delete extracted images and temp files after co
 # (DOI, publication year, authors, venue, hyperlinks in DOCX output)
 citation:
   openalex_email: ''  # Your email for polite pool (faster responses); leave blank to skip
-  max_api_requests: 300  # Cap API calls per document to avoid rate limits
+  max_api_requests: 300  # Cap API calls per document to avoid rate limits (every request counts)
   enable_openalex_enrichment: true  # Set to false to disable API calls (faster summary generation)
+
+  # Deduplication tuning. Extracted citations are folded (accents/case/quotes),
+  # keyed by (author, year, volume, title), then conservatively merged within a
+  # (first-author surname, year) block. Merge only when SequenceMatcher ratio or
+  # token-set Jaccard clears its threshold; different years or volumes never
+  # merge. Lower the thresholds to merge more aggressively (riskier).
+  merge_ratio: 0.90       # SequenceMatcher similarity gate (0-1)
+  merge_jaccard: 0.85     # Token-set Jaccard gate (0-1)
+
+  # Strict OpenAlex linking: a candidate links only when title-word overlap
+  # clears this AND (publication year within +/-1 of a cited year OR the
+  # candidate author surname appears in the citation). Prefer no link over a
+  # wrong one.
+  match_title_overlap: 0.5
+
+# =============================================================================
+# State Directory
+# =============================================================================
+# Where the daily token-budget state and the persistent OpenAlex cache live.
+# Blank = user-level default (~/.autoexcerpter). Set an absolute path to
+# override. A legacy state file in the working directory is adopted once when
+# the user-level file is absent.
+paths:
+  state_dir: ''
 
 # =============================================================================
 # Daily Token Limit

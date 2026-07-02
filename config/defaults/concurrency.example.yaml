@@ -53,13 +53,10 @@ api_requests:
     # flex = cheaper but may queue; priority = fastest but expensive
     service_tier: default
 
-  # ---------------------------------------------------------------------------
-  # Summary Phase
-  # ---------------------------------------------------------------------------
-  summary:
-    concurrency_limit: 5  # Lower than transcription (summaries are larger)
-    delay_between_tasks: 0.5
-    service_tier: default
+  # NOTE: Summaries run inline within the transcription workers and share the
+  # transcription phase's concurrency and one rate limiter per provider, so a
+  # separate `summary:` concurrency block is intentionally not used.
+  # Summary-phase OpenAI service tier falls back to the transcription tier.
 
 # =============================================================================
 # RETRY & BACKOFF CONFIGURATION

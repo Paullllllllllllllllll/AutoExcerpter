@@ -56,10 +56,39 @@ REF_INDENT_PT = 18
 BULLET_INDENT_PT = 18
 
 # ============================================================================
+# Working-Log Format
+# ============================================================================
+# Bumped whenever the on-disk working-log layout changes. Resume refuses logs
+# that lack this exact marker (no migration; re-run from scratch instead).
+LOG_FORMAT_VERSION = 2
+
+# ============================================================================
 # Transcription Markers
 # ============================================================================
 EMPTY_PAGE_MARKER = "[empty page]"
 NO_TRANSCRIPTION_MARKER = "[no transcription possible]"
+
+# Substrings that identify a blank / untranscribable page regardless of the
+# exact wrapper the transcription layer emits. The transcription layer produces
+# forms such as "[<img>: no transcribable text — ...]" and
+# "[<img>: transcription not possible — ...]" (llm/transcription.py), while the
+# legacy markers above are still recognized. Match case-insensitively as
+# substrings so both variants short-circuit the summary API call.
+BLANK_PAGE_SENTINELS: tuple[str, ...] = (
+    "no transcribable text",
+    "transcription not possible",
+    "empty page",
+    "no transcription possible",
+)
+
+
+def is_blank_transcription(text: str | None) -> bool:
+    """Return True if *text* is a blank/untranscribable-page sentinel."""
+    if not text:
+        return False
+    lowered = text.lower()
+    return any(marker in lowered for marker in BLANK_PAGE_SENTINELS)
+
 
 # ============================================================================
 # Model Provider Prefixes
@@ -69,7 +98,15 @@ OPENAI_MODEL_PREFIXES = ("gpt-", "o1", "o3", "o4")
 # ============================================================================
 # Error Detection Constants
 # ============================================================================
-ERROR_MARKERS = ["[empty page", "no transcription possible", "empty page", "error"]
+# Markers indicating a page carries no usable summary content. Kept in sync with
+# BLANK_PAGE_SENTINELS plus the generic "error" marker used by summary filtering.
+ERROR_MARKERS = [
+    "no transcribable text",
+    "transcription not possible",
+    "no transcription possible",
+    "empty page",
+    "error",
+]
 
 # ============================================================================
 # Math Conversion Constants
@@ -131,9 +168,13 @@ __all__ = [
     "BULLET_SPACE_AFTER_PT",
     "REF_INDENT_PT",
     "BULLET_INDENT_PT",
+    # Working-log format
+    "LOG_FORMAT_VERSION",
     # Transcription markers
     "EMPTY_PAGE_MARKER",
     "NO_TRANSCRIPTION_MARKER",
+    "BLANK_PAGE_SENTINELS",
+    "is_blank_transcription",
     # Model provider prefixes
     "OPENAI_MODEL_PREFIXES",
     # Error detection

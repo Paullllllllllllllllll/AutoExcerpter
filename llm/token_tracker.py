@@ -29,6 +29,7 @@ Usage:
 
 from __future__ import annotations
 
+import atexit
 import json
 import threading
 import time
@@ -48,8 +49,17 @@ __all__ = [
 
 logger = setup_logger(__name__)
 
-# Default path for token tracker state file
-_TOKEN_TRACKER_FILE = Path.cwd() / ".autoexcerpter_token_state.json"
+# Legacy (pre-state-dir) token state file in the working directory. Adopted
+# once into the user-level state dir when the user-level file is absent.
+_LEGACY_TOKEN_TRACKER_FILE = Path.cwd() / ".autoexcerpter_token_state.json"
+# Fallback default when the state dir cannot be resolved (kept for callers that
+# construct a tracker without an explicit state_file).
+_TOKEN_TRACKER_FILE = _LEGACY_TOKEN_TRACKER_FILE
+_TOKEN_STATE_FILENAME = "token_state.json"
+
+# Minimum seconds between debounced state writes (a flush at exit persists the
+# final value). Prevents a per-API-call write storm during large runs.
+_MIN_SAVE_INTERVAL_S = 1.0
 
 # Singleton instance
 _tracker_instance: DailyTokenTracker | None = None
@@ -99,6 +109,10 @@ class DailyTokenTracker:
 
         # Thread safety
         self._lock = threading.Lock()
+
+        # Debounced-write bookkeeping.
+        self._last_save_time: float = 0.0
+        self._pending_save: bool = False
 
         # Token tracking state
         self._current_date: str = ""  # Format: YYYY-MM-DD
@@ -162,7 +176,7 @@ class DailyTokenTracker:
                     "Token counter reset to 0."
                 )
                 # Save the reset state
-                self._save_state()
+                self._save_state(force=True)
 
         except Exception as e:
             logger.warning(f"Error loading token state from {self.state_file}: {e}")
@@ -170,8 +184,18 @@ class DailyTokenTracker:
             self._current_date = self._get_current_date_str()
             self._tokens_used_today = 0
 
-    def _save_state(self) -> None:
-        """Save current token usage state to disk."""
+    def _save_state(self, force: bool = False) -> None:
+        """Save current token usage state to disk (debounced).
+
+        Writes are coalesced to at most one per ``_MIN_SAVE_INTERVAL_S`` unless
+        *force* is set (used for day-rollover and the exit flush), so a large
+        run does not write the state file on every API call. A pending write is
+        persisted by :meth:`flush`.
+        """
+        now = time.time()
+        if not force and (now - self._last_save_time) < _MIN_SAVE_INTERVAL_S:
+            self._pending_save = True
+            return
         try:
             state = {
                 "date": self._current_date,
@@ -186,9 +210,17 @@ class DailyTokenTracker:
 
             # Replace original file
             temp_file.replace(self.state_file)
+            self._last_save_time = now
+            self._pending_save = False
 
         except Exception as e:
             logger.error(f"Error saving token state to {self.state_file}: {e}")
+
+    def flush(self) -> None:
+        """Persist any debounced pending state write."""
+        with self._lock:
+            if self._pending_save:
+                self._save_state(force=True)
 
     def _check_and_reset_if_new_day(self) -> None:
         """Check if it's a new day and reset counter if needed."""
@@ -201,7 +233,7 @@ class DailyTokenTracker:
             )
             self._current_date = current_date
             self._tokens_used_today = 0
-            self._save_state()
+            self._save_state(force=True)
 
     def add_tokens(self, tokens: int) -> None:
         """
@@ -251,6 +283,31 @@ class DailyTokenTracker:
                 return None
             self._tokens_reserved += est
             return est
+
+    def _current_estimate(self) -> int:
+        """Current per-page token estimate (EWMA floor of 1)."""
+        return max(1, round(self._ewma))
+
+    def can_admit_page(self, estimate: int | None = None) -> bool:
+        """Whether the remaining budget can admit one more page.
+
+        Unlike :meth:`is_limit_reached` (which only fires when the budget is
+        fully spent), this returns False when a positive budget remains but is
+        too small to cover a page's estimated usage. Callers use it to decide
+        whether to keep admitting work or wait for the daily reset, so a partial
+        remainder that cannot fit a page is treated as wait-worthy rather than
+        spun on.
+        """
+        if not self.enabled:
+            return True
+
+        with self._lock:
+            self._check_and_reset_if_new_day()
+            est = max(int(estimate or 0), self._current_estimate())
+            available = (
+                self.daily_limit - self._tokens_used_today - self._tokens_reserved
+            )
+            return est <= available
 
     def release(self, amount: int) -> None:
         """Release a reservation made by :meth:`try_reserve` after the page.
@@ -404,11 +461,26 @@ def get_token_tracker() -> DailyTokenTracker:
                 _tracker_instance = DailyTokenTracker(
                     daily_limit=config.DAILY_TOKEN_LIMIT,
                     enabled=config.DAILY_TOKEN_LIMIT_ENABLED,
+                    state_file=_resolve_state_file(),
                     chunk_estimate_seed=config.DAILY_TOKEN_CHUNK_ESTIMATE_SEED,
                     estimate_smoothing=config.DAILY_TOKEN_ESTIMATE_SMOOTHING,
                 )
+                atexit.register(_tracker_instance.flush)
 
     return _tracker_instance
+
+
+def _resolve_state_file() -> Path:
+    """Resolve the user-level token state file, adopting a legacy CWD file once."""
+    try:
+        from config.state import resolve_state_file
+
+        return resolve_state_file(
+            _TOKEN_STATE_FILENAME, legacy_path=_LEGACY_TOKEN_TRACKER_FILE
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.debug("Falling back to legacy token state file: %s", exc)
+        return _TOKEN_TRACKER_FILE
 
 
 def wait_for_token_reset() -> bool:
@@ -421,14 +493,17 @@ def wait_for_token_reset() -> bool:
     KeyboardInterrupt cancels the wait.
     """
     tracker = get_token_tracker()
-    if not tracker.enabled or not tracker.is_limit_reached():
+    # Wait-worthy when a page cannot fit the remaining budget, even if that
+    # budget is still positive (a partial remainder too small for one page).
+    if not tracker.enabled or tracker.can_admit_page():
         return True
 
     seconds_until_reset = tracker.get_seconds_until_reset()
     reset_time = tracker.get_reset_time()
     stats = tracker.get_stats()
     logger.warning(
-        "Daily token limit reached: %s/%s tokens used. Waiting until %s for reset...",
+        "Daily token budget cannot fit another page: %s/%s tokens used. "
+        "Waiting until %s for reset...",
         f"{stats['tokens_used_today']:,}",
         f"{stats['daily_limit']:,}",
         reset_time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -440,10 +515,10 @@ def wait_for_token_reset() -> bool:
             interval = min(1, max(0, seconds_until_reset - elapsed))
             time.sleep(interval)
             elapsed += interval
-            if not tracker.is_limit_reached():
-                logger.info("Token limit has been reset. Resuming processing.")
+            if tracker.can_admit_page():
+                logger.info("Token budget has reset. Resuming processing.")
                 return True
-        logger.info("Token limit has been reset. Resuming processing.")
+        logger.info("Token budget has reset. Resuming processing.")
         return True
     except KeyboardInterrupt:
         logger.info("Token-limit wait cancelled by user.")

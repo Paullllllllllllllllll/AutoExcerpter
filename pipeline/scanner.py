@@ -78,8 +78,13 @@ def _collect_items_from_directory(path_to_scan: Path) -> Iterable[ItemSpec]:
             elif is_supported_image(file_path):
                 image_folders.setdefault(current_dir, []).append(file_path)
 
-        # Skip descending into directories that contain images
-        dirs[:] = [name for name in dirs if (current_dir / name) not in image_folders]
+        # If this directory itself collected images, treat it as a single image
+        # folder and do not descend into its subdirectories. Otherwise a folder
+        # and its own image subfolders (e.g. Book1 and Book1/thumbnails) would
+        # be emitted as separate items. (The previous filter compared against
+        # subdirectories that os.walk had not yet visited, so it never matched.)
+        if current_dir in image_folders:
+            dirs[:] = []
 
     items.extend(_build_image_folder_items(image_folders))
     return items

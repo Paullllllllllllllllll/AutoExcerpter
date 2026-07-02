@@ -21,7 +21,6 @@ from config.accessors import (
     get_image_processing_concurrency,
     get_rate_limits,
     get_service_tier,
-    get_summary_concurrency,
     get_target_dpi,
     get_transcription_concurrency,
 )
@@ -48,7 +47,6 @@ __all__ = [
     "get_image_processing_concurrency",
     "get_rate_limits",
     "get_service_tier",
-    "get_summary_concurrency",
     "get_target_dpi",
     "get_transcription_concurrency",
 ]

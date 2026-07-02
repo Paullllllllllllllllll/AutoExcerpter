@@ -765,8 +765,13 @@ def detect_capabilities(model_name: str) -> ProviderCapabilities:
 
     # --- Fallback: conservative -------------------------------------------
     provider = detect_provider(model_name)
-    logger.debug(
-        f"Model '{model_name}' using fallback capability profile (provider={provider})"
+    logger.warning(
+        "Model '%s' is not in the capability registry; using a conservative "
+        "fallback profile (provider=%s). Vision and structured output are "
+        "assumed unsupported, which may degrade transcription/summary quality. "
+        "Add it to the registry or verify the model name.",
+        model_name,
+        provider,
     )
     return ProviderCapabilities(
         provider_name=provider,

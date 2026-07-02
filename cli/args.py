@@ -39,10 +39,65 @@ def _temperature_float(value: str) -> float:
     return parsed
 
 
+def _apply_mode_override() -> None:
+    """First stage of the two-stage parse: honor ``--cli`` / ``--interactive``.
+
+    These flags override the config-file ``cli_mode`` so an agent never has to
+    edit gitignored YAML to drive the tool. The argparse shape below is gated on
+    ``config.CLI_MODE``, so this must run before the real parser is built.
+    """
+    pre = argparse.ArgumentParser(add_help=False)
+    mode = pre.add_mutually_exclusive_group()
+    mode.add_argument("--cli", action="store_true", default=None)
+    mode.add_argument("--interactive", action="store_true", default=None)
+    known, _ = pre.parse_known_args()
+    if known.cli:
+        config.CLI_MODE = True
+    elif known.interactive:
+        config.CLI_MODE = False
+
+
 def setup_argparse() -> argparse.Namespace:
+    _apply_mode_override()
+
     parser = argparse.ArgumentParser(
         description="PDF and Image Folder Transcription and Summarization",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+
+    # Execution-mode override flags (two-stage parse; consumed above but also
+    # declared here so they appear in --help and parse cleanly).
+    mode_group = parser.add_mutually_exclusive_group()
+    mode_group.add_argument(
+        "--cli",
+        action="store_true",
+        default=None,
+        help="Force CLI (non-interactive) mode, overriding cli_mode in app.yaml.",
+    )
+    mode_group.add_argument(
+        "--interactive",
+        action="store_true",
+        default=None,
+        help="Force interactive mode, overriding cli_mode in app.yaml.",
+    )
+
+    # Agent-contract flags (available in both modes).
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit one machine-readable JSON run-summary line on stdout at exit.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Discover inputs and classify resume state without any API calls"
+        " or side effects; report the planned actions and exit.",
+    )
+    parser.add_argument(
+        "--retranscribe",
+        action="store_true",
+        help="Force fresh transcription of resumable items instead of reusing"
+        " logged transcriptions (summary-only resume).",
     )
 
     # Resume / overwrite behavior (available in both modes)
@@ -496,21 +551,39 @@ def _parse_cli_selection(items: list[ItemSpec], pattern: str) -> list[ItemSpec]:
     else:
         # Numeric selection
         parts = numeric_pattern.split(",")
+        unmatched: list[str] = []
         for part in parts:
             if not part:
                 continue
             if "-" in part:
+                matched = False
                 try:
                     start_str, end_str = part.split("-", 1)
                     start = int(start_str)
                     end = int(end_str)
                     if 1 <= start <= end <= len(items):
                         selected_indices.update(range(start - 1, end))
+                        matched = True
                 except ValueError:
-                    pass
+                    matched = False
+                if not matched:
+                    unmatched.append(part)
             elif part.isdigit():
                 idx = int(part) - 1
                 if 0 <= idx < len(items):
                     selected_indices.add(idx)
+                else:
+                    unmatched.append(part)
+            else:
+                unmatched.append(part)
+        if unmatched:
+            logger.warning(
+                "Ignored out-of-range/invalid --select part(s): %s (valid: 1-%d)",
+                ", ".join(unmatched),
+                len(items),
+            )
+
+    if not selected_indices:
+        logger.warning("No items matched --select pattern %r", pattern)
 
     return [items[i] for i in sorted(selected_indices)]

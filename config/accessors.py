@@ -67,11 +67,6 @@ def get_transcription_concurrency() -> tuple[int, float]:
     return get_api_concurrency("transcription")
 
 
-def get_summary_concurrency() -> tuple[int, float]:
-    """Get concurrency settings for summary API requests."""
-    return get_api_concurrency("summary")
-
-
 def get_image_processing_concurrency() -> tuple[int, float]:
     """Get concurrency settings for local image processing."""
     try:
@@ -158,7 +153,6 @@ def get_target_dpi() -> int:
 __all__ = [
     "get_api_concurrency",
     "get_transcription_concurrency",
-    "get_summary_concurrency",
     "get_image_processing_concurrency",
     "get_service_tier",
     "get_api_timeout",

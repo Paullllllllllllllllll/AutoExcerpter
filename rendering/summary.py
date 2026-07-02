@@ -281,8 +281,14 @@ def prepare_summary_data(
         page_types = page_info["page_types"]
         references = summary_payload.get("references") or []
 
-        if references and isinstance(page_number, int):
-            citation_manager.add_citations(references, page_number)
+        if references:
+            # Include citations on unnumbered pages (page_number is "?"): they
+            # are recorded with page=None and rendered as "unnumbered" rather
+            # than silently discarded.
+            citation_manager.add_citations(
+                references,
+                page_number if isinstance(page_number, int) else None,
+            )
 
         if isinstance(page_number, int):
             for pt in _get_structure_types(page_types):
@@ -316,6 +322,26 @@ def prepare_summary_data(
         content_page_count=content_page_count,
         page_render_items=page_render_items,
     )
+
+
+def build_render_context(
+    summary_results: list[dict[str, Any]],
+    polite_pool_email: str | None = None,
+) -> tuple[CitationManager, SummaryData]:
+    """Build one enriched-once render context shared by both writers.
+
+    Collects citations, runs the conservative :meth:`CitationManager.consolidate`
+    merge, and returns the (not-yet-enriched) manager plus the prepared
+    :class:`SummaryData`. The caller runs OpenAlex enrichment exactly once
+    (``enrich_if_enabled``) so both the DOCX and Markdown writers render from
+    identical, already-enriched citations.
+    """
+    from rendering.citations import CitationManager
+
+    citation_manager = CitationManager(polite_pool_email=polite_pool_email)
+    data = prepare_summary_data(summary_results, citation_manager)
+    citation_manager.consolidate()
+    return citation_manager, data
 
 
 # ============================================================================

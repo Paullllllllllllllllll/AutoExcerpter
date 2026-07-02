@@ -8,10 +8,12 @@ from __future__ import annotations
 
 import threading
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 import pipeline.transcriber as transcriber
+from config import app as app_config
 from llm.token_tracker import DailyTokenTracker
 from pipeline.transcriber import ItemTranscriber
 
@@ -36,11 +38,19 @@ class TestProcessSinglePageGate:
             chunk_estimate_seed=1000,
         )
 
-        t_results: list[dict] = []
-        s_results: list[dict] = []
+        t_results: list[dict[str, Any]] = []
+        s_results: list[dict[str, Any]] = []
         count = [0]
 
-        result = obj._process_single_page(0, None, t_results, s_results, 5, count)
+        # None source is never dereferenced: the budget gate defers first.
+        result = obj._process_single_page(
+            0,
+            None,  # type: ignore[arg-type]
+            t_results,
+            s_results,
+            5,
+            count,
+        )
 
         # Deferred: no API call, no result, no counter movement, and the
         # exhausted flag is set so siblings stop admitting too.
@@ -68,7 +78,7 @@ class TestTranscribeAndSummarizeResumeLoop:
                 return n
 
         # Skip the summary-log setup branch.
-        monkeypatch.setattr(transcriber.config, "SUMMARIZE", False, raising=False)
+        monkeypatch.setattr(app_config, "SUMMARIZE", False, raising=False)
         monkeypatch.setattr(
             transcriber, "get_transcription_concurrency", lambda: (2, None)
         )
@@ -92,7 +102,7 @@ class TestTranscribeAndSummarizeResumeLoop:
         obj._process_single_page = fake_process  # type: ignore[method-assign]
         monkeypatch.setattr(transcriber, "wait_for_token_reset", fake_wait)
 
-        t_results, _s_results = obj._transcribe_and_summarize(_Source())
+        t_results, _s_results = obj._transcribe_and_summarize(_Source())  # type: ignore[arg-type]
 
         indices = sorted(r["original_input_order_index"] for r in t_results)
         # Every page processed exactly once across the two passes.
@@ -115,7 +125,7 @@ class TestTranscribeAndSummarizeResumeLoop:
             def __len__(self) -> int:
                 return n
 
-        monkeypatch.setattr(transcriber.config, "SUMMARIZE", False, raising=False)
+        monkeypatch.setattr(app_config, "SUMMARIZE", False, raising=False)
         monkeypatch.setattr(
             transcriber, "get_transcription_concurrency", lambda: (2, None)
         )
@@ -132,7 +142,7 @@ class TestTranscribeAndSummarizeResumeLoop:
         # User cancels the wait: the run stops with only the processed pages.
         monkeypatch.setattr(transcriber, "wait_for_token_reset", lambda: False)
 
-        t_results, _s_results = obj._transcribe_and_summarize(_Source())
+        t_results, _s_results = obj._transcribe_and_summarize(_Source())  # type: ignore[arg-type]
 
         indices = sorted(r["original_input_order_index"] for r in t_results)
         # Only the pages that fit before exhaustion are present; the rest are

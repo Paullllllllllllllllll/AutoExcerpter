@@ -16,12 +16,11 @@ from config.accessors import (
 )
 from config.constants import (
     DEFAULT_MODEL,
-    EMPTY_PAGE_MARKER,
     ETA_BLEND_WEIGHT_OVERALL,
     ETA_BLEND_WEIGHT_RECENT,
     MIN_SAMPLES_FOR_ETA,
-    NO_TRANSCRIPTION_MARKER,
     RECENT_SAMPLES_FOR_ETA,
+    is_blank_transcription,
 )
 from config.loader import get_config_loader
 from config.logger import setup_logger
@@ -33,13 +32,18 @@ from pipeline.context import format_context_for_prompt, resolve_summary_context
 from pipeline.log import append_to_log, finalize_log_file, initialize_log_file
 from pipeline.page_numbering import PageNumberProcessor
 from pipeline.paths import create_safe_directory_name, create_safe_log_filename
-from pipeline.resume import load_transcription_results_from_log
+from pipeline.resume import (
+    load_log_header,
+    load_transcription_results_from_log,
+)
 from pipeline.text_cleaner import clean_transcription
 from rendering import (
     create_docx_summary,
     create_markdown_summary,
     write_transcription_to_text,
 )
+from rendering.citations import enrich_if_enabled
+from rendering.summary import build_render_context
 
 logger = setup_logger(__name__)
 
@@ -101,8 +105,12 @@ class ItemTranscriber:
         self.transcription_times: list[float] = []  # For successful transcriptions
 
         # Snapshot of prior page results for page-level resume, loaded by
-        # process_item before the log file is reinitialized (truncated).
+        # process_item before the log files are reinitialized (truncated).
         self._prior_transcription_results: list[dict[str, Any]] = []
+        self._prior_summary_results: list[dict[str, Any]] = []
+        # Extra metadata lines recorded in the .txt output (e.g. a resume model
+        # mismatch: logged transcriptions produced by a different model).
+        self._output_metadata_notes: list[str] = []
 
         # Load model configuration from model.yaml
         config_loader = get_config_loader()
@@ -145,13 +153,22 @@ class ItemTranscriber:
             and transcription_custom_caps.use_plain_text_prompt
         )
 
-        # TranscriptionManager constructs its own rate limiter from
-        # concurrency.yaml; SummaryManager does the same.
+        # Share ONE rate limiter per provider across transcription and the
+        # inline summary phase so their combined request rate honors the
+        # configured caps (previously each manager built its own limiter,
+        # doubling the effective rate for a same-provider setup).
+        from llm.client import get_provider_for_model
+        from llm.rate_limit import get_shared_rate_limiter
+
+        transcription_rate_limiter = get_shared_rate_limiter(
+            self.transcription_provider
+        )
         self.transcribe_manager = TranscriptionManager(
             model_name=self.transcription_model,
             provider=self.transcription_provider,
             timeout=get_api_timeout(),
             custom_capabilities=transcription_custom_caps,
+            rate_limiter=transcription_rate_limiter,
         )
 
         # Only initialize summary manager if summarization is enabled
@@ -176,12 +193,21 @@ class ItemTranscriber:
                     self.summary_context = format_context_for_prompt(resolved_context)
                     logger.info(f"Resolved summary context from: {context_path}")
 
+            resolved_summary_provider = summary_provider or get_provider_for_model(
+                self.summary_model
+            )
+            summary_rate_limiter = (
+                transcription_rate_limiter
+                if resolved_summary_provider == self.transcription_provider
+                else get_shared_rate_limiter(resolved_summary_provider)
+            )
             self.summary_manager = SummaryManager(
                 model_name=self.summary_model,
                 provider=summary_provider,
                 summary_context=self.summary_context,
                 custom_capabilities=summary_custom_caps,
                 transcription_was_plain_text=transcription_was_plain_text,
+                rate_limiter=summary_rate_limiter,
             )
 
         # Page number processor for adjusting and sorting summary page numbers
@@ -305,10 +331,7 @@ class ItemTranscriber:
         if "error" not in transcription_result:
             transcription_text = transcription_result.get("transcription", "")
 
-            if (
-                EMPTY_PAGE_MARKER in transcription_text
-                or NO_TRANSCRIPTION_MARKER in transcription_text
-            ):
+            if is_blank_transcription(transcription_text):
                 summary_data = self._create_placeholder_summary(
                     page_num_to_use if has_valid else None,
                     "arabic" if has_valid else "none",
@@ -424,7 +447,7 @@ class ItemTranscriber:
                 if "error" not in transcription_result
                 else f"FAILED ({transcription_result.get('retries', 0)} retries)"
             )
-            item_num_str = transcription_result.get("page", "?")
+            item_num_str = str(original_input_order_index + 1)
             eta_str = self._calculate_eta(processed_count_ref[0], total_images)
 
             logger.debug(
@@ -452,6 +475,70 @@ class ItemTranscriber:
             # add_tokens inside the provider layer during the calls above.
             self._token_tracker.release(reserved)
 
+    def _detect_resume_model_mismatch(self) -> None:
+        """Warn (and record) when reusing transcriptions from a different model.
+
+        Summary-only resume reuses logged transcriptions rather than re-running
+        the vision model. If the logged transcription model differs from the
+        currently configured one, the reused text and any freshly generated
+        summaries were produced by different models; surface that so the mixed
+        provenance is visible in both the log and the .txt metadata.
+        """
+        header = load_log_header(self.log_path)
+        logged_model = header.get("model_name") if isinstance(header, dict) else None
+        if logged_model and logged_model != self.transcription_model:
+            note = (
+                "Summary-only resume: reusing transcriptions from model "
+                f"'{logged_model}'; current transcription model is "
+                f"'{self.transcription_model}'."
+            )
+            logger.warning(note)
+            self._output_metadata_notes.append(note)
+
+    def _reload_completed_pages(
+        self,
+        transcription_results: list[dict[str, Any]],
+        summary_results: list[dict[str, Any]],
+    ) -> None:
+        """Reload completed pages' transcriptions and (re)attach their summaries.
+
+        For each already-completed page: append its logged transcription to the
+        results and re-append it to the freshly initialized transcription log
+        (so a later crash still sees it as complete). If summarizing, reuse the
+        logged summary when present; otherwise regenerate it from the logged
+        transcription text (the summary-only resume path) — never dropping a
+        completed page's summary.
+        """
+        prior_results = self._prior_transcription_results or (
+            load_transcription_results_from_log(self.log_path) or []
+        )
+        prior_summary_by_idx: dict[int, dict[str, Any]] = {}
+        for summ in self._prior_summary_results:
+            idx = summ.get("original_input_order_index")
+            if isinstance(idx, int):
+                prior_summary_by_idx[idx] = summ
+
+        summarizing = bool(config.SUMMARIZE and self.summary_manager)
+
+        for entry in prior_results:
+            idx = entry.get("original_input_order_index")
+            if not isinstance(idx, int) or idx not in self.completed_page_indices:
+                continue
+
+            transcription_results.append(entry)
+            append_to_log(self.log_path, entry)
+
+            if not summarizing:
+                continue
+
+            summary_result = prior_summary_by_idx.get(idx)
+            if summary_result is None:
+                image_name = entry.get("image") or f"page index {idx}"
+                summary_result = self._summarize_transcription(entry, idx, image_name)
+            if summary_result is not None:
+                append_to_log(self.summary_log_path, summary_result)
+                summary_results.append(summary_result)
+
     def _transcribe_and_summarize(
         self, source: PdfPayloadSource | FolderPayloadSource
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -459,27 +546,30 @@ class ItemTranscriber:
         summary_results: list[dict[str, Any]] = []
         total_images = len(source)
 
-        # --- Page-level resume: pre-load completed results and filter the
-        # pending index list BEFORE any page is rendered ---
+        # Initialize the summary log ONCE up front (if summarizing) so that both
+        # reused and freshly generated summaries are appended to the same file.
+        if config.SUMMARIZE and self.summary_manager:
+            max_workers, _ = get_transcription_concurrency()
+            initialize_log_file(
+                self.summary_log_path,
+                self.name,
+                str(self.input_path),
+                "PDF" if self.input_type == "pdf" else "Image Folder",
+                total_images,
+                self.summary_model,
+                concurrency_limit=max_workers,
+                log_type="summary",
+            )
+
+        # --- Page-level resume: reload completed transcriptions, reuse their
+        # summaries where logged, and regenerate summaries for completed pages
+        # that lack one (the summary-only / TRANSCRIPTION_ONLY resume path).
+        # This runs BEFORE any page is rendered so no completed page is lost. ---
         pending_indices = list(range(total_images))
         skipped_page_count = 0
 
         if self.completed_page_indices:
-            # Prior results were snapshotted by process_item BEFORE the log
-            # file was reinitialized (which truncates it); fall back to the
-            # log for callers that did not go through process_item.
-            prior_results = self._prior_transcription_results or (
-                load_transcription_results_from_log(self.log_path)
-            )
-            if prior_results:
-                for entry in prior_results:
-                    idx = entry.get("original_input_order_index")
-                    if isinstance(idx, int) and idx in self.completed_page_indices:
-                        transcription_results.append(entry)
-                        # Re-append to the freshly initialized log so a later
-                        # crash + resume still sees these pages as completed.
-                        append_to_log(self.log_path, entry)
-
+            self._reload_completed_pages(transcription_results, summary_results)
             pending_indices = [
                 idx for idx in pending_indices if idx not in self.completed_page_indices
             ]
@@ -494,7 +584,7 @@ class ItemTranscriber:
         if not pending_indices:
             logger.info(
                 "All pages already transcribed (page-level resume). "
-                "Skipping transcription."
+                "Skipping transcription; summaries reused/regenerated from logs."
             )
             transcription_results.sort(
                 key=lambda x: x.get("original_input_order_index", 0)
@@ -509,18 +599,6 @@ class ItemTranscriber:
             f"Starting transcription{suffix} of "
             f"{len(pending_indices)} images{resume_note}..."
         )
-
-        if config.SUMMARIZE and self.summary_manager:
-            max_workers, _ = get_transcription_concurrency()
-            initialize_log_file(
-                self.summary_log_path,
-                self.name,
-                str(self.input_path),
-                "PDF" if self.input_type == "pdf" else "Image Folder",
-                total_images,
-                self.summary_model,
-                concurrency_limit=max_workers,
-            )
 
         # Mutable counter shared across threads (replaces nonlocal)
         processed_count_ref = [0]
@@ -686,12 +764,17 @@ class ItemTranscriber:
             f"for transcription{suffix}."
         )
 
-        # Snapshot prior page results BEFORE the log file is reinitialized
-        # below (initialize_log_file truncates it).
+        # Snapshot prior page results BEFORE the log files are reinitialized
+        # below (initialize_log_file truncates them). Also detect a model
+        # mismatch so summary-only resume can warn and record both models.
         if self.completed_page_indices:
             self._prior_transcription_results = (
                 load_transcription_results_from_log(self.log_path) or []
             )
+            self._prior_summary_results = (
+                load_transcription_results_from_log(self.summary_log_path) or []
+            )
+            self._detect_resume_model_mismatch()
 
         # Initialize log file with a header (incl. file-level provenance)
         target_dpi = source.target_dpi if isinstance(source, PdfPayloadSource) else None
@@ -723,8 +806,12 @@ class ItemTranscriber:
             )
             elapsed_str = time.strftime("%H:%M:%S", time.gmtime(total_elapsed_time))
 
-            # Sort results by page number
-            transcription_results.sort(key=lambda x: int(x.get("page", 0)))
+            # Order strictly by original input order. (A prior sort by the
+            # optional "page" key relocated critical-error pages, which lack it,
+            # to the front and scrambled the output.)
+            transcription_results.sort(
+                key=lambda x: x.get("original_input_order_index", 0)
+            )
 
             final_success_count = sum(
                 1 for r in transcription_results if "error" not in r
@@ -742,6 +829,7 @@ class ItemTranscriber:
                 item_type_str,
                 total_elapsed_time,
                 self.input_path,
+                metadata_notes=self._output_metadata_notes or None,
             )
 
             # Save summaries to output files if summarization is enabled
@@ -755,12 +843,25 @@ class ItemTranscriber:
                 )
 
                 try:
+                    # Build ONE citation manager per item: citations are
+                    # collected, consolidated, and OpenAlex-enriched exactly
+                    # once, then both writers render from the same instance
+                    # (prevents duplicate API lookups and diverging
+                    # bibliographies).
+                    citation_manager, render_data = build_render_context(
+                        adjusted_summary_results,
+                        polite_pool_email=config.CITATION_OPENALEX_EMAIL,
+                    )
+                    enrich_if_enabled(citation_manager)
+
                     # Generate DOCX if enabled
                     if config.OUTPUT_DOCX:
                         create_docx_summary(
                             adjusted_summary_results,
                             self.output_summary_docx_path,
                             self.name,
+                            citation_manager=citation_manager,
+                            data=render_data,
                         )
 
                     # Generate Markdown if enabled
@@ -769,6 +870,8 @@ class ItemTranscriber:
                             adjusted_summary_results,
                             self.output_summary_md_path,
                             self.name,
+                            citation_manager=citation_manager,
+                            data=render_data,
                         )
 
                 except Exception as e:

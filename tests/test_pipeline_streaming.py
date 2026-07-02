@@ -77,22 +77,31 @@ def _make_transcriber(
 
 
 def _read_log_entries(log_path: Path) -> list[dict[str, Any]]:
-    """Parse a finalized JSON-array transcription log."""
-    entries = json.loads(log_path.read_text(encoding="utf-8"))
+    """Parse a JSONL transcription log (header line + one object per line)."""
+    entries = [
+        json.loads(line)
+        for line in log_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
     assert isinstance(entries, list)
     return entries
 
 
 def _seed_log(transcriber: ItemTranscriber, entries: list[dict[str, Any]]) -> None:
-    """Write an unfinalized transcription log mimicking a crashed run."""
+    """Write a versioned JSONL transcription log mimicking a crashed run."""
+    from config.constants import LOG_FORMAT_VERSION
+
     header = {
+        "_format_version": LOG_FORMAT_VERSION,
+        "log_type": "transcription",
         "input_item_name": transcriber.name,
         "input_item_path": str(transcriber.input_path),
         "input_type": "PDF",
         "total_images": len(entries),
+        "model_name": transcriber.transcription_model,
     }
-    parts = [json.dumps(header)] + [json.dumps(entry) for entry in entries]
-    transcriber.log_path.write_text("[\n" + ",\n".join(parts), encoding="utf-8")
+    lines = [json.dumps(header)] + [json.dumps(entry) for entry in entries]
+    transcriber.log_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 class TestProcessItemEndToEnd:

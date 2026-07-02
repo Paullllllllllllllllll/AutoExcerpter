@@ -99,9 +99,9 @@ class TestInitializeLogFile:
         assert result is True
         assert log_path.exists()
         content = log_path.read_text(encoding="utf-8")
-        assert content.startswith("[")
-        # Parse the JSON payload (after the opening bracket)
-        payload = json.loads(content[1:].strip())
+        # JSONL: the first line is the versioned header object.
+        payload = json.loads(content.splitlines()[0])
+        assert payload["_format_version"] == 2
         assert payload["input_item_name"] == "test_doc.pdf"
         assert payload["total_images"] == 10
         assert payload["configuration"]["concurrent_requests"] == 8
@@ -126,7 +126,7 @@ class TestInitializeLogFile:
         )
 
         content = log_path.read_text(encoding="utf-8")
-        payload = json.loads(content[1:].strip())
+        payload = json.loads(content.splitlines()[0])
         assert payload["configuration"]["service_tier"] == "N/A"
 
     @patch("pipeline.log.get_api_concurrency", return_value=(4, 0.05))
@@ -205,7 +205,7 @@ class TestFinalizeLogFile:
     def test_closes_json_array(
         self, mock_tier, mock_timeout, mock_conc, tmp_path: Path
     ) -> None:
-        """Finalizes the log file by closing the JSON array."""
+        """Finalizes the log file by flushing/closing the JSONL handle."""
         log_path = tmp_path / "test.log.json"
 
         initialize_log_file(
@@ -223,7 +223,8 @@ class TestFinalizeLogFile:
 
         assert result is True
         content = log_path.read_text(encoding="utf-8")
-        assert content.strip().endswith("]")
+        # Last line is a complete JSON object (no array bracket in JSONL).
+        assert json.loads(content.splitlines()[-1]) == {"page": 1, "status": "ok"}
 
     @patch("pipeline.log.get_api_concurrency", return_value=(4, 0.05))
     @patch("pipeline.log.get_api_timeout", return_value=900)
@@ -231,7 +232,7 @@ class TestFinalizeLogFile:
     def test_full_lifecycle_produces_valid_json(
         self, mock_tier, mock_timeout, mock_conc, tmp_path: Path
     ) -> None:
-        """Full init -> append -> finalize produces parseable JSON array."""
+        """Full init -> append -> finalize produces one parseable object per line."""
         log_path = tmp_path / "test.log.json"
 
         initialize_log_file(
@@ -248,9 +249,10 @@ class TestFinalizeLogFile:
         finalize_log_file(log_path)
 
         content = log_path.read_text(encoding="utf-8")
-        data = json.loads(content)
-        assert isinstance(data, list)
-        assert len(data) == 3  # header + 2 entries
+        lines = [json.loads(ln) for ln in content.splitlines() if ln.strip()]
+        assert isinstance(lines, list)
+        assert len(lines) == 3  # header + 2 entries
+        assert lines[0]["_format_version"] == 2
 
 
 # ============================================================================

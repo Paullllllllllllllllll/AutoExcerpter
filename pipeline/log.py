@@ -1,4 +1,12 @@
-"""JSON log file management for AutoExcerpter processing runs."""
+"""JSONL log file management for AutoExcerpter processing runs.
+
+Working logs are true JSONL: the first line is a header object carrying a
+``_format_version`` marker, and each subsequent line is one complete JSON
+object (a per-page result). Because every record is a self-contained line, a
+crash mid-write can at most truncate the final line, which the resume parser
+drops. Logs lacking the current format marker are refused on resume (no
+migration); see :data:`config.constants.LOG_FORMAT_VERSION`.
+"""
 
 from __future__ import annotations
 
@@ -14,7 +22,7 @@ from config.accessors import (
     get_api_timeout,
     get_service_tier,
 )
-from config.constants import OPENAI_MODEL_PREFIXES
+from config.constants import LOG_FORMAT_VERSION, OPENAI_MODEL_PREFIXES
 from config.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -56,8 +64,9 @@ def initialize_log_file(
     extraction_dpi: int | None = None,
     concurrency_limit: int | None = None,
     file_provenance: dict[str, Any] | None = None,
+    log_type: str = "transcription",
 ) -> bool:
-    """Create the per-item log file header as the start of a JSON array."""
+    """Create the per-item log file header as the first JSONL line."""
     # Determine if this is an OpenAI model for flex processing metadata
     is_openai_model = model_name.startswith(OPENAI_MODEL_PREFIXES)
     default_concurrency, _ = get_api_concurrency()
@@ -73,11 +82,14 @@ def initialize_log_file(
     }
 
     payload = {
+        "_format_version": LOG_FORMAT_VERSION,
+        "log_type": log_type,
         "input_item_name": item_name,
         "input_item_path": input_path,
         "input_type": input_type,
         "processing_start_time": datetime.now().isoformat(),
         "total_images": total_images,
+        "model_name": model_name,
         "configuration": configuration,
     }
     if file_provenance is not None:
@@ -86,8 +98,8 @@ def initialize_log_file(
     try:
         _close_log_handle(log_path)
         with log_path.open("w", encoding="utf-8") as log_file:
-            log_file.write("[\n")  # Start JSON array
-            json.dump(payload, log_file)
+            log_file.write(json.dumps(payload, ensure_ascii=False))
+            log_file.write("\n")
         return True
     except OSError as exc:
         logger.warning("Failed to initialize log file %s: %s", log_path, exc)
@@ -95,12 +107,12 @@ def initialize_log_file(
 
 
 def append_to_log(log_path: Path, entry: dict[str, Any]) -> bool:
-    """Append a JSON entry to the log file array (comma-separated)."""
+    """Append a single JSON object as one JSONL line."""
     try:
         log_file, lock = _get_log_handle(log_path)
         with lock:
-            log_file.write(",\n")  # Add comma separator
-            json.dump(entry, log_file)
+            log_file.write(json.dumps(entry, ensure_ascii=False))
+            log_file.write("\n")
         return True
     except (OSError, TypeError, ValueError) as exc:
         logger.warning("Failed to write to log file %s: %s", log_path, exc)
@@ -108,13 +120,11 @@ def append_to_log(log_path: Path, entry: dict[str, Any]) -> bool:
 
 
 def finalize_log_file(log_path: Path) -> bool:
-    """Finalize the log file by closing the JSON array."""
-    try:
-        log_file, lock = _get_log_handle(log_path)
-        with lock:
-            log_file.write("\n]")  # Close JSON array
-        _close_log_handle(log_path)
-        return True
-    except (OSError, ValueError) as exc:
-        logger.warning("Failed to finalize log file %s: %s", log_path, exc)
-        return False
+    """Flush and close the log handle.
+
+    With JSONL there is no array to close, so this only releases the cached
+    file handle. It never creates a file, so calling it on a log that was
+    never initialized is a no-op (no stray artifact is written).
+    """
+    _close_log_handle(log_path)
+    return True

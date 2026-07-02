@@ -165,6 +165,32 @@ CITATION_OPENALEX_EMAIL = _get_str(
 CITATION_MAX_API_REQUESTS = _get_int(_CITATION, "max_api_requests", 50)
 CITATION_ENABLE_OPENALEX = _get_bool(_CITATION, "enable_openalex_enrichment", True)
 
+
+def _get_float(data: dict[str, Any], key: str, default: float) -> float:
+    """Safely get a float value from config dictionary."""
+    try:
+        return float(data.get(key, default))
+    except (ValueError, TypeError):
+        logger.warning(f"Invalid float for '{key}', using default: {default}")
+        return default
+
+
+# Conservative fuzzy-merge thresholds (decision 9: prefer under-merging).
+# Variants merge only within a (first-author surname, year) block when EITHER
+# similarity gate passes; volume differences never merge.
+CITATION_MERGE_RATIO = _get_float(_CITATION, "merge_ratio", 0.90)
+CITATION_MERGE_JACCARD = _get_float(_CITATION, "merge_jaccard", 0.85)
+# Strict OpenAlex linking: title overlap must clear this AND a year/author check.
+CITATION_MATCH_TITLE_OVERLAP = _get_float(_CITATION, "match_title_overlap", 0.5)
+
+# --- State Directory (token-budget + OpenAlex cache) ---
+# User-level by default (~/.autoexcerpter); override with paths.state_dir. A
+# legacy CWD state file is adopted once when the user-level file is absent.
+_PATHS: dict[str, Any] = (
+    _APP_CFG.get("paths", {}) if isinstance(_APP_CFG.get("paths"), dict) else {}
+)
+STATE_DIR = _get_str(_PATHS, "state_dir", "")
+
 # --- LLM Provider API Keys ---
 # Read from environment. Validation is lazy: import of this module no longer
 # raises when no API keys are set. Callers that need a key must use

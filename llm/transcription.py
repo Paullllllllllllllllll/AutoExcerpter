@@ -24,14 +24,13 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from config.accessors import get_rate_limits
 from config.loader import PROMPTS_DIR, SCHEMAS_DIR
 from config.logger import setup_logger
 from imaging.payload import PagePayload
 from llm.base import LLMClientBase
 from llm.client import ProviderType, get_model_capabilities
 from llm.prompts import render_prompt_with_schema, strip_markdown_code_block
-from llm.rate_limit import RateLimiter
+from llm.rate_limit import RateLimiter, get_shared_rate_limiter
 from llm.types import CustomEndpointCapabilities
 
 logger = setup_logger(__name__)
@@ -92,7 +91,7 @@ class TranscriptionManager(LLMClientBase):
             ValueError: If the selected model doesn't support multimodal (image) input.
         """
         if rate_limiter is None:
-            rate_limiter = RateLimiter(get_rate_limits())
+            rate_limiter = get_shared_rate_limiter(provider)
         super().__init__(
             model_name,
             provider,

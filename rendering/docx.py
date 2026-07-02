@@ -569,7 +569,11 @@ def add_hyperlink(paragraph: Any, url: str, text: str) -> None:
 
 
 def create_docx_summary(
-    summary_results: list[dict[str, Any]], output_path: Path, document_name: str
+    summary_results: list[dict[str, Any]],
+    output_path: Path,
+    document_name: str,
+    citation_manager: CitationManager | None = None,
+    data: Any = None,
 ) -> None:
     """Create a DOCX summary document from structured summary results.
 
@@ -578,9 +582,19 @@ def create_docx_summary(
     2. Document Structure (page type overview)
     3. Content Summaries (in document order)
     4. Consolidated References
+
+    When *citation_manager* and *data* are supplied by the pipeline they are
+    already consolidated and OpenAlex-enriched, so this writer renders them as-is
+    (one enrichment pass per item, shared with the Markdown writer). When called
+    standalone they are built and enriched here.
     """
-    citation_manager = CitationManager(polite_pool_email=config.CITATION_OPENALEX_EMAIL)
-    data = prepare_summary_data(summary_results, citation_manager)
+    if citation_manager is None or data is None:
+        citation_manager = CitationManager(
+            polite_pool_email=config.CITATION_OPENALEX_EMAIL
+        )
+        data = prepare_summary_data(summary_results, citation_manager)
+        citation_manager.consolidate()
+        enrich_if_enabled(citation_manager)
     filtered_results = data.filtered_results
     page_type_pages = data.page_type_pages
 
@@ -643,8 +657,6 @@ def create_docx_summary(
             "Processing %d unique citations for consolidated references section",
             len(citation_manager.citations),
         )
-
-        enrich_if_enabled(citation_manager)
 
         document.add_page_break()  # type: ignore[no-untyped-call]
         ref_main_heading = document.add_heading(

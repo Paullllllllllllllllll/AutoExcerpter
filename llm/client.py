@@ -464,6 +464,11 @@ def is_provider_available(provider: ProviderType) -> bool:
     env_key = provider_info.get("env_key")
     if env_key is None:
         return False  # Custom provider: availability checked via config, not env
+    # Honor the optional api_keys.yaml remapping so availability agrees with the
+    # env var actually resolved at call time.
+    from config.loader import resolve_env_var
+
+    env_key = resolve_env_var(provider, env_key)
     return bool(os.environ.get(env_key))
 
 

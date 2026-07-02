@@ -291,7 +291,13 @@ def _display_completion_summary(
 
     print_info("    • Transcriptions: .txt files")
     if config.SUMMARIZE:
-        print_info("    • Summaries: .docx files")
+        summary_formats = []
+        if config.OUTPUT_DOCX:
+            summary_formats.append(".docx")
+        if config.OUTPUT_MARKDOWN:
+            summary_formats.append(".md")
+        if summary_formats:
+            print_info(f"    • Summaries: {', '.join(summary_formats)} files")
 
     print_separator()
 

@@ -12,8 +12,10 @@ This script:
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
+from typing import Any
 
 from cli.args import (
     _apply_app_config_overrides,
@@ -31,7 +33,6 @@ from cli.display import (
 )
 from cli.errors import handle_critical_error
 from cli.interaction import (
-    exit_program,
     print_dim,
     print_info,
     print_section,
@@ -76,12 +77,16 @@ def _select_items_for_processing(
             logger.info("Processing single item in CLI mode")
             return list(all_items)
         else:
-            # If multiple items found but --all/--select not specified, first only
-            logger.info(
-                "Processing first item "
-                "(use --all or --select to process specific items)"
+            # Multiple items with no --all/--select is ambiguous in CLI mode:
+            # error out rather than silently processing only the first (which
+            # loses the rest without any signal to a driving agent).
+            logger.error(
+                "%d items found but neither --all nor --select was given. "
+                "Refusing to silently process only the first item; pass --all "
+                "to process every item or --select to choose specific ones.",
+                len(all_items),
             )
-            return [all_items[0]]
+            sys.exit(2)
     else:
         # Interactive mode: prompt user for selection
         return prompt_for_item_selection(all_items) or []
@@ -174,6 +179,7 @@ def _apply_resume_filtering(
     selected_items: list[ItemSpec],
     base_output_dir: Path,
     resume_mode: str,
+    retranscribe: bool = False,
 ) -> tuple[list[ItemSpec], dict[str, ResumeResult], str, list[ResumeResult]]:
     """Filter items through the resume checker.
 
@@ -185,6 +191,7 @@ def _apply_resume_filtering(
         summarize=config.SUMMARIZE,
         output_docx=config.OUTPUT_DOCX,
         output_markdown=config.OUTPUT_MARKDOWN,
+        retranscribe=retranscribe,
     )
     filtered_result = resume_checker.filter_items(
         items=selected_items,
@@ -298,16 +305,96 @@ def _run_processing_loop(
     return processed_count
 
 
-def main() -> None:
+def _emit_json_summary(
+    processed: int,
+    failed: int,
+    skipped: int,
+    total: int,
+    outputs: list[str],
+) -> None:
+    """Print one machine-readable JSON run-summary line on stdout."""
+    stats = get_token_tracker().get_stats() if config.DAILY_TOKEN_LIMIT_ENABLED else {}
+    summary = {
+        "items_total": total,
+        "items_complete": processed,
+        "items_failed": failed,
+        "items_skipped": skipped,
+        "outputs": outputs,
+        "tokens_used_today": stats.get("tokens_used_today"),
+        "daily_token_limit": stats.get("daily_limit"),
+    }
+    print(json.dumps(summary, ensure_ascii=False))
+
+
+def _run_dry_run(
+    items_to_process: list[ItemSpec],
+    item_resume_map: dict[str, ResumeResult],
+    skipped_items: list[ResumeResult],
+    emit_json: bool,
+) -> None:
+    """Report the planned actions (discovery + resume classification), no work."""
+    plan: list[dict[str, Any]] = []
+    for item in items_to_process:
+        resume = item_resume_map.get(item.output_stem)
+        state = resume.state.value if resume else "none"
+        pages = (
+            len(resume.completed_page_indices)
+            if resume and resume.completed_page_indices
+            else 0
+        )
+        plan.append(
+            {"name": item.output_stem, "state": state, "completed_pages": pages}
+        )
+        logger.info(
+            "DRY-RUN plan: %s -> %s (%d completed page(s))",
+            item.output_stem,
+            state,
+            pages,
+        )
+    for skipped in skipped_items:
+        logger.info("DRY-RUN skip: %s -> complete", skipped.item_name)
+
+    if emit_json:
+        print(
+            json.dumps(
+                {
+                    "dry_run": True,
+                    "to_process": plan,
+                    "skipped": [s.item_name for s in skipped_items],
+                },
+                ensure_ascii=False,
+            )
+        )
+
+
+def main() -> int:
     args = setup_argparse()
+    emit_json = bool(getattr(args, "json", False))
+    dry_run = bool(getattr(args, "dry_run", False))
+    retranscribe = bool(getattr(args, "retranscribe", False))
+
+    # Non-TTY guard: interactive mode would block on input() prompts. Fail fast
+    # with a clear message and usage exit code instead of hanging or EOF-ing.
+    if not config.CLI_MODE and not sys.stdin.isatty():
+        logger.error(
+            "Interactive mode requires a TTY. Re-run with --cli (and input/"
+            "output paths) for non-interactive use."
+        )
+        return 2
 
     selected_items, base_output_dir, summary_context, resume_mode = _setup_and_scan(
         args
     )
 
     items_to_process, item_resume_map, resume_mode, skipped_items = (
-        _apply_resume_filtering(selected_items, base_output_dir, resume_mode)
+        _apply_resume_filtering(
+            selected_items, base_output_dir, resume_mode, retranscribe=retranscribe
+        )
     )
+
+    if dry_run:
+        _run_dry_run(items_to_process, item_resume_map, skipped_items, emit_json)
+        return 0
 
     # Prompt for summary context in interactive mode
     if not config.CLI_MODE and config.SUMMARIZE and not summary_context:
@@ -320,7 +407,7 @@ def main() -> None:
         )
         if not confirmed:
             print_info("Processing cancelled by user.")
-            sys.exit(0)
+            return 0
         print_section(f"Processing {len(items_to_process)} Item(s)")
 
     _log_token_usage()
@@ -336,6 +423,7 @@ def main() -> None:
     # Final summary
     skipped_count = len(skipped_items)
     total_to_process = len(items_to_process)
+    failed_count = total_to_process - processed_count
     if config.CLI_MODE:
         msg = f"{processed_count}/{total_to_process} item(s) processed."
         if skipped_count > 0:
@@ -355,13 +443,24 @@ def main() -> None:
         f"{processed_count}/{total_to_process} selected items have been processed."
     )
 
+    if emit_json:
+        _emit_json_summary(
+            processed_count, failed_count, skipped_count, total_to_process, []
+        )
+
+    # Exit code contract: 0 = all requested items succeeded; 1 = one or more
+    # failed/partial.
+    return 1 if failed_count > 0 else 0
+
 
 if __name__ == "__main__":
     try:
-        main()
+        sys.exit(main())
+    except SystemExit:
+        raise
     except KeyboardInterrupt:
         logger.info("Processing interrupted by user (Ctrl+C). Exiting.")
-        exit_program("\nProcessing interrupted by user.")
+        sys.exit(130)
     except Exception as exc:
         handle_critical_error(
             exc,

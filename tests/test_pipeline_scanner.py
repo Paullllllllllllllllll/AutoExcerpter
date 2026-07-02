@@ -343,18 +343,23 @@ class TestCollectItemsFromDirectory:
         assert items == []
 
     def test_image_folder_with_nested_content(self, tmp_path: Path) -> None:
-        """A directory with images is detected; its children are still walked.
+        """A directory that collected images is one item; its subtree is pruned.
 
-        The ``dirs[:]`` filtering in ``_collect_items_from_directory``
-        removes subdirectories from the walk only if those subdirectories
-        are *themselves* already registered as image folders. Since
-        ``os.walk`` is top-down, subdirectories are not yet in
-        ``image_folders`` when the parent is evaluated, so the walk
-        descends into them normally.
+        Once a directory contributes images it is treated as a single image
+        folder and the walk does not descend into its subdirectories. This
+        prevents a book folder and its own ``thumbnails`` subfolder from being
+        emitted as two separate items (and, as a side effect, ignores nested
+        content beneath an image folder).
         """
         parent = tmp_path / "parent"
         parent.mkdir()
         (parent / "photo.jpg").write_bytes(b"\xff\xd8")
+
+        # A thumbnails subfolder with its own images must NOT become a
+        # second item.
+        thumbs = parent / "thumbnails"
+        thumbs.mkdir()
+        (thumbs / "thumb.jpg").write_bytes(b"\xff\xd8")
 
         child = parent / "child"
         child.mkdir()
@@ -366,8 +371,7 @@ class TestCollectItemsFromDirectory:
         assert len(folder_items) == 1
         assert folder_items[0].path == parent
 
-        # The nested PDF is still found because the child directory
-        # is not itself an image folder, so it is not pruned.
+        # The subtree beneath an image folder is pruned, so the nested PDF and
+        # the thumbnails subfolder are not emitted as separate items.
         pdf_items = [i for i in items if i.kind == "pdf"]
-        assert len(pdf_items) == 1
-        assert pdf_items[0].path.name == "nested.pdf"
+        assert pdf_items == []

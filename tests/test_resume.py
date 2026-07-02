@@ -102,25 +102,38 @@ def _create_log_with_entries(
     safe_log_name = create_safe_log_filename(item_name, "transcription")
     log_path = working_dir / safe_log_name
 
-    # Mimic the JSON array log format
-    header = {
-        "input_item_name": item_name,
-        "input_item_path": f"/fake/{item_name}.pdf",
-        "input_type": "PDF",
-        "total_images": len(entries),
-    }
-
-    parts = [json.dumps(header)]
-    for entry in entries:
-        parts.append(json.dumps(entry))
-
-    content = "[\n" + ",\n".join(parts)
-    if finalize:
-        content += "\n]"
-    # else: leave the array unclosed (simulating a crash)
-
-    log_path.write_text(content, encoding="utf-8")
+    log_path.write_text(_jsonl_log(entries, finalize=finalize), encoding="utf-8")
     return log_path
+
+
+def _jsonl_log(
+    entries: list[dict[str, Any]],
+    finalize: bool = True,
+    total_images: int | None = None,
+    model_name: str | None = None,
+) -> str:
+    """Build JSONL working-log content with the current versioned header.
+
+    In JSONL every written line is a complete object, so *finalize* is accepted
+    for call-site compatibility but has no effect (a crash can only truncate the
+    final line, which the parser drops; see the dedicated recovery tests).
+    """
+    from config.constants import LOG_FORMAT_VERSION
+
+    header = {
+        "_format_version": LOG_FORMAT_VERSION,
+        "log_type": "transcription",
+        "input_item_name": "test",
+        "input_item_path": "/fake/test.pdf",
+        "input_type": "PDF",
+        "total_images": total_images if total_images is not None else len(entries),
+    }
+    if model_name is not None:
+        header["model_name"] = model_name
+
+    lines = [json.dumps(header)]
+    lines.extend(json.dumps(entry) for entry in entries)
+    return "\n".join(lines) + "\n"
 
 
 # ============================================================================
@@ -444,46 +457,57 @@ class TestResumeCheckerFilterItems:
 # ============================================================================
 # load_completed_pages Tests
 # ============================================================================
+def _jl(
+    entries: list[dict[str, Any]], header_extra: dict[str, Any] | None = None
+) -> str:
+    """Build versioned JSONL log content (header line + one line per entry)."""
+    from config.constants import LOG_FORMAT_VERSION
+
+    header: dict[str, Any] = {
+        "_format_version": LOG_FORMAT_VERSION,
+        "input_item_name": "test",
+    }
+    if header_extra:
+        header.update(header_extra)
+    lines = [json.dumps(header)] + [json.dumps(e) for e in entries]
+    return "\n".join(lines) + "\n"
+
+
 class TestLoadCompletedPages:
     def test_valid_complete_log(self, tmp_path: Path) -> None:
-        """Parse a valid, finalized JSON log."""
-        header = {"input_item_name": "test"}
+        """Parse a valid, versioned JSONL log."""
         entries = [
             {"original_input_order_index": 0, "page": 1, "transcription": "a"},
             {"original_input_order_index": 1, "page": 2, "transcription": "b"},
             {"original_input_order_index": 2, "page": 3, "error": "fail"},
         ]
         log_path = tmp_path / "test_log.json"
-        log_path.write_text(json.dumps([header] + entries), encoding="utf-8")
+        log_path.write_text(_jl(entries), encoding="utf-8")
 
         result = load_completed_pages(log_path)
         assert result == {0, 1}  # index 2 has error, excluded
 
-    def test_incomplete_json_array(self, tmp_path: Path) -> None:
-        """Recover from incomplete JSON array (no closing bracket)."""
-        header = {"input_item_name": "test"}
+    def test_truncated_last_line_recovered(self, tmp_path: Path) -> None:
+        """A crash truncating the final JSONL line drops only that line."""
         e1 = {"original_input_order_index": 0, "page": 1, "transcription": "a"}
         log_path = tmp_path / "test_log.json"
+        # Complete e1 line, then a torn partial line (no newline).
         log_path.write_text(
-            "[\n" + json.dumps(header) + ",\n" + json.dumps(e1),
+            _jl([e1]) + '{"original_input_order_index": 1, "transcr',
             encoding="utf-8",
         )
 
         result = load_completed_pages(log_path)
         assert result == {0}
 
-    def test_incomplete_with_trailing_comma(self, tmp_path: Path) -> None:
-        """Recover from incomplete JSON array with trailing comma."""
+    def test_unversioned_log_refused(self, tmp_path: Path) -> None:
+        """A legacy JSON-array log (no version marker) is refused."""
         header = {"input_item_name": "test"}
         e1 = {"original_input_order_index": 0, "page": 1, "transcription": "a"}
-        log_path = tmp_path / "test_log.json"
-        log_path.write_text(
-            "[\n" + json.dumps(header) + ",\n" + json.dumps(e1) + ",",
-            encoding="utf-8",
-        )
+        log_path = tmp_path / "legacy.json"
+        log_path.write_text(json.dumps([header, e1]), encoding="utf-8")
 
-        result = load_completed_pages(log_path)
-        assert result == {0}
+        assert load_completed_pages(log_path) is None
 
     def test_empty_file(self, tmp_path: Path) -> None:
         """Empty file returns None."""
@@ -493,9 +517,8 @@ class TestLoadCompletedPages:
 
     def test_header_only(self, tmp_path: Path) -> None:
         """Log with only a header (no page entries) returns None."""
-        header = {"input_item_name": "test"}
         log_path = tmp_path / "header_only.json"
-        log_path.write_text(json.dumps([header]), encoding="utf-8")
+        log_path.write_text(_jl([]), encoding="utf-8")
         assert load_completed_pages(log_path) is None
 
     def test_nonexistent_file(self, tmp_path: Path) -> None:
@@ -505,12 +528,9 @@ class TestLoadCompletedPages:
 
     def test_all_errors_returns_none(self, tmp_path: Path) -> None:
         """Log where all entries have errors returns None."""
-        header = {"input_item_name": "test"}
-        entries = [
-            {"original_input_order_index": 0, "page": 1, "error": "fail"},
-        ]
+        entries = [{"original_input_order_index": 0, "page": 1, "error": "fail"}]
         log_path = tmp_path / "errors.json"
-        log_path.write_text(json.dumps([header] + entries), encoding="utf-8")
+        log_path.write_text(_jl(entries), encoding="utf-8")
         assert load_completed_pages(log_path) is None
 
     def test_corrupted_json(self, tmp_path: Path) -> None:
@@ -526,13 +546,12 @@ class TestLoadCompletedPages:
 class TestLoadTranscriptionResultsFromLog:
     def test_returns_entries_excluding_header(self, tmp_path: Path) -> None:
         """Returns only entries with original_input_order_index (not header)."""
-        header = {"input_item_name": "test"}
         entries = [
             {"original_input_order_index": 0, "page": 1, "transcription": "a"},
             {"original_input_order_index": 1, "page": 2, "transcription": "b"},
         ]
         log_path = tmp_path / "log.json"
-        log_path.write_text(json.dumps([header] + entries), encoding="utf-8")
+        log_path.write_text(_jl(entries), encoding="utf-8")
 
         result = load_transcription_results_from_log(log_path)
         assert result is not None
@@ -542,12 +561,9 @@ class TestLoadTranscriptionResultsFromLog:
 
     def test_includes_error_entries(self, tmp_path: Path) -> None:
         """Error entries are included (they are page results, just failed)."""
-        header = {"input_item_name": "test"}
-        entries = [
-            {"original_input_order_index": 0, "page": 1, "error": "fail"},
-        ]
+        entries = [{"original_input_order_index": 0, "page": 1, "error": "fail"}]
         log_path = tmp_path / "log.json"
-        log_path.write_text(json.dumps([header] + entries), encoding="utf-8")
+        log_path.write_text(_jl(entries), encoding="utf-8")
 
         result = load_transcription_results_from_log(log_path)
         assert result is not None
@@ -560,20 +576,15 @@ class TestLoadTranscriptionResultsFromLog:
         assert load_transcription_results_from_log(log_path) is None
 
     def test_header_only_returns_none(self, tmp_path: Path) -> None:
-        header = {"input_item_name": "test"}
         log_path = tmp_path / "header_only.json"
-        log_path.write_text(json.dumps([header]), encoding="utf-8")
+        log_path.write_text(_jl([]), encoding="utf-8")
         assert load_transcription_results_from_log(log_path) is None
 
     def test_incomplete_log(self, tmp_path: Path) -> None:
-        """Can recover entries from an incomplete log."""
-        header = {"input_item_name": "test"}
+        """Can recover entries from a log with a truncated final line."""
         e1 = {"original_input_order_index": 0, "page": 1, "transcription": "a"}
         log_path = tmp_path / "incomplete.json"
-        log_path.write_text(
-            "[\n" + json.dumps(header) + ",\n" + json.dumps(e1),
-            encoding="utf-8",
-        )
+        log_path.write_text(_jl([e1]) + '{"original_input_o', encoding="utf-8")
 
         result = load_transcription_results_from_log(log_path)
         assert result is not None
@@ -584,13 +595,15 @@ class TestLoadTranscriptionResultsFromLog:
 # _parse_log_entries Tests
 # ============================================================================
 class TestParseLogEntries:
-    def test_valid_json_array(self) -> None:
-        raw = json.dumps([{"a": 1}, {"b": 2}])
+    def test_valid_jsonl(self) -> None:
+        raw = _jl([{"a": 1}, {"b": 2}])
         result = _parse_log_entries(raw)
         assert result is not None
-        assert len(result) == 2
+        # header + 2 entries
+        assert len(result) == 3
+        assert result[0]["_format_version"] == 2
 
-    def test_not_a_list(self) -> None:
+    def test_unversioned_header_refused(self) -> None:
         raw = json.dumps({"key": "value"})
         result = _parse_log_entries(raw)
         assert result is None
@@ -599,17 +612,24 @@ class TestParseLogEntries:
         result = _parse_log_entries("")
         assert result is None
 
-    def test_missing_closing_bracket(self) -> None:
-        raw = '[{"a": 1},{"b": 2}'
+    def test_truncated_final_line_dropped(self) -> None:
+        raw = _jl([{"original_input_order_index": 0}]) + '{"original_input_o'
         result = _parse_log_entries(raw)
         assert result is not None
+        # header + one complete entry; the torn line is dropped
         assert len(result) == 2
 
-    def test_trailing_comma_and_missing_bracket(self) -> None:
-        raw = '[{"a": 1},'
+    def test_interior_corrupt_line_skipped(self) -> None:
+        raw = (
+            _jl([{"original_input_order_index": 0}]).rstrip("\n")
+            + "\nnot-json\n"
+            + json.dumps({"original_input_order_index": 2})
+            + "\n"
+        )
         result = _parse_log_entries(raw)
         assert result is not None
-        assert len(result) == 1
+        # header + 2 valid entries; the interior corrupt line is skipped
+        assert len(result) == 3
 
     def test_completely_invalid(self) -> None:
         result = _parse_log_entries("{{not json}}")

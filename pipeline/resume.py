@@ -25,6 +25,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from config.constants import LOG_FORMAT_VERSION
 from config.logger import setup_logger
 from pipeline.paths import create_safe_directory_name, create_safe_log_filename
 
@@ -51,6 +52,7 @@ class ResumeResult:
     missing_outputs: list[Path] = field(default_factory=list)
     reason: str = ""
     completed_page_indices: set[int] | None = None
+    logged_model_name: str | None = None
 
 
 class ResumeChecker:
@@ -73,11 +75,15 @@ class ResumeChecker:
         summarize: bool = True,
         output_docx: bool = True,
         output_markdown: bool = True,
+        retranscribe: bool = False,
     ) -> None:
         self.resume_mode = resume_mode
         self.summarize = summarize
         self.output_docx = output_docx
         self.output_markdown = output_markdown
+        # When True, logged transcriptions are NOT reused: resumable items are
+        # re-transcribed from scratch (``--retranscribe``).
+        self.retranscribe = retranscribe
 
     # ------------------------------------------------------------------
     # Public API
@@ -167,8 +173,38 @@ class ResumeChecker:
                 else:
                     missing.append(md_path)
 
+        # Read the working-log state once: completed page indices, the logged
+        # model name, and the expected page count from the header. Used both for
+        # the completeness contract (never mark COMPLETE with pages missing) and
+        # for summary-only reuse.
+        log_path = self._transcription_log_path(item_name, output_dir)
+        completed_pages = load_completed_pages(log_path) if log_path else None
+        header = load_log_header(log_path) if log_path else None
+        logged_model = header.get("model_name") if isinstance(header, dict) else None
+        expected_total = (
+            header.get("total_images") if isinstance(header, dict) else None
+        )
+        # Count ALL logged page entries (successful and errored). An error page
+        # was attempted and logged, so it counts as accounted-for; only pages
+        # that never reached the log at all (e.g. deferred by a token-budget
+        # stall) constitute a shortfall.
+        logged_results = (
+            load_transcription_results_from_log(log_path) if log_path else None
+        )
+        logged_count = len(logged_results) if logged_results else 0
+
+        # Completeness gate: outputs may exist yet be missing pages (a stalled
+        # token budget can write complete-looking outputs). If the log proves a
+        # shortfall, refuse COMPLETE and resume the missing pages. When no log
+        # is available we cannot prove a shortfall, so outputs are trusted.
+        log_shortfall = (
+            log_path is not None
+            and isinstance(expected_total, int)
+            and logged_count < expected_total
+        )
+
         # Determine state
-        if not missing:
+        if not missing and not log_shortfall:
             return ResumeResult(
                 item_name=item_name,
                 state=ProcessingState.COMPLETE,
@@ -176,25 +212,36 @@ class ResumeChecker:
                 existing_outputs=existing,
                 missing_outputs=missing,
                 reason=f"all outputs exist: {', '.join(p.name for p in existing)}",
+                logged_model_name=logged_model,
             )
 
-        # Check if transcription exists but summaries are missing
+        reuse_pages = None if self.retranscribe else completed_pages
+
+        # Transcription exists but summaries are missing (or pages are short of
+        # the expected total): reuse the logged transcriptions and (re)generate
+        # summaries only, unless --retranscribe forces a fresh pass.
         txt_exists = any(p.suffix == ".txt" for p in existing)
-        if txt_exists and self.summarize and missing:
+        if txt_exists and self.summarize and (missing or log_shortfall):
+            reason = "transcription exists, missing: " + ", ".join(
+                p.name for p in missing
+            )
+            if log_shortfall:
+                reason += (
+                    f" (log shows {len(completed_pages or [])}/{expected_total} "
+                    "pages; resuming missing pages)"
+                )
             return ResumeResult(
                 item_name=item_name,
                 state=ProcessingState.TRANSCRIPTION_ONLY,
                 output_dir=output_dir,
                 existing_outputs=existing,
                 missing_outputs=missing,
-                reason=(
-                    "transcription exists, missing: "
-                    + ", ".join(p.name for p in missing)
-                ),
+                reason=reason,
+                completed_page_indices=reuse_pages,
+                logged_model_name=logged_model,
             )
 
         # Check for partial processing (JSONL log exists in working directory)
-        completed_pages = self._check_partial_log(item_name, output_dir)
         if completed_pages is not None:
             return ResumeResult(
                 item_name=item_name,
@@ -203,7 +250,8 @@ class ResumeChecker:
                 existing_outputs=existing,
                 missing_outputs=missing,
                 reason=f"partial log with {len(completed_pages)} completed page(s)",
-                completed_page_indices=completed_pages,
+                completed_page_indices=reuse_pages,
+                logged_model_name=logged_model,
             )
 
         return ResumeResult(
@@ -215,12 +263,8 @@ class ResumeChecker:
             reason="no output",
         )
 
-    def _check_partial_log(self, item_name: str, output_dir: Path) -> set[int] | None:
-        """Check if a partial transcription log exists with completed pages.
-
-        Returns:
-            Set of completed page indices if a partial log exists, None otherwise.
-        """
+    def _transcription_log_path(self, item_name: str, output_dir: Path) -> Path | None:
+        """Return the transcription log path for an item, or None if absent."""
         safe_working_dir_name = create_safe_directory_name(item_name, "_working_files")
         working_dir = output_dir / safe_working_dir_name
 
@@ -233,30 +277,27 @@ class ResumeChecker:
         if not log_path.exists() or log_path.stat().st_size == 0:
             return None
 
-        return load_completed_pages(log_path)
+        return log_path
 
 
 def load_completed_pages(log_path: Path) -> set[int] | None:
-    """Parse a transcription JSONL log and return indices of successfully completed
-    pages.
+    """Parse a transcription JSONL log and return indices of completed pages.
 
-    The log format is a JSON array where the first element is the header/metadata
-    and subsequent elements are per-page transcription results.
+    The log is JSONL: line 1 is the versioned header, each later line is a
+    per-page result. Logs lacking the current format marker are refused.
 
     Args:
         log_path: Path to the transcription log file.
 
     Returns:
         Set of ``original_input_order_index`` values for successful pages,
-        or None if the log cannot be parsed.
+        or None if the log cannot be parsed or is unversioned.
     """
     try:
         raw = log_path.read_text(encoding="utf-8").strip()
         if not raw:
             return None
 
-        # Handle potentially incomplete JSON arrays (crash before finalize)
-        # Try parsing as-is first, then try fixing incomplete arrays
         entries = _parse_log_entries(raw)
         if entries is None:
             return None
@@ -265,8 +306,7 @@ def load_completed_pages(log_path: Path) -> set[int] | None:
         for entry in entries:
             if not isinstance(entry, dict):
                 continue
-            # Skip the header entry (has "input_item_name" but no
-            # "original_input_order_index")
+            # Skip the header entry (no per-page order index).
             if "original_input_order_index" not in entry:
                 continue
             # Only count entries without errors
@@ -283,37 +323,73 @@ def load_completed_pages(log_path: Path) -> set[int] | None:
 
 
 def _parse_log_entries(raw: str) -> list[dict[str, Any]] | None:
-    """Parse log file content, handling both complete and incomplete JSON arrays.
+    """Parse JSONL working-log content with version enforcement.
+
+    The first non-blank line must be a header carrying the current
+    ``_format_version`` marker; otherwise the log is refused (no migration).
+    A truncated final line (crash mid-write) is dropped.
 
     Args:
         raw: Raw file content.
 
     Returns:
-        List of parsed entries, or None if parsing fails.
+        List of parsed objects (header first), or None on refusal/parse
+        failure.
     """
-    # Try standard JSON parse first
-    try:
-        data = json.loads(raw)
-        if isinstance(data, list):
-            return data
+    lines = [ln for ln in raw.splitlines() if ln.strip()]
+    if not lines:
         return None
-    except json.JSONDecodeError:
-        pass
 
-    # Try fixing incomplete array (crash before finalize_log_file added closing bracket)
-    # Common cases: "[header,entry1,entry2" or "[header,entry1,entry2,"
-    cleaned = raw.rstrip().rstrip(",")
-    if not cleaned.endswith("]"):
-        cleaned += "\n]"
     try:
-        data = json.loads(cleaned)
-        if isinstance(data, list):
-            logger.debug("Recovered incomplete JSON log array")
-            return data
+        header = json.loads(lines[0])
     except json.JSONDecodeError:
-        pass
+        return None
 
-    return None
+    if (
+        not isinstance(header, dict)
+        or header.get("_format_version") != LOG_FORMAT_VERSION
+    ):
+        logger.warning(
+            "Refusing resume of working log with an unrecognized format "
+            "(missing or outdated _format_version marker). Re-run from scratch "
+            "or finish it with the version that wrote it."
+        )
+        return None
+
+    entries: list[dict[str, Any]] = [header]
+    last_index = len(lines) - 1
+    for i, line in enumerate(lines[1:], start=1):
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            if i == last_index:
+                # Expected: a crash truncated the final line. Drop it.
+                logger.debug("Dropped trailing truncated log line")
+            else:
+                logger.warning("Skipping unparsable interior log line %d", i)
+            continue
+        if isinstance(obj, dict):
+            entries.append(obj)
+
+    return entries
+
+
+def load_log_header(log_path: Path) -> dict[str, Any] | None:
+    """Return the versioned header object of a JSONL working log, or None."""
+    try:
+        raw = log_path.read_text(encoding="utf-8").strip()
+        if not raw:
+            return None
+        entries = _parse_log_entries(raw)
+        if not entries:
+            return None
+        header = entries[0]
+        if isinstance(header, dict) and "_format_version" in header:
+            return header
+        return None
+    except Exception as exc:
+        logger.warning("Could not read log header %s: %s", log_path, exc)
+        return None
 
 
 def load_transcription_results_from_log(log_path: Path) -> list[dict[str, Any]] | None:
@@ -361,5 +437,6 @@ __all__ = [
     "ResumeResult",
     "ResumeChecker",
     "load_completed_pages",
+    "load_log_header",
     "load_transcription_results_from_log",
 ]

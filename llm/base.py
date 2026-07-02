@@ -893,6 +893,17 @@ class LLMClientBase:
         # Add max_output_tokens from config (most models support this)
         if capabilities.get("max_tokens", True):
             max_tokens = self.model_config.get("max_output_tokens")
+            if not max_tokens and self.provider == "anthropic":
+                # langchain-anthropic silently defaults to 1024 output tokens
+                # when max_tokens is unset, truncating long transcriptions and
+                # summaries. Fall back to the capability registry's default.
+                from llm.capabilities import detect_capabilities
+
+                max_tokens = detect_capabilities(self.model_name).max_output_tokens
+                logger.debug(
+                    "Anthropic max_tokens omitted; defaulting to registry value "
+                    f"{max_tokens} for {self.model_name}"
+                )
             if max_tokens:
                 if self.provider == "openai":
                     invoke_kwargs["max_output_tokens"] = max_tokens
@@ -977,6 +988,26 @@ class LLMClientBase:
         elif "text" in self.model_config:
             logger.debug(
                 f"Skipping text verbosity params for {self.model_name} (not supported)"
+            )
+
+        # Temperature (capability-guarded). Skipped for reasoning models
+        # (whose capability flag is False) and whenever reasoning/extended
+        # thinking is active, since those paths reject an explicit temperature.
+        temperature = self.model_config.get("temperature")
+        reasoning_active = any(
+            key in invoke_kwargs for key in ("reasoning", "thinking", "thinking_config")
+        )
+        if (
+            temperature is not None
+            and capabilities.get("temperature", False)
+            and not reasoning_active
+        ):
+            invoke_kwargs["temperature"] = float(temperature)
+            logger.debug(f"Added temperature={temperature} for {self.model_name}")
+        elif temperature is not None:
+            logger.debug(
+                f"Skipping temperature for {self.model_name} "
+                "(unsupported or reasoning active)"
             )
 
         return invoke_kwargs

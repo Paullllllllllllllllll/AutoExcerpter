@@ -22,13 +22,13 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from config.accessors import get_api_timeout, get_rate_limits
+from config.accessors import get_api_timeout
 from config.loader import PROMPTS_DIR, SCHEMAS_DIR
 from config.logger import setup_logger
 from llm.base import LLMClientBase
 from llm.client import ProviderType
 from llm.prompts import render_prompt_with_schema, strip_markdown_code_block
-from llm.rate_limit import RateLimiter
+from llm.rate_limit import RateLimiter, get_shared_rate_limiter
 from llm.types import CustomEndpointCapabilities
 
 logger = setup_logger(__name__)
@@ -65,6 +65,7 @@ class SummaryManager(LLMClientBase):
         summary_context: str | None = None,
         custom_capabilities: CustomEndpointCapabilities | None = None,
         transcription_was_plain_text: bool = False,
+        rate_limiter: RateLimiter | None = None,
     ) -> None:
         """
         Initialize the summary manager.
@@ -77,9 +78,12 @@ class SummaryManager(LLMClientBase):
             custom_capabilities: Declared capabilities for custom endpoints.
             transcription_was_plain_text: Whether the transcription step used
                 plain-text mode (affects which summary prompt is loaded).
+            rate_limiter: Optional injected RateLimiter. When omitted, the
+                process-wide limiter for this provider is used so transcription
+                and summary requests share one set of rate-limit windows.
         """
-        # Initialize rate limiter with provider-agnostic configuration
-        rate_limiter = RateLimiter(get_rate_limits())
+        if rate_limiter is None:
+            rate_limiter = get_shared_rate_limiter(provider)
         super().__init__(
             model_name,
             provider,

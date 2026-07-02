@@ -6,7 +6,9 @@ from __future__ import annotations
 import hashlib
 import re
 import time
+import unicodedata
 from dataclasses import dataclass, field
+from difflib import SequenceMatcher
 from typing import Any
 
 import requests
@@ -17,24 +19,115 @@ logger = setup_logger(__name__)
 
 
 # ============================================================================
+# Text folding & structured-key helpers (shared by dedup and matching)
+# ============================================================================
+
+# Curly quotes/apostrophes and the several dash characters folded to ASCII so
+# that "Müller's" / "Muller's" and en/em dashes do not defeat deduplication.
+_CURLY_TRANSLATION = {
+    ord("‘"): "'",
+    ord("’"): "'",
+    ord("“"): '"',
+    ord("”"): '"',
+    ord("–"): "-",
+    ord("—"): "-",
+    ord("−"): "-",
+    ord("­"): "",  # soft hyphen
+}
+
+_YEAR_RE = re.compile(r"\b(1[0-9]{3}|20[0-9]{2})\b")
+_VOLUME_RE = re.compile(r"\b(?:vol|volume)\.?\s*([0-9]+)\b", re.IGNORECASE)
+_TITLE_SPAN_RE = re.compile(r'\*([^*\n]{3,})\*|"([^"\n]{3,})"')
+_STOPLIST_RE = re.compile(
+    r"\b(?:london|cambridge|oxford|new york|berkeley|chicago"
+    r"|press|university|publishers?)\b"
+)
+
+
+def _fold(text: str) -> str:
+    """Fold text for robust comparison.
+
+    NFKD-normalizes, strips combining marks (so ``Müller`` == ``Muller`` and
+    ``Génin`` == ``Genin``), casefolds, unifies curly quotes and dashes to
+    ASCII, and rewrites ``&`` as ``and``.
+    """
+    if not text:
+        return ""
+    text = text.translate(_CURLY_TRANSLATION)
+    text = unicodedata.normalize("NFKD", text)
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    text = text.casefold()
+    text = text.replace("&", " and ")
+    return text
+
+
+def _extract_year(text: str) -> int | None:
+    """Return the first 4-digit publication year in *text*, or None."""
+    match = _YEAR_RE.search(text)
+    return int(match.group(1)) if match else None
+
+
+def _extract_volume(text: str) -> int | None:
+    """Return the volume number in *text* (``Vol. 3``), or None."""
+    match = _VOLUME_RE.search(text)
+    return int(match.group(1)) if match else None
+
+
+def _title_spans(text: str) -> list[str]:
+    """Return italic (``*...*``) or quoted (``"..."``) title spans in *text*."""
+    spans: list[str] = []
+    for ital, quoted in _TITLE_SPAN_RE.findall(text):
+        span = ital or quoted
+        if span:
+            spans.append(span)
+    return spans
+
+
+def _first_author_surname(text: str) -> str:
+    """Return the folded first-author surname (best-effort), or ``""``.
+
+    Takes the first capitalized, alphabetic token before the first year or
+    opening parenthesis.
+    """
+    head = re.split(r"\(|\d{4}", text, maxsplit=1)[0]
+    for tok in re.findall(r"[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ'’-]{1,}", head):
+        folded = _fold(tok)
+        if folded not in {"the", "and", "of", "in", "on", "ed", "eds", "trans"}:
+            return folded
+    return ""
+
+
+def _token_set(text: str) -> set[str]:
+    """Return the set of word tokens (length > 1) in folded *text*."""
+    return {t for t in re.findall(r"[a-z0-9]+", text) if len(t) > 1}
+
+
+def _jaccard(a: str, b: str) -> float:
+    """Token-set Jaccard similarity of two comparison strings."""
+    sa, sb = _token_set(a), _token_set(b)
+    if not sa or not sb:
+        return 0.0
+    return len(sa & sb) / len(sa | sb)
+
+
+# ============================================================================
 # Page Range Formatting
 # ============================================================================
 
 
-def _format_page_range(pages: list[int]) -> str:
+def _format_page_range(pages: list[int], has_unnumbered: bool = False) -> str:
     """Format a list of page numbers as a compact range string.
 
     Examples:
         [1, 2, 3, 5, 7, 8, 9] -> "pp. 1-3, 5, 7-9"
         [5] -> "p. 5"
+        [] with has_unnumbered=True -> "unnumbered"
+        [5] with has_unnumbered=True -> "pp. 5, unnumbered"
     """
     if not pages:
-        return ""
+        return "unnumbered" if has_unnumbered else ""
 
     pages = sorted(set(pages))
-    if len(pages) == 1:
-        return f"p. {pages[0]}"
-
     ranges = []
     start = pages[0]
     end = pages[0]
@@ -54,7 +147,12 @@ def _format_page_range(pages: list[int]) -> str:
     else:
         ranges.append(f"{start}-{end}")
 
-    return f"pp. {', '.join(ranges)}"
+    if has_unnumbered:
+        ranges.append("unnumbered")
+
+    single = len(pages) == 1 and not has_unnumbered
+    prefix = "p." if single else "pp."
+    return f"{prefix} {', '.join(ranges)}"
 
 
 # ============================================================================
@@ -92,7 +190,10 @@ BUDGET_EXHAUSTED_RETRY_AFTER_THRESHOLD = 300  # 5 minutes
 MIN_AUTHOR_LENGTH = 3
 MIN_TITLE_LENGTH = 10
 MIN_YEAR_LENGTH = 4
-MATCH_RATIO_THRESHOLD = 0.3  # Minimum word overlap ratio for citation matching
+# Minimum fraction of candidate title words that must appear in the citation
+# for an OpenAlex link to be considered (strict linking; see decision 9). The
+# config value ``citation.match_title_overlap`` overrides this at runtime.
+MATCH_RATIO_THRESHOLD = 0.5
 MAX_AUTHORS_TO_EXTRACT = 5  # Limit authors in metadata
 SEARCH_QUERY_MAX_LENGTH = 100  # Maximum length for search queries
 SEARCH_RESULTS_PER_PAGE = 5  # Candidates fetched per search; first matching wins
@@ -101,7 +202,14 @@ PROGRESS_LOG_INTERVAL = 5  # Log progress every N citations
 
 @dataclass
 class Citation:
-    """Represents a single citation with metadata and page tracking."""
+    """Represents a single citation with metadata and page tracking.
+
+    The deduplication key is *structured*: it folds the text (accents, case,
+    quotes, ``&``), keeps the year and volume as discriminators (so different
+    editions never collapse), and applies the publisher/city stop-list only
+    outside the title span. ``consolidate()`` on the manager performs a later,
+    conservative fuzzy merge within (author, year) blocks.
+    """
 
     raw_text: str
     pages: set[int] = field(default_factory=set)
@@ -109,72 +217,70 @@ class Citation:
     metadata: dict[str, Any] | None = None
     doi: str | None = None
     url: str | None = None
+    unnumbered: bool = False
+    variants: list[str] = field(default_factory=list)
+    # Structured discriminators / comparison material (populated in __post_init__)
+    year: int | None = None
+    volume: int | None = None
+    author: str = ""
+    comparison_text: str = ""
 
     def __post_init__(self) -> None:
-        """Generate normalized key for deduplication."""
+        """Generate structured normalized key for deduplication."""
+        self.year = _extract_year(self.raw_text)
+        self.volume = _extract_volume(self.raw_text)
+        self.author = _first_author_surname(self.raw_text)
         if not self.normalized_key:
             self.normalized_key = self._generate_normalized_key()
 
     def _generate_normalized_key(self) -> str:
-        """Create a normalized key for citation deduplication."""
-        # Start with lowercase text
-        text = self.raw_text.strip().lower()
+        """Create a structured normalized key for citation deduplication."""
+        text = _fold(self.raw_text.strip())
 
-        # Remove URLs (http/https)
-        text = re.sub(r"https?://[^\s]+", "", text)
+        # Remove URLs and DOIs (identifiers handled separately).
+        text = re.sub(r"https?://\S+", " ", text)
+        text = re.sub(r"doi:\s*10\.\S+", " ", text)
+        text = re.sub(r"\b10\.\d{4,}/\S+", " ", text)
 
-        # Remove DOIs
-        text = re.sub(r"doi:\s*[\d.]+/[^\s]+", "", text)
+        # Remove page numbers (p. 123, pp. 123-145, (pp. 123)).
+        text = re.sub(r"\(?\s*pp?\.\s*\d+(?:\s*-\s*\d+)?\s*\)?", " ", text)
 
-        # Remove page numbers in various formats:
-        # p. 123, pp. 123-145, (p. 123), (pp. 123-145)
-        text = re.sub(r"\(?\s*pp?\.\s*\d+[-–—]?\d*\s*\)?", "", text)
+        # Protect the folded title span so the stop-list only strips the
+        # non-title parts (keeps "the cambridge world history of food" intact).
+        placeholders: dict[str, str] = {}
+        for i, span in enumerate(_title_spans(self.raw_text)):
+            folded_span = _fold(span)
+            token = f" __title{i}__ "
+            if folded_span and folded_span in text:
+                text = text.replace(folded_span, token)
+                placeholders[token.strip()] = folded_span
 
-        # Remove years in parentheses: (2002), (n.d.), (1984/1996), (forthcoming)
-        text = re.sub(
-            r"\(\s*(?:\d{4}(?:[-/]\d{4})?|n\.?d\.?|forthcoming)\s*\)", "", text
-        )
+        text = _STOPLIST_RE.sub(" ", text)
 
-        # Remove standalone years: 1984, 2002
-        text = re.sub(r"\b\d{4}\b", "", text)
+        for token, folded_span in placeholders.items():
+            text = text.replace(token, f" {folded_span} ")
 
-        # Remove "n.d." standalone
-        text = re.sub(r"\bn\.?\s*d\.?\b", "", text)
+        # Editor / translator markers and bracketed clarifications.
+        text = re.sub(r"\(?\s*(?:eds?|trans)\.?\s*\)?", " ", text)
+        text = re.sub(r"\[[^\]]*\]", " ", text)
 
-        # Remove editor references: (Ed.), (Eds.), (Trans.)
-        text = re.sub(r"\(\s*(?:ed|eds|trans)\.?\s*\)", "", text, flags=re.IGNORECASE)
-
-        # Remove volume references: Vol. 4, Volume 4
-        text = re.sub(r"\b(?:vol|volume)\.?\s*\d+\b", "", text, flags=re.IGNORECASE)
-
-        # Remove issue/page references in journals: 63(3), 101,
-        text = re.sub(r"\d+\(\d+\)", "", text)
-
-        # Remove common publisher locations and publishers
-        text = re.sub(
-            r"\b(?:london|cambridge|oxford|new york|berkeley|chicago"
-            r"|press|university|publisher)\b",
-            "",
-            text,
-            flags=re.IGNORECASE,
-        )
-
-        # Remove common citation elements: [publisher],
-        # [Place of publication not identified]
-        text = re.sub(r"\[.*?\]", "", text)
-
-        # Remove remaining punctuation except spaces
-        text = re.sub(r'[,.:;()\[\]"\'–—]', " ", text)
-
-        # Normalize whitespace
+        # Strip punctuation (straightened quotes, apostrophes, ASCII hyphen).
+        text = re.sub(r"[,.:;()\[\]\"'\-]", " ", text)
         text = re.sub(r"\s+", " ", text).strip()
 
-        # Create hash for efficient comparison
-        return hashlib.md5(text.encode("utf-8")).hexdigest()
+        self.comparison_text = text
 
-    def add_page(self, page: int) -> None:
-        """Add a page number to this citation."""
-        self.pages.add(page)
+        # Keep year and volume in the key material so different editions never
+        # collapse onto the same hash.
+        key_material = f"{text}|y={self.year}|v={self.volume}"
+        return hashlib.md5(key_material.encode("utf-8")).hexdigest()
+
+    def add_page(self, page: int | None) -> None:
+        """Add a page number (or mark unnumbered when *page* is None)."""
+        if page is None:
+            self.unnumbered = True
+        else:
+            self.pages.add(page)
 
     def get_sorted_pages(self) -> list[int]:
         """Return sorted list of page numbers."""
@@ -182,7 +288,7 @@ class Citation:
 
     def get_page_range_str(self) -> str:
         """Return a formatted string of page numbers/ranges."""
-        return _format_page_range(self.get_sorted_pages())
+        return _format_page_range(self.get_sorted_pages(), self.unnumbered)
 
 
 class CitationManager:
@@ -201,13 +307,31 @@ class CitationManager:
         self._api_cache: dict[str, dict[str, Any] | None] = {}
         self._openalex_budget_exhausted: bool = False
 
-    def add_citations(self, citations: list[str], page_number: int) -> None:
+        # Merge/linking thresholds (config-exposed under `citation:`).
+        try:
+            from config import app as config
+
+            self._merge_ratio = config.CITATION_MERGE_RATIO
+            self._merge_jaccard = config.CITATION_MERGE_JACCARD
+            self._match_title_overlap = config.CITATION_MATCH_TITLE_OVERLAP
+        except Exception:
+            self._merge_ratio = 0.90
+            self._merge_jaccard = 0.85
+            self._match_title_overlap = MATCH_RATIO_THRESHOLD
+
+        # Persistent cross-run OpenAlex cache (keyed by normalized citation key).
+        self._persistent_cache: dict[str, dict[str, Any]] = (
+            _load_persistent_openalex_cache()
+        )
+
+    def add_citations(self, citations: list[str], page_number: int | None) -> None:
         """
         Add citations from a page, handling deduplication.
 
         Args:
             citations: List of citation strings from a page.
-            page_number: The page number where these citations appear.
+            page_number: The page number where these citations appear, or None
+                for an unnumbered page (still recorded; rendered "unnumbered").
         """
         for citation_text in citations:
             if not citation_text or not citation_text.strip():
@@ -225,6 +349,80 @@ class CitationManager:
                 citation.add_page(page_number)
                 self.citations[normalized_key] = citation
 
+    def consolidate(self) -> None:
+        """Conservatively fuzzy-merge near-duplicate citations.
+
+        Blocks citations on (first-author surname, exact year) so different
+        years never merge, then within a block merges variants whose
+        SequenceMatcher ratio clears ``merge_ratio`` or whose token-set Jaccard
+        clears ``merge_jaccard``. Differing volumes never merge. The longest
+        variant becomes canonical; pages/unnumbered union; the first non-null
+        DOI/metadata wins; every merge is logged with both variants.
+        """
+        from collections import defaultdict
+
+        blocks: dict[tuple[str, int | None], list[Citation]] = defaultdict(list)
+        for citation in self.citations.values():
+            blocks[(citation.author, citation.year)].append(citation)
+
+        merged: dict[str, Citation] = {}
+        for block in blocks.values():
+            survivors: list[Citation] = []
+            for candidate in block:
+                target = self._find_merge_target(candidate, survivors)
+                if target is None:
+                    survivors.append(candidate)
+                else:
+                    self._merge_into(target, candidate)
+            for survivor in survivors:
+                merged[survivor.normalized_key] = survivor
+
+        self.citations = merged
+
+    def _find_merge_target(
+        self, candidate: Citation, survivors: list[Citation]
+    ) -> Citation | None:
+        """Return an existing survivor *candidate* should merge into, or None."""
+        for survivor in survivors:
+            if (
+                candidate.volume is not None
+                and survivor.volume is not None
+                and candidate.volume != survivor.volume
+            ):
+                # Different volumes are genuinely different works.
+                continue
+            ratio = SequenceMatcher(
+                None, candidate.comparison_text, survivor.comparison_text
+            ).ratio()
+            jaccard = _jaccard(candidate.comparison_text, survivor.comparison_text)
+            if ratio >= self._merge_ratio or jaccard >= self._merge_jaccard:
+                return survivor
+        return None
+
+    @staticmethod
+    def _merge_into(survivor: Citation, other: Citation) -> None:
+        """Merge *other* into *survivor* (longest variant becomes canonical)."""
+        logger.info(
+            "Merging citation variants:\n  - %s\n  - %s",
+            survivor.raw_text,
+            other.raw_text,
+        )
+        survivor.variants.extend(other.variants)
+        if other.raw_text != survivor.raw_text:
+            survivor.variants.append(other.raw_text)
+        if len(other.raw_text) > len(survivor.raw_text):
+            survivor.variants.append(survivor.raw_text)
+            survivor.raw_text = other.raw_text
+
+        survivor.pages |= other.pages
+        survivor.unnumbered = survivor.unnumbered or other.unnumbered
+        if survivor.doi is None:
+            survivor.doi = other.doi
+        if survivor.metadata is None:
+            survivor.metadata = other.metadata
+        if survivor.url is None:
+            survivor.url = other.url
+
     def enrich_with_metadata(self, max_requests: int | None = None) -> None:
         """
         Enrich citations with metadata from OpenAlex API.
@@ -235,6 +433,7 @@ class CitationManager:
         logger.info("Enriching %d unique citations with metadata", len(self.citations))
 
         requests_made = 0
+        enriched = 0
         for processed, citation in enumerate(self.citations.values(), start=1):
             # Log progress periodically
             if processed % PROGRESS_LOG_INTERVAL == 0:
@@ -242,8 +441,16 @@ class CitationManager:
                     "Processed %d/%d citations, enriched %d with metadata",
                     processed,
                     len(self.citations),
-                    requests_made,
+                    enriched,
                 )
+
+            # Persistent cross-run cache: reuse a prior lookup without spending
+            # a request against the daily budget.
+            cached = self._persistent_cache.get(citation.normalized_key)
+            if cached is not None:
+                self._apply_metadata(citation, cached)
+                enriched += 1
+                continue
 
             if max_requests and requests_made >= max_requests:
                 logger.info("Reached maximum API requests limit (%d)", max_requests)
@@ -258,18 +465,50 @@ class CitationManager:
                 )
                 break
 
-            # Try to extract identifiable information
+            # Every attempt counts against the budget (hit or miss), so a
+            # document of hard-to-match citations cannot silently exceed the cap.
             metadata = self._fetch_metadata_from_openalex(citation.raw_text)
+            requests_made += 1
             if metadata:
-                citation.metadata = metadata
-                citation.doi = metadata.get("doi")
-                citation.url = metadata.get("url")
-                requests_made += 1
-
+                self._apply_metadata(citation, metadata)
+                self._persistent_cache[citation.normalized_key] = metadata
+                enriched += 1
                 # Be polite to the API
                 time.sleep(API_POLITE_DELAY)
 
-        logger.info("Successfully enriched %d citations with metadata", requests_made)
+        # Post-enrichment: merge any citations that resolved to the same work.
+        self._merge_by_shared_identifier()
+        _save_persistent_openalex_cache(self._persistent_cache)
+
+        logger.info("Successfully enriched %d citations with metadata", enriched)
+
+    @staticmethod
+    def _apply_metadata(citation: Citation, metadata: dict[str, Any]) -> None:
+        """Attach fetched metadata to a citation."""
+        citation.metadata = metadata
+        citation.doi = metadata.get("doi")
+        citation.url = metadata.get("url")
+
+    def _merge_by_shared_identifier(self) -> None:
+        """Merge citations that OpenAlex resolved to the same DOI / work id."""
+        ident_map: dict[str, Citation] = {}
+        new_citations: dict[str, Citation] = {}
+        for citation in list(self.citations.values()):
+            ident: str | None = None
+            if citation.doi:
+                ident = f"doi:{citation.doi.strip().lower()}"
+            elif citation.metadata and citation.metadata.get("url"):
+                ident = f"url:{str(citation.metadata['url']).strip().lower()}"
+
+            if ident and ident in ident_map:
+                self._merge_into(ident_map[ident], citation)
+                continue
+
+            new_citations[citation.normalized_key] = citation
+            if ident:
+                ident_map[ident] = citation
+
+        self.citations = new_citations
 
     def _fetch_metadata_from_openalex(
         self, citation_text: str
@@ -521,22 +760,47 @@ class CitationManager:
     def _verify_citation_match(
         self, citation_text: str, work_data: dict[str, Any]
     ) -> bool:
-        """Verify that OpenAlex result matches the citation."""
+        """Verify that an OpenAlex result matches the citation (strict linking).
+
+        Requires title-word overlap at or above the configured threshold AND a
+        corroborating signal — the candidate's publication year within +/-1 of a
+        year cited in the text, or the candidate's author surname appearing in
+        the citation. This prefers no link over a wrong one (a permissive
+        title-only match assigns wrong DOIs to look-alike titles).
+        """
         raw_title = work_data.get("title") or work_data.get("display_name") or ""
-        title = raw_title.lower()
-        citation_lower = citation_text.lower()
+        if not raw_title:
+            return False
 
-        # Check if title appears in citation (at least 50% of title words)
-        if title:
-            title_words = set(re.findall(r"\w+", title))
-            title_words = {w for w in title_words if len(w) > 3}
+        citation_folded = _fold(citation_text)
+        title_words = {w for w in _token_set(_fold(raw_title)) if len(w) > 3}
+        if not title_words:
+            return False
 
-            if title_words:
-                citation_words = set(re.findall(r"\w+", citation_lower))
-                common_words = title_words & citation_words
-                match_ratio = len(common_words) / len(title_words)
+        citation_words = _token_set(citation_folded)
+        overlap = len(title_words & citation_words) / len(title_words)
+        if overlap < self._match_title_overlap:
+            return False
 
-                return match_ratio >= MATCH_RATIO_THRESHOLD
+        # Corroborating signal 1: publication year within +/-1 of a cited year.
+        cand_year = work_data.get("publication_year")
+        cited_year = _extract_year(citation_text)
+        if (
+            isinstance(cand_year, int)
+            and cited_year is not None
+            and abs(cand_year - cited_year) <= 1
+        ):
+            return True
+
+        # Corroborating signal 2: candidate author surname present in citation.
+        for authorship in work_data.get("authorships", []):
+            author = (
+                authorship.get("author", {}) if isinstance(authorship, dict) else {}
+            )
+            name = author.get("display_name") or ""
+            parts = _fold(name).split()
+            if parts and parts[-1] in citation_words:
+                return True
 
         return False
 
@@ -575,12 +839,24 @@ class CitationManager:
 
     def get_sorted_citations(self) -> list[Citation]:
         """
-        Return citations sorted alphabetically by raw text.
+        Return citations in a stable, accent-folded order.
+
+        Sorts by (folded first-author surname, year, folded title/comparison
+        text) so the order is deterministic across runs and does not push
+        accented names after ``z`` (as a raw-text sort would).
 
         Returns:
-            List of Citation objects sorted by citation text.
+            List of Citation objects in stable order.
         """
-        return sorted(self.citations.values(), key=lambda c: c.raw_text.lower())
+
+        def sort_key(c: Citation) -> tuple[str, int, str]:
+            return (
+                c.author or "~",
+                c.year if c.year is not None else 9999,
+                c.comparison_text or _fold(c.raw_text),
+            )
+
+        return sorted(self.citations.values(), key=sort_key)
 
     def get_citations_with_pages(self) -> list[tuple[Citation, str]]:
         """
@@ -591,3 +867,36 @@ class CitationManager:
         """
         citations = self.get_sorted_citations()
         return [(citation, citation.get_page_range_str()) for citation in citations]
+
+
+# ============================================================================
+# Persistent cross-run OpenAlex cache
+# ============================================================================
+
+_OPENALEX_CACHE_FILE = "openalex_cache.json"
+
+
+def _load_persistent_openalex_cache() -> dict[str, dict[str, Any]]:
+    """Load the persistent OpenAlex cache (normalized key -> metadata)."""
+    try:
+        from config.state import read_json, resolve_state_file
+
+        path = resolve_state_file(_OPENALEX_CACHE_FILE)
+        data = read_json(path)
+        return {k: v for k, v in data.items() if isinstance(v, dict)}
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.debug("Could not load persistent OpenAlex cache: %s", exc)
+        return {}
+
+
+def _save_persistent_openalex_cache(cache: dict[str, dict[str, Any]]) -> None:
+    """Persist the OpenAlex cache atomically to the user state dir."""
+    if not cache:
+        return
+    try:
+        from config.state import resolve_state_file, write_json_atomic
+
+        path = resolve_state_file(_OPENALEX_CACHE_FILE)
+        write_json_atomic(path, cache)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.debug("Could not save persistent OpenAlex cache: %s", exc)
