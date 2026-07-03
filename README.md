@@ -1,4 +1,4 @@
-# AutoExcerpter v1.14.1
+# AutoExcerpter v1.15.0
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -565,6 +565,34 @@ another page, in-flight pages drain, the run waits for the reset, then resumes
 the still-pending pages from the log. An item is never marked complete while
 its log shows pages missing.
 
+#### Shared Cross-Tool Token Budget (optional)
+
+AutoExcerpter can share ONE combined daily budget with its sibling tools
+(ChronoMiner, ChronoTranscriber) instead of enforcing its cap in isolation.
+Off by default; single-tool installations need not care. Enable it in
+`app.yaml`:
+
+```yaml
+shared_token_budget:
+  enabled: true
+  ledger_dir: ''   # empty = ~/.chronopipeline; or an absolute path
+```
+
+When enabled, every participating tool merges its usage into one shared
+ledger (`token_ledger.json`) guarded by an OS file lock, and
+`daily_token_limit.daily_tokens` is enforced against the COMBINED total, so
+several tools running concurrently cannot collectively overshoot the budget.
+Usage is merged as deltas under the lock (concurrent processes lose
+nothing); the hot path stays in memory with a debounced sync, plus forced
+refreshes near the cap and while waiting at the limit. The `--json` summary
+adds `combined_tokens_today` alongside the tool's own `tokens_used_today`,
+and token summaries show the per-tool breakdown. If the ledger is ever
+unavailable, the tool degrades to its private counter with a single warning
+and never crashes. Keep `daily_tokens` identical across participating
+tools; the strictest value simply stops its tool first. Editing
+`daily_tokens` while a run waits at the limit lifts the cap within a poll
+cycle, no restart needed.
+
 ## Output Files
 
 For each processed document (`<name>` is the input file/folder stem):
@@ -698,6 +726,20 @@ a single baseline commit at v1.0.0 on 25 April 2026; version numbers before
 v1.0.0 do not exist.
 
 ## Changelog
+
+- **v1.15.0** (3 July 2026) -- Optional shared cross-tool token budget.
+    Add the vendored `llm/shared_ledger.py` (locked delta merges into
+    per-tool fields, atomic per-process temp writes, local-midnight
+    rollover, degrade-to-standalone) and wire it into the daily token
+    tracker behind the new opt-in `shared_token_budget` config block: when
+    enabled, `daily_token_limit.daily_tokens` is enforced against the
+    COMBINED usage of AutoExcerpter, ChronoMiner, and ChronoTranscriber via
+    one ledger at `~/.chronopipeline/token_ledger.json`, with seed-once
+    adoption of legacy same-day counts, delta syncs riding the debounced
+    save, forced refreshes near the cap and in both wait loops, per-tool
+    breakdown in token summaries, and `combined_tokens_today` in the
+    `--json` run summary. Default behavior (feature off) is unchanged.
+    Verified live: concurrent tools share one limit with zero lost updates.
 
 - **v1.14.1** (3 July 2026) -- Await async SDK client closers during manager
     teardown: `_close_client_obj` now runs coroutine-returning `close()`
