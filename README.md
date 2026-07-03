@@ -1,4 +1,4 @@
-# AutoExcerpter v1.14.0
+# AutoExcerpter v1.14.1
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -698,6 +698,12 @@ a single baseline commit at v1.0.0 on 25 April 2026; version numbers before
 v1.0.0 do not exist.
 
 ## Changelog
+
+- **v1.14.1** (3 July 2026) -- Await async SDK client closers during manager
+    teardown: `_close_client_obj` now runs coroutine-returning `close()`
+    methods on a fresh event loop (or discards them cleanly when a loop is
+    active) instead of leaving an un-awaited coroutine warning behind.
+    Surfaced by the live post-release validation run.
 
 - **v1.14.0** (3 July 2026) -- Concurrency and token-budget hardening.
     Replace the eager page fan-out with one executor per item, bounded

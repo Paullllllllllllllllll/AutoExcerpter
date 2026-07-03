@@ -25,7 +25,9 @@ This module provides the foundational LLM client implementation with:
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
+import inspect
 import json as _json
 import random
 import statistics
@@ -1171,7 +1173,15 @@ class LLMClientBase:
             close = getattr(target, "close", None)
             if callable(close):
                 with contextlib.suppress(Exception):
-                    close()
+                    result = close()
+                    if inspect.iscoroutine(result):
+                        # Async SDK clients return a coroutine; run it on a
+                        # fresh loop (we are in sync CLI context) or discard
+                        # it cleanly if a loop is already running.
+                        try:
+                            asyncio.run(result)
+                        except RuntimeError:
+                            result.close()
 
     def close(self) -> None:
         """Release the underlying SDK/httpx clients held by the chat model.
