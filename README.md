@@ -1,4 +1,4 @@
-# AutoExcerpter v1.15.0
+# AutoExcerpter v1.16.0
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -726,6 +726,21 @@ a single baseline commit at v1.0.0 on 25 April 2026; version numbers before
 v1.0.0 do not exist.
 
 ## Changelog
+
+- **v1.16.0** (3 July 2026) -- Honest run status and CLI-contract fixes
+    from a live cross-provider bug hunt. Propagate page-level failures to
+    the item status, the `--json` summary, and the exit code: an item with
+    any failed transcription or summary page (or zero extracted pages) now
+    counts as failed and the run exits 1 instead of reporting success.
+    Emit the `--json` run summary on every exit path, including all-skipped
+    resume runs and summary-only resume (previously such runs printed
+    nothing and exited 0 silently). Populate the `outputs` field of the
+    JSON summary with the absolute paths of all files actually written
+    (txt, docx, md). Fix OpenRouter structured output by injecting the
+    required top-level `title` into the JSON schema (previously every
+    OpenRouter page failed with "Unsupported function"). Extend the CLI
+    `--reasoning-effort` choices to the full supported set (`none`,
+    `minimal`, `low`, `medium`, `high`, `xhigh`).
 
 - **v1.15.0** (3 July 2026) -- Optional shared cross-tool token budget.
     Add the vendored `llm/shared_ledger.py` (locked delta merges into

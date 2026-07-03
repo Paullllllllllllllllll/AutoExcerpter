@@ -36,7 +36,7 @@ def _process_single_item(
     summary_context: str | None = None,
     resume_mode: str = "skip",
     completed_page_indices: set[int] | None = None,
-) -> bool:
+) -> tuple[bool, list[str]]:
     """Process a single PDF or image folder item.
 
     Args:
@@ -50,7 +50,9 @@ def _process_single_item(
             (for page-level resume).
 
     Returns:
-        True if processing succeeded, False otherwise.
+        ``(success, outputs)`` where *success* is True only when every page
+        succeeded and all configured outputs were written, and *outputs* is
+        the list of absolute output-file paths written for this item.
     """
     logger.info(
         "--- Starting Item %s of %s: %s (%s) ---",
@@ -87,13 +89,25 @@ def _process_single_item(
             resume_mode=resume_mode,
             completed_page_indices=completed_page_indices,
         )
-        transcriber_instance.process_item()
+        success = transcriber_instance.process_item()
+        outputs = [str(p) for p in transcriber_instance.written_outputs]
 
-        if config.CLI_MODE:
-            logger.info(f"Successfully processed: {item_spec.output_stem}")
+        if success:
+            if config.CLI_MODE:
+                logger.info(f"Successfully processed: {item_spec.output_stem}")
+            else:
+                print_success(f"Successfully processed: {item_spec.output_stem}")
         else:
-            print_success(f"Successfully processed: {item_spec.output_stem}")
-        return True
+            logger.error(
+                "Item finished with page-level failures or missing outputs: %s",
+                item_spec.output_stem,
+            )
+            if not config.CLI_MODE:
+                print_warning(
+                    f"Completed with failures: {item_spec.output_stem}"
+                    " (see log for failed pages)"
+                )
+        return success, outputs
 
     except Exception as exc:
         handle_critical_error(
@@ -103,7 +117,12 @@ def _process_single_item(
             show_user_message=not config.CLI_MODE,
         )
         logger.info("--- Attempting to continue with the next item if any. ---")
-        return False
+        outputs = (
+            [str(p) for p in transcriber_instance.written_outputs]
+            if transcriber_instance is not None
+            else []
+        )
+        return False, outputs
 
     finally:
         # Clean up temporary working directory if configured

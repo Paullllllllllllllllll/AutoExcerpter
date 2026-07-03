@@ -143,6 +143,8 @@ def _setup_and_scan(
 
     all_items_to_consider = scan_input_path(input_path_arg)
 
+    emit_json = bool(getattr(args, "json", False))
+
     if not all_items_to_consider:
         _hint = (
             "Set input_folder_path in config/defaults/app.yaml "
@@ -150,12 +152,16 @@ def _setup_and_scan(
         )
         if config.CLI_MODE:
             logger.error("No items found to process in: %s. %s", input_path_arg, _hint)
+            if emit_json:
+                _emit_json_summary(0, 0, 0, 0, [])
             sys.exit(1)
         else:
             from cli.interaction import print_error
 
             print_error(f"No items found to process in: {input_path_arg}. {_hint}")
             logger.debug("No items found in: %s", input_path_arg)
+            if emit_json:
+                _emit_json_summary(0, 0, 0, 0, [])
             sys.exit(0)
 
     if not config.CLI_MODE:
@@ -169,6 +175,8 @@ def _setup_and_scan(
     if not selected_items:
         if not config.CLI_MODE:
             print_info("No items selected for processing. Exiting.")
+        if emit_json:
+            _emit_json_summary(0, 0, 0, 0, [])
         sys.exit(0)
 
     logger.info("Selected %s item(s) for processing.", len(selected_items))
@@ -222,11 +230,15 @@ def _apply_resume_filtering(
         resume_mode, selected_items, skipped_items, items_to_process
     )
     if not should_continue:
+        # Nothing to do (all items already complete, or the user declined a
+        # force reprocess). Return an empty work list instead of exiting so
+        # main() can still emit the --json run summary (AE-5: a silent
+        # sys.exit here swallowed the JSON line on all-skipped runs).
         if not config.CLI_MODE:
             print_info("No items to process. Exiting.")
-        sys.exit(0)
+        return [], item_resume_map, resume_mode, skipped_items
 
-    if not items_to_process and should_continue:
+    if not items_to_process:
         items_to_process = list(selected_items)
         resume_mode = "overwrite"
         item_resume_map.clear()
@@ -264,9 +276,15 @@ def _run_processing_loop(
     item_resume_map: dict[str, ResumeResult],
     summary_context: str | None,
     resume_mode: str,
-) -> int:
-    """Process items sequentially, returning the number successfully processed."""
+) -> tuple[int, list[str]]:
+    """Process items sequentially.
+
+    Returns:
+        ``(processed_count, outputs)``: the number of items that fully
+        succeeded and the absolute paths of all output files written this run.
+    """
     processed_count = 0
+    run_outputs: list[str] = []
     total_to_process = len(items_to_process)
 
     for index, item_spec in enumerate(items_to_process, start=1):
@@ -288,7 +306,7 @@ def _run_processing_loop(
         item_resume = item_resume_map.get(item_spec.output_stem)
         completed_pages = item_resume.completed_page_indices if item_resume else None
 
-        success = _process_single_item(
+        success, item_outputs = _process_single_item(
             item_spec,
             index,
             total_to_process,
@@ -297,12 +315,13 @@ def _run_processing_loop(
             resume_mode=resume_mode,
             completed_page_indices=completed_pages,
         )
+        run_outputs.extend(item_outputs)
         if success:
             processed_count += 1
 
         _log_token_usage(f"Token usage after file {index}/{total_to_process}")
 
-    return processed_count
+    return processed_count, run_outputs
 
 
 def _emit_json_summary(
@@ -404,6 +423,19 @@ def main() -> int:
         _run_dry_run(items_to_process, item_resume_map, skipped_items, emit_json)
         return 0
 
+    if not items_to_process:
+        # All requested items were skipped as already complete (or the user
+        # declined a force reprocess). Still honor the --json contract: emit
+        # one run-summary line with the skipped count before exiting (AE-5).
+        skipped_count = len(skipped_items)
+        logger.info(
+            "Nothing to process: %d item(s) skipped as already complete.",
+            skipped_count,
+        )
+        if emit_json:
+            _emit_json_summary(0, 0, skipped_count, 0, [])
+        return 0
+
     # Prompt for summary context in interactive mode
     if not config.CLI_MODE and config.SUMMARIZE and not summary_context:
         summary_context = _prompt_for_summary_context()
@@ -420,7 +452,7 @@ def main() -> int:
 
     _log_token_usage()
 
-    processed_count = _run_processing_loop(
+    processed_count, run_outputs = _run_processing_loop(
         items_to_process,
         base_output_dir,
         item_resume_map,
@@ -453,7 +485,11 @@ def main() -> int:
 
     if emit_json:
         _emit_json_summary(
-            processed_count, failed_count, skipped_count, total_to_process, []
+            processed_count,
+            failed_count,
+            skipped_count,
+            total_to_process,
+            run_outputs,
         )
 
     # Exit code contract: 0 = all requested items succeeded; 1 = one or more

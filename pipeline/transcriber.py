@@ -115,6 +115,11 @@ class ItemTranscriber:
         # mismatch: logged transcriptions produced by a different model).
         self._output_metadata_notes: list[str] = []
 
+        # Absolute paths of output files actually written by process_item
+        # (transcription .txt plus summary .docx/.md), consumed by the CLI
+        # loop for the --json run summary.
+        self.written_outputs: list[Path] = []
+
         # Load model configuration from model.yaml
         config_loader = get_config_loader()
         model_cfg = config_loader.get_model_config()
@@ -757,7 +762,15 @@ class ItemTranscriber:
             + ETA_BLEND_WEIGHT_RECENT * recent_rate
         )
 
-    def process_item(self) -> None:
+    def process_item(self) -> bool:
+        """Process the item end to end.
+
+        Returns:
+            True when every page succeeded (transcription and, if enabled,
+            summarization) and all configured outputs were written; False when
+            the item aborted early, at least one page failed, or a summary
+            output file could not be produced.
+        """
         item_type_str = "PDF" if self.input_type == "pdf" else "Image Folder"
         logger.info(f"Processing {self.name} ({item_type_str})")
         self.start_time_processing = time.time()
@@ -768,7 +781,7 @@ class ItemTranscriber:
             source = self._create_payload_source()
         except Exception as e:
             logger.exception(f"Failed to open input for {self.name}: {e}")
-            return
+            return False
 
         if len(source) == 0:
             source.close()
@@ -784,7 +797,7 @@ class ItemTranscriber:
                 logger.warning(
                     f"Could not remove working directory {self.working_dir}: {e}"
                 )
-            return
+            return False
 
         self.total_items_to_transcribe = len(source)
         suffix = " and summarization" if config.SUMMARIZE else ""
@@ -847,6 +860,14 @@ class ItemTranscriber:
             )
             final_failure_count = len(transcription_results) - final_success_count
 
+            # Summary-phase page failures (API errors after retries). Failed
+            # transcriptions get error-free placeholder summaries, so this
+            # never double-counts a page already in final_failure_count.
+            summary_failure_count = sum(
+                1 for s in summary_results if isinstance(s, dict) and "error" in s
+            )
+            summary_render_ok = True
+
             # Save transcription to text file
             logger.info(
                 f"Writing final transcription output to: {self.output_txt_path}"
@@ -860,6 +881,7 @@ class ItemTranscriber:
                 self.input_path,
                 metadata_notes=self._output_metadata_notes or None,
             )
+            self.written_outputs.append(self.output_txt_path.resolve())
 
             # Save summaries to output files if summarization is enabled
             if config.SUMMARIZE and summary_results:
@@ -892,6 +914,9 @@ class ItemTranscriber:
                             citation_manager=citation_manager,
                             data=render_data,
                         )
+                        self.written_outputs.append(
+                            self.output_summary_docx_path.resolve()
+                        )
 
                     # Generate Markdown if enabled
                     if config.OUTPUT_MARKDOWN:
@@ -902,8 +927,12 @@ class ItemTranscriber:
                             citation_manager=citation_manager,
                             data=render_data,
                         )
+                        self.written_outputs.append(
+                            self.output_summary_md_path.resolve()
+                        )
 
                 except Exception as e:
+                    summary_render_ok = False
                     logger.error(f"Error creating summary files: {e}")
 
             logger.info(f"PROCESSING COMPLETE for item: {self.name}")
@@ -940,6 +969,26 @@ class ItemTranscriber:
                 " and " + str(self.summary_log_path) if config.SUMMARIZE else ""
             )
             logger.info(f"  Detailed logs: {self.log_path}{detail_suffix}")
+
+            # Item verdict: any failed page (transcription or summary) or a
+            # failed summary-file render means the item is NOT complete, so
+            # the caller counts it failed and the run exits non-zero.
+            item_success = (
+                final_failure_count == 0
+                and summary_failure_count == 0
+                and summary_render_ok
+            )
+            if not item_success:
+                logger.error(
+                    "Item %s finished with failures: %d failed transcription "
+                    "page(s), %d failed summary page(s), summary files "
+                    "written: %s",
+                    self.name,
+                    final_failure_count,
+                    summary_failure_count,
+                    summary_render_ok,
+                )
+            return item_success
 
         finally:
             # Always finalize log files by closing JSON arrays, even if errors occurred

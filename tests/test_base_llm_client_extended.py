@@ -495,7 +495,12 @@ class TestGetStructuredChatModel:
         assert client._get_structured_chat_model() is base_model
 
     def test_openrouter_with_schema_uses_structured_output(self) -> None:
-        """OpenRouter with schema calls with_structured_output."""
+        """OpenRouter with schema calls with_structured_output with a title.
+
+        Regression (AE-4): LangChain's function-calling path requires a
+        top-level "title" key on the schema to use as the function name;
+        without it every OpenRouter call fails with "Unsupported function".
+        """
         base_model = MagicMock()
         structured = MagicMock()
         base_model.with_structured_output.return_value = structured
@@ -507,10 +512,50 @@ class TestGetStructuredChatModel:
         )
         result = client._get_structured_chat_model()
         base_model.with_structured_output.assert_called_once_with(
-            {"type": "object", "properties": {}},
+            {"type": "object", "properties": {}, "title": "structured_output"},
             include_raw=True,
         )
         assert result is structured
+
+    def test_openrouter_title_injected_from_schema_name(self) -> None:
+        """Regression (AE-4): the schema's declared name becomes the title."""
+        base_model = MagicMock()
+        client = _make_client(
+            provider="openrouter",
+            chat_model=base_model,
+            _output_schema={
+                "name": "markdown_transcription_schema",
+                "schema": {"type": "object", "properties": {}},
+            },
+        )
+        client._get_structured_chat_model()
+        schema_arg = base_model.with_structured_output.call_args.args[0]
+        assert schema_arg["title"] == "markdown_transcription_schema"
+
+    def test_openrouter_existing_title_preserved(self) -> None:
+        """Regression (AE-4): a pre-existing inner title is not overwritten."""
+        base_model = MagicMock()
+        inner = {"type": "object", "properties": {}, "title": "keep_me"}
+        client = _make_client(
+            provider="openrouter",
+            chat_model=base_model,
+            _output_schema={"name": "other_name", "schema": inner},
+        )
+        client._get_structured_chat_model()
+        schema_arg = base_model.with_structured_output.call_args.args[0]
+        assert schema_arg["title"] == "keep_me"
+
+    def test_openrouter_title_injection_does_not_mutate_schema(self) -> None:
+        """Regression (AE-4): the shared schema dict is copied, not mutated."""
+        base_model = MagicMock()
+        inner = {"type": "object", "properties": {}}
+        client = _make_client(
+            provider="openrouter",
+            chat_model=base_model,
+            _output_schema={"name": "s", "schema": inner},
+        )
+        client._get_structured_chat_model()
+        assert "title" not in inner
 
     def test_openrouter_without_schema_returns_base(self) -> None:
         """OpenRouter without schema returns base model."""

@@ -207,6 +207,17 @@ class TestBuildCliModelOverrides:
         assert result["transcription_model"]["reasoning"]["effort"] == "high"
         assert result["summary_model"]["reasoning"]["effort"] == "low"
 
+    @patch.object(config, "CLI_MODE", True)
+    def test_reasoning_effort_none_and_xhigh_flow_through(self) -> None:
+        """Regression (AE-3): 'none' and 'xhigh' are usable CLI values."""
+        args = _make_cli_args(
+            transcription_reasoning_effort="none",
+            summary_reasoning_effort="xhigh",
+        )
+        result = _build_cli_model_overrides(args)
+        assert result["transcription_model"]["reasoning"]["effort"] == "none"
+        assert result["summary_model"]["reasoning"]["effort"] == "xhigh"
+
     # --- Verbosity overrides ---
 
     @patch.object(config, "CLI_MODE", True)
@@ -551,8 +562,17 @@ class TestConstants:
     """Verify that choice constants are consistent and non-empty."""
 
     def test_reasoning_effort_choices(self) -> None:
-        assert len(REASONING_EFFORT_CHOICES) >= 3
-        assert "medium" in REASONING_EFFORT_CHOICES
+        """Regression (AE-3): the CLI accepts the full supported effort set
+        documented in model.yaml and handled by llm/base.py, including
+        'none' (GPT-5.2+ default) and 'xhigh'."""
+        assert REASONING_EFFORT_CHOICES == (
+            "none",
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+        )
 
     def test_verbosity_choices(self) -> None:
         assert len(VERBOSITY_CHOICES) >= 3

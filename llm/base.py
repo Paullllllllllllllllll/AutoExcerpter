@@ -523,10 +523,19 @@ class LLMClientBase:
         if self.provider == "google":
             return self.chat_model
 
-        # OpenRouter: Use tool-based structured output (OpenAI-compatible)
+        # OpenRouter: Use tool-based structured output (OpenAI-compatible).
+        # LangChain's function-calling path requires a top-level "title" on
+        # the JSON schema to use as the function name; without it every call
+        # fails with "Unsupported function". Inject the schema's declared
+        # name (never mutating the shared schema dict) when it is missing.
         if self._output_schema:
             schema = self._output_schema.get("schema", self._output_schema)
             if isinstance(schema, dict) and schema:
+                if "title" not in schema:
+                    schema = {
+                        **schema,
+                        "title": self._output_schema.get("name", "structured_output"),
+                    }
                 return self.chat_model.with_structured_output(
                     schema,
                     include_raw=True,
