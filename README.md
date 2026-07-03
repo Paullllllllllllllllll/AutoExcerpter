@@ -1,4 +1,4 @@
-# AutoExcerpter v1.13.0
+# AutoExcerpter v1.14.0
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -698,6 +698,23 @@ a single baseline commit at v1.0.0 on 25 April 2026; version numbers before
 v1.0.0 do not exist.
 
 ## Changelog
+
+- **v1.14.0** (3 July 2026) -- Concurrency and token-budget hardening.
+    Replace the eager page fan-out with one executor per item, bounded
+    submission, completion-order processing, and prompt cancellation of
+    queued pages on interrupt (`cancel_futures`); fix the lost-update race
+    on the progress counter; make the budget reservation EWMA per page
+    (transcription + summary observed together) so the admission gate
+    matches the documented contract; capture prompt-cache tokens
+    defensively and commit them at full weight across raw-Anthropic,
+    LangChain-normalized, and OpenAI shapes; honor HTTP `Retry-After` with
+    a 120 s backoff cap and lower the default retry budget from 15 to 8
+    attempts; re-read `daily_token_limit.daily_tokens` during both
+    wait-at-limit paths so a mid-wait config edit lifts the cap without
+    restart; unify atomic state writes on a per-process-unique temp-file
+    helper shared with the OpenAlex cache; close manager clients
+    deterministically per item; remove the dead `delay_between_tasks`,
+    `image_processing`, and summary-concurrency config surface.
 
 - **v1.13.0** (2 July 2026) -- Hardening release closing the resume and
     citation defects found in a full production audit. Page-level resume now

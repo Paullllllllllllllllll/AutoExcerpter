@@ -80,6 +80,9 @@ class ItemTranscriber:
         # and driven by the re-pass loop in _transcribe_and_summarize.
         self._token_tracker = get_token_tracker()
         self._budget_exhausted = threading.Event()
+        # Guards the shared processed-page counter against lost-update races
+        # between worker threads (a bare ``+= 1`` is not atomic).
+        self._count_lock = threading.Lock()
 
         self.base_output_dir = base_output_dir
         self.output_txt_path = self.base_output_dir / f"{self.name}.txt"
@@ -434,7 +437,11 @@ class ItemTranscriber:
                 summary_results.append(summary_result)
 
             append_to_log(self.log_path, transcription_result)
-            processed_count_ref[0] += 1
+            # Lock-guarded increment + read: worker threads otherwise lose
+            # updates on a bare ``+= 1`` (read-modify-write is not atomic).
+            with self._count_lock:
+                processed_count_ref[0] += 1
+                processed_now = processed_count_ref[0]
 
             if (
                 "processing_time" in transcription_result
@@ -448,10 +455,10 @@ class ItemTranscriber:
                 else f"FAILED ({transcription_result.get('retries', 0)} retries)"
             )
             item_num_str = str(original_input_order_index + 1)
-            eta_str = self._calculate_eta(processed_count_ref[0], total_images)
+            eta_str = self._calculate_eta(processed_now, total_images)
 
             logger.debug(
-                f"Processed {processed_count_ref[0]}/{total_images} "
+                f"Processed {processed_now}/{total_images} "
                 f"- Item {item_num_str} - Status: {status} - {eta_str}"
             )
             transcription_results.append(transcription_result)
@@ -468,12 +475,18 @@ class ItemTranscriber:
                 "original_input_order_index": original_input_order_index,
             }
             transcription_results.append(error_result)
-            processed_count_ref[0] += 1
+            with self._count_lock:
+                processed_count_ref[0] += 1
             return error_result
         finally:
             # Release the reservation; actual usage was committed via
             # add_tokens inside the provider layer during the calls above.
             self._token_tracker.release(reserved)
+            # Feed this page's total actual usage (transcription + summary +
+            # retries, accumulated per-thread by add_tokens) to the reservation
+            # EWMA as ONE per-page observation, so the gate reserves per-page
+            # cost rather than per-call cost.
+            self._token_tracker.record_page_usage()
 
     def _detect_resume_model_mismatch(self) -> None:
         """Warn (and record) when reusing transcriptions from a different model.
@@ -603,83 +616,99 @@ class ItemTranscriber:
         # Mutable counter shared across threads (replaces nonlocal)
         processed_count_ref = [0]
 
-        # Page-level token-budget loop: each pass transcribes pages until the
-        # daily budget is exhausted (the gate in _process_single_page sets
-        # _budget_exhausted and defers the rest), then drains the pool, waits
-        # for the daily reset, and re-passes over the still-pending pages.
-        # Deferred pages write no log/result, so resume re-runs exactly them.
+        # One ThreadPoolExecutor per ITEM (sized once from config), reused
+        # across budget re-passes so exhaustion + reset does not churn a fresh
+        # pool each pass. Sized to the initial pending count; later, smaller
+        # passes simply leave surplus workers idle.
+        max_workers, _ = get_transcription_concurrency()
+        max_workers = min(max_workers, len(pending_indices))
+        if max_workers <= 0:
+            max_workers = 1
+        logger.info(f"Using {max_workers} concurrent workers for transcription")
+
+        # Page-level token-budget loop: each pass submits the pending pages and
+        # consumes results in COMPLETION order (so tqdm reflects real progress);
+        # the gate in _process_single_page sets _budget_exhausted and defers the
+        # rest once the daily budget cannot fit a page. Deferred pages write no
+        # log/result, so resume re-runs exactly them. On KeyboardInterrupt or a
+        # fatal error the pool is shut down with cancel_futures=True so queued
+        # pages are cancelled rather than draining for up to api_timeout each.
         pending = list(pending_indices)
         stalled_resets = 0
-        while pending:
-            self._budget_exhausted.clear()
-            max_workers, _ = get_transcription_concurrency()
-            max_workers = min(max_workers, len(pending))
-            if max_workers <= 0:
-                max_workers = 1
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
+        try:
+            while pending:
+                self._budget_exhausted.clear()
 
-            logger.info(f"Using {max_workers} concurrent workers for transcription")
-            with concurrent.futures.ThreadPoolExecutor(
-                max_workers=max_workers
-            ) as executor:
-                list(
-                    tqdm(
-                        executor.map(
-                            lambda idx: self._process_single_page(
-                                idx,
-                                source,
-                                transcription_results,
-                                summary_results,
-                                total_images,
-                                processed_count_ref,
-                            ),
-                            pending,
-                        ),
-                        total=len(pending),
-                        desc="Processing images",
+                futures = [
+                    executor.submit(
+                        self._process_single_page,
+                        idx,
+                        source,
+                        transcription_results,
+                        summary_results,
+                        total_images,
+                        processed_count_ref,
                     )
-                )
+                    for idx in pending
+                ]
+                for future in tqdm(
+                    concurrent.futures.as_completed(futures),
+                    total=len(futures),
+                    desc="Processing images",
+                ):
+                    # _process_single_page handles its own errors; result()
+                    # only re-raises a truly unexpected failure, which we let
+                    # propagate to the finally (deterministic shutdown).
+                    future.result()
 
-            if not self._budget_exhausted.is_set():
-                break
+                if not self._budget_exhausted.is_set():
+                    break
 
-            # Recompute the still-pending pages: those not yet recorded in the
-            # transcription results (deferred pages appended nothing).
-            done = {
-                r.get("original_input_order_index")
-                for r in transcription_results
-                if isinstance(r, dict)
-            }
-            remaining = [idx for idx in pending if idx not in done]
-            made_progress = len(remaining) < len(pending)
-            pending = remaining
-            if not pending:
-                break
+                # Recompute the still-pending pages: those not yet recorded in
+                # the transcription results (deferred pages appended nothing).
+                done = {
+                    r.get("original_input_order_index")
+                    for r in transcription_results
+                    if isinstance(r, dict)
+                }
+                remaining = [idx for idx in pending if idx not in done]
+                made_progress = len(remaining) < len(pending)
+                pending = remaining
+                if not pending:
+                    break
 
-            logger.warning(
-                "Daily token budget reached; %d page(s) deferred. "
-                "Waiting for daily reset...",
-                len(pending),
-            )
-            if not wait_for_token_reset():
-                logger.info(
-                    "Token-limit wait cancelled; %d page(s) left for a later run.",
+                logger.warning(
+                    "Daily token budget reached; %d page(s) deferred. "
+                    "Waiting for daily reset...",
                     len(pending),
                 )
-                break
-
-            # Safeguard: if a reset still yields no progress twice running, a
-            # page cannot fit the available daily budget; stop rather than loop.
-            if not made_progress:
-                stalled_resets += 1
-                if stalled_resets >= 2:
-                    logger.warning(
-                        "A page cannot fit the daily token budget; stopping. "
-                        "Raise daily_tokens to process the remaining %d page(s).",
+                if not wait_for_token_reset():
+                    logger.info(
+                        "Token-limit wait cancelled; %d page(s) left for a later run.",
                         len(pending),
                     )
                     break
-            else:
-                stalled_resets = 0
+
+                # Safeguard: if a reset still yields no progress twice running, a
+                # page cannot fit the available daily budget; stop rather than
+                # loop.
+                if not made_progress:
+                    stalled_resets += 1
+                    if stalled_resets >= 2:
+                        logger.warning(
+                            "A page cannot fit the daily token budget; stopping. "
+                            "Raise daily_tokens to process the remaining %d page(s).",
+                            len(pending),
+                        )
+                        break
+                else:
+                    stalled_resets = 0
+        finally:
+            # Deterministic teardown. cancel_futures cancels any pages still
+            # queued (e.g. after a KeyboardInterrupt) instead of letting them
+            # drain; wait=False returns without blocking on in-flight calls.
+            executor.shutdown(wait=False, cancel_futures=True)
 
         transcription_results.sort(key=lambda x: x.get("original_input_order_index", 0))
         return transcription_results, summary_results
@@ -919,3 +948,21 @@ class ItemTranscriber:
                 finalize_log_file(self.summary_log_path)
 
             source.close()
+            # Managers (and their provider SDK / httpx clients) are built per
+            # item; close them so connection pools do not leak across items.
+            self._close_managers()
+
+    def _close_managers(self) -> None:
+        """Best-effort teardown of the per-item LLM managers' SDK clients."""
+        for manager in (
+            getattr(self, "transcribe_manager", None),
+            getattr(self, "summary_manager", None),
+        ):
+            if manager is None:
+                continue
+            close = getattr(manager, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception as exc:  # defensive: teardown must not raise
+                    logger.debug("Manager close failed: %s", exc)

@@ -128,6 +128,15 @@ class DailyTokenTracker:
         self._alpha: float = min(1.0, max(0.0, float(estimate_smoothing)))
         self._ewma: float = float(self._seed)
 
+        # Per-page usage accumulator (thread-local). A page spends one or more
+        # API calls (transcription + optional summary + retries) on a single
+        # worker thread; each add_tokens() adds to this thread's running page
+        # total, and record_page_usage() feeds that ONE per-page observation to
+        # the EWMA. The EWMA therefore tracks per-page cost (what try_reserve
+        # gates on) rather than per-call cost, which under-reserved ~2x when a
+        # page made two calls.
+        self._page_local = threading.local()
+
         # Load existing state from disk
         self._load_state()
 
@@ -190,31 +199,42 @@ class DailyTokenTracker:
         Writes are coalesced to at most one per ``_MIN_SAVE_INTERVAL_S`` unless
         *force* is set (used for day-rollover and the exit flush), so a large
         run does not write the state file on every API call. A pending write is
-        persisted by :meth:`flush`.
+        persisted by :meth:`flush`. The on-disk write goes through the shared
+        :func:`config.state.write_json_atomic` helper (per-process-unique temp
+        name plus PermissionError/FileNotFoundError retry).
         """
         now = time.time()
         if not force and (now - self._last_save_time) < _MIN_SAVE_INTERVAL_S:
             self._pending_save = True
             return
-        try:
-            state = {
-                "date": self._current_date,
-                "tokens_used": self._tokens_used_today,
-                "last_updated": datetime.now().isoformat(),
-            }
 
-            # Write atomically using a temp file
-            temp_file = self.state_file.with_suffix(".tmp")
-            with open(temp_file, "w", encoding="utf-8") as f:
-                json.dump(state, f, indent=2)
+        state = {
+            "date": self._current_date,
+            "tokens_used": self._tokens_used_today,
+            "last_updated": datetime.now().isoformat(),
+        }
+        from config.state import write_json_atomic
 
-            # Replace original file
-            temp_file.replace(self.state_file)
-            self._last_save_time = now
-            self._pending_save = False
+        write_json_atomic(self.state_file, state)
+        self._last_save_time = now
+        self._pending_save = False
 
-        except Exception as e:
-            logger.error(f"Error saving token state to {self.state_file}: {e}")
+    def set_daily_limit(self, new_limit: int) -> None:
+        """Update the daily token limit at runtime.
+
+        Used by the wait loops so a user editing ``app.yaml`` mid-wait (raising
+        ``daily_token_limit.daily_tokens``) lifts the cap without a restart. A
+        no-op when the value is unchanged.
+        """
+        new_limit = int(new_limit)
+        with self._lock:
+            if new_limit != self.daily_limit:
+                logger.info(
+                    "Daily token limit updated: %s -> %s",
+                    f"{self.daily_limit:,}",
+                    f"{new_limit:,}",
+                )
+                self.daily_limit = new_limit
 
     def flush(self) -> None:
         """Persist any debounced pending state write."""
@@ -248,14 +268,41 @@ class DailyTokenTracker:
         with self._lock:
             self._check_and_reset_if_new_day()
             self._tokens_used_today += tokens
-            # Update the rolling per-call estimate used by try_reserve().
-            self._ewma = self._alpha * tokens + (1.0 - self._alpha) * self._ewma
             self._save_state()
 
             logger.debug(
                 f"Added {tokens:,} tokens. "
                 f"Daily total: {self._tokens_used_today:,}/{self.daily_limit:,}"
             )
+
+        # Accumulate this call's tokens into the current thread's page total
+        # (outside the lock; thread-local is single-owner). The EWMA is updated
+        # once per page via record_page_usage(), not per call.
+        self._page_local.total = getattr(self._page_local, "total", 0) + tokens
+
+    def record_page_usage(self, total: int | None = None) -> None:
+        """Feed one page's total actual token usage to the reservation EWMA.
+
+        Called once per page (from the worker's finally block). When *total* is
+        None the accumulated per-thread sum from :meth:`add_tokens` for the
+        just-finished page is used, then reset. A single per-page observation
+        (transcription + optional summary + retries) drives the EWMA that
+        :meth:`try_reserve` gates on, so the estimate converges to per-page
+        cost. When summarization is disabled a page is one call and the EWMA
+        tracks per-call automatically. No-op when limiting is disabled.
+        """
+        if not self.enabled:
+            self._page_local.total = 0
+            return
+
+        if total is None:
+            total = int(getattr(self._page_local, "total", 0))
+        self._page_local.total = 0
+
+        if total <= 0:
+            return
+        with self._lock:
+            self._ewma = self._alpha * total + (1.0 - self._alpha) * self._ewma
 
     def try_reserve(self, estimate: int | None = None) -> int | None:
         """Reserve estimated tokens for one page before launching it.
@@ -515,6 +562,14 @@ def wait_for_token_reset() -> bool:
             interval = min(1, max(0, seconds_until_reset - elapsed))
             time.sleep(interval)
             elapsed += interval
+
+            # Live re-read of the configured daily limit: a user raising
+            # daily_token_limit.daily_tokens mid-wait lifts the cap without a
+            # restart. A read failure keeps the current limit.
+            new_limit = config.reload_daily_token_limit()
+            if new_limit is not None:
+                tracker.set_daily_limit(new_limit)
+
             if tracker.can_admit_page():
                 logger.info("Token budget has reset. Resuming processing.")
                 return True

@@ -18,7 +18,6 @@ from config import app, constants
 from config.accessors import (
     get_api_concurrency,
     get_api_timeout,
-    get_image_processing_concurrency,
     get_rate_limits,
     get_service_tier,
     get_target_dpi,
@@ -44,7 +43,6 @@ __all__ = [
     "SCHEMAS_DIR",
     "get_api_concurrency",
     "get_api_timeout",
-    "get_image_processing_concurrency",
     "get_rate_limits",
     "get_service_tier",
     "get_target_dpi",

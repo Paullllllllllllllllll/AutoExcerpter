@@ -104,6 +104,8 @@ daily_token_limit:
   # pages. Higher is more conservative (stops slightly earlier).
   chunk_estimate_seed: 25_000
 
-  # EWMA smoothing factor (0-1) for the per-call estimate: higher reacts faster
-  # to recent calls, lower is steadier.
+  # EWMA smoothing factor (0-1) for the rolling per-page estimate: higher reacts
+  # faster to recent pages, lower is steadier. The estimate observes each page's
+  # total usage (transcription + optional summary + retries) as one sample, so
+  # the reservation gate reserves per-page cost rather than per-call cost.
   estimate_smoothing: 0.3

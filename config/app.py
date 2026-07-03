@@ -253,6 +253,30 @@ def require_api_key(provider: str) -> str:
 # --- Daily Token Limit ---
 DAILY_TOKEN_LIMIT_ENABLED = _get_bool(_TOKEN_LIMIT, "enabled", False)
 DAILY_TOKEN_LIMIT = _get_int(_TOKEN_LIMIT, "daily_tokens", 10000000)
+
+
+def reload_daily_token_limit() -> int | None:
+    """Re-read ``daily_token_limit.daily_tokens`` fresh from ``app.yaml``.
+
+    Bypasses the import-time module constant so a user editing the config while
+    a token-limit wait loop is polling lifts (or lowers) the cap without a
+    restart. Returns ``None`` when the value is absent or the file cannot be
+    read, so callers keep the current limit on failure. Degrades gracefully:
+    never raises.
+    """
+    try:
+        data = _load_yaml_app_config()
+        token_limit = data.get("daily_token_limit", {})
+        if not isinstance(token_limit, dict):
+            return None
+        raw = token_limit.get("daily_tokens")
+        if raw is None:
+            return None
+        return int(str(raw).replace("_", ""))
+    except Exception:
+        return None
+
+
 # Chunk/page-level enforcement tuning (see llm/token_tracker.DailyTokenTracker).
 DAILY_TOKEN_CHUNK_ESTIMATE_SEED = _get_int(_TOKEN_LIMIT, "chunk_estimate_seed", 25000)
 DAILY_TOKEN_ESTIMATE_SMOOTHING = float(_TOKEN_LIMIT.get("estimate_smoothing", 0.3))

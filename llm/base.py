@@ -25,6 +25,7 @@ This module provides the foundational LLM client implementation with:
 
 from __future__ import annotations
 
+import contextlib
 import json as _json
 import random
 import statistics
@@ -73,8 +74,15 @@ def _load_retry_config() -> dict[str, Any]:
 # Load retry configuration from concurrency.yaml
 _RETRY_CONFIG = _load_retry_config()
 
-# Constants for retry logic (loaded from config with fallback defaults)
-DEFAULT_MAX_RETRIES = _RETRY_CONFIG.get("max_attempts", 5)
+# Constants for retry logic (loaded from config with fallback defaults).
+# Default reduced from 15 to 8: with honored Retry-After and a 120 s backoff
+# cap, 8 transient attempts already spans several minutes of retrying.
+DEFAULT_MAX_RETRIES = _RETRY_CONFIG.get("max_attempts", 8)
+
+# Hard ceiling on any single backoff wait (seconds), including a server-provided
+# Retry-After. Keeps a hostile Retry-After header from stalling a worker for an
+# unbounded time.
+BACKOFF_CAP_S = float(_RETRY_CONFIG.get("backoff_cap", 120))
 
 _JITTER = _RETRY_CONFIG.get("jitter", {})
 JITTER_MIN = _JITTER.get("min", 0.5)
@@ -579,8 +587,61 @@ class LLMClientBase:
                     invoke_kwargs.setdefault("response_mime_type", "application/json")
                     invoke_kwargs.setdefault("response_schema", schema_obj)
 
+    @staticmethod
+    def _usage_metadata_folds_cache(usage_meta: dict[str, Any]) -> bool:
+        """Whether a LangChain usage_metadata already folds cache into the total.
+
+        LangChain normalizes prompt-cache tokens into ``input_tokens`` and
+        exposes the breakdown under ``input_token_details`` (keys ``cache_read``
+        / ``cache_creation``). OpenAI's cached-prompt tokens surface the same
+        way (a subset of the prompt count). When that nested detail dict is
+        present the cache is already inside ``total_tokens``, so it must not be
+        added again.
+        """
+        return isinstance(usage_meta.get("input_token_details"), dict)
+
+    @staticmethod
+    def _additive_cache_tokens(usage_meta: dict[str, Any], target: Any) -> int:
+        """Cache tokens reported SEPARATELY from a cache-exclusive input.
+
+        Raw-Anthropic usage reports ``cache_read_input_tokens`` /
+        ``cache_creation_input_tokens`` alongside an ``input_tokens`` that
+        EXCLUDES them, so ``input + output`` is short by the cache total. This
+        reads those fields from the usage_metadata dict and, defensively, from
+        the raw provider usage on the unwrapped response
+        (``response_metadata['usage']`` or a ``usage`` attribute). Only invoked
+        when the usage_metadata does not already fold cache in, so no double
+        counting occurs. Returns the full-weight cache total to add.
+        """
+        candidates: list[dict[str, Any]] = [usage_meta]
+        response_metadata = getattr(target, "response_metadata", None)
+        if isinstance(response_metadata, dict):
+            raw_usage = response_metadata.get("usage")
+            if isinstance(raw_usage, dict):
+                candidates.append(raw_usage)
+        raw_usage_attr = getattr(target, "usage", None)
+        if isinstance(raw_usage_attr, dict):
+            candidates.append(raw_usage_attr)
+
+        cache_read = 0
+        cache_creation = 0
+        for usage in candidates:
+            if not isinstance(usage, dict):
+                continue
+            cache_read = cache_read or int(usage.get("cache_read_input_tokens", 0) or 0)
+            cache_creation = cache_creation or int(
+                usage.get("cache_creation_input_tokens", 0) or 0
+            )
+        return cache_read + cache_creation
+
     def _report_token_usage(self, response: Any, context_label: str) -> None:
         """Report token usage from a LangChain response to the token tracker.
+
+        Cache tokens count at FULL weight in the daily budget. LangChain-
+        normalized and OpenAI cached shapes fold cache into ``total_tokens``
+        already (committed as-is); raw-Anthropic shapes report cache separately
+        from a cache-exclusive input, so those are added on top. Never double
+        counts.
 
         Args:
             response: LangChain model response with usage_metadata.
@@ -607,12 +668,20 @@ class LLMClientBase:
                 if isinstance(input_tokens, int) and isinstance(output_tokens, int):
                     total_tokens = input_tokens + output_tokens
 
+            # Add raw-Anthropic-shape cache tokens at full weight ONLY when the
+            # usage_metadata does not already fold them into the total.
+            cache_add = 0
+            if not self._usage_metadata_folds_cache(usage_meta):
+                cache_add = self._additive_cache_tokens(usage_meta, target)
+
             if total_tokens and isinstance(total_tokens, int):
+                committed = total_tokens + cache_add
                 token_tracker = get_token_tracker()
-                token_tracker.add_tokens(total_tokens)
+                token_tracker.add_tokens(committed)
                 logger.debug(
-                    f"[TOKEN] {context_label}: added {total_tokens} tokens "
-                    f"(total now: {token_tracker.get_tokens_used_today():,})"
+                    f"[TOKEN] {context_label}: added {committed} tokens "
+                    f"(cache +{cache_add}; "
+                    f"total now: {token_tracker.get_tokens_used_today():,})"
                 )
             else:
                 logger.warning(
@@ -733,7 +802,9 @@ class LLMClientBase:
     def _calculate_backoff(self, attempt: int, error_type: str) -> float:
         """Calculate backoff delay for the given attempt and error type.
 
-        Uses retry config from ``concurrency.yaml`` (``_RETRY_CONFIG``).
+        Uses retry config from ``concurrency.yaml`` (``_RETRY_CONFIG``). The
+        result is capped at ``BACKOFF_CAP_S`` so a high attempt count cannot
+        produce an unbounded wait.
 
         Args:
             attempt: Zero-based attempt number.
@@ -741,14 +812,73 @@ class LLMClientBase:
                 ``"other"``.
 
         Returns:
-            Backoff delay in seconds.
+            Backoff delay in seconds (<= ``BACKOFF_CAP_S``).
         """
         backoff_base = _RETRY_CONFIG.get("backoff_base", 0.5)
         multipliers = _RETRY_CONFIG.get("backoff_multipliers", {})
         multiplier = multipliers.get(error_type, 2.0)
 
         jitter = random.uniform(JITTER_MIN, JITTER_MAX)
-        return float(backoff_base * (multiplier**attempt) + jitter)
+        return min(BACKOFF_CAP_S, float(backoff_base * (multiplier**attempt) + jitter))
+
+    @staticmethod
+    def _parse_retry_after(exc: BaseException | None) -> float | None:
+        """Extract a Retry-After delay (seconds) from an exception's headers.
+
+        Reads the ``Retry-After`` header off the exception's response (or a
+        top-level ``headers`` attribute) across the OpenAI/Anthropic SDK
+        exception shapes, tolerating both the integer/float seconds form and the
+        HTTP-date form. Returns ``None`` when no usable value is present.
+        Defensive: any parsing problem yields ``None`` rather than raising.
+        """
+        if exc is None:
+            return None
+        try:
+            headers = None
+            resp = getattr(exc, "response", None)
+            if resp is not None:
+                headers = getattr(resp, "headers", None)
+            if headers is None:
+                headers = getattr(exc, "headers", None)
+            if headers is None:
+                return None
+
+            getter = getattr(headers, "get", None)
+            if not callable(getter):
+                return None
+            raw = getter("retry-after")
+            if raw is None:
+                raw = getter("Retry-After")
+            if raw is None:
+                return None
+
+            value = str(raw).strip()
+            if not value:
+                return None
+
+            # Seconds form (integer or float).
+            try:
+                return max(0.0, float(value))
+            except ValueError:
+                pass
+
+            # HTTP-date form (e.g. "Wed, 21 Oct 2026 07:28:00 GMT").
+            from email.utils import parsedate_to_datetime
+
+            try:
+                target = parsedate_to_datetime(value)
+            except (TypeError, ValueError):
+                return None
+            if target is None:
+                return None
+            import datetime as _dt
+
+            now = (
+                _dt.datetime.now(target.tzinfo) if target.tzinfo else _dt.datetime.now()
+            )
+            return max(0.0, (target - now).total_seconds())
+        except Exception:
+            return None
 
     def _invoke_with_retry(
         self,
@@ -793,18 +923,31 @@ class LLMClientBase:
                     e, f"{context_label} (attempt {attempt + 1}/{self.max_retries + 1})"
                 )
 
-                # Report to rate limiter
-                self._report_error(error_type in ("rate_limit", "server_error"))
+                # A server-provided Retry-After is itself a rate-limit signal.
+                # Feed it into the shared limiter as a rate-limit error even
+                # when the exception was not otherwise classified as one (a
+                # single report per failure — never double-counted).
+                retry_after = self._parse_retry_after(e)
+                is_rate_signal = (
+                    error_type in ("rate_limit", "server_error")
+                    or retry_after is not None
+                )
+                self._report_error(is_rate_signal)
 
                 if not retryable or attempt >= self.max_retries:
                     raise
 
+                # Honor Retry-After: wait at least as long as the server asks,
+                # never below the computed backoff and never above the cap.
                 backoff = self._calculate_backoff(attempt, error_type)
+                if retry_after is not None:
+                    backoff = min(BACKOFF_CAP_S, max(backoff, retry_after))
                 logger.warning(
                     f"Retryable {error_type} on attempt"
                     f" {attempt + 1}/{self.max_retries + 1} "
                     f"for {context_label}: {type(e).__name__}. "
-                    f"Retrying in {backoff:.1f}s..."
+                    f"Retrying in {backoff:.1f}s"
+                    f"{' (Retry-After honored)' if retry_after is not None else ''}..."
                 )
                 time.sleep(backoff)
 
@@ -1011,6 +1154,44 @@ class LLMClientBase:
             )
 
         return invoke_kwargs
+
+    @staticmethod
+    def _close_client_obj(client: Any) -> None:
+        """Best-effort close of one SDK/httpx client object.
+
+        Tries the client's own ``close()`` and, if it wraps a lower-level httpx
+        client (SDKs expose it as ``_client``), closes that too. Swallows all
+        errors: teardown is defensive and must never raise.
+        """
+        if client is None:
+            return
+        for target in (client, getattr(client, "_client", None)):
+            if target is None:
+                continue
+            close = getattr(target, "close", None)
+            if callable(close):
+                with contextlib.suppress(Exception):
+                    close()
+
+    def close(self) -> None:
+        """Release the underlying SDK/httpx clients held by the chat model.
+
+        Managers are constructed per item; without an explicit teardown the
+        wrapped provider SDK clients (and their httpx connection pools) leak
+        until GC. This walks the known LangChain client attributes and closes
+        each, sync and async. Idempotent and never raises (adapts ChronoMiner's
+        ``_aclose_maybe`` pattern to sync clients).
+        """
+        model = getattr(self, "chat_model", None)
+        if model is None:
+            return
+        for attr in (
+            "client",
+            "async_client",
+            "root_client",
+            "root_async_client",
+        ):
+            self._close_client_obj(getattr(model, attr, None))
 
 
 # ============================================================================

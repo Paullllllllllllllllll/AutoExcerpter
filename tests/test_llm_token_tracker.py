@@ -175,7 +175,8 @@ class TestChunkReservation:
         assert t.try_reserve(20) is None  # 90 + 20 = 110, denied
         assert t.try_reserve(10) == 10  # 90 + 10 = 100, exact fit
 
-    def test_add_tokens_updates_ewma(self, tmp_path: Path) -> None:
+    def test_add_tokens_does_not_update_ewma(self, tmp_path: Path) -> None:
+        # Per-call committed usage must NOT move the EWMA (which is per-page).
         t = token_tracker.DailyTokenTracker(
             daily_limit=10**9,
             enabled=True,
@@ -183,9 +184,53 @@ class TestChunkReservation:
             chunk_estimate_seed=100,
             estimate_smoothing=0.5,
         )
-        # EWMA = 0.5 * 1100 + 0.5 * 100 = 600
         t.add_tokens(1100)
+        # EWMA still at the seed; the reservation reflects per-page cost only.
+        assert t.try_reserve() == 100
+
+    def test_record_page_usage_updates_ewma(self, tmp_path: Path) -> None:
+        t = token_tracker.DailyTokenTracker(
+            daily_limit=10**9,
+            enabled=True,
+            state_file=tmp_path / "s.json",
+            chunk_estimate_seed=100,
+            estimate_smoothing=0.5,
+        )
+        # One page's total (e.g. 800 transcription + 300 summary) is one sample.
+        # EWMA = 0.5 * 1100 + 0.5 * 100 = 600.
+        t.record_page_usage(1100)
         assert t.try_reserve() == 600
+
+    def test_record_page_usage_from_accumulated_calls(self, tmp_path: Path) -> None:
+        # Summarize-on shape: two calls on the page accumulate; record feeds
+        # the summed per-page total as ONE observation.
+        t = token_tracker.DailyTokenTracker(
+            daily_limit=10**9,
+            enabled=True,
+            state_file=tmp_path / "s.json",
+            chunk_estimate_seed=100,
+            estimate_smoothing=1.0,  # EWMA snaps to the latest sample
+        )
+        t.add_tokens(800)  # transcription call
+        t.add_tokens(300)  # summary call
+        t.record_page_usage()  # total=1100 fed to EWMA
+        assert t.try_reserve() == 1100
+
+    def test_record_page_usage_single_call_when_summary_off(
+        self, tmp_path: Path
+    ) -> None:
+        # Summarize-off shape: a page is one call; the EWMA tracks per-call,
+        # which equals per-page here.
+        t = token_tracker.DailyTokenTracker(
+            daily_limit=10**9,
+            enabled=True,
+            state_file=tmp_path / "s.json",
+            chunk_estimate_seed=100,
+            estimate_smoothing=1.0,
+        )
+        t.add_tokens(500)  # only the transcription call
+        t.record_page_usage()
+        assert t.try_reserve() == 500
 
     def test_reserve_uses_max_of_estimate_and_ewma(self, tmp_path: Path) -> None:
         t = token_tracker.DailyTokenTracker(

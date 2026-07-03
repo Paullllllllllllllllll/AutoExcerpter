@@ -3,8 +3,6 @@
 Covers:
 - get_api_concurrency: missing api_type in config, empty config dict
 - get_transcription_concurrency: delegates to get_api_concurrency
-- get_summary_concurrency: delegates to get_api_concurrency
-- get_image_processing_concurrency: missing config, error handling
 - get_service_tier: tier present, tier missing, error branch
 - get_api_timeout: missing key, error branch
 - get_rate_limits: valid list, invalid items, empty list, error branch
@@ -110,46 +108,6 @@ class TestConvenienceWrappers:
         workers, delay = ch.get_transcription_concurrency()
         assert workers == ch.DEFAULT_CONCURRENT_REQUESTS
         assert delay == 0.05
-
-
-# ============================================================================
-# get_image_processing_concurrency
-# ============================================================================
-class TestGetImageProcessingConcurrency:
-    """Tests for get_image_processing_concurrency()."""
-
-    def test_reads_config(self, monkeypatch) -> None:
-        """Reads concurrency_limit and delay from image_processing section."""
-        cfg = {
-            "image_processing": {"concurrency_limit": 16, "delay_between_tasks": 0.01}
-        }
-        monkeypatch.setattr(
-            ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg=cfg)
-        )
-
-        workers, delay = ch.get_image_processing_concurrency()
-        assert workers == 16
-        assert delay == 0.01
-
-    def test_missing_image_processing_section(self, monkeypatch) -> None:
-        """Returns defaults when image_processing section is absent."""
-        monkeypatch.setattr(
-            ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg={})
-        )
-
-        workers, delay = ch.get_image_processing_concurrency()
-        assert workers == 24
-        assert delay == 0
-
-    def test_error_fallback(self, monkeypatch) -> None:
-        """Returns defaults on exception."""
-        loader = MagicMock()
-        loader.get_concurrency_config.side_effect = ValueError("broken")
-        monkeypatch.setattr(ch, "get_config_loader", lambda: loader)
-
-        workers, delay = ch.get_image_processing_concurrency()
-        assert workers == 24
-        assert delay == 0
 
 
 # ============================================================================

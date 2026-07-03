@@ -15,15 +15,6 @@
 #   - image_processing.yaml: Image preprocessing settings
 
 # =============================================================================
-# IMAGE PROCESSING CONCURRENCY
-# =============================================================================
-# Local I/O operations: PDF page extraction and image preprocessing
-# CPU/disk-bound (no external API calls)
-image_processing:
-  concurrency_limit: 4  # Parallel tasks; raise to 8-24 on an SSD once settled in
-  delay_between_tasks: 0  # No delay needed for local operations
-
-# =============================================================================
 # API CONCURRENCY SETTINGS
 # =============================================================================
 # Controls LLM API requests for transcription and summarization
@@ -47,7 +38,6 @@ api_requests:
   # ---------------------------------------------------------------------------
   transcription:
     concurrency_limit: 5  # Parallel API requests; raise once you know your tier
-    delay_between_tasks: 0.5  # Stagger requests to smooth rate limit usage
 
     # OpenAI service tier: 'default' | 'flex' | 'priority'
     # flex = cheaper but may queue; priority = fastest but expensive
@@ -68,8 +58,9 @@ retry:
   # API Error Retries
   # ---------------------------------------------------------------------------
   # Handles rate limits (429), timeouts, and server errors (5xx)
-  max_attempts: 15  # Total attempts before giving up (OpenAI recommends 5-6)
+  max_attempts: 8  # Total attempts before giving up (OpenAI recommends 5-6)
   backoff_base: 0.5  # Initial wait time in seconds
+  backoff_cap: 120  # Hard ceiling (s) on any single wait, incl. server Retry-After
 
   # Error-specific multipliers (higher = longer waits)
   backoff_multipliers:

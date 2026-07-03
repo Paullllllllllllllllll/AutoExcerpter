@@ -12,6 +12,8 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import time
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +22,13 @@ from config.logger import setup_logger
 logger = setup_logger(__name__)
 
 _DEFAULT_DIR_NAME = ".autoexcerpter"
+
+# Number of write attempts before giving up. Windows antivirus / search
+# indexers briefly lock the temp or destination file, surfacing transient
+# PermissionError / FileNotFoundError on the write or the os.replace; a short
+# retry loop rides those out (pattern adopted from ChronoMiner v1.21.0).
+_ATOMIC_WRITE_ATTEMPTS = 4
+_ATOMIC_WRITE_RETRY_SLEEP_S = 0.05
 
 
 def get_state_dir() -> Path:
@@ -69,15 +78,48 @@ def read_json(path: Path) -> dict[str, Any]:
 
 
 def write_json_atomic(path: Path, data: dict[str, Any]) -> None:
-    """Write *data* as JSON to *path* atomically (temp file + os.replace)."""
+    """Write *data* as JSON to *path* atomically (temp file + os.replace).
+
+    The temp file carries a per-process-unique suffix (pid + random token) so
+    concurrent processes writing the same destination never collide on the temp
+    path. Transient ``PermissionError`` / ``FileNotFoundError`` races (Windows
+    AV / indexer holding the file briefly) are retried a few times before the
+    write is abandoned with a warning. The temp file is always cleaned up.
+    """
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(path.suffix + ".tmp")
-        with tmp.open("w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        os.replace(tmp, path)
     except OSError as exc:
-        logger.warning("Could not write state JSON %s: %s", path, exc)
+        logger.warning("Could not create parent dir for %s: %s", path, exc)
+        return
+
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp")
+    last_exc: OSError | None = None
+    try:
+        for attempt in range(_ATOMIC_WRITE_ATTEMPTS):
+            try:
+                with tmp.open("w", encoding="utf-8") as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+                os.replace(tmp, path)
+                return
+            except (PermissionError, FileNotFoundError) as exc:
+                # Transient on Windows; back off briefly and retry.
+                last_exc = exc
+                if attempt < _ATOMIC_WRITE_ATTEMPTS - 1:
+                    time.sleep(_ATOMIC_WRITE_RETRY_SLEEP_S)
+            except OSError as exc:
+                # Non-transient (e.g. bad path): stop retrying.
+                last_exc = exc
+                break
+        if last_exc is not None:
+            logger.warning("Could not write state JSON %s: %s", path, last_exc)
+    finally:
+        # A successful os.replace already consumed the temp file; clean up any
+        # remnant left by a failed write or replace.
+        try:
+            if tmp.exists():
+                tmp.unlink()
+        except OSError:
+            pass
 
 
 __all__ = [

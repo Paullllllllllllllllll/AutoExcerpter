@@ -195,12 +195,8 @@ def _display_processing_summary(
     print_highlight("  Concurrency Configuration:")
     print_separator()
 
-    # Image processing
-    img_proc = concurrency_config.get("image_processing", {})
-    img_concurrency = img_proc.get("concurrency_limit", 24)
-    print_info(f"    • Image extraction: {img_concurrency} concurrent tasks")
-
-    # API requests
+    # API requests. Summaries run inline within the transcription workers and
+    # share their concurrency, so only the transcription phase is reported here.
     api_requests = concurrency_config.get("api_requests", {})
     trans_api = api_requests.get("transcription", {})
     trans_concurrency = trans_api.get("concurrency_limit", 5)
@@ -210,10 +206,8 @@ def _display_processing_summary(
 
     if config.SUMMARIZE:
         sum_api = api_requests.get("summary", {})
-        sum_concurrency = sum_api.get("concurrency_limit", 5)
-        sum_service_tier = sum_api.get("service_tier", "flex")
-        print_info(f"    • Summary API: {sum_concurrency} concurrent requests")
-        print_dim(f"      - Service tier: {sum_service_tier}")
+        sum_service_tier = sum_api.get("service_tier", trans_service_tier)
+        print_dim(f"      - Summary service tier: {sum_service_tier}")
 
     # Retry configuration
     retry_config = concurrency_config.get("retry", {})

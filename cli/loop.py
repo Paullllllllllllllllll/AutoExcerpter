@@ -189,7 +189,14 @@ def _wait_for_token_reset(
         time.sleep(interval)
         elapsed += interval
 
-        # Re-check if it's a new day
+        # Live re-read of the configured daily limit: a user raising
+        # daily_token_limit.daily_tokens mid-wait lifts the cap without a
+        # restart. A read failure keeps the current limit.
+        new_limit = config.reload_daily_token_limit()
+        if new_limit is not None:
+            token_tracker.set_daily_limit(new_limit)
+
+        # Re-check if it's a new day (or the cap was lifted above)
         if not token_tracker.is_limit_reached():
             logger.info("Token limit has been reset. Resuming processing.")
             if not config.CLI_MODE:

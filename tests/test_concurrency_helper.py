@@ -32,16 +32,6 @@ class TestConcurrencyHelper:
         assert isinstance(max_workers, int)
         assert delay == 0.05
 
-    def test_get_image_processing_concurrency_defaults(self, monkeypatch) -> None:
-        cfg = {"image_processing": {"concurrency_limit": 7, "delay_between_tasks": 0.0}}
-        loader = MagicMock()
-        loader.get_concurrency_config.return_value = cfg
-        monkeypatch.setattr(ch, "get_config_loader", lambda: loader)
-
-        max_workers, delay = ch.get_image_processing_concurrency()
-        assert max_workers == 7
-        assert delay == 0.0
-
     def test_get_service_tier_default_flex_when_missing(self, monkeypatch) -> None:
         cfg: dict[str, Any] = {"api_requests": {"transcription": {}}}
         loader = MagicMock()

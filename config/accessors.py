@@ -67,22 +67,6 @@ def get_transcription_concurrency() -> tuple[int, float]:
     return get_api_concurrency("transcription")
 
 
-def get_image_processing_concurrency() -> tuple[int, float]:
-    """Get concurrency settings for local image processing."""
-    try:
-        cfg_loader = get_config_loader()
-        concurrency_cfg = cfg_loader.get_concurrency_config()
-        img_cfg = concurrency_cfg.get("image_processing", {})
-
-        max_workers = img_cfg.get("concurrency_limit", 24)
-        delay = img_cfg.get("delay_between_tasks", 0)
-
-        return max_workers, delay
-    except Exception as e:
-        logger.warning(f"Error loading image processing concurrency config: {e}")
-        return 24, 0
-
-
 def get_service_tier(api_type: str = "transcription") -> str:
     """Get OpenAI service tier for the specified API type."""
     tier: Any = _get_config_value(
@@ -153,7 +137,6 @@ def get_target_dpi() -> int:
 __all__ = [
     "get_api_concurrency",
     "get_transcription_concurrency",
-    "get_image_processing_concurrency",
     "get_service_tier",
     "get_api_timeout",
     "get_rate_limits",
