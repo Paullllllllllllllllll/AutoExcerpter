@@ -314,15 +314,23 @@ def _emit_json_summary(
 ) -> None:
     """Print one machine-readable JSON run-summary line on stdout."""
     stats = get_token_tracker().get_stats() if config.DAILY_TOKEN_LIMIT_ENABLED else {}
-    summary = {
+    # tokens_used_today stays this tool's OWN usage; when the shared budget is
+    # enabled the ledger exposes the per-tool figure as own_tokens_used_today
+    # (equal to tokens_used_today in standalone mode). The combined cross-tool
+    # total is surfaced separately only when the shared budget is active.
+    summary: dict[str, Any] = {
         "items_total": total,
         "items_complete": processed,
         "items_failed": failed,
         "items_skipped": skipped,
         "outputs": outputs,
-        "tokens_used_today": stats.get("tokens_used_today"),
+        "tokens_used_today": stats.get(
+            "own_tokens_used_today", stats.get("tokens_used_today")
+        ),
         "daily_token_limit": stats.get("daily_limit"),
     }
+    if stats.get("shared_budget_enabled"):
+        summary["combined_tokens_today"] = stats.get("combined_tokens_used_today")
     print(json.dumps(summary, ensure_ascii=False))
 
 

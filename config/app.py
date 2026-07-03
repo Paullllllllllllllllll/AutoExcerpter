@@ -139,6 +139,11 @@ _SUMMARY_OUTPUT: dict[str, Any] = (
     if isinstance(_APP_CFG.get("summary_output"), dict)
     else {}
 )
+_SHARED_TOKEN_BUDGET: dict[str, Any] = (
+    _APP_CFG.get("shared_token_budget", {})
+    if isinstance(_APP_CFG.get("shared_token_budget"), dict)
+    else {}
+)
 
 # --- Execution Mode ---
 CLI_MODE: bool = _get_bool(_APP_CFG, "cli_mode", False)
@@ -280,6 +285,16 @@ def reload_daily_token_limit() -> int | None:
 # Chunk/page-level enforcement tuning (see llm/token_tracker.DailyTokenTracker).
 DAILY_TOKEN_CHUNK_ESTIMATE_SEED = _get_int(_TOKEN_LIMIT, "chunk_estimate_seed", 25000)
 DAILY_TOKEN_ESTIMATE_SMOOTHING = float(_TOKEN_LIMIT.get("estimate_smoothing", 0.3))
+
+# --- Shared Cross-Tool Token Budget (opt-in) ---
+# When enabled, the daily token limit is enforced against the COMBINED usage of
+# every participating ChronoPipeline tool (ChronoMiner, ChronoTranscriber,
+# AutoExcerpter) via a shared on-disk ledger, and that ledger replaces the
+# private token-state file as persistence. An empty ledger_dir means the ledger
+# default (~/.chronopipeline). Disabled by default: bit-for-bit the private
+# per-tool tracker with zero ledger I/O.
+SHARED_TOKEN_BUDGET_ENABLED = _get_bool(_SHARED_TOKEN_BUDGET, "enabled", False)
+SHARED_TOKEN_BUDGET_LEDGER_DIR = _get_str(_SHARED_TOKEN_BUDGET, "ledger_dir", "")
 
 # ============================================================================
 # Logging

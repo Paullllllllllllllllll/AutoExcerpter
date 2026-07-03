@@ -238,6 +238,7 @@ def _display_processing_summary(
             f"/{stats['daily_limit']:,} ({stats['usage_percentage']:.1f}%)"
         )
         print_info(f"    • Remaining today: {stats['tokens_remaining']:,} tokens")
+        _print_shared_budget_breakdown(stats)
         print_separator()
 
     # === Selected Items ===
@@ -307,11 +308,34 @@ def _display_completion_summary(
             f"/{stats['daily_limit']:,} ({stats['usage_percentage']:.1f}%)"
         )
         print_info(f"    • Remaining today: {stats['tokens_remaining']:,} tokens")
+        _print_shared_budget_breakdown(stats)
         print_separator()
 
     print()
     print_highlight("  Thank you for using AutoExcerpter!")
     print()
+
+
+def _print_shared_budget_breakdown(stats: dict[str, Any]) -> None:
+    """Print the per-tool shared-ledger split when the shared budget is active.
+
+    A no-op when the shared budget is disabled, so standalone runs are unchanged.
+    The combined figure is already shown as the usage line above; here we surface
+    this tool's own share and the cross-tool breakdown so a combined cap that is
+    driven mostly by a sibling tool is legible.
+    """
+    if not stats.get("shared_budget_enabled"):
+        return
+    own = stats.get("own_tokens_used_today", 0)
+    print_dim(f"      - This tool (autoexcerpter): {own:,} tokens")
+    breakdown = stats.get("shared_breakdown") or {}
+    if breakdown:
+        parts = "; ".join(
+            f"{name}: {value:,}" for name, value in sorted(breakdown.items())
+        )
+        print_dim(f"      - Shared ledger split: {parts}")
+    if stats.get("shared_budget_degraded"):
+        print_dim("      - Shared ledger degraded: using this tool's count only")
 
 
 def _log_token_limit_reached(

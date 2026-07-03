@@ -189,6 +189,15 @@ def _wait_for_token_reset(
         time.sleep(interval)
         elapsed += interval
 
+        # Forced ledger refresh each poll so another tool's usage or its midnight
+        # reset is observed while we wait. A no-op when the shared budget is off,
+        # so single-tool waits are unchanged.
+        if token_tracker._shared_enabled:
+            try:
+                token_tracker.sync_ledger_now()
+            except Exception:
+                logger.debug("Shared ledger refresh during wait failed", exc_info=True)
+
         # Live re-read of the configured daily limit: a user raising
         # daily_token_limit.daily_tokens mid-wait lifts the cap without a
         # restart. A read failure keeps the current limit.

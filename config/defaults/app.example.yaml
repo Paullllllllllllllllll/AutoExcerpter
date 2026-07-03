@@ -109,3 +109,21 @@ daily_token_limit:
   # total usage (transcription + optional summary + retries) as one sample, so
   # the reservation gate reserves per-page cost rather than per-call cost.
   estimate_smoothing: 0.3
+
+# =============================================================================
+# Shared Cross-Tool Token Budget (opt-in)
+# =============================================================================
+# Off by default. When enabled, the daily_token_limit.daily_tokens cap above is
+# enforced against the COMBINED daily usage of every participating
+# ChronoPipeline tool (ChronoMiner, ChronoTranscriber, AutoExcerpter) rather
+# than this tool's usage alone. The tools coordinate through one shared on-disk
+# ledger guarded by an OS file lock, so several tools running at once cannot
+# collectively overshoot the single combined budget.
+#
+# While enabled the shared ledger REPLACES this tool's private token-state file
+# as the daily-usage record; per-tool daily_tokens is enforced against the
+# combined total. When disabled (default) behaviour is bit-for-bit the private
+# per-tool tracker with zero ledger I/O.
+shared_token_budget:
+  enabled: false  # true = share one combined daily budget across the tools
+  ledger_dir: ''  # Empty = ~/.chronopipeline/token_ledger.json; or an absolute path

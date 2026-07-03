@@ -61,6 +61,14 @@ module = "tests.*"
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
 
+[[tool.mypy.overrides]]
+# The vendored shared-ledger drift test locates the module dynamically, so the
+# ledger object is typed as ``object`` and its method/attribute accesses trip
+# strict attr-defined. The test is vendored byte-identically (SHA-256-pinned)
+# and must not be edited, so silence just that code for this one module.
+module = "tests.test_shared_ledger"
+disable_error_code = ["attr-defined"]
+
 [tool.hatch.build.targets.wheel]
 packages = [
     "cli",

@@ -30,15 +30,19 @@ Usage:
 from __future__ import annotations
 
 import atexit
+import contextlib
 import json
 import threading
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from config import app as config
 from config.logger import setup_logger
+
+if TYPE_CHECKING:
+    from llm.shared_ledger import SharedTokenLedger
 
 __all__ = [
     "DailyTokenTracker",
@@ -60,6 +64,15 @@ _TOKEN_STATE_FILENAME = "token_state.json"
 # Minimum seconds between debounced state writes (a flush at exit persists the
 # final value). Prevents a per-API-call write storm during large runs.
 _MIN_SAVE_INTERVAL_S = 1.0
+
+# Minimum seconds between shared-ledger syncs on the debounced (add_tokens) path.
+# Deliberately longer than the private-file debounce: a ledger sync takes an OS
+# file lock, so it is heavier than a private write. Forced syncs (near-limit
+# admission, wait-loop polls, exit flush) bypass this interval.
+_LEDGER_SYNC_DEBOUNCE_S = 2.0
+
+# This tool's field name in the shared cross-tool ledger.
+_LEDGER_TOOL_NAME = "autoexcerpter"
 
 # Singleton instance
 _tracker_instance: DailyTokenTracker | None = None
@@ -88,6 +101,8 @@ class DailyTokenTracker:
         state_file: Path | None = None,
         chunk_estimate_seed: int = 25_000,
         estimate_smoothing: float = 0.3,
+        shared_enabled: bool = False,
+        shared_ledger_dir: str | Path | None = None,
     ) -> None:
         """
         Initialize the token tracker.
@@ -102,6 +117,14 @@ class DailyTokenTracker:
                 used by try_reserve() before any usage has been observed.
             estimate_smoothing: EWMA smoothing factor (0-1) applied to observed
                 per-call token usage; higher reacts faster to recent calls.
+            shared_enabled: Opt-in cross-tool combined budget. When True the
+                daily limit is enforced against the COMBINED usage of every
+                participating ChronoPipeline tool via a shared on-disk ledger,
+                and that ledger replaces the private state file as persistence.
+                When False (default) behaviour is bit-for-bit the private
+                per-tool tracker with no ledger I/O whatsoever.
+            shared_ledger_dir: Directory holding the shared ledger. Empty/None
+                means the ledger default (``~/.chronopipeline``).
         """
         self.daily_limit = daily_limit
         self.enabled = enabled
@@ -137,13 +160,44 @@ class DailyTokenTracker:
         # page made two calls.
         self._page_local = threading.local()
 
+        # Shared cross-tool ledger state (only touched when shared_enabled).
+        # The ledger is constructed lazily on first use so a disabled tracker
+        # performs zero ledger I/O. _unsynced_delta accumulates committed tokens
+        # not yet pushed to the ledger; _combined_total caches the last-known
+        # combined usage across all tools. Budget math while enabled uses
+        # (_combined_total + _unsynced_delta) as the effective usage. The ledger
+        # sync rides the existing debounced save: add_tokens accumulates the
+        # delta and the debounced path pushes ledger.sync(delta) INSTEAD of
+        # writing the private state file.
+        self._shared_enabled: bool = bool(shared_enabled)
+        self._shared_ledger_dir: str | Path | None = shared_ledger_dir or None
+        self._ledger: SharedTokenLedger | None = None
+        self._ledger_construct_failed: bool = False
+        self._ledger_tool_name: str = _LEDGER_TOOL_NAME
+        self._unsynced_delta: int = 0
+        self._combined_total: int = 0
+        self._seeded: bool = False
+        self._ledger_degraded: bool = False
+        self._ledger_sync_in_flight: bool = False
+        self._last_ledger_sync_monotonic: float = 0.0
+
         # Load existing state from disk
         self._load_state()
+
+        # Seed the shared ledger once at init so the combined baseline (this
+        # tool's prior same-day usage plus any concurrent tools) is known before
+        # the first admission check. Best-effort: a degraded ledger simply leaves
+        # the tracker in standalone mode. Init is off any hot path, so this runs
+        # inline and the combined total is visible immediately.
+        if self._shared_enabled:
+            with contextlib.suppress(Exception):
+                self.sync_ledger_now()
 
         logger.info(
             f"Token tracker initialized: enabled={enabled}, "
             f"daily_limit={daily_limit:,}, "
-            f"current_usage={self._tokens_used_today:,}"
+            f"current_usage={self._tokens_used_today:,}, "
+            f"shared_budget={self._shared_enabled}"
         )
 
     def _get_current_date_str(self) -> str:
@@ -237,10 +291,178 @@ class DailyTokenTracker:
                 self.daily_limit = new_limit
 
     def flush(self) -> None:
-        """Persist any debounced pending state write."""
+        """Persist any debounced pending state write.
+
+        When the shared budget is enabled this instead forces a final ledger
+        sync so the last accumulated delta lands before exit; if a sync is in
+        flight, wait briefly (bounded) for it to clear so the final push is not
+        skipped by the in-flight guard. The private state file is not written
+        while the ledger is the active persistence.
+        """
+        if self._shared_enabled:
+            for _ in range(50):
+                with self._lock:
+                    busy = self._ledger_sync_in_flight
+                if not busy:
+                    break
+                time.sleep(0.02)
+            with contextlib.suppress(Exception):
+                self.sync_ledger_now()
+            return
         with self._lock:
             if self._pending_save:
                 self._save_state(force=True)
+
+    # ------------------------------------------------------------------
+    # Shared cross-tool ledger integration
+    # ------------------------------------------------------------------
+
+    def _get_or_create_ledger_locked(self) -> SharedTokenLedger | None:
+        """Construct the shared ledger lazily. Must hold ``self._lock``.
+
+        Construction touches no filesystem (the ledger defers all I/O to its
+        locked merge), so a bad directory cannot fail here; a genuinely invalid
+        tool name is the only ValueError, and it is latched so we do not retry
+        forever.
+        """
+        if self._ledger is None and not self._ledger_construct_failed:
+            try:
+                from llm.shared_ledger import SharedTokenLedger
+
+                self._ledger = SharedTokenLedger(
+                    self._ledger_tool_name,
+                    ledger_dir=self._shared_ledger_dir,
+                )
+            except Exception as exc:  # pragma: no cover - defensive
+                self._ledger_construct_failed = True
+                logger.warning("Could not construct shared token ledger: %s", exc)
+        return self._ledger
+
+    def _effective_used_locked(self) -> int:
+        """Return the usage figure the budget is enforced against. Hold the lock.
+
+        Enabled and healthy: the last-known combined total across all tools plus
+        this tool's not-yet-synced delta, so our own in-flight usage is never
+        undercounted. Disabled or degraded: the private per-tool count, i.e.
+        exactly today's standalone semantics.
+        """
+        if self._shared_enabled and not self._ledger_degraded:
+            return self._combined_total + self._unsynced_delta
+        return self._tokens_used_today
+
+    def _due_for_ledger_sync_locked(self, force: bool) -> bool:
+        """Whether a ledger sync should be dispatched now. Must hold the lock."""
+        if not self._shared_enabled:
+            return False
+        if self._ledger_sync_in_flight:
+            return False
+        if force:
+            return True
+        elapsed = time.monotonic() - self._last_ledger_sync_monotonic
+        return elapsed >= _LEDGER_SYNC_DEBOUNCE_S
+
+    def _perform_ledger_sync(self) -> None:
+        """Run a ledger sync inline on the calling thread.
+
+        This repo is fully threaded with no asyncio event loop, so ledger I/O
+        never risks blocking a loop; the sync runs inline (outside the tracker
+        lock) on whichever worker thread found a sync due. The in-flight guard
+        in :meth:`sync_ledger_now` keeps concurrent workers from stacking syncs,
+        so the hot path never blocks on file I/O beyond the debounce gate.
+        """
+        self.sync_ledger_now()
+
+    def sync_ledger_now(self) -> None:
+        """Seed-or-sync the shared ledger, writing back the combined total.
+
+        Discipline: snapshot the delta under the tracker lock, call the ledger
+        (seed or sync) with the lock RELEASED, then write the returned combined
+        total back under the lock. The ledger has its own internal mutex; we
+        never hold the tracker lock across a ledger call so the hot path cannot
+        stall on ledger I/O. Degradation (ledger returns None) leaves the tracker
+        in standalone mode with the unsynced delta preserved so a transient
+        failure self-heals and the full accumulated amount replays on a later
+        sync.
+        """
+        if not self._shared_enabled:
+            return
+
+        with self._lock:
+            if self._ledger_sync_in_flight:
+                return
+            self._ledger_sync_in_flight = True
+            ledger = self._get_or_create_ledger_locked()
+            need_seed = not self._seeded
+            own_committed = self._tokens_used_today
+            delta = self._unsynced_delta
+            self._last_ledger_sync_monotonic = time.monotonic()
+
+        try:
+            if ledger is None:
+                with self._lock:
+                    self._ledger_degraded = True
+                return
+
+            own_field: int | None = None
+            if need_seed:
+                combined = ledger.seed(own_committed)
+                if combined is not None:
+                    breakdown = ledger.read_breakdown()
+                    if breakdown is not None:
+                        own_field = int(
+                            breakdown.get(self._ledger_tool_name, own_committed)
+                        )
+            else:
+                combined = ledger.sync(delta)
+
+            with self._lock:
+                if combined is None:
+                    # Degraded: keep the unsynced delta so the full accumulated
+                    # amount is pushed once the ledger recovers.
+                    self._ledger_degraded = True
+                else:
+                    self._ledger_degraded = False
+                    self._combined_total = combined
+                    if need_seed:
+                        self._seeded = True
+                        baseline = own_field if own_field is not None else own_committed
+                        if baseline > self._tokens_used_today:
+                            self._tokens_used_today = baseline
+                        # Any delta committed during the seed round is preserved
+                        # for the next sync; the baseline is now in the ledger.
+                        self._unsynced_delta = max(
+                            0, self._tokens_used_today - baseline
+                        )
+                    else:
+                        # Subtract only what we pushed; deltas that arrived
+                        # mid-sync remain queued for the next push.
+                        self._unsynced_delta = max(0, self._unsynced_delta - delta)
+        finally:
+            with self._lock:
+                self._ledger_sync_in_flight = False
+
+    def _maybe_forced_refresh_before_admit(self) -> None:
+        """Force a ledger refresh before a reservation when it matters.
+
+        Triggers a forced (debounce-bypassing) sync when the shared budget is not
+        yet seeded, or when the cached combined total already exceeds 80% of the
+        daily limit, so admission near the cap sees the freshest cross-tool usage.
+        Runs inline (fresh value visible to the immediately following check). A
+        no-op when the shared budget is disabled.
+        """
+        if not self._shared_enabled:
+            return
+        trigger = False
+        with self._lock:
+            near_limit = (
+                self.daily_limit > 0 and self._combined_total > 0.8 * self.daily_limit
+            )
+            if (not self._seeded or near_limit) and self._due_for_ledger_sync_locked(
+                force=True
+            ):
+                trigger = True
+        if trigger:
+            self._perform_ledger_sync()
 
     def _check_and_reset_if_new_day(self) -> None:
         """Check if it's a new day and reset counter if needed."""
@@ -253,7 +475,15 @@ class DailyTokenTracker:
             )
             self._current_date = current_date
             self._tokens_used_today = 0
-            self._save_state(force=True)
+            if self._shared_enabled:
+                # The ledger rolls over internally; reset the local mirror and
+                # force a re-seed on the next sync. The private file is left
+                # untouched while the shared budget is the active persistence.
+                self._unsynced_delta = 0
+                self._combined_total = 0
+                self._seeded = False
+            else:
+                self._save_state(force=True)
 
     def add_tokens(self, tokens: int) -> None:
         """
@@ -265,15 +495,29 @@ class DailyTokenTracker:
         if not self.enabled or tokens <= 0:
             return
 
+        do_ledger_sync = False
         with self._lock:
             self._check_and_reset_if_new_day()
             self._tokens_used_today += tokens
-            self._save_state()
+
+            if self._shared_enabled:
+                # Ledger is the active persistence: accumulate the delta and
+                # decide (under the lock) whether a debounced sync is due. The
+                # ledger I/O itself runs OUTSIDE the lock below, so the hot path
+                # never takes the OS file lock while holding the tracker lock.
+                self._unsynced_delta += tokens
+                do_ledger_sync = self._due_for_ledger_sync_locked(force=False)
+            else:
+                # Debounced private-file write (unchanged standalone behaviour).
+                self._save_state()
 
             logger.debug(
                 f"Added {tokens:,} tokens. "
                 f"Daily total: {self._tokens_used_today:,}/{self.daily_limit:,}"
             )
+
+        if do_ledger_sync:
+            self._perform_ledger_sync()
 
         # Accumulate this call's tokens into the current thread's page total
         # (outside the lock; thread-local is single-owner). The EWMA is updated
@@ -320,11 +564,17 @@ class DailyTokenTracker:
         if not self.enabled:
             return 0
 
+        # Forced pre-admission refresh when near the combined cap (or not yet
+        # seeded). Runs outside the tracker lock, inline, so the fresh combined
+        # total is visible to the admission check below. No-op when the shared
+        # budget is disabled.
+        self._maybe_forced_refresh_before_admit()
+
         with self._lock:
             self._check_and_reset_if_new_day()
             est = max(int(estimate or 0), max(1, round(self._ewma)))
             available = (
-                self.daily_limit - self._tokens_used_today - self._tokens_reserved
+                self.daily_limit - self._effective_used_locked() - self._tokens_reserved
             )
             if est > available:
                 return None
@@ -348,11 +598,15 @@ class DailyTokenTracker:
         if not self.enabled:
             return True
 
+        # Forced pre-admission refresh when near the combined cap (or not yet
+        # seeded); no-op when the shared budget is disabled.
+        self._maybe_forced_refresh_before_admit()
+
         with self._lock:
             self._check_and_reset_if_new_day()
             est = max(int(estimate or 0), self._current_estimate())
             available = (
-                self.daily_limit - self._tokens_used_today - self._tokens_reserved
+                self.daily_limit - self._effective_used_locked() - self._tokens_reserved
             )
             return est <= available
 
@@ -372,9 +626,20 @@ class DailyTokenTracker:
         """
         Get the number of tokens used today.
 
+        With the shared budget enabled this is the COMBINED usage across all
+        participating tools (the figure the daily limit is enforced against);
+        otherwise it is this tool's private count. See
+        :meth:`get_own_tokens_used_today` for the per-tool figure.
+
         Returns:
             Token count for current day.
         """
+        with self._lock:
+            self._check_and_reset_if_new_day()
+            return self._effective_used_locked()
+
+    def get_own_tokens_used_today(self) -> int:
+        """Return this tool's private token count for today (never combined)."""
         with self._lock:
             self._check_and_reset_if_new_day()
             return self._tokens_used_today
@@ -391,7 +656,7 @@ class DailyTokenTracker:
 
         with self._lock:
             self._check_and_reset_if_new_day()
-            remaining = self.daily_limit - self._tokens_used_today
+            remaining = self.daily_limit - self._effective_used_locked()
             return max(0, remaining)
 
     def is_limit_reached(self) -> bool:
@@ -479,7 +744,7 @@ class DailyTokenTracker:
         seconds_until_reset = self.get_seconds_until_reset()
         reset_time = self.get_reset_time()
 
-        return {
+        stats: dict[str, Any] = {
             "enabled": self.enabled,
             "daily_limit": self.daily_limit,
             "tokens_used_today": used,
@@ -489,6 +754,34 @@ class DailyTokenTracker:
             "seconds_until_reset": seconds_until_reset,
             "reset_time": reset_time.isoformat(),
             "current_date": self._current_date,
+        }
+        stats.update(self._shared_stats())
+        return stats
+
+    def _shared_stats(self) -> dict[str, Any]:
+        """Shared-budget stats: combined total, own count, and per-tool split.
+
+        Returns an empty dict when the shared budget is disabled so callers see
+        no change. ``read_breakdown`` is a lock-free ledger read run outside the
+        tracker lock; ``tokens_used_today`` above already reflects the combined
+        figure when enabled.
+        """
+        if not self._shared_enabled:
+            return {}
+        with self._lock:
+            ledger = self._ledger
+            own = self._tokens_used_today
+            combined = self._effective_used_locked()
+            degraded = self._ledger_degraded
+        breakdown: dict[str, int] | None = None
+        if ledger is not None:
+            breakdown = ledger.read_breakdown()
+        return {
+            "shared_budget_enabled": True,
+            "shared_budget_degraded": degraded,
+            "own_tokens_used_today": own,
+            "combined_tokens_used_today": combined,
+            "shared_breakdown": breakdown or {},
         }
 
 
@@ -511,6 +804,8 @@ def get_token_tracker() -> DailyTokenTracker:
                     state_file=_resolve_state_file(),
                     chunk_estimate_seed=config.DAILY_TOKEN_CHUNK_ESTIMATE_SEED,
                     estimate_smoothing=config.DAILY_TOKEN_ESTIMATE_SMOOTHING,
+                    shared_enabled=config.SHARED_TOKEN_BUDGET_ENABLED,
+                    shared_ledger_dir=config.SHARED_TOKEN_BUDGET_LEDGER_DIR or None,
                 )
                 atexit.register(_tracker_instance.flush)
 
@@ -562,6 +857,13 @@ def wait_for_token_reset() -> bool:
             interval = min(1, max(0, seconds_until_reset - elapsed))
             time.sleep(interval)
             elapsed += interval
+
+            # Forced ledger refresh each poll so another tool's usage or its
+            # midnight reset is observed while we wait. A no-op when the shared
+            # budget is disabled, so single-tool waits are unchanged.
+            if tracker._shared_enabled:
+                with contextlib.suppress(Exception):
+                    tracker.sync_ledger_now()
 
             # Live re-read of the configured daily limit: a user raising
             # daily_token_limit.daily_tokens mid-wait lifts the cap without a
