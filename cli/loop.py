@@ -208,9 +208,9 @@ def _wait_for_token_reset(
         time.sleep(interval)
         elapsed += interval
 
-        # Forced ledger refresh each poll so another tool's usage or its midnight
-        # reset is observed while we wait. A no-op when the shared budget is off,
-        # so single-tool waits are unchanged.
+        # Forced ledger refresh each poll so another tool's usage or its 00:01
+        # UTC reset is observed while we wait. A no-op when the shared budget is
+        # off, so single-tool waits are unchanged.
         if token_tracker._shared_enabled:
             try:
                 token_tracker.sync_ledger_now()

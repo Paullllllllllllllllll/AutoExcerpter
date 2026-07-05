@@ -91,7 +91,7 @@ paths:
 # Disabled by default; set enabled: true and adjust daily_tokens to your budget.
 daily_token_limit:
   enabled: false  # Set to true to enforce the daily token budget
-  daily_tokens: 10_000_000  # Max tokens per day (resets at midnight)
+  daily_tokens: 10_000_000  # Max tokens per day (resets at 00:01 UTC, one minute after OpenAI's free-tier counter reset at 00:00 UTC)
 
   # The budget is enforced per page (transcription + optional summary reserved
   # together), not just between files, so a single large document cannot

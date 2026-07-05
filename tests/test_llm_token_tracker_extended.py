@@ -7,8 +7,8 @@ Covers:
 - get_tokens_remaining: disabled, enabled with usage
 - is_limit_reached: disabled, at limit, over limit, under limit
 - can_use_tokens: disabled, enough tokens, not enough, estimated_tokens
-- get_seconds_until_reset: returns positive integer
-- get_reset_time: returns tomorrow midnight
+- get_seconds_until_reset: returns positive integer; targets next 00:01 UTC
+- get_reset_time: returns the next 00:01 UTC reset (aware UTC)
 - get_usage_percentage: disabled, zero limit, normal usage
 - get_stats: returns comprehensive dict
 - get_token_tracker singleton: first call creates, second returns same
@@ -17,14 +17,18 @@ Covers:
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
 import llm.token_tracker as token_tracker
 from llm.token_tracker import DailyTokenTracker
+
+
+def _today() -> str:
+    """Buffered-UTC day key, mirroring the tracker under test."""
+    return (datetime.now(UTC) - token_tracker._RESET_BUFFER).strftime("%Y-%m-%d")
 
 
 # ---------------------------------------------------------------------------
@@ -65,11 +69,11 @@ class TestLoadState:
         """When no state file exists, tracker starts with zero usage."""
         tracker = _make_tracker(state_file)
         assert tracker._tokens_used_today == 0
-        assert tracker._current_date == datetime.now().strftime("%Y-%m-%d")
+        assert tracker._current_date == _today()
 
     def test_same_day_restores_tokens(self, state_file: Path) -> None:
         """State file from the same day restores the token count."""
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = _today()
         state = {
             "date": today,
             "tokens_used": 42_000,
@@ -83,7 +87,9 @@ class TestLoadState:
 
     def test_different_day_resets_counter(self, state_file: Path) -> None:
         """State file from a previous day resets the token count to zero."""
-        yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        yesterday = (
+            datetime.strptime(_today(), "%Y-%m-%d") - timedelta(days=1)
+        ).strftime("%Y-%m-%d")
         state = {
             "date": yesterday,
             "tokens_used": 99_999,
@@ -93,7 +99,7 @@ class TestLoadState:
 
         tracker = _make_tracker(state_file)
         assert tracker._tokens_used_today == 0
-        assert tracker._current_date == datetime.now().strftime("%Y-%m-%d")
+        assert tracker._current_date == _today()
 
     def test_corrupted_json_initializes_fresh(self, state_file: Path) -> None:
         """Corrupted (non-JSON) state file falls back to fresh state."""
@@ -273,20 +279,18 @@ class TestGetSecondsUntilReset:
         assert isinstance(secs, int)
         assert 0 < secs <= 86_400
 
-    def test_consistent_with_mocked_time(self, state_file: Path) -> None:
-        """With a fixed time, seconds until reset is predictable."""
-        fake_now = datetime(2026, 2, 26, 22, 0, 0)
-        with patch("llm.token_tracker.datetime") as mock_dt:
-            mock_dt.now.return_value = fake_now
-            mock_dt.min = datetime.min
-            mock_dt.combine = datetime.combine
-            # We also need side_effect for strftime inside _get_current_date_str
-            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+    def test_targets_next_00_01_utc(self, state_file: Path, monkeypatch) -> None:
+        """With a fixed time, seconds until reset targets the next 00:01 UTC."""
+        tracker = _make_tracker(state_file)
 
-            tracker = _make_tracker(state_file)
-            secs = tracker.get_seconds_until_reset()
-            # From 22:00 to midnight is 7200 seconds
-            assert secs == 7200
+        class _FrozenDateTime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return datetime(2026, 2, 26, 12, 0, 0, tzinfo=UTC)
+
+        monkeypatch.setattr(token_tracker, "datetime", _FrozenDateTime)
+        # From 12:00:00 UTC to the next 00:01 UTC (27 Feb) is 12h 1m.
+        assert tracker.get_seconds_until_reset() == 12 * 3600 + 60
 
 
 # ============================================================================
@@ -295,17 +299,64 @@ class TestGetSecondsUntilReset:
 class TestGetResetTime:
     """Tests for DailyTokenTracker.get_reset_time()."""
 
-    def test_returns_tomorrow_midnight(self, state_file: Path) -> None:
-        """Reset time is midnight of the next day."""
-        fake_now = datetime(2026, 2, 26, 15, 30, 0)
-        with patch("llm.token_tracker.datetime") as mock_dt:
-            mock_dt.now.return_value = fake_now
-            mock_dt.min = datetime.min
-            mock_dt.combine = datetime.combine
+    def test_returns_next_00_01_utc(self, state_file: Path, monkeypatch) -> None:
+        """Reset time is the next 00:01 UTC as an aware-UTC datetime."""
+        tracker = _make_tracker(state_file)
 
-            tracker = _make_tracker(state_file)
-            reset_time = tracker.get_reset_time()
-            assert reset_time == datetime(2026, 2, 27, 0, 0, 0)
+        class _FrozenDateTime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return datetime(2026, 2, 26, 15, 30, 0, tzinfo=UTC)
+
+        monkeypatch.setattr(token_tracker, "datetime", _FrozenDateTime)
+        assert tracker.get_reset_time() == datetime(2026, 2, 27, 0, 1, 0, tzinfo=UTC)
+
+
+# ============================================================================
+# TestResetBoundary: budget day rolls over at 00:01 UTC
+# ============================================================================
+class TestResetBoundary:
+    """The budget day rolls over at 00:01 UTC, not exact UTC midnight."""
+
+    def test_date_str_before_buffer_is_previous_day(
+        self, state_file: Path, monkeypatch
+    ) -> None:
+        tracker = _make_tracker(state_file)
+
+        class _FrozenDateTime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return datetime(2026, 7, 5, 0, 0, 30, tzinfo=UTC)
+
+        monkeypatch.setattr(token_tracker, "datetime", _FrozenDateTime)
+        assert tracker._get_current_date_str() == "2026-07-04"
+
+    def test_date_str_after_buffer_is_new_day(
+        self, state_file: Path, monkeypatch
+    ) -> None:
+        tracker = _make_tracker(state_file)
+
+        class _FrozenDateTime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return datetime(2026, 7, 5, 0, 1, 30, tzinfo=UTC)
+
+        monkeypatch.setattr(token_tracker, "datetime", _FrozenDateTime)
+        assert tracker._get_current_date_str() == "2026-07-05"
+
+    def test_seconds_until_reset_targets_next_00_01_utc(
+        self, state_file: Path, monkeypatch
+    ) -> None:
+        tracker = _make_tracker(state_file)
+
+        class _FrozenDateTime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return datetime(2026, 7, 5, 12, 0, 0, tzinfo=UTC)
+
+        monkeypatch.setattr(token_tracker, "datetime", _FrozenDateTime)
+        # From 12:00:00 UTC to the next 00:01 UTC (6 July) is 12h 1m.
+        assert tracker.get_seconds_until_reset() == 12 * 3600 + 60
 
 
 # ============================================================================

@@ -22,7 +22,7 @@ from cli.interaction import (
 )
 from config import app as config
 from config.logger import setup_logger
-from llm.token_tracker import get_token_tracker
+from llm.token_tracker import _describe_reset_time, get_token_tracker
 from pipeline.resume import ResumeResult
 from pipeline.types import ItemSpec
 
@@ -347,7 +347,7 @@ def _log_token_limit_reached(
         f"/{stats['daily_limit']:,} tokens used"
     )
     logger.info(
-        f"Waiting until {reset_time.strftime('%Y-%m-%d %H:%M:%S')}"
+        f"Waiting until {_describe_reset_time(reset_time)}"
         f" ({hours}h {minutes}m) for token limit reset..."
     )
 
@@ -362,7 +362,7 @@ def _log_token_limit_reached(
             f"    • Tokens used: {stats['tokens_used_today']:,}"
             f"/{stats['daily_limit']:,}"
         )
-        print_info(f"    • Reset time: {reset_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        print_info(f"    • Reset time: {_describe_reset_time(reset_time)}")
         print_info(f"    • Time remaining: {hours}h {minutes}m")
         print()
         print_dim("  Waiting for token limit reset...")

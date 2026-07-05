@@ -18,12 +18,8 @@ from datetime import datetime
 from pathlib import Path
 
 import llm.token_tracker as tt
-from llm.shared_ledger import LEDGER_FILENAME, SharedTokenLedger
+from llm.shared_ledger import LEDGER_FILENAME, SharedTokenLedger, _today
 from llm.token_tracker import DailyTokenTracker, wait_for_token_reset
-
-
-def _today() -> str:
-    return datetime.now().strftime("%Y-%m-%d")
 
 
 def _write_ledger(ledger_dir: Path, tools: dict[str, int]) -> None:

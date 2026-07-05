@@ -1,4 +1,4 @@
-# AutoExcerpter v1.16.0
+# AutoExcerpter v1.17.0
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -84,7 +84,8 @@ bibliography section.
 concurrent page transcription via ThreadPoolExecutor; sliding-
 window rate limiter; exponential backoff with jitter; schema-
 specific retries (validation failures, content flags); daily
-token budgeting with midnight reset and persistent state; OpenAI
+token budgeting that resets at 00:01 UTC (one minute after OpenAI's
+00:00 UTC free-tier reset) with persistent state; OpenAI
 Flex tier support; progress bars; JSONL audit logs.
 
 **Multi-provider architecture:**
@@ -559,7 +560,8 @@ the working directory is adopted once when the user-level file is absent.
 
 Configured in `app.yaml` under `daily_token_limit`. Tracks `total_tokens` from
 every API call, persists debounced state to `token_state.json` in the state
-directory, and resets at local midnight. The budget is enforced per page
+directory, and resets at 00:01 UTC (one minute after OpenAI's 00:00 UTC
+free-tier reset). The budget is enforced per page
 (transcription plus optional summary reserved together); when it cannot fit
 another page, in-flight pages drain, the run waits for the reset, then resumes
 the still-pending pages from the log. An item is never marked complete while
@@ -726,6 +728,17 @@ a single baseline commit at v1.0.0 on 25 April 2026; version numbers before
 v1.0.0 do not exist.
 
 ## Changelog
+
+- **v1.17.0** (5 July 2026) -- Fix the daily token budget's reset boundary.
+    Both the private per-tool tracker (`llm/token_tracker.py`) and the vendored
+    shared cross-tool ledger (`llm/shared_ledger.py`, bumped to 1.1.0) now roll
+    the budget day over at 00:01 UTC -- one minute after OpenAI's 00:00 UTC
+    free-tier reset -- instead of local midnight, so the tool never frees its
+    budget before OpenAI's own counter has actually reset. The one-minute
+    buffer is a deliberate safety margin against clock skew. `get_reset_time()`
+    now returns a timezone-aware UTC datetime; user-facing wait messages show
+    the local wall-clock time alongside an explicit "(00:01 UTC)" anchor for
+    clarity. Updated docs and config comments accordingly. All tests pass.
 
 - **v1.16.0** (3 July 2026) -- Honest run status and CLI-contract fixes
     from a live cross-provider bug hunt. Propagate page-level failures to
