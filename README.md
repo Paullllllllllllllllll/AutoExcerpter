@@ -1,4 +1,4 @@
-# AutoExcerpter v1.17.0
+# AutoExcerpter v1.18.0
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -728,6 +728,20 @@ a single baseline commit at v1.0.0 on 25 April 2026; version numbers before
 v1.0.0 do not exist.
 
 ## Changelog
+
+- **v1.18.0** (6 July 2026) -- Fail items with budget-deferred pages truthfully
+    and withhold masking outputs. When the daily token budget defers pages
+    mid-item (a stalled reset, a cancelled budget wait, or shared-ledger
+    exhaustion), `process_item` now compares the source page count against the
+    completed results and fails the item on any shortfall, so the run exits 1
+    and the `--json` summary reports an honest `items_failed` instead of
+    exit 0 with a silently truncated document. On such a shortfall the partial
+    `.txt` and summary `.docx`/`.md` outputs are withheld entirely -- previously
+    a truncated final text was written whose header self-reported as complete
+    -- while the completed pages stay finalized in the working-log JSONL, so a
+    later resume run reconstructs them and finishes only the missing pages.
+    Regression tests cover the withheld-output partial run, the main-level
+    exit-code and JSON contract, and the full partial-then-resume round trip.
 
 - **v1.17.0** (5 July 2026) -- Fix the daily token budget's reset boundary.
     Both the private per-tool tracker (`llm/token_tracker.py`) and the vendored

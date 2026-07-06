@@ -148,3 +148,7 @@ class TestTranscribeAndSummarizeResumeLoop:
         # Only the pages that fit before exhaustion are present; the rest are
         # left for a later run (resume).
         assert indices == [0, 1]
+        # The deferred pages appended nothing, so process_item's shortfall check
+        # (total - len(results)) sees the gap: 2 present, 4 deferred out of n.
+        assert len(t_results) == 2
+        assert n - len(t_results) == 4

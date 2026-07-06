@@ -460,3 +460,118 @@ class TestResumeJsonEmission:
         # while the summaries were regenerated.
         assert pipeline_env.transcribe_payload.call_count == 0
         assert summary_env.generate_summary.call_count == 1
+
+
+# ============================================================================
+# AE-6: budget-deferred pages must fail the item and withhold truncated output
+# ============================================================================
+class TestBudgetDeferralWithholding:
+    """A run cut short by the daily token budget must NOT emit a truncated .txt
+    that self-reports as complete, must fail the item (exit 1, items_failed),
+    and must retain the completed pages in the working log so a later run
+    resumes and finishes them."""
+
+    def test_partial_run_withholds_txt_and_fails(
+        self,
+        make_pdf: Callable[..., Path],
+        tmp_path: Path,
+        pipeline_env: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """process_item() is False, the final .txt is NOT written, nothing is
+        registered in written_outputs, and the working log holds exactly the
+        one page that completed before the budget stalled."""
+        transcriber = _make_transcriber(make_pdf("Partial.pdf", 3), tmp_path / "out")
+
+        # Defer every page after index 0 (budget exhausted); page 0 transcribes
+        # for real via the mocked manager.
+        real_process = transcriber._process_single_page
+
+        def deferring(
+            idx: int,
+            source: Any,
+            t_results: list[dict[str, Any]],
+            s_results: list[dict[str, Any]],
+            total: int,
+            count_ref: list[int],
+        ) -> dict[str, Any] | None:
+            if idx >= 1:
+                transcriber._budget_exhausted.set()
+                return None
+            return real_process(idx, source, t_results, s_results, total, count_ref)
+
+        monkeypatch.setattr(transcriber, "_process_single_page", deferring)
+        # The daily reset never comes (user cancels / limit unreachable).
+        monkeypatch.setattr(transcriber_module, "wait_for_token_reset", lambda: False)
+
+        assert transcriber.process_item() is False
+        # Leg 2: the truncated .txt must not exist and must not be advertised.
+        assert not transcriber.output_txt_path.exists()
+        assert transcriber.written_outputs == []
+        # Leg 1 preservation: the working log retains exactly the completed page
+        # so the resume completeness gate can finish the rest later.
+        from pipeline.resume import load_completed_pages
+
+        assert load_completed_pages(transcriber.log_path) == {0}
+
+    def test_budget_deferral_roundtrip_via_main(
+        self,
+        make_pdf: Callable[..., Path],
+        tmp_path: Path,
+        pipeline_env: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Main-level: a partial (budget-stalled) run exits 1 with
+        items_failed >= 1 and writes no .txt; a subsequent resume run finishes
+        every page and exits 0."""
+        in_dir = tmp_path / "in"
+        out_dir = tmp_path / "out"
+        in_dir.mkdir()
+        out_dir.mkdir()
+        make_pdf("in/Item.pdf", 3)
+
+        # Class-level patch so the instance main() builds internally defers.
+        real_process = ItemTranscriber._process_single_page
+        defer = {"on": True}
+
+        def maybe_defer(
+            self: ItemTranscriber,
+            idx: int,
+            source: Any,
+            t_results: list[dict[str, Any]],
+            s_results: list[dict[str, Any]],
+            total: int,
+            count_ref: list[int],
+        ) -> dict[str, Any] | None:
+            if defer["on"] and idx >= 1:
+                self._budget_exhausted.set()
+                return None
+            return real_process(
+                self, idx, source, t_results, s_results, total, count_ref
+            )
+
+        monkeypatch.setattr(ItemTranscriber, "_process_single_page", maybe_defer)
+        monkeypatch.setattr(transcriber_module, "wait_for_token_reset", lambda: False)
+
+        # --- First run: pages 1,2 deferred -> partial, withheld, exit 1 ---
+        exit_code_1 = _run_main(monkeypatch, in_dir, out_dir)
+        payload_1 = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+        assert exit_code_1 == 1
+        assert payload_1["items_failed"] >= 1
+        assert payload_1["items_complete"] == 0
+        assert payload_1["outputs"] == []
+        assert not (out_dir / "Item.txt").exists()
+
+        # --- Second run: budget healthy; resume finishes all pages, exit 0 ---
+        defer["on"] = False
+        exit_code_2 = _run_main(monkeypatch, in_dir, out_dir)
+        payload_2 = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+        assert exit_code_2 == 0
+        assert payload_2["items_failed"] == 0
+        assert payload_2["items_complete"] == 1
+        assert (out_dir / "Item.txt").exists()
+        # The resumed run reused page 0 and transcribed only the two that were
+        # deferred (3 total minus the 1 already logged).
+        txt = (out_dir / "Item.txt").read_text(encoding="utf-8")
+        assert "# Total images processed: 3" in txt

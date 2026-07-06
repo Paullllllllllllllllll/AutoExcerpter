@@ -868,72 +868,96 @@ class ItemTranscriber:
             )
             summary_render_ok = True
 
-            # Save transcription to text file
-            logger.info(
-                f"Writing final transcription output to: {self.output_txt_path}"
-            )
-            write_transcription_to_text(
-                transcription_results,
-                self.output_txt_path,
-                self.name,
-                item_type_str,
-                total_elapsed_time,
-                self.input_path,
-                metadata_notes=self._output_metadata_notes or None,
-            )
-            self.written_outputs.append(self.output_txt_path.resolve())
+            # A page-budget stall (or a cancelled budget wait) can leave pages
+            # deferred: they appended nothing to transcription_results and are
+            # absent from the working log. total_items_to_transcribe is the
+            # source page count, so a positive difference means real pages are
+            # missing. Writing the .txt/summary now would emit a truncated file
+            # that self-reports as complete, so withhold ALL final outputs and
+            # register nothing in written_outputs. The working-log JSONL is still
+            # finalized in the finally block below, so the resume completeness
+            # gate reconstructs and finishes the missing pages on a later run.
+            pages_deferred = self.total_items_to_transcribe - len(transcription_results)
 
-            # Save summaries to output files if summarization is enabled
-            if config.SUMMARIZE and summary_results:
-                # Step 1: Adjust page numbers and sort
-                # (uses page_number_type for unnumbered detection)
-                adjusted_summary_results = (
-                    self.page_number_processor.adjust_and_sort_page_numbers(
-                        summary_results
-                    )
+            if pages_deferred > 0:
+                logger.error(
+                    "Item %s incomplete: %d of %d page(s) were deferred by the "
+                    "token budget and never transcribed. Withholding the partial "
+                    ".txt and summary outputs (a truncated file would misreport "
+                    "as complete); %d completed page(s) are retained in the "
+                    "working log for a later resume run.",
+                    self.name,
+                    pages_deferred,
+                    self.total_items_to_transcribe,
+                    len(transcription_results),
                 )
+            else:
+                # Save transcription to text file
+                logger.info(
+                    f"Writing final transcription output to: {self.output_txt_path}"
+                )
+                write_transcription_to_text(
+                    transcription_results,
+                    self.output_txt_path,
+                    self.name,
+                    item_type_str,
+                    total_elapsed_time,
+                    self.input_path,
+                    metadata_notes=self._output_metadata_notes or None,
+                )
+                self.written_outputs.append(self.output_txt_path.resolve())
 
-                try:
-                    # Build ONE citation manager per item: citations are
-                    # collected, consolidated, and OpenAlex-enriched exactly
-                    # once, then both writers render from the same instance
-                    # (prevents duplicate API lookups and diverging
-                    # bibliographies).
-                    citation_manager, render_data = build_render_context(
-                        adjusted_summary_results,
-                        polite_pool_email=config.CITATION_OPENALEX_EMAIL,
+                # Save summaries to output files if summarization is enabled
+                if config.SUMMARIZE and summary_results:
+                    # Step 1: Adjust page numbers and sort
+                    # (uses page_number_type for unnumbered detection)
+                    adjusted_summary_results = (
+                        self.page_number_processor.adjust_and_sort_page_numbers(
+                            summary_results
+                        )
                     )
-                    enrich_if_enabled(citation_manager)
 
-                    # Generate DOCX if enabled
-                    if config.OUTPUT_DOCX:
-                        create_docx_summary(
+                    try:
+                        # Build ONE citation manager per item: citations are
+                        # collected, consolidated, and OpenAlex-enriched exactly
+                        # once, then both writers render from the same instance
+                        # (prevents duplicate API lookups and diverging
+                        # bibliographies).
+                        citation_manager, render_data = build_render_context(
                             adjusted_summary_results,
-                            self.output_summary_docx_path,
-                            self.name,
-                            citation_manager=citation_manager,
-                            data=render_data,
+                            polite_pool_email=config.CITATION_OPENALEX_EMAIL,
                         )
-                        self.written_outputs.append(
-                            self.output_summary_docx_path.resolve()
-                        )
+                        enrich_if_enabled(citation_manager)
 
-                    # Generate Markdown if enabled
-                    if config.OUTPUT_MARKDOWN:
-                        create_markdown_summary(
-                            adjusted_summary_results,
-                            self.output_summary_md_path,
-                            self.name,
-                            citation_manager=citation_manager,
-                            data=render_data,
-                        )
-                        self.written_outputs.append(
-                            self.output_summary_md_path.resolve()
-                        )
+                        # Generate DOCX if enabled
+                        if config.OUTPUT_DOCX:
+                            create_docx_summary(
+                                adjusted_summary_results,
+                                self.output_summary_docx_path,
+                                self.name,
+                                citation_manager=citation_manager,
+                                data=render_data,
+                            )
+                            self.written_outputs.append(
+                                self.output_summary_docx_path.resolve()
+                            )
 
-                except Exception as e:
-                    summary_render_ok = False
-                    logger.error(f"Error creating summary files: {e}")
+                        # Generate Markdown if enabled
+                        if config.OUTPUT_MARKDOWN:
+                            create_markdown_summary(
+                                adjusted_summary_results,
+                                self.output_summary_md_path,
+                                self.name,
+                                citation_manager=citation_manager,
+                                data=render_data,
+                            )
+                            self.written_outputs.append(
+                                self.output_summary_md_path.resolve()
+                            )
+
+                    except Exception as e:
+                        summary_render_ok = False
+                        logger.error(f"Error creating summary files: {e}")
 
             logger.info(f"PROCESSING COMPLETE for item: {self.name}")
             logger.info(f"  Total images for this item: {len(transcription_results)}")
@@ -970,20 +994,23 @@ class ItemTranscriber:
             )
             logger.info(f"  Detailed logs: {self.log_path}{detail_suffix}")
 
-            # Item verdict: any failed page (transcription or summary) or a
-            # failed summary-file render means the item is NOT complete, so
-            # the caller counts it failed and the run exits non-zero.
+            # Item verdict: a budget-deferred page, any failed page
+            # (transcription or summary), or a failed summary-file render means
+            # the item is NOT complete, so the caller counts it failed and the
+            # run exits non-zero.
             item_success = (
-                final_failure_count == 0
+                pages_deferred == 0
+                and final_failure_count == 0
                 and summary_failure_count == 0
                 and summary_render_ok
             )
             if not item_success:
                 logger.error(
-                    "Item %s finished with failures: %d failed transcription "
-                    "page(s), %d failed summary page(s), summary files "
-                    "written: %s",
+                    "Item %s finished incomplete: %d deferred page(s), %d failed "
+                    "transcription page(s), %d failed summary page(s), summary "
+                    "files rendered ok: %s",
                     self.name,
+                    pages_deferred,
                     final_failure_count,
                     summary_failure_count,
                     summary_render_ok,
