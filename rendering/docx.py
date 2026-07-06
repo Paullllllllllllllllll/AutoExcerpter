@@ -90,11 +90,14 @@ def parse_latex_in_text(text: str) -> list[tuple[str, str]]:
     # Second pass: extract inline math $...$ from non-display regions
     display_ranges = [(s[2], s[3]) for s in temp_segments]
 
-    def in_display_range(pos: int) -> bool:
-        return any(start <= pos < end for start, end in display_ranges)
+    def overlaps_display_range(start: int, end: int) -> bool:
+        # True if [start, end) intersects any display range, including the case
+        # where the inline match fully encloses a $$...$$ block (both endpoints
+        # outside the range). Half-open interval overlap test.
+        return any(start < d_end and d_start < end for d_start, d_end in display_ranges)
 
     for match in re.finditer(inline_pattern, protected_text, re.DOTALL):
-        if not in_display_range(match.start()) and not in_display_range(match.end()):
+        if not overlaps_display_range(match.start(), match.end()):
             temp_segments.append(
                 (match.group(1), "latex_inline", match.start(), match.end())
             )

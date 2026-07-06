@@ -343,13 +343,13 @@ class TestCollectItemsFromDirectory:
         assert items == []
 
     def test_image_folder_with_nested_content(self, tmp_path: Path) -> None:
-        """A directory that collected images is one item; its subtree is pruned.
+        """An image folder suppresses nested image folders but not nested PDFs.
 
-        Once a directory contributes images it is treated as a single image
-        folder and the walk does not descend into its subdirectories. This
-        prevents a book folder and its own ``thumbnails`` subfolder from being
-        emitted as two separate items (and, as a side effect, ignores nested
-        content beneath an image folder).
+        A directory that contributes images is one image-folder item, and an
+        image subfolder beneath it (e.g. ``thumbnails``) is suppressed so the
+        book and its thumbnails are not emitted as two items. Nested PDFs,
+        however, must still be discovered: pruning the whole subtree silently
+        dropped them (AE-3).
         """
         parent = tmp_path / "parent"
         parent.mkdir()
@@ -367,11 +367,12 @@ class TestCollectItemsFromDirectory:
 
         items = list(_collect_items_from_directory(tmp_path))
 
+        # The image subfolder (thumbnails) is suppressed: only parent remains.
         folder_items = [i for i in items if i.kind == "image_folder"]
         assert len(folder_items) == 1
         assert folder_items[0].path == parent
 
-        # The subtree beneath an image folder is pruned, so the nested PDF and
-        # the thumbnails subfolder are not emitted as separate items.
+        # The nested PDF beneath the image folder is still discovered, not lost.
         pdf_items = [i for i in items if i.kind == "pdf"]
-        assert pdf_items == []
+        assert len(pdf_items) == 1
+        assert pdf_items[0].path == child / "nested.pdf"

@@ -203,8 +203,28 @@ class ResumeChecker:
             and logged_count < expected_total
         )
 
+        # Failure gate (AE-2): a run that logged failed pages must NOT be
+        # classified COMPLETE, or a reported failure could never be repaired by
+        # re-running (exit-1 then exit-0 "already complete" ping-pong). A page
+        # whose transcription entry is an error placeholder is excluded from
+        # completed_pages, so classifying the item PARTIAL/TRANSCRIPTION_ONLY
+        # re-runs exactly those pages. A page whose transcription succeeded but
+        # whose SUMMARY entry carries an error also forces a re-run, where the
+        # summary-only resume path regenerates just that summary. (The logged_
+        # count above still counts error entries as attempted, per the
+        # deliberate deferred-vs-attempted distinction; this is a separate,
+        # additive signal that leaves that count untouched.)
+        transcription_error_count = (
+            sum(1 for r in logged_results if isinstance(r, dict) and "error" in r)
+            if logged_results
+            else 0
+        )
+        summary_error_count = self._count_summary_errors(item_name, output_dir)
+        log_has_failures = transcription_error_count > 0 or summary_error_count > 0
+        log_incomplete = log_shortfall or log_has_failures
+
         # Determine state
-        if not missing and not log_shortfall:
+        if not missing and not log_incomplete:
             return ResumeResult(
                 item_name=item_name,
                 state=ProcessingState.COMPLETE,
@@ -218,10 +238,12 @@ class ResumeChecker:
         reuse_pages = None if self.retranscribe else completed_pages
 
         # Transcription exists but summaries are missing (or pages are short of
-        # the expected total): reuse the logged transcriptions and (re)generate
-        # summaries only, unless --retranscribe forces a fresh pass.
+        # the expected total, or a page failed): reuse the logged transcriptions
+        # and (re)generate summaries only, unless --retranscribe forces a fresh
+        # pass. Error pages are excluded from completed_pages, so they are
+        # re-run rather than reused.
         txt_exists = any(p.suffix == ".txt" for p in existing)
-        if txt_exists and self.summarize and (missing or log_shortfall):
+        if txt_exists and self.summarize and (missing or log_incomplete):
             reason = "transcription exists, missing: " + ", ".join(
                 p.name for p in missing
             )
@@ -229,6 +251,11 @@ class ResumeChecker:
                 reason += (
                     f" (log shows {len(completed_pages or [])}/{expected_total} "
                     "pages; resuming missing pages)"
+                )
+            if log_has_failures:
+                reason += (
+                    f" ({transcription_error_count} failed transcription page(s), "
+                    f"{summary_error_count} failed summary page(s); retrying them)"
                 )
             return ResumeResult(
                 item_name=item_name,
@@ -278,6 +305,30 @@ class ResumeChecker:
             return None
 
         return log_path
+
+    def _count_summary_errors(self, item_name: str, output_dir: Path) -> int:
+        """Count summary-log entries that carry an error, 0 if none/absent.
+
+        A summary page that errored on a prior run must not let the item be
+        classified COMPLETE (AE-2); the summary-only resume path regenerates it.
+        """
+        if not self.summarize:
+            return 0
+
+        safe_working_dir_name = create_safe_directory_name(item_name, "_working_files")
+        working_dir = output_dir / safe_working_dir_name
+        if not working_dir.exists():
+            return 0
+
+        safe_log_name = create_safe_log_filename(item_name, "summary")
+        log_path = working_dir / safe_log_name
+        if not log_path.exists() or log_path.stat().st_size == 0:
+            return 0
+
+        entries = load_transcription_results_from_log(log_path)
+        if not entries:
+            return 0
+        return sum(1 for e in entries if isinstance(e, dict) and "error" in e)
 
 
 def load_completed_pages(log_path: Path) -> set[int] | None:

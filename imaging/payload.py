@@ -183,6 +183,8 @@ class PdfPayloadSource(_PayloadSourceBase):
         grayscale_enabled = bool(self.img_cfg.get("grayscale_conversion", True))
 
         with self._render_lock:
+            if self._doc is None:
+                raise RuntimeError("PdfPayloadSource is closed")
             page = self._doc[index]
             if grayscale_enabled:
                 pix = page.get_pixmap(
@@ -227,9 +229,12 @@ class PdfPayloadSource(_PayloadSourceBase):
         return provenance
 
     def close(self) -> None:
-        if self._doc is not None:
-            self._doc.close()
-            self._doc = None
+        # Acquire the render lock so we never close the document out from
+        # under an in-flight page.get_pixmap() render on a worker thread.
+        with self._render_lock:
+            if self._doc is not None:
+                self._doc.close()
+                self._doc = None
 
 
 class FolderPayloadSource(_PayloadSourceBase):
@@ -260,7 +265,9 @@ class FolderPayloadSource(_PayloadSourceBase):
             pil_img = ImageProcessor.preprocess_pil_image(
                 img_file, self.img_cfg, self.model_type
             )
-        jpeg_bytes, width, height = _encode_jpeg(pil_img, self.jpeg_quality)
+            # Encode inside the with-block: preprocessing may return the same
+            # (unmodified) image object, which is closed when the block exits.
+            jpeg_bytes, width, height = _encode_jpeg(pil_img, self.jpeg_quality)
 
         return PagePayload(
             base64=base64.b64encode(jpeg_bytes).decode("utf-8"),

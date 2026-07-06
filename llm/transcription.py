@@ -420,8 +420,9 @@ class TranscriptionManager(LLMClientBase):
                 # Build messages and invocation kwargs
                 messages, invoke_kwargs = self._build_model_inputs(base64_image)
 
-                # Get structured chat model
-                structured_model = self._get_structured_chat_model()
+                # Get structured chat model (binds invoke kwargs on the
+                # structured-output paths where invoke-time kwargs are dropped)
+                structured_model = self._get_structured_chat_model(invoke_kwargs)
 
                 # Application-level retry with per-attempt token tracking
                 response = self._invoke_with_retry(
@@ -512,10 +513,15 @@ class TranscriptionManager(LLMClientBase):
 
                 # --- Standard JSON mode: schema-flag retries ---
                 if not self.is_plain_text_mode:
-                    # Parse the raw text as JSON to check for schema flags
+                    # Parse the raw text as JSON to check for schema flags.
+                    # Strip any markdown code fence first (as validation and
+                    # parsing do) so a fenced response does not bypass the
+                    # configured schema-flag retries.
                     parsed_response = None
                     with contextlib.suppress(json.JSONDecodeError, TypeError):
-                        parsed_response = json.loads(raw_text)
+                        parsed_response = json.loads(
+                            strip_markdown_code_block(raw_text)
+                        )
 
                     # Check for schema-specific retry conditions
                     if isinstance(parsed_response, dict):
@@ -576,7 +582,7 @@ class TranscriptionManager(LLMClientBase):
 
             except Exception as e:
                 # _invoke_with_retry has exhausted all retries if we get here
-                self.failed_requests += 1
+                self._report_failure()
                 logger.error(
                     f"Transcription API error for {image_name} after retries: "
                     f"{type(e).__name__} - {e}"

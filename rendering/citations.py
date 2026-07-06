@@ -452,7 +452,7 @@ class CitationManager:
                 enriched += 1
                 continue
 
-            if max_requests and requests_made >= max_requests:
+            if max_requests is not None and requests_made >= max_requests:
                 logger.info("Reached maximum API requests limit (%d)", max_requests)
                 break
 

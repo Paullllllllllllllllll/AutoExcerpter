@@ -54,7 +54,10 @@ logger = setup_logger(__name__)
 
 
 def _select_items_for_processing(
-    all_items: list[ItemSpec], process_all: bool, select_pattern: str | None = None
+    all_items: list[ItemSpec],
+    process_all: bool,
+    select_pattern: str | None = None,
+    emit_json: bool = False,
 ) -> list[ItemSpec]:
     """Select items for processing based on mode and user input."""
     if config.CLI_MODE:
@@ -71,21 +74,32 @@ def _select_items_for_processing(
                 )
                 return selected
             else:
+                # A --select pattern matching nothing is almost always a typo,
+                # not a valid "process nothing" request. Exit non-zero (like the
+                # empty-input-directory case) so a driving agent sees the error
+                # rather than a false success, still emitting the JSON summary
+                # per the "emit JSON on all exits" contract (AE-5).
                 logger.error(f"No items found matching '{select_pattern}'")
-                return []
+                if emit_json:
+                    _emit_json_summary(0, 0, 0, 0, [])
+                sys.exit(1)
         elif len(all_items) == 1:
             logger.info("Processing single item in CLI mode")
             return list(all_items)
         else:
             # Multiple items with no --all/--select is ambiguous in CLI mode:
             # error out rather than silently processing only the first (which
-            # loses the rest without any signal to a driving agent).
+            # loses the rest without any signal to a driving agent). Emit the
+            # JSON summary first so this controlled exit honors the same
+            # "emit JSON on all exits" contract as its neighbors (AE-4).
             logger.error(
                 "%d items found but neither --all nor --select was given. "
                 "Refusing to silently process only the first item; pass --all "
                 "to process every item or --select to choose specific ones.",
                 len(all_items),
             )
+            if emit_json:
+                _emit_json_summary(0, 0, 0, 0, [])
             sys.exit(2)
     else:
         # Interactive mode: prompt user for selection
@@ -170,7 +184,7 @@ def _setup_and_scan(
         )
 
     selected_items = _select_items_for_processing(
-        all_items_to_consider, process_all, select_pattern
+        all_items_to_consider, process_all, select_pattern, emit_json
     )
     if not selected_items:
         if not config.CLI_MODE:
@@ -188,7 +202,7 @@ def _apply_resume_filtering(
     base_output_dir: Path,
     resume_mode: str,
     retranscribe: bool = False,
-) -> tuple[list[ItemSpec], dict[str, ResumeResult], str, list[ResumeResult]]:
+) -> tuple[list[ItemSpec], dict[Path, ResumeResult], str, list[ResumeResult]]:
     """Filter items through the resume checker.
 
     Returns:
@@ -209,7 +223,11 @@ def _apply_resume_filtering(
     items_to_process: list[ItemSpec] = filtered_result[0]
     skipped_items: list[ResumeResult] = filtered_result[1]
 
-    item_resume_map: dict[str, ResumeResult] = {}
+    # Keyed by the item's input path, not its output stem: two items in
+    # different directories can share a stem (e.g. BookA/images and BookB/images
+    # both stem "images" under input_paths_is_output_path), and a stem key would
+    # let one item's resume set clobber the other's (AE-1).
+    item_resume_map: dict[Path, ResumeResult] = {}
     for item in items_to_process:
         result = resume_checker.should_skip(
             item.output_stem,
@@ -219,7 +237,7 @@ def _apply_resume_filtering(
             ProcessingState.PARTIAL,
             ProcessingState.TRANSCRIPTION_ONLY,
         ):
-            item_resume_map[item.output_stem] = result
+            item_resume_map[item.path] = result
 
     if resume_mode == "skip":
         logger.info("Resume mode: skip (use --force to reprocess all)")
@@ -273,19 +291,22 @@ def _log_token_usage(context: str = "") -> None:
 def _run_processing_loop(
     items_to_process: list[ItemSpec],
     base_output_dir: Path,
-    item_resume_map: dict[str, ResumeResult],
+    item_resume_map: dict[Path, ResumeResult],
     summary_context: str | None,
     resume_mode: str,
-) -> tuple[int, list[str]]:
+) -> tuple[int, list[str], int]:
     """Process items sequentially.
 
     Returns:
-        ``(processed_count, outputs)``: the number of items that fully
-        succeeded and the absolute paths of all output files written this run.
+        ``(processed_count, outputs, unattempted_count)``: the number of items
+        that fully succeeded, the absolute paths of all output files written
+        this run, and the number of items never reached because the user
+        cancelled the token-limit wait.
     """
     processed_count = 0
     run_outputs: list[str] = []
     total_to_process = len(items_to_process)
+    attempted_count = 0
 
     for index, item_spec in enumerate(items_to_process, start=1):
         if not _check_and_wait_for_token_limit():
@@ -300,10 +321,11 @@ def _run_processing_loop(
                 )
             break
 
+        attempted_count += 1
         item_output_dir = _resolve_item_output_dir(item_spec, base_output_dir)
         item_output_dir.mkdir(parents=True, exist_ok=True)
 
-        item_resume = item_resume_map.get(item_spec.output_stem)
+        item_resume = item_resume_map.get(item_spec.path)
         completed_pages = item_resume.completed_page_indices if item_resume else None
 
         success, item_outputs = _process_single_item(
@@ -321,7 +343,7 @@ def _run_processing_loop(
 
         _log_token_usage(f"Token usage after file {index}/{total_to_process}")
 
-    return processed_count, run_outputs
+    return processed_count, run_outputs, total_to_process - attempted_count
 
 
 def _emit_json_summary(
@@ -355,14 +377,14 @@ def _emit_json_summary(
 
 def _run_dry_run(
     items_to_process: list[ItemSpec],
-    item_resume_map: dict[str, ResumeResult],
+    item_resume_map: dict[Path, ResumeResult],
     skipped_items: list[ResumeResult],
     emit_json: bool,
 ) -> None:
     """Report the planned actions (discovery + resume classification), no work."""
     plan: list[dict[str, Any]] = []
     for item in items_to_process:
-        resume = item_resume_map.get(item.output_stem)
+        resume = item_resume_map.get(item.path)
         state = resume.state.value if resume else "none"
         pages = (
             len(resume.completed_page_indices)
@@ -452,7 +474,7 @@ def main() -> int:
 
     _log_token_usage()
 
-    processed_count, run_outputs = _run_processing_loop(
+    processed_count, run_outputs, unattempted_count = _run_processing_loop(
         items_to_process,
         base_output_dir,
         item_resume_map,
@@ -463,11 +485,19 @@ def main() -> int:
     # Final summary
     skipped_count = len(skipped_items)
     total_to_process = len(items_to_process)
-    failed_count = total_to_process - processed_count
+    # Only items that were actually attempted can be counted as failures. Items
+    # never reached because the user cancelled the token-limit wait are reported
+    # as not attempted (folded into the skipped/pending count and logged), never
+    # as failures (AE-7). The run still exits non-zero when any item was left
+    # unattempted, since the requested work did not finish.
+    attempted_count = total_to_process - unattempted_count
+    failed_count = attempted_count - processed_count
     if config.CLI_MODE:
         msg = f"{processed_count}/{total_to_process} item(s) processed."
         if skipped_count > 0:
             msg += f" {skipped_count} item(s) skipped (already complete)."
+        if unattempted_count > 0:
+            msg += f" {unattempted_count} item(s) not attempted (stopped early)."
         logger.info(msg)
     else:
         _display_completion_summary(
@@ -478,23 +508,31 @@ def main() -> int:
         if skipped_count > 0:
             print_dim(f"  ({skipped_count} item(s) were skipped as already complete)")
             print()
+        if unattempted_count > 0:
+            print_dim(f"  ({unattempted_count} item(s) were not attempted)")
+            print()
 
     logger.info(
         f"{processed_count}/{total_to_process} selected items have been processed."
     )
+    if unattempted_count > 0:
+        logger.info(
+            "%d item(s) were not attempted (processing stopped before reaching them).",
+            unattempted_count,
+        )
 
     if emit_json:
         _emit_json_summary(
             processed_count,
             failed_count,
-            skipped_count,
+            skipped_count + unattempted_count,
             total_to_process,
             run_outputs,
         )
 
     # Exit code contract: 0 = all requested items succeeded; 1 = one or more
-    # failed/partial.
-    return 1 if failed_count > 0 else 0
+    # failed/partial, or one or more items were left unattempted.
+    return 1 if failed_count > 0 or unattempted_count > 0 else 0
 
 
 if __name__ == "__main__":

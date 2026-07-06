@@ -14,6 +14,7 @@ from __future__ import annotations
 import base64
 import io
 import json
+import threading
 from collections import deque
 from collections.abc import Generator
 from pathlib import Path
@@ -75,6 +76,7 @@ def _make_manager(**overrides) -> TranscriptionManager:
         "rate_limiter": None,
         "max_retries": 5,
         "chat_model": MagicMock(),
+        "_stats_lock": threading.Lock(),
         "successful_requests": 0,
         "failed_requests": 0,
         "processing_times": deque(maxlen=50),
@@ -620,6 +622,72 @@ class TestTranscribePayload:
 
         assert result["transcription"] == "Got it this time."
         assert result["schema_retries"]["no_transcribable_text"] == 1
+
+    def test_schema_flag_retry_on_markdown_fenced_response(self) -> None:
+        """A markdown-fenced JSON flag still triggers the schema-flag retry.
+
+        Regression: the flag check must strip the code fence (as validation and
+        parsing do) before json.loads, or a fenced ``transcription_not_possible``
+        response silently bypasses the configured retry.
+        """
+        payload = _make_payload("page_0001.jpg", sequence_number=1)
+
+        mgr = _make_manager(
+            provider="openai",
+            schema_retry_config={
+                "transcription_not_possible": {
+                    "enabled": True,
+                    "max_attempts": 1,
+                    "backoff_base": 0.01,
+                    "backoff_multiplier": 1.0,
+                },
+            },
+        )
+
+        fenced_flag = (
+            "```json\n"
+            + json.dumps(
+                {
+                    "image_analysis": "Illegible.",
+                    "transcription": "",
+                    "no_transcribable_text": False,
+                    "transcription_not_possible": True,
+                }
+            )
+            + "\n```"
+        )
+        response_retry = AIMessage(content=fenced_flag)
+        response_retry.usage_metadata = None
+        response_retry.response_metadata = {}
+
+        response_ok = AIMessage(
+            content=json.dumps(
+                {
+                    "image_analysis": "Readable now.",
+                    "transcription": "Got it this time.",
+                    "no_transcribable_text": False,
+                    "transcription_not_possible": False,
+                }
+            )
+        )
+        response_ok.usage_metadata = None
+        response_ok.response_metadata = {}
+
+        mock_structured = MagicMock()
+        mock_structured.invoke.side_effect = [response_retry, response_ok]
+
+        with (
+            patch.object(
+                mgr, "_get_structured_chat_model", return_value=mock_structured
+            ),
+            patch.object(mgr, "_build_model_inputs", return_value=([], {})),
+            patch("llm.transcription.time.sleep"),
+            patch("llm.base.random.uniform", return_value=1.0),
+        ):
+            result = mgr.transcribe_payload(payload, max_schema_retries=3)
+
+        assert result["transcription"] == "Got it this time."
+        assert result["schema_retries"]["transcription_not_possible"] == 1
 
     def test_get_stats_includes_service_tier(self) -> None:
         """get_stats() includes service_tier from transcription manager."""

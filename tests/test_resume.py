@@ -340,6 +340,100 @@ class TestResumeCheckerPartial:
 
 
 # ============================================================================
+# ResumeChecker — AE-2: logged failures must never classify COMPLETE
+# ============================================================================
+def _create_summary_log(
+    output_dir: Path, item_name: str, entries: list[dict[str, Any]]
+) -> Path:
+    """Create a summary working-log file alongside the transcription log."""
+    safe_working_dir_name = create_safe_directory_name(item_name, "_working_files")
+    working_dir = output_dir / safe_working_dir_name
+    working_dir.mkdir(parents=True, exist_ok=True)
+    safe_log_name = create_safe_log_filename(item_name, "summary")
+    log_path = working_dir / safe_log_name
+    log_path.write_text(_jsonl_log(entries), encoding="utf-8")
+    return log_path
+
+
+class TestResumeCheckerLoggedFailures:
+    """A run that logged failed pages must be repairable by re-running: it is
+    classified TRANSCRIPTION_ONLY/PARTIAL (retry the failed pages), never
+    COMPLETE. Otherwise a reported failure would ping-pong exit 1 then exit 0
+    "already complete" (AE-2)."""
+
+    def test_transcription_error_blocks_complete(
+        self, checker_skip: ResumeChecker, output_dir: Path, item_name: str
+    ) -> None:
+        """All outputs and all pages logged, but one page errored -> not
+        COMPLETE; the failed page is excluded from completed_page_indices so a
+        re-run retries exactly it."""
+        _create_file(output_dir / f"{item_name}.txt")
+        _create_file(output_dir / f"{item_name}.docx")
+        _create_file(output_dir / f"{item_name}.md")
+        entries = [
+            {"original_input_order_index": 0, "page": 1, "transcription": "text"},
+            {"original_input_order_index": 1, "page": 2, "error": "API timeout"},
+        ]
+        _create_log_with_entries(output_dir, item_name, entries)
+
+        result = checker_skip.should_skip(item_name, output_dir)
+        assert result.state == ProcessingState.TRANSCRIPTION_ONLY
+        assert result.completed_page_indices == {0}
+
+    def test_summary_error_blocks_complete(
+        self, checker_skip: ResumeChecker, output_dir: Path, item_name: str
+    ) -> None:
+        """All transcriptions succeeded and all outputs exist, but a summary
+        entry errored -> not COMPLETE. The transcription of the failed-summary
+        page is still reusable, so it stays in completed_page_indices and the
+        summary-only resume path regenerates just that summary."""
+        _create_file(output_dir / f"{item_name}.txt")
+        _create_file(output_dir / f"{item_name}.docx")
+        _create_file(output_dir / f"{item_name}.md")
+        entries = [
+            {"original_input_order_index": 0, "page": 1, "transcription": "text"},
+            {"original_input_order_index": 1, "page": 2, "transcription": "text"},
+        ]
+        _create_log_with_entries(output_dir, item_name, entries)
+        _create_summary_log(
+            output_dir,
+            item_name,
+            [
+                {"original_input_order_index": 0, "page": 1, "bullet_points": ["ok"]},
+                {"original_input_order_index": 1, "page": 2, "error": "summary API"},
+            ],
+        )
+
+        result = checker_skip.should_skip(item_name, output_dir)
+        assert result.state == ProcessingState.TRANSCRIPTION_ONLY
+        assert result.completed_page_indices == {0, 1}
+
+    def test_clean_run_still_complete(
+        self, checker_skip: ResumeChecker, output_dir: Path, item_name: str
+    ) -> None:
+        """No regression: an error-free logged run with all outputs is COMPLETE."""
+        _create_file(output_dir / f"{item_name}.txt")
+        _create_file(output_dir / f"{item_name}.docx")
+        _create_file(output_dir / f"{item_name}.md")
+        entries = [
+            {"original_input_order_index": 0, "page": 1, "transcription": "text"},
+            {"original_input_order_index": 1, "page": 2, "transcription": "text"},
+        ]
+        _create_log_with_entries(output_dir, item_name, entries)
+        _create_summary_log(
+            output_dir,
+            item_name,
+            [
+                {"original_input_order_index": 0, "page": 1, "bullet_points": ["ok"]},
+                {"original_input_order_index": 1, "page": 2, "bullet_points": ["ok"]},
+            ],
+        )
+
+        result = checker_skip.should_skip(item_name, output_dir)
+        assert result.state == ProcessingState.COMPLETE
+
+
+# ============================================================================
 # ResumeChecker — Skip Mode: NONE State Tests
 # ============================================================================
 class TestResumeCheckerNone:

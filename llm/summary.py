@@ -283,8 +283,9 @@ class SummaryManager(LLMClientBase):
                 # Build messages and invocation kwargs
                 messages, invoke_kwargs = self._build_model_inputs(transcription)
 
-                # Get structured chat model
-                structured_model = self._get_structured_chat_model()
+                # Get structured chat model (binds invoke kwargs on the
+                # structured-output paths where invoke-time kwargs are dropped)
+                structured_model = self._get_structured_chat_model(invoke_kwargs)
 
                 # Application-level retry with per-attempt token tracking
                 response = self._invoke_with_retry(
@@ -352,11 +353,25 @@ class SummaryManager(LLMClientBase):
                             "references": None,
                         }
                     else:
-                        # Not a custom endpoint -- raise so the outer
-                        # except block can handle it.
-                        raise ValueError(
-                            f"Invalid summary JSON for page {page_num}: {reason}"
+                        # Validation retries exhausted on a structured-output
+                        # model. The API call itself succeeded (already counted
+                        # via _report_success); only the content failed schema
+                        # validation. Return a validation-marked placeholder
+                        # rather than raising into the api_failure handler,
+                        # which would both mislabel the error and double-count
+                        # the request as failed.
+                        logger.error(
+                            f"Invalid summary JSON for page {page_num} after "
+                            f"validation retries: {reason}"
                         )
+                        placeholder = self._create_placeholder_summary(
+                            page_num, f"Invalid summary JSON: {reason}"
+                        )
+                        placeholder["error_type"] = "schema_validation"
+                        placeholder["provider"] = self.provider
+                        if sum(schema_retry_attempts.values()) > 0:
+                            placeholder["schema_retries"] = schema_retry_attempts.copy()
+                        return placeholder
                 else:
                     # Parse JSON
                     try:
@@ -398,7 +413,7 @@ class SummaryManager(LLMClientBase):
 
             except Exception as e:
                 # _invoke_with_retry has exhausted all retries if we get here
-                self.failed_requests += 1
+                self._report_failure()
                 logger.error(
                     f"Summary API error for page {page_num} after retries: "
                     f"{type(e).__name__} - {e}"
@@ -408,21 +423,24 @@ class SummaryManager(LLMClientBase):
                 placeholder["provider"] = self.provider
                 return placeholder
 
-        # Fallback if schema retry loop exits (all schema retries exhausted)
-        # Build flat structure from summary_json
-        result = {
-            "page": page_num,
-            "page_information": (
-                summary_json.get("page_information") if summary_json else None
-            ),
-            "bullet_points": (
-                summary_json.get("bullet_points") if summary_json else None
-            ),
-            "references": summary_json.get("references") if summary_json else None,
-            "processing_time": round(time.time() - start_time, 2),
-            "provider": self.provider,
-        }
-        return result
+        # Fallback: the schema-retry loop exhausted its hard iteration bound
+        # without producing a valid summary (reachable when the configured
+        # validation-failure max_attempts exceeds the loop bound). Return an
+        # error-marked placeholder so the page is not silently rendered as an
+        # empty success. summary_json is always None here because every path
+        # that assigns it returns from inside the loop.
+        logger.error(
+            f"Summary schema retries exhausted for page {page_num} "
+            "without a valid response."
+        )
+        placeholder = self._create_placeholder_summary(
+            page_num, "Summary schema validation retries exhausted"
+        )
+        placeholder["error_type"] = "schema_validation"
+        placeholder["provider"] = self.provider
+        if sum(schema_retry_attempts.values()) > 0:
+            placeholder["schema_retries"] = schema_retry_attempts.copy()
+        return placeholder
 
     def get_stats(self) -> dict[str, Any]:
         """Get statistics about API usage."""

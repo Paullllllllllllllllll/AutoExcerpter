@@ -66,7 +66,7 @@ def _collect_items_from_directory(path_to_scan: Path) -> Iterable[ItemSpec]:
     image_folders: dict[Path, list[Path]] = {}
     items: list[ItemSpec] = []
 
-    for root, dirs, files in os.walk(path_to_scan):
+    for root, _dirs, files in os.walk(path_to_scan):
         current_dir = Path(root)
 
         # Collect PDF files and images in a single pass (a file is at most one
@@ -78,13 +78,31 @@ def _collect_items_from_directory(path_to_scan: Path) -> Iterable[ItemSpec]:
             elif is_supported_image(file_path):
                 image_folders.setdefault(current_dir, []).append(file_path)
 
-        # If this directory itself collected images, treat it as a single image
-        # folder and do not descend into its subdirectories. Otherwise a folder
-        # and its own image subfolders (e.g. Book1 and Book1/thumbnails) would
-        # be emitted as separate items. (The previous filter compared against
-        # subdirectories that os.walk had not yet visited, so it never matched.)
-        if current_dir in image_folders:
-            dirs[:] = []
+    # Descend the whole tree so nested PDFs and image folders are never lost:
+    # pruning the os.walk at the first image-bearing directory silently dropped
+    # everything below it (e.g. a stray cover.jpg at the root hid all PDFs
+    # underneath). Instead, only suppress image folders nested under another
+    # image folder (e.g. Book1/thumbnails under an image-book Book1): those are
+    # parts of the parent scan set, not separate items. PDFs anywhere below are
+    # always kept, and every suppressed folder is logged so nothing processable
+    # is silently discarded.
+    folder_paths = set(image_folders)
+    kept: dict[Path, list[Path]] = {}
+    for folder, images in image_folders.items():
+        suppressing = next(
+            (parent for parent in folder.parents if parent in folder_paths), None
+        )
+        if suppressing is None:
+            kept[folder] = images
+        else:
+            logger.warning(
+                "Skipping image folder %s (%d image(s)): nested under image "
+                "folder %s. Point the input path at it directly to process it.",
+                folder,
+                len(images),
+                suppressing,
+            )
+    image_folders = kept
 
     items.extend(_build_image_folder_items(image_folders))
     return items

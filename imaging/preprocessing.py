@@ -199,6 +199,10 @@ class ImageProcessor:
             pil_img.mode in ("RGBA", "LA")
             or (pil_img.mode == "P" and "transparency" in pil_img.info)
         ):
+            # Promote palette-with-transparency to RGBA so its alpha channel
+            # is honored as the paste mask instead of the palette color.
+            if pil_img.mode == "P":
+                pil_img = pil_img.convert("RGBA")
             background = Image.new("RGB", pil_img.size, WHITE_BACKGROUND_COLOR)
             mask = pil_img.split()[-1] if pil_img.mode in ("RGBA", "LA") else None
             background.paste(pil_img, mask=mask)

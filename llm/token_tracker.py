@@ -440,13 +440,17 @@ class DailyTokenTracker:
                     if need_seed:
                         self._seeded = True
                         baseline = own_field if own_field is not None else own_committed
+                        # Tokens committed by this process during the seed I/O
+                        # (the lock was released for the ledger call) are not yet
+                        # in the ledger; only ``own_committed`` was seeded.
+                        # Compute the pending delta from that pre-I/O snapshot,
+                        # NOT from ``baseline`` -- deriving it from ``baseline``
+                        # zeroes out (silently discards) any mid-I/O usage
+                        # whenever the ledger's own field exceeds the local count.
+                        pending = max(0, self._tokens_used_today - own_committed)
                         if baseline > self._tokens_used_today:
                             self._tokens_used_today = baseline
-                        # Any delta committed during the seed round is preserved
-                        # for the next sync; the baseline is now in the ledger.
-                        self._unsynced_delta = max(
-                            0, self._tokens_used_today - baseline
-                        )
+                        self._unsynced_delta = pending
                     else:
                         # Subtract only what we pushed; deltas that arrived
                         # mid-sync remain queued for the next push.

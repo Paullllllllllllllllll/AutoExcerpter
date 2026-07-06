@@ -31,6 +31,7 @@ import inspect
 import json as _json
 import random
 import statistics
+import threading
 import time
 from collections import deque
 from collections.abc import Callable
@@ -291,6 +292,7 @@ class LLMClientBase:
     schema_retry_config: dict[str, Any]
     _output_schema: dict[str, Any] | None
     custom_capabilities: Any
+    _stats_lock: threading.Lock
 
     def __init__(
         self,
@@ -341,7 +343,10 @@ class LLMClientBase:
         # Instantiate LangChain chat model (no SDK-level retry)
         self.chat_model: BaseChatModel = get_chat_model(llm_config)
 
-        # Statistics tracking
+        # Statistics tracking. Managers are shared across ThreadPoolExecutor
+        # workers, so the request counters are guarded by a lock to keep their
+        # read-modify-writes atomic.
+        self._stats_lock = threading.Lock()
         self.successful_requests = 0
         self.failed_requests = 0
         self.processing_times: deque[float] = deque(maxlen=50)
@@ -412,9 +417,15 @@ class LLMClientBase:
 
     def _report_success(self) -> None:
         """Report successful request to rate limiter and update stats."""
-        self.successful_requests += 1
+        with self._stats_lock:
+            self.successful_requests += 1
         if self.rate_limiter is not None:
             self.rate_limiter.report_success()
+
+    def _report_failure(self) -> None:
+        """Increment the failed-request counter (thread-safe)."""
+        with self._stats_lock:
+            self.failed_requests += 1
 
     def _report_error(self, is_rate_limit_or_server: bool) -> None:
         """
@@ -478,7 +489,9 @@ class LLMClientBase:
             "strict": strict,
         }
 
-    def _get_structured_chat_model(self) -> Any:
+    def _get_structured_chat_model(
+        self, invoke_kwargs: dict[str, Any] | None = None
+    ) -> Any:
         """Get chat model with structured output for each provider.
 
         Provider-specific approaches:
@@ -491,9 +504,25 @@ class LLMClientBase:
         - Google: response_mime_type + response_schema in invoke kwargs
         - OpenRouter: Tool-based structured output (OpenAI-compatible)
 
+        ``with_structured_output(include_raw=True)`` returns a
+        ``RunnableMap(raw=llm) | parser`` that never forwards call-time kwargs
+        to the inner model, so resolved model parameters (max_tokens,
+        temperature, extended-thinking config) are bound onto the model here
+        before wrapping. Bare-model providers (OpenAI/Custom/Google) still
+        receive those kwargs at invoke time, so they are not bound here.
+
+        Args:
+            invoke_kwargs: Resolved invocation kwargs to bind onto the model on
+                the structured-output paths (Anthropic/OpenRouter). ``None`` or
+                empty leaves the model unbound.
+
         Returns:
             Chat model with structured output, or base chat model.
         """
+
+        def _bind(model: Any) -> Any:
+            return model.bind(**invoke_kwargs) if invoke_kwargs else model
+
         if self.provider == "openai":
             return self.chat_model
 
@@ -513,7 +542,7 @@ class LLMClientBase:
                         schema["title"] = self._output_schema.get(
                             "name", "structured_output"
                         )
-                    return self.chat_model.with_structured_output(
+                    return _bind(self.chat_model).with_structured_output(
                         schema,
                         method="json_schema",
                         include_raw=True,
@@ -536,7 +565,7 @@ class LLMClientBase:
                         **schema,
                         "title": self._output_schema.get("name", "structured_output"),
                     }
-                return self.chat_model.with_structured_output(
+                return _bind(self.chat_model).with_structured_output(
                     schema,
                     include_raw=True,
                 )
@@ -969,14 +998,17 @@ class LLMClientBase:
         avg_time = (
             statistics.mean(self.processing_times) if self.processing_times else 0
         )
-        total_requests = self.successful_requests + self.failed_requests
-        success_rate = (self.successful_requests / max(1, total_requests)) * 100
+        with self._stats_lock:
+            successful = self.successful_requests
+            failed = self.failed_requests
+        total_requests = successful + failed
+        success_rate = (successful / max(1, total_requests)) * 100
 
         return {
             "provider": self.provider,
             "model": self.model_name,
-            "successful_requests": self.successful_requests,
-            "failed_requests": self.failed_requests,
+            "successful_requests": successful,
+            "failed_requests": failed,
             "average_processing_time": round(avg_time, 2),
             "recent_success_rate": round(success_rate, 1),
         }
@@ -1028,12 +1060,15 @@ class LLMClientBase:
         if current_attempt >= max_attempts:
             return False, 0.0, max_attempts
 
-        # Calculate backoff time
+        # Calculate backoff time. Additive jitter (base * multiplier^attempt +
+        # jitter), matching the documented formula in concurrency.example.yaml
+        # and the sibling _calculate_backoff; a multiplicative jitter in
+        # [0.5, 1.0] would instead halve the intended wait.
         backoff_base = flag_config.get("backoff_base", 2.0)
         backoff_multiplier = flag_config.get("backoff_multiplier", 1.5)
         jitter = random.uniform(JITTER_MIN, JITTER_MAX)
 
-        backoff_time = backoff_base * (backoff_multiplier**current_attempt) * jitter
+        backoff_time = backoff_base * (backoff_multiplier**current_attempt) + jitter
 
         return True, backoff_time, max_attempts
 

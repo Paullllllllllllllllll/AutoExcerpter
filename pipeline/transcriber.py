@@ -523,9 +523,16 @@ class ItemTranscriber:
         For each already-completed page: append its logged transcription to the
         results and re-append it to the freshly initialized transcription log
         (so a later crash still sees it as complete). If summarizing, reuse the
-        logged summary when present; otherwise regenerate it from the logged
-        transcription text (the summary-only resume path) — never dropping a
-        completed page's summary.
+        logged summary when present AND error-free; otherwise regenerate it from
+        the logged transcription text (the summary-only resume path) — never
+        dropping a completed page's summary, and never reusing a summary that
+        previously errored (AE-2, so a re-run repairs it).
+
+        Regenerating a summary calls the LLM, so it is gated by the same daily
+        token budget as ``_process_single_page`` (AE-6): if the remaining budget
+        cannot cover a page, the WHOLE page is deferred (nothing appended), so
+        ``pages_deferred`` withholds the truncated outputs and a later run
+        finishes it — rather than blowing past the daily cap on a large resume.
         """
         prior_results = self._prior_transcription_results or (
             load_transcription_results_from_log(self.log_path) or []
@@ -543,16 +550,39 @@ class ItemTranscriber:
             if not isinstance(idx, int) or idx not in self.completed_page_indices:
                 continue
 
-            transcription_results.append(entry)
-            append_to_log(self.log_path, entry)
-
             if not summarizing:
+                transcription_results.append(entry)
+                append_to_log(self.log_path, entry)
                 continue
 
+            # Reuse a logged summary only when present and error-free; anything
+            # missing or previously errored is regenerated.
             summary_result = prior_summary_by_idx.get(idx)
-            if summary_result is None:
-                image_name = entry.get("image") or f"page index {idx}"
-                summary_result = self._summarize_transcription(entry, idx, image_name)
+            needs_generation = summary_result is None or (
+                isinstance(summary_result, dict) and "error" in summary_result
+            )
+
+            if needs_generation:
+                # Token-budget gate, mirroring _process_single_page: defer the
+                # whole page (append nothing) when the daily budget cannot cover
+                # it, so it is treated as deferred and its outputs withheld.
+                if self._budget_exhausted.is_set():
+                    continue
+                reserved = self._token_tracker.try_reserve()
+                if reserved is None:
+                    self._budget_exhausted.set()
+                    continue
+                try:
+                    image_name = entry.get("image") or f"page index {idx}"
+                    summary_result = self._summarize_transcription(
+                        entry, idx, image_name
+                    )
+                finally:
+                    self._token_tracker.release(reserved)
+                    self._token_tracker.record_page_usage()
+
+            transcription_results.append(entry)
+            append_to_log(self.log_path, entry)
             if summary_result is not None:
                 append_to_log(self.summary_log_path, summary_result)
                 summary_results.append(summary_result)

@@ -575,3 +575,119 @@ class TestBudgetDeferralWithholding:
         # deferred (3 total minus the 1 already logged).
         txt = (out_dir / "Item.txt").read_text(encoding="utf-8")
         assert "# Total images processed: 3" in txt
+
+
+def _run_main_argv(monkeypatch: pytest.MonkeyPatch, extra_argv: list[str]) -> int:
+    """Invoke main.main() in CLI mode with an arbitrary argv tail."""
+    import sys
+
+    import main as main_module
+
+    monkeypatch.setattr(app_config, "CLI_MODE", True)
+    monkeypatch.setattr(app_config, "INPUT_PATHS_IS_OUTPUT_PATH", False)
+    monkeypatch.setattr(app_config, "DAILY_TOKEN_LIMIT_ENABLED", False)
+    monkeypatch.setattr(sys, "argv", ["main.py", "--cli", *extra_argv])
+    return main_module.main()
+
+
+# ============================================================================
+# AE-4 / AE-5: controlled selection exits must still emit the JSON summary
+# ============================================================================
+class TestSelectionExitJsonEmission:
+    def test_no_match_select_exits_nonzero_with_json(
+        self,
+        make_pdf: Callable[..., Path],
+        tmp_path: Path,
+        pipeline_env: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """A --select pattern matching nothing is a user error: exit non-zero
+        (not a silent success) while still emitting the JSON summary (AE-5)."""
+        in_dir = tmp_path / "in"
+        out_dir = tmp_path / "out"
+        in_dir.mkdir()
+        out_dir.mkdir()
+        make_pdf("in/Alpha.pdf", 1)
+
+        with pytest.raises(SystemExit) as exc:
+            _run_main_argv(
+                monkeypatch,
+                [str(in_dir), str(out_dir), "--select", "NoSuchName", "--json"],
+            )
+        assert exc.value.code == 1
+        payload = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+        assert payload["items_total"] == 0
+        assert payload["items_complete"] == 0
+
+    def test_multiple_items_no_all_exits_with_json(
+        self,
+        make_pdf: Callable[..., Path],
+        tmp_path: Path,
+        pipeline_env: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Multiple items and neither --all nor --select is ambiguous: exit 2
+        but still emit the JSON summary (AE-4)."""
+        in_dir = tmp_path / "in"
+        out_dir = tmp_path / "out"
+        in_dir.mkdir()
+        out_dir.mkdir()
+        make_pdf("in/Alpha.pdf", 1)
+        make_pdf("in/Beta.pdf", 1)
+
+        with pytest.raises(SystemExit) as exc:
+            _run_main_argv(monkeypatch, [str(in_dir), str(out_dir), "--json"])
+        assert exc.value.code == 2
+        out = capsys.readouterr().out.strip()
+        assert out, "controlled exit must still emit the --json summary line"
+        payload = json.loads(out.splitlines()[-1])
+        assert payload["items_total"] == 0
+
+
+# ============================================================================
+# AE-7: items never reached (cancelled token wait) are not counted as failures
+# ============================================================================
+class TestUnattemptedNotFailed:
+    def test_cancelled_wait_reports_unattempted_not_failed(
+        self,
+        make_pdf: Callable[..., Path],
+        tmp_path: Path,
+        pipeline_env: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """When the user cancels the token-limit wait before a later item, that
+        item is reported as not attempted (not a failure); the run still exits
+        non-zero because the requested work did not finish."""
+        import main as main_module
+
+        in_dir = tmp_path / "in"
+        out_dir = tmp_path / "out"
+        in_dir.mkdir()
+        out_dir.mkdir()
+        make_pdf("in/Alpha.pdf", 1)
+        make_pdf("in/Beta.pdf", 1)
+
+        # Allow the first item through, then "cancel" before the second.
+        calls = {"n": 0}
+
+        def fake_wait() -> bool:
+            calls["n"] += 1
+            return calls["n"] == 1
+
+        monkeypatch.setattr(main_module, "_check_and_wait_for_token_limit", fake_wait)
+
+        exit_code = _run_main_argv(
+            monkeypatch, [str(in_dir), str(out_dir), "--all", "--json"]
+        )
+
+        payload = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+        assert exit_code == 1
+        assert payload["items_total"] == 2
+        assert payload["items_complete"] == 1
+        # The never-attempted item is NOT a failure ...
+        assert payload["items_failed"] == 0
+        # ... it is reported under the skipped/pending count instead.
+        assert payload["items_skipped"] == 1

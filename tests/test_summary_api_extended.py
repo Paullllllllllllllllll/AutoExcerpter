@@ -13,6 +13,7 @@ This file provides comprehensive coverage for:
 from __future__ import annotations
 
 import json
+import threading
 from collections import deque
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -51,6 +52,7 @@ def _make_manager(**overrides) -> SummaryManager:
         "rate_limiter": None,
         "max_retries": 5,
         "chat_model": MagicMock(),
+        "_stats_lock": threading.Lock(),
         "successful_requests": 0,
         "failed_requests": 0,
         "processing_times": deque(maxlen=50),
@@ -606,7 +608,53 @@ class TestGenerateSummary:
             result = mgr.generate_summary("Some text.", 3)
 
         assert "Error generating summary" in result["bullet_points"][0]
-        assert result["error_type"] == "api_failure"
+        # A response that fails schema validation (exhausting validation
+        # retries) is a content/schema failure, not an API failure, and must
+        # not be double-counted as a failed request.
+        assert result["error_type"] == "schema_validation"
+        assert mgr.failed_requests == 0
+        assert mgr.successful_requests == 1
+
+    def test_validation_retries_exhaust_hard_loop_bound(self) -> None:
+        """When configured max_attempts exceeds the hard loop bound, the
+        exhausted loop returns an error-marked placeholder rather than a
+        silently-empty successful page.
+
+        Regression: the post-loop fallback previously returned bullet_points=
+        None / references=None with no ``error`` key.
+        """
+        mgr = _make_manager(
+            provider="openai",
+            schema_retry_config={
+                "validation_failure": {
+                    "enabled": True,
+                    "max_attempts": 10,  # exceeds the hard loop bound below
+                    "backoff_base": 0.01,
+                    "backoff_multiplier": 1.0,
+                },
+            },
+        )
+
+        response = AIMessage(content="not valid json")
+        response.usage_metadata = None
+        response.response_metadata = {}
+
+        mock_structured = MagicMock()
+        mock_structured.invoke.return_value = response
+
+        with (
+            patch.object(
+                mgr, "_get_structured_chat_model", return_value=mock_structured
+            ),
+            patch.object(mgr, "_build_model_inputs", return_value=([], {})),
+            patch("llm.summary.time.sleep"),
+            patch("llm.base.random.uniform", return_value=0.0),
+        ):
+            result = mgr.generate_summary("Some text.", 7, max_schema_retries=1)
+
+        assert result["error_type"] == "schema_validation"
+        assert "error" in result
+        assert result["bullet_points"] is not None
 
     def test_empty_response_returns_placeholder(self) -> None:
         """Empty LLM response returns placeholder."""

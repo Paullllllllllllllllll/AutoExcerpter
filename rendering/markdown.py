@@ -121,7 +121,15 @@ def create_markdown_summary(
             citation_text = sanitize_for_xml(citation.raw_text)
 
             if citation.url:
-                line = f"{idx}. [{citation_text}]({citation.url})"
+                # Escape link-breaking characters: brackets in the text and
+                # parentheses/spaces in the URL (e.g. DOIs like S0140-6736(00)…).
+                link_text = citation_text.replace("[", "\\[").replace("]", "\\]")
+                link_url = (
+                    citation.url.replace("(", "%28")
+                    .replace(")", "%29")
+                    .replace(" ", "%20")
+                )
+                line = f"{idx}. [{link_text}]({link_url})"
             else:
                 line = f"{idx}. {citation_text}"
 

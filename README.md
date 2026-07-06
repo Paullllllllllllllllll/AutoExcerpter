@@ -1,4 +1,4 @@
-# AutoExcerpter v1.18.0
+# AutoExcerpter v1.19.0
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -728,6 +728,34 @@ a single baseline commit at v1.0.0 on 25 April 2026; version numbers before
 v1.0.0 do not exist.
 
 ## Changelog
+
+- **v1.19.0** (6 July 2026) -- Multi-agent bug-hunt sweep fixing twenty
+    verified defects across all packages. Highest impact: on the Anthropic and
+    OpenRouter structured-output paths, invoke kwargs (`max_tokens`,
+    `temperature`, extended-thinking config) were silently dropped by the
+    LangChain runnable chain and are now bound onto the model before
+    `with_structured_output`; the resume map is keyed by item path instead of
+    output stem, so same-named items in different directories no longer
+    clobber each other's resume state; runs that logged failed transcription
+    or summary pages are no longer classified COMPLETE on rerun, making
+    reported failures repairable; and `FolderPayloadSource` no longer encodes
+    a closed PIL image when preprocessing returns the input unchanged. Also
+    fixed: the directory scanner no longer silently drops PDFs and image
+    folders nested under an image-bearing directory (suppressed folders now
+    warn); the summary-only resume path is gated by the daily token budget;
+    a no-match `--select` exits 1 and the ambiguous multiple-items guard
+    emits the `--json` summary before exiting; items never attempted after a
+    cancelled budget wait are reported as skipped, not failed; markdown-fenced
+    JSON no longer bypasses the transcription content-flag retries;
+    schema-validation exhaustion is labeled `schema_validation` instead of
+    `api_failure` and no longer double-counts stats; the schema-retry backoff
+    uses the documented additive jitter; request counters are lock-guarded;
+    the token-ledger seed no longer discards usage committed during ledger
+    I/O; `PdfPayloadSource.close()` takes the render lock; P-mode transparent
+    images flatten to white; DOI URLs with parentheses render as valid
+    markdown links; inline math straddling a display block no longer
+    duplicates it in DOCX output; and `citation.max_api_requests: 0` means
+    zero requests instead of unlimited.
 
 - **v1.18.0** (6 July 2026) -- Fail items with budget-deferred pages truthfully
     and withhold masking outputs. When the daily token budget defers pages

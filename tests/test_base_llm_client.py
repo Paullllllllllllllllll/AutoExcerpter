@@ -59,7 +59,8 @@ class TestSchemaRetryDecision:
             )
 
         assert should_retry is True
-        assert backoff == 2.0
+        # Additive jitter: base * multiplier^attempt + jitter = 1*2^1 + 1 = 3.0
+        assert backoff == 3.0
         assert max_attempts == 3
 
 

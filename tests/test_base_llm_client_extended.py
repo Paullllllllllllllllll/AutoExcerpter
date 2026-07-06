@@ -22,6 +22,7 @@ This file complements test_base_llm_client.py by covering:
 
 from __future__ import annotations
 
+import threading
 from collections import deque
 from typing import Any
 from unittest.mock import MagicMock, PropertyMock, patch
@@ -45,6 +46,7 @@ def _make_client(**overrides) -> LLMClientBase:
         "rate_limiter": None,
         "max_retries": 5,
         "chat_model": MagicMock(),
+        "_stats_lock": threading.Lock(),
         "successful_requests": 0,
         "failed_requests": 0,
         "processing_times": deque(maxlen=50),
@@ -477,6 +479,75 @@ class TestGetStructuredChatModel:
         assert result is structured
 
     @patch("llm.base.get_model_capabilities")
+    def test_anthropic_binds_invoke_kwargs(self, mock_caps) -> None:
+        """Resolved invoke kwargs are bound onto the model before wrapping.
+
+        Regression: with_structured_output(include_raw=True) returns a
+        RunnableMap|parser that drops call-time kwargs, so max_tokens /
+        temperature / extended-thinking config must be bound onto the inner
+        model to actually reach the API.
+        """
+        mock_caps.return_value = {"structured_output": True}
+        base_model = MagicMock()
+        bound = MagicMock()
+        structured = MagicMock()
+        base_model.bind.return_value = bound
+        bound.with_structured_output.return_value = structured
+
+        client = _make_client(
+            provider="anthropic",
+            chat_model=base_model,
+            _output_schema={"schema": {"type": "object", "properties": {}}},
+        )
+        invoke_kwargs = {"max_tokens": 4096, "thinking": {"type": "enabled"}}
+        result = client._get_structured_chat_model(invoke_kwargs)
+
+        base_model.bind.assert_called_once_with(**invoke_kwargs)
+        base_model.with_structured_output.assert_not_called()
+        bound.with_structured_output.assert_called_once_with(
+            {"type": "object", "properties": {}, "title": "structured_output"},
+            method="json_schema",
+            include_raw=True,
+        )
+        assert result is structured
+
+    def test_openrouter_binds_invoke_kwargs(self) -> None:
+        """OpenRouter structured path also binds invoke kwargs onto the model."""
+        base_model = MagicMock()
+        bound = MagicMock()
+        structured = MagicMock()
+        base_model.bind.return_value = bound
+        bound.with_structured_output.return_value = structured
+
+        client = _make_client(
+            provider="openrouter",
+            chat_model=base_model,
+            _output_schema={"schema": {"type": "object", "properties": {}}},
+        )
+        result = client._get_structured_chat_model({"max_tokens": 2048})
+
+        base_model.bind.assert_called_once_with(max_tokens=2048)
+        bound.with_structured_output.assert_called_once_with(
+            {"type": "object", "properties": {}, "title": "structured_output"},
+            include_raw=True,
+        )
+        assert result is structured
+
+    @patch("llm.base.get_model_capabilities")
+    def test_anthropic_empty_kwargs_does_not_bind(self, mock_caps) -> None:
+        """No invoke kwargs leaves the model unbound (unchanged behavior)."""
+        mock_caps.return_value = {"structured_output": True}
+        base_model = MagicMock()
+        client = _make_client(
+            provider="anthropic",
+            chat_model=base_model,
+            _output_schema={"schema": {"type": "object", "properties": {}}},
+        )
+        client._get_structured_chat_model({})
+        base_model.bind.assert_not_called()
+        base_model.with_structured_output.assert_called_once()
+
+    @patch("llm.base.get_model_capabilities")
     def test_anthropic_no_structured_output_returns_base(self, mock_caps) -> None:
         """Anthropic without structured output support returns bare model."""
         mock_caps.return_value = {"structured_output": False}
@@ -860,8 +931,8 @@ class TestShouldRetryForSchemaFlagExtended:
                 "flag", True, 0
             )
         assert should is True
-        # backoff = 2.0 * (1.5 ** 0) * 1.0 = 2.0
-        assert backoff == pytest.approx(2.0)
+        # Additive jitter: base * multiplier^attempt + jitter = 2*1.5^0 + 1 = 3.0
+        assert backoff == pytest.approx(3.0)
         assert max_att == 3
 
 
