@@ -40,6 +40,10 @@ ERROR_MULTIPLIER_INCREASE_RATE_LIMIT = 1.5
 ERROR_MULTIPLIER_INCREASE_OTHER = 1.2
 CONSECUTIVE_ERRORS_THRESHOLD = 2
 MAX_ERROR_MULTIPLIER = 5.0
+# Base per-request penalty (seconds) imposed once the error multiplier is
+# elevated but no window is saturated. Without this the multiplier would scale
+# a zero wait and stay a no-op, admitting at full speed after repeated 429s.
+ERROR_BASE_PENALTY_SECONDS = 0.5
 
 # ============================================================================
 # Document Formatting Constants
@@ -157,6 +161,7 @@ __all__ = [
     "ERROR_MULTIPLIER_INCREASE_OTHER",
     "CONSECUTIVE_ERRORS_THRESHOLD",
     "MAX_ERROR_MULTIPLIER",
+    "ERROR_BASE_PENALTY_SECONDS",
     # Document formatting
     "TITLE_HEADING_LEVEL",
     "PAGE_HEADING_LEVEL",

@@ -58,7 +58,30 @@ class TestWaitForCapacity:
         limiter.wait_for_capacity()
 
         assert len(limiter.request_timestamps[0]) == 2
-        assert limiter.total_requests == 2
+
+    def test_error_penalty_delays_but_still_admits(self, monkeypatch) -> None:
+        """An elevated multiplier must impose a real delay even when no window
+        is saturated (the multiplier used to scale a zero wait, a silent
+        no-op) — and wait_for_capacity must still RETURN. Regression: a
+        perpetual penalty floor would livelock here, because the multiplier
+        only decays via report_success, which needs an admission first.
+        """
+        import llm.rate_limit as rl
+
+        monkeypatch.setattr(rl, "ERROR_BASE_PENALTY_SECONDS", 0.05)
+        limiter = RateLimiter([(1000, 1)])
+        limiter.report_error(is_rate_limit=True)
+        assert limiter.error_multiplier > 1.0
+
+        start = time.monotonic()
+        waited = limiter.wait_for_capacity()
+        elapsed = time.monotonic() - start
+
+        # (multiplier - 1.0) * base = 0.5 * 0.05 = 0.025 s minimum delay.
+        assert elapsed >= 0.02
+        assert elapsed < 5.0
+        assert waited >= 0.0
+        assert limiter.total_requests == 1
 
     def test_rate_limit_enforced(self) -> None:
         """Rate limit is enforced when exceeded."""

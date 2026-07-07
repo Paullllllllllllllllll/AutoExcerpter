@@ -42,6 +42,7 @@ from typing import Any
 
 from config.constants import (
     CONSECUTIVE_ERRORS_THRESHOLD,
+    ERROR_BASE_PENALTY_SECONDS,
     ERROR_MULTIPLIER_DECREASE_RATE,
     ERROR_MULTIPLIER_INCREASE_OTHER,
     ERROR_MULTIPLIER_INCREASE_RATE_LIMIT,
@@ -133,8 +134,21 @@ class RateLimiter:
                         required_wait = oldest_request_time + seconds - now
                         wait_time = max(wait_time, required_wait)
 
-                # Apply error multiplier to wait time
-                wait_time *= self.error_multiplier
+                # Lengthen the wait when recent errors have raised the
+                # multiplier. Multiplying a saturated window's wait spreads
+                # bursts out; when no window imposes a wait, delay admission by
+                # a base penalty scaled by the elevation so repeated 429s still
+                # slow admission instead of multiplying zero (a silent no-op).
+                # The penalty is a deadline measured from wait_start, NOT a
+                # perpetual floor: a positive floor would keep wait_time > 0 on
+                # every iteration and never admit (the multiplier only decays
+                # via report_success, which needs an admission first).
+                if self.error_multiplier > 1.0:
+                    penalty = (self.error_multiplier - 1.0) * ERROR_BASE_PENALTY_SECONDS
+                    penalty_remaining = wait_start + penalty - now
+                    wait_time = max(
+                        wait_time * self.error_multiplier, penalty_remaining
+                    )
 
                 # If no wait needed, record the request and return
                 if wait_time <= 0:

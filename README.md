@@ -1,4 +1,4 @@
-# AutoExcerpter v1.19.0
+# AutoExcerpter v1.20.0
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -728,6 +728,18 @@ a single baseline commit at v1.0.0 on 25 April 2026; version numbers before
 v1.0.0 do not exist.
 
 ## Changelog
+
+- **v1.20.0** (7 July 2026) -- Adopt shared token ledger 1.2.0 and fix the
+    rate limiter's adaptive backoff. The vendored `llm/shared_ledger.py` is
+    re-copied from ChronoMiner: `_merge` now coerces a non-numeric stored
+    tool value to 0 and catches `ValueError`/`TypeError` alongside `OSError`,
+    so a hand-edited or corrupt ledger degrades to standalone mode instead of
+    crashing the call path (never-crash contract). The rate limiter's error
+    backoff now imposes a real, bounded admission delay after 429s: the
+    multiplier previously scaled a zero wait when no window was saturated (a
+    silent no-op), and the new penalty is a deadline from wait start rather
+    than a perpetual floor, so admission always resumes. All 1,352 tests
+    pass.
 
 - **v1.19.0** (6 July 2026) -- Multi-agent bug-hunt sweep fixing twenty
     verified defects across all packages. Highest impact: on the Anthropic and
