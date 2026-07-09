@@ -280,6 +280,73 @@ _OPENROUTER_BASE: dict[str, Any] = _non_openai_base(
 
 _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]]] = [
     # ===== OpenAI GPT-5.x family (reasoning + text verbosity) =====
+    # GPT-5.6 (GA 2026-07-09). Vision + detail control (original/auto = full input
+    # resolution, no patch cap); 1.05M context, 128k output. Specific variant IDs
+    # precede the bare "gpt-5.6" alias, which resolves to the flagship "sol".
+    (
+        ("gpt-5.6-sol",),
+        "gpt-5.6-sol",
+        _OPENAI_REASONING_BASE,
+        dict(
+            supports_text_verbosity=True,
+            max_context_tokens=1050000,
+            max_output_tokens=128000,
+        ),
+    ),
+    (
+        ("gpt-5.6-terra",),
+        "gpt-5.6-terra",
+        _OPENAI_REASONING_BASE,
+        dict(
+            supports_text_verbosity=True,
+            max_context_tokens=1050000,
+            max_output_tokens=128000,
+        ),
+    ),
+    (
+        ("gpt-5.6-luna",),
+        "gpt-5.6-luna",
+        _OPENAI_REASONING_BASE,
+        dict(
+            supports_text_verbosity=True,
+            max_context_tokens=1050000,
+            max_output_tokens=128000,
+        ),
+    ),
+    (
+        # Bare alias: "gpt-5.6" == flagship "sol".
+        ("gpt-5.6",),
+        "gpt-5.6-sol",
+        _OPENAI_REASONING_BASE,
+        dict(
+            supports_text_verbosity=True,
+            max_context_tokens=1050000,
+            max_output_tokens=128000,
+        ),
+    ),
+    # GPT-5.5 (GA 2026-07-09). Vision; 1.05M context, 128k output; reasoning
+    # none/low/medium(default)/high/xhigh; text verbosity as per gpt-5.4.
+    # gpt-5.5-pro precedes the bare gpt-5.5 alias (longest-prefix-first).
+    (
+        ("gpt-5.5-pro",),
+        "gpt-5.5-pro",
+        _OPENAI_REASONING_BASE,
+        dict(
+            supports_text_verbosity=True,
+            max_context_tokens=1050000,
+            max_output_tokens=128000,
+        ),
+    ),
+    (
+        ("gpt-5.5",),
+        "gpt-5.5",
+        _OPENAI_REASONING_BASE,
+        dict(
+            supports_text_verbosity=True,
+            max_context_tokens=1050000,
+            max_output_tokens=128000,
+        ),
+    ),
     (
         ("gpt-5.4-pro",),
         "gpt-5.4-pro",
@@ -475,6 +542,46 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
         ),
     ),
     # ===== Anthropic Claude models (most-specific first) =====
+    # Claude 5 generation (docs 2026-07-09): adaptive thinking, 1M context,
+    # 128k output, high-res vision (2576px). Adaptive thinking + effort replace
+    # temperature/top_p/top_k and thinking budget_tokens (HTTP 400 if sent);
+    # mirror the opus-4.5/sonnet-4.5 handling (supports_top_p=False).
+    (
+        ("claude-fable-5", "claude-fable-5.0"),
+        "claude-fable-5",
+        _ANTHROPIC_BASE,
+        dict(
+            is_reasoning_model=True,
+            supports_reasoning_effort=True,
+            supports_top_p=False,
+            max_context_tokens=1000000,
+            max_output_tokens=128000,
+        ),
+    ),
+    (
+        ("claude-sonnet-5", "claude-sonnet-5.0"),
+        "claude-sonnet-5",
+        _ANTHROPIC_BASE,
+        dict(
+            is_reasoning_model=True,
+            supports_reasoning_effort=True,
+            supports_top_p=False,
+            max_context_tokens=1000000,
+            max_output_tokens=128000,
+        ),
+    ),
+    (
+        ("claude-opus-4-8", "claude-opus-4.8"),
+        "claude-opus-4.8",
+        _ANTHROPIC_BASE,
+        dict(
+            is_reasoning_model=True,
+            supports_reasoning_effort=True,
+            supports_top_p=False,
+            max_context_tokens=1000000,
+            max_output_tokens=128000,
+        ),
+    ),
     (
         ("claude-opus-4-7", "claude-opus-4.7"),
         "claude-opus-4.7",
@@ -599,6 +706,20 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
     ),
     (("claude",), "claude", _ANTHROPIC_BASE, {}),
     # ===== Google Gemini models (most-specific first) =====
+    # Gemini 3.5 Flash (GA, Developer API 2026-07-09): vision+PDF,
+    # media_resolution low/medium/high/ultra_high, 1,048,576 context,
+    # 65,536 output, thinking_level minimal/low/medium(default)/high.
+    (
+        ("gemini-3.5-flash", "gemini-3-5-flash"),
+        "gemini-3.5-flash",
+        _GOOGLE_BASE,
+        dict(
+            is_reasoning_model=True,
+            supports_reasoning_effort=True,
+            max_context_tokens=1048576,
+            max_output_tokens=65536,
+        ),
+    ),
     (
         ("gemini-3.1-pro", "gemini-3-1-pro"),
         "gemini-3.1-pro",

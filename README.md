@@ -1,4 +1,4 @@
-# AutoExcerpter v1.20.0
+# AutoExcerpter v1.21.0
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -728,6 +728,19 @@ a single baseline commit at v1.0.0 on 25 April 2026; version numbers before
 v1.0.0 do not exist.
 
 ## Changelog
+
+- **v1.21.0** (9 July 2026) -- Register current LLM models in the capability
+    registry (`llm/capabilities.py`). OpenAI: the GPT-5.6 family
+    (`gpt-5.6-sol`/`-terra`/`-luna` plus the bare `gpt-5.6` alias resolving to
+    the `sol` flagship) and GPT-5.5 (`gpt-5.5`, `gpt-5.5-pro`) -- vision,
+    1.05M context, 128k output, reasoning effort, and text verbosity. Anthropic:
+    the Claude 5 generation (`claude-fable-5`, `claude-sonnet-5`,
+    `claude-opus-4-8`) -- adaptive thinking, 1M context, 128k output, high-res
+    vision, with `top_p` gated off to mirror the existing opus-4.5/sonnet-4.5
+    handling. Google: `gemini-3.5-flash` (GA) -- vision/PDF, media resolution,
+    1,048,576 context, 65,536 output, thinking levels. Matching uses
+    longest-prefix-first ordering; deprecated-model entries are retained. All
+    1,352 tests pass.
 
 - **v1.20.0** (7 July 2026) -- Adopt shared token ledger 1.2.0 and fix the
     rate limiter's adaptive backoff. The vendored `llm/shared_ledger.py` is
