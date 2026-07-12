@@ -1646,3 +1646,12 @@ class TestInvokeWithRetry:
 
         # 2 attempts, each should report error
         assert limiter.report_error.call_count == 2
+
+    def test_default_max_retries_treats_max_attempts_as_total(self) -> None:
+        """retry.max_attempts is documented as TOTAL attempts (initial call
+        included), so the derived retry count is one less: range(max_retries
+        + 1) then performs exactly max_attempts attempts."""
+        import llm.base as base_module
+
+        configured = int(base_module._RETRY_CONFIG.get("max_attempts", 8))
+        assert max(0, configured - 1) == base_module.DEFAULT_MAX_RETRIES

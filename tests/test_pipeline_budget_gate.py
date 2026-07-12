@@ -60,6 +60,49 @@ class TestProcessSinglePageGate:
         assert count == [0]
         assert obj._budget_exhausted.is_set()
 
+    def test_summary_bucket_gates_fresh_page(self, tmp_path: Path) -> None:
+        """A pool-less transcription bucket must not bypass the summary key's
+        pool cap: the fresh-page gate reserves against BOTH buckets when the
+        summary stamp resolves to a different one."""
+        obj = _bare_transcriber()
+        obj._budget_exhausted = threading.Event()
+        # Combined budget is wide open; only the summary key's pool cap (10)
+        # cannot fit the page estimate (1000).
+        obj._token_tracker = DailyTokenTracker(
+            daily_limit=10**9,
+            enabled=True,
+            state_file=tmp_path / "s.json",
+            chunk_estimate_seed=1000,
+            pool_caps={"openai": {"large": 10}},
+        )
+        # Pool-less transcription endpoint (custom/local), pooled summary key.
+        obj._transcription_stamp = {
+            "provider": "custom",
+            "key_env": "LOCAL_API_KEY",
+            "model": "local-vision",
+        }
+        obj._summary_stamp = {
+            "provider": "openai",
+            "key_env": "OPENAI_API_KEY",
+            "model": "gpt-5",
+        }
+
+        result = obj._process_single_page(
+            0,
+            None,  # type: ignore[arg-type]
+            [],
+            [],
+            5,
+            [0],
+        )
+
+        # Deferred by the summary bucket; the transcription-side reservation
+        # was rolled back so no headroom leaks.
+        assert result is None
+        assert obj._budget_exhausted.is_set()
+        assert obj._token_tracker._tokens_reserved == 0
+        assert obj._token_tracker._bucket_reservations == {}
+
 
 class TestTranscribeAndSummarizeResumeLoop:
     def test_resumes_pending_pages_after_reset(

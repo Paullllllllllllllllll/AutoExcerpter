@@ -264,6 +264,15 @@ class DailyTokenTracker:
         # Load existing state from disk
         self._load_state()
 
+        # Pre-session baseline for shared-ledger seeding: exactly the usage
+        # loaded from the private state file at init. Seeding merges with max
+        # semantics, so only genuinely pre-session usage may seed; anything
+        # committed after construction goes through the additive sync path
+        # (otherwise a degraded-at-startup ledger would silently collapse this
+        # session's accumulated usage into a max() on first contact).
+        self._init_own_total: int = self._tokens_used_today
+        self._init_own_buckets: dict[BucketKey, int] = dict(self._own_buckets)
+
         # Seed the shared ledger once at init so the combined baseline (this
         # tool's prior same-day usage plus any concurrent tools) is known before
         # the first admission check. Best-effort: a degraded ledger simply leaves
@@ -637,8 +646,8 @@ class DailyTokenTracker:
             self._ledger_sync_in_flight = True
             ledger = self._get_or_create_ledger_locked()
             need_seed = not self._seeded
-            own_committed = self._tokens_used_today
-            own_buckets_snapshot = dict(self._own_buckets)
+            seed_total = self._init_own_total
+            seed_buckets = dict(self._init_own_buckets)
             deltas = dict(self._unsynced_deltas)
             self._last_ledger_sync_monotonic = time.monotonic()
 
@@ -649,10 +658,26 @@ class DailyTokenTracker:
                 return
 
             snapshot: UsageSnapshot | None
+            pushed: dict[BucketKey, int] = {}
             if need_seed:
-                snapshot = ledger.seed_usage(own_committed, own_buckets_snapshot)
+                # Seed only the genuinely pre-session usage (the init-time
+                # private-file load): seeding merges with max semantics, which
+                # would silently collapse usage committed while the ledger was
+                # degraded. That usage stays in the unsynced deltas and is
+                # pushed additively right after the seed, so the first ledger
+                # contact never undercounts the combined figure.
+                snapshot = ledger.seed_usage(seed_total, seed_buckets)
+                if snapshot is not None and deltas:
+                    synced = ledger.sync_usage(deltas)
+                    if synced is not None:
+                        snapshot = synced
+                        pushed = deltas
+                    # A failed delta push keeps the deltas queued; the seed
+                    # itself succeeded, so a later sync replays them.
             else:
                 snapshot = ledger.sync_usage(deltas)
+                if snapshot is not None:
+                    pushed = deltas
 
             with self._lock:
                 if snapshot is None:
@@ -664,47 +689,36 @@ class DailyTokenTracker:
                     self._combined_total = snapshot.combined
                     self._bucket_totals = dict(snapshot.buckets)
                     if need_seed:
-                        self._apply_seed_snapshot(snapshot, own_buckets_snapshot)
-                    else:
-                        # Subtract only what we pushed; deltas that arrived
-                        # mid-sync remain queued for the next push.
-                        for bucket, amount in deltas.items():
-                            remaining = self._unsynced_deltas.get(bucket, 0) - amount
-                            if remaining > 0:
-                                self._unsynced_deltas[bucket] = remaining
-                            else:
-                                self._unsynced_deltas.pop(bucket, None)
+                        self._apply_seed_snapshot(snapshot)
+                    # Subtract only what we pushed; deltas that arrived
+                    # mid-sync remain queued for the next push.
+                    for bucket, amount in pushed.items():
+                        remaining = self._unsynced_deltas.get(bucket, 0) - amount
+                        if remaining > 0:
+                            self._unsynced_deltas[bucket] = remaining
+                        else:
+                            self._unsynced_deltas.pop(bucket, None)
         finally:
             with self._lock:
                 self._ledger_sync_in_flight = False
 
-    def _apply_seed_snapshot(
-        self,
-        snapshot: UsageSnapshot,
-        own_buckets_snapshot: Mapping[BucketKey, int],
-    ) -> None:
-        """Adopt a seed snapshot, preserving usage committed during the I/O.
+    def _apply_seed_snapshot(self, snapshot: UsageSnapshot) -> None:
+        """Adopt a seed snapshot's own-usage view (max-merge, pre-session only).
 
-        Must hold ``self._lock``. Tokens committed by this process while the
-        seed I/O ran (the lock was released) are not yet in the ledger; the
-        pending delta is computed from the pre-I/O snapshot so mid-I/O usage is
-        never dropped, then the ledger's own view (which may exceed ours via a
-        prior session's max-semantics adoption) is merged in.
+        Must hold ``self._lock``. The seed carries only the pre-session
+        baseline loaded from the private state file at init; usage committed
+        after construction stays queued in ``_unsynced_deltas`` (add_tokens
+        accumulates there while shared) and replays through the additive sync
+        path, so the max merge below never collapses this session's usage. The
+        ledger's own view may exceed ours via a prior session's max-semantics
+        adoption; merge it in.
         """
         self._seeded = True
-        pending: dict[BucketKey, int] = {}
-        for bucket, amount in self._own_buckets.items():
-            committed = amount - int(own_buckets_snapshot.get(bucket, 0))
-            if committed > 0:
-                pending[bucket] = committed
-
         if snapshot.own_total > self._tokens_used_today:
             self._tokens_used_today = snapshot.own_total
         for bucket, amount in snapshot.own_buckets.items():
             if amount > self._own_buckets.get(bucket, 0):
                 self._own_buckets[bucket] = amount
-
-        self._unsynced_deltas = pending
 
     def _maybe_forced_refresh_before_admit(self) -> None:
         """Force a ledger refresh before a reservation when it matters.
@@ -742,6 +756,9 @@ class DailyTokenTracker:
             self._tokens_used_today = 0
             self._own_buckets = {}
             self._bucket_totals = {}
+            # No pre-session usage survives a day rollover.
+            self._init_own_total = 0
+            self._init_own_buckets = {}
             if self._shared_enabled:
                 # The ledger rolls over internally; reset the local mirror and
                 # force a re-seed on the next sync. The private file is left

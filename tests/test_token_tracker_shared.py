@@ -318,6 +318,37 @@ class TestDegradedMode:
         assert t._ledger_degraded is False
         assert t.get_tokens_used_today() == 150
 
+    def test_first_contact_adds_session_usage_instead_of_max_merging(
+        self, tmp_path: Path
+    ) -> None:
+        """Seeding is restricted to genuinely pre-session usage: tokens
+        committed while the ledger was degraded must ADD to the ledger's
+        prior own field on first contact, not collapse into a max()."""
+        t = _make(
+            ledger_dir=tmp_path / "ledger",
+            state_file=tmp_path / "s.json",
+        )
+        fake = _FakeLedger()
+        fake.field = 500  # a prior session's own usage already in the ledger
+        with t._lock:
+            t._ledger = fake  # type: ignore[assignment]
+            t._seeded = False
+            t._combined_total = 0
+            t._unsynced_deltas = {}
+            t._ledger_degraded = True
+            t._last_ledger_sync_monotonic = 0.0
+
+        t.add_tokens(100)  # session usage while the ledger is unreachable
+        assert t._ledger_degraded is True
+
+        fake.fail = False
+        t.sync_ledger_now()  # first successful contact: seed + additive push
+
+        # 500 pre-session (ledger) + 100 this session; a max() would keep 500.
+        assert fake.field == 600
+        assert t.get_tokens_used_today() == 600
+        assert not t._unsynced_deltas
+
     def test_per_bucket_deltas_preserved_across_degradation(
         self, tmp_path: Path
     ) -> None:

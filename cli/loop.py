@@ -80,6 +80,7 @@ def _process_single_item(
 
     # Process the item
     transcriber_instance: ItemTranscriber | None = None
+    success = False
     try:
         transcriber_instance = ItemTranscriber(
             item_spec.path,
@@ -127,9 +128,11 @@ def _process_single_item(
     finally:
         # Clean up temporary working directory if configured
         # In resume mode ("skip"), retain working dir to preserve JSONL logs
-        # for future resumes
+        # for future resumes. An incomplete item (deferred or failed pages)
+        # also keeps its working dir: process_item promises those JSONL logs
+        # are retained for a later resume run.
         should_cleanup_working_dir = (
-            config.DELETE_TEMP_WORKING_DIR and resume_mode != "skip"
+            config.DELETE_TEMP_WORKING_DIR and resume_mode != "skip" and success
         )
         if transcriber_instance and should_cleanup_working_dir:
             working_dir = transcriber_instance.working_dir

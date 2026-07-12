@@ -78,9 +78,11 @@ def _load_retry_config() -> dict[str, Any]:
 _RETRY_CONFIG = _load_retry_config()
 
 # Constants for retry logic (loaded from config with fallback defaults).
-# Default reduced from 15 to 8: with honored Retry-After and a 120 s backoff
-# cap, 8 transient attempts already spans several minutes of retrying.
-DEFAULT_MAX_RETRIES = _RETRY_CONFIG.get("max_attempts", 8)
+# retry.max_attempts is the TOTAL number of attempts (initial call included),
+# so the retry count is one less. Default reduced from 15 to 8: with honored
+# Retry-After and a 120 s backoff cap, 8 transient attempts already spans
+# several minutes of retrying.
+DEFAULT_MAX_RETRIES = max(0, int(_RETRY_CONFIG.get("max_attempts", 8)) - 1)
 
 # Hard ceiling on any single backoff wait (seconds), including a server-provided
 # Retry-After. Keeps a hostile Retry-After header from stalling a worker for an

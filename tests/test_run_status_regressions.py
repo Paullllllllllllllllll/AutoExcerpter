@@ -262,6 +262,59 @@ class TestItemFailurePropagation:
         assert success is False
         assert outputs == [str(tmp_path / "Item.txt")]
 
+    def test_incomplete_item_keeps_working_dir_outside_skip_mode(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """--force/--overwrite must not delete the working dir of an item that
+        finished incomplete: process_item promises its JSONL logs are retained
+        for a later resume run."""
+        import cli.loop as loop_module
+
+        working_dir = tmp_path / "wd"
+        working_dir.mkdir()
+        instance = MagicMock()
+        instance.process_item.return_value = False
+        instance.written_outputs = []
+        instance.working_dir = working_dir
+        monkeypatch.setattr(
+            loop_module, "ItemTranscriber", MagicMock(return_value=instance)
+        )
+        monkeypatch.setattr(app_config, "CLI_MODE", True)
+        monkeypatch.setattr(app_config, "DELETE_TEMP_WORKING_DIR", True)
+
+        item = ItemSpec(kind="pdf", path=tmp_path / "Item.pdf")
+        success, _ = loop_module._process_single_item(
+            item, 1, 1, tmp_path, resume_mode="overwrite"
+        )
+        assert success is False
+        assert working_dir.exists()
+
+    def test_successful_item_cleans_working_dir_outside_skip_mode(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A fully successful item still has its working dir cleaned up when
+        configured and not in resume ("skip") mode."""
+        import cli.loop as loop_module
+
+        working_dir = tmp_path / "wd"
+        working_dir.mkdir()
+        instance = MagicMock()
+        instance.process_item.return_value = True
+        instance.written_outputs = []
+        instance.working_dir = working_dir
+        monkeypatch.setattr(
+            loop_module, "ItemTranscriber", MagicMock(return_value=instance)
+        )
+        monkeypatch.setattr(app_config, "CLI_MODE", True)
+        monkeypatch.setattr(app_config, "DELETE_TEMP_WORKING_DIR", True)
+
+        item = ItemSpec(kind="pdf", path=tmp_path / "Item.pdf")
+        success, _ = loop_module._process_single_item(
+            item, 1, 1, tmp_path, resume_mode="overwrite"
+        )
+        assert success is True
+        assert not working_dir.exists()
+
 
 # ============================================================================
 # AE-1: --json outputs population

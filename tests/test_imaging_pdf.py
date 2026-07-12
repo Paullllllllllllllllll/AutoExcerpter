@@ -168,6 +168,20 @@ class TestGetImagePathsFromFolder:
         assert paths[1].name == "b_image.jpg"
         assert paths[2].name == "c_image.jpg"
 
+    def test_natural_sort_of_unpadded_numbers(self, temp_dir: Path) -> None:
+        """Unpadded numeric filenames sort numerically, not lexicographically."""
+        for i in (1, 2, 10, 11):
+            (temp_dir / f"page_{i}.jpg").touch()
+
+        paths = get_image_paths_from_folder(temp_dir)
+
+        assert [p.name for p in paths] == [
+            "page_1.jpg",
+            "page_2.jpg",
+            "page_10.jpg",
+            "page_11.jpg",
+        ]
+
     def test_empty_folder(self, temp_dir: Path) -> None:
         """Empty folder returns empty list."""
         paths = get_image_paths_from_folder(temp_dir)

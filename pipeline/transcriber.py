@@ -394,6 +394,23 @@ class ItemTranscriber:
             summary_error,
         )
 
+    def _stamps_share_bucket(
+        self,
+        stamp_a: dict[str, str | None],
+        stamp_b: dict[str, str | None],
+    ) -> bool:
+        """Whether two token-tracker stamps resolve to the same accounting bucket.
+
+        Two roles on the same key and pool must not double-reserve one page,
+        while distinct buckets must each pass their own admission gate.
+        """
+        resolve = self._token_tracker._bucket_for
+        return resolve(
+            stamp_a.get("provider"), stamp_a.get("key_env"), stamp_a.get("model")
+        ) == resolve(
+            stamp_b.get("provider"), stamp_b.get("key_env"), stamp_b.get("model")
+        )
+
     def _process_single_page(
         self,
         original_input_order_index: int,
@@ -425,6 +442,18 @@ class ItemTranscriber:
         if reserved is None:
             self._budget_exhausted.set()
             return None
+        # The summary call commits its usage to the SUMMARY bucket, so when
+        # that bucket differs from the transcription one its own gates (per-key
+        # pool cap, combined budget) must admit the page too -- otherwise the
+        # summary key's cap would never be enforced on the fresh-page path.
+        summ_stamp = getattr(self, "_summary_stamp", {})
+        summ_reserved: int | None = None
+        if summ_stamp and not self._stamps_share_bucket(trans_stamp, summ_stamp):
+            summ_reserved = self._token_tracker.try_reserve(**summ_stamp)
+            if summ_reserved is None:
+                self._token_tracker.release(reserved, **trans_stamp)
+                self._budget_exhausted.set()
+                return None
 
         image_name = f"page index {original_input_order_index}"
         try:
@@ -510,10 +539,12 @@ class ItemTranscriber:
                 processed_count_ref[0] += 1
             return error_result
         finally:
-            # Release the reservation (same stamp as the reserve); actual usage
-            # was committed via add_tokens inside the provider layer during the
-            # calls above.
+            # Release the reservations (same stamps as the reserves); actual
+            # usage was committed via add_tokens inside the provider layer
+            # during the calls above.
             self._token_tracker.release(reserved, **trans_stamp)
+            if summ_reserved:
+                self._token_tracker.release(summ_reserved, **summ_stamp)
             # Feed this page's total actual usage (transcription + summary +
             # retries, accumulated per-thread by add_tokens) to the reservation
             # EWMA as ONE per-page observation, so the gate reserves per-page
@@ -751,9 +782,15 @@ class ItemTranscriber:
                 # Stamp the wait with the transcription bucket so a per-key pool
                 # cap (not just the combined budget) is what the wait polls on;
                 # otherwise a still-open combined budget would spin the re-pass.
-                if not wait_for_token_reset(
+                # A distinct summary bucket is gated in _process_single_page
+                # too, so wait until BOTH buckets can admit a page again.
+                resumed = wait_for_token_reset(
                     **getattr(self, "_transcription_stamp", {})
-                ):
+                )
+                summ_stamp = getattr(self, "_summary_stamp", {})
+                if resumed and summ_stamp:
+                    resumed = wait_for_token_reset(**summ_stamp)
+                if not resumed:
                     logger.info(
                         "Token-limit wait cancelled; %d page(s) left for a later run.",
                         len(pending),

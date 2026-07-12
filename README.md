@@ -1,4 +1,4 @@
-# AutoExcerpter v1.22.0
+# AutoExcerpter v1.23.0
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -771,6 +771,20 @@ v1.0.0 do not exist.
 
 ## Changelog
 
+- **v1.23.0** (12 July 2026) -- Bug-fix release closing five defects found in
+    an automated audit. The per-key pool cap is now enforced for the summary
+    role on the fresh-page path: when the summary stamp resolves to a
+    different accounting bucket than the transcription stamp, the page must
+    be admitted by both buckets, and the budget wait polls both before
+    resuming. Working directories of incomplete items (budget-deferred or
+    failed pages) are retained for resume even under `--force`/`--overwrite`,
+    as the retention notice promises. Image folders are ordered by natural
+    sort, so unpadded filenames (`page_2` before `page_10`) no longer
+    scramble transcription and summary order. Shared-ledger seeding after a
+    degraded start pushes session usage through the additive sync path
+    instead of max-merging it away. `retry.max_attempts` is now honored as
+    the total attempt count, as documented. Regression tests cover all five
+    fixes.
 - **v1.22.0** (12 July 2026) -- Per-key token accounting and definable daily
     pools. The shared cross-tool ledger moves to schema v2: every API call
     is stamped with its provider, the NAME of the env var that served it
