@@ -30,6 +30,7 @@ concurrency.yaml
 
 from __future__ import annotations
 
+import contextlib
 import os
 from pathlib import Path
 from typing import Any
@@ -258,6 +259,108 @@ def require_api_key(provider: str) -> str:
 # --- Daily Token Limit ---
 DAILY_TOKEN_LIMIT_ENABLED = _get_bool(_TOKEN_LIMIT, "enabled", False)
 DAILY_TOKEN_LIMIT = _get_int(_TOKEN_LIMIT, "daily_tokens", 10000000)
+
+# Combined-guard scope: "pooled" (default) enforces the combined daily_tokens
+# cap only against pooled buckets and unstamped legacy usage; "all" enforces it
+# against every stamped bucket too.
+DAILY_TOKEN_LIMIT_SCOPE = _get_str(_TOKEN_LIMIT, "scope", "pooled")
+
+
+def _parse_pool_caps(
+    raw: Any,
+) -> tuple[dict[str, dict[str, int]], dict[str, dict[str, list[str]]]]:
+    """Parse a ``per_key_pool_caps`` block into ``(caps, pool_models)``.
+
+    Each pool entry under a provider is EITHER a bare integer (cap only; the
+    pool's model list comes from the ledger built-ins) OR a mapping with the
+    optional keys ``cap`` (daily token cap) and ``models`` (model-name prefixes
+    defining the pool; configured lists replace the built-ins for that
+    provider). A ``models`` list without a ``cap`` yields a tracked but
+    uncapped pool. The ``enabled`` toggle is skipped; malformed entries are
+    dropped silently so a hand-edited config never crashes the run.
+
+    Returns:
+        ``caps``: ``{provider: {pool_label: cap}}`` for entries carrying a cap.
+        ``pool_models``: ``{provider: {pool_label: [prefix, ...]}}`` for
+        entries carrying a ``models`` list (input to ``compile_pools``).
+    """
+    caps: dict[str, dict[str, int]] = {}
+    pool_models: dict[str, dict[str, list[str]]] = {}
+    if not isinstance(raw, dict):
+        return caps, pool_models
+    for provider, pools in raw.items():
+        if provider == "enabled" or not isinstance(pools, dict):
+            continue
+        provider_caps: dict[str, int] = {}
+        provider_models: dict[str, list[str]] = {}
+        for pool, value in pools.items():
+            label = str(pool)
+            if isinstance(value, dict):
+                cap_raw = value.get("cap")
+                if cap_raw is not None:
+                    with contextlib.suppress(ValueError, TypeError):
+                        provider_caps[label] = int(str(cap_raw).replace("_", ""))
+                models_raw = value.get("models")
+                if isinstance(models_raw, (list, tuple)):
+                    prefixes = [
+                        str(m).strip()
+                        for m in models_raw
+                        if isinstance(m, str) and m.strip()
+                    ]
+                    if prefixes:
+                        provider_models[label] = prefixes
+            else:
+                try:
+                    provider_caps[label] = int(str(value).replace("_", ""))
+                except (ValueError, TypeError):
+                    continue
+        if provider_caps:
+            caps[str(provider)] = provider_caps
+        if provider_models:
+            pool_models[str(provider)] = provider_models
+    return caps, pool_models
+
+
+# Per-key-pool caps and definitions (primary enforcement). Absent block ->
+# defaults apply (enabled, built-in pools and DEFAULT_POOL_CAPS from the shared
+# ledger). ``enabled: false`` turns the pool gate off entirely, leaving only
+# the combined guard.
+_PER_KEY_POOL_CAPS: dict[str, Any] = (
+    _TOKEN_LIMIT.get("per_key_pool_caps", {})
+    if isinstance(_TOKEN_LIMIT.get("per_key_pool_caps"), dict)
+    else {}
+)
+PER_KEY_POOL_CAPS_ENABLED = _get_bool(_PER_KEY_POOL_CAPS, "enabled", True)
+PER_KEY_POOL_CAPS, PER_KEY_POOL_MODELS = _parse_pool_caps(_PER_KEY_POOL_CAPS)
+
+
+def reload_pool_settings() -> dict[str, Any] | None:
+    """Re-read ``scope`` and ``per_key_pool_caps`` fresh from ``app.yaml``.
+
+    Bypasses the import-time constants so a user editing the config while a
+    token-limit wait loop is polling changes the combined scope, toggles the
+    pool gate, or remaps caps and pool definitions without a restart. Returns
+    ``None`` when the file cannot be read (callers keep current values).
+    Degrades gracefully: never raises.
+    """
+    try:
+        data = _load_yaml_app_config()
+        token_limit = data.get("daily_token_limit", {})
+        if not isinstance(token_limit, dict):
+            return None
+        raw_caps = token_limit.get("per_key_pool_caps", {})
+        enabled = (
+            _get_bool(raw_caps, "enabled", True) if isinstance(raw_caps, dict) else True
+        )
+        caps, pool_models = _parse_pool_caps(raw_caps)
+        return {
+            "scope": str(token_limit.get("scope", "pooled")),
+            "pool_caps_enabled": enabled,
+            "pool_caps": caps,
+            "pool_models": pool_models,
+        }
+    except Exception:
+        return None
 
 
 def reload_daily_token_limit() -> int | None:

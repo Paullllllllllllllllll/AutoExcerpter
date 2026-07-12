@@ -1280,7 +1280,9 @@ class TestReportTokenUsageHardened:
 
             client._report_token_usage(response, "test")
 
-        mock_tracker.add_tokens.assert_called_once_with(150)
+        mock_tracker.add_tokens.assert_called_once_with(
+            150, provider="openai", key_env=None, model="gpt-5-mini"
+        )
 
     def test_warns_when_no_usable_counts(self) -> None:
         """Logs warning when no usable token counts are found."""
@@ -1315,7 +1317,9 @@ class TestReportTokenUsageHardened:
 
             client._report_token_usage(response, "test")
 
-        mock_tracker.add_tokens.assert_called_once_with(200)
+        mock_tracker.add_tokens.assert_called_once_with(
+            200, provider="openai", key_env=None, model="gpt-5-mini"
+        )
 
 
 # ============================================================================
@@ -1337,7 +1341,9 @@ class TestExtractTokensFromException:
 
             client._extract_tokens_from_exception(exc, "test")
 
-        mock_tracker.add_tokens.assert_called_once_with(300)
+        mock_tracker.add_tokens.assert_called_once_with(
+            300, provider="openai", key_env=None, model="gpt-5-mini"
+        )
 
     def test_extracts_from_body_prompt_completion(self) -> None:
         """Extracts from prompt_tokens + completion_tokens (OpenAI style)."""
@@ -1352,7 +1358,9 @@ class TestExtractTokensFromException:
 
             client._extract_tokens_from_exception(exc, "test")
 
-        mock_tracker.add_tokens.assert_called_once_with(300)
+        mock_tracker.add_tokens.assert_called_once_with(
+            300, provider="openai", key_env=None, model="gpt-5-mini"
+        )
 
     def test_extracts_from_body_input_output(self) -> None:
         """Extracts from input_tokens + output_tokens (Anthropic style)."""
@@ -1367,7 +1375,9 @@ class TestExtractTokensFromException:
 
             client._extract_tokens_from_exception(exc, "test")
 
-        mock_tracker.add_tokens.assert_called_once_with(225)
+        mock_tracker.add_tokens.assert_called_once_with(
+            225, provider="openai", key_env=None, model="gpt-5-mini"
+        )
 
     def test_extracts_from_response_json(self) -> None:
         """Falls back to exc.response.json()['usage']."""
@@ -1384,7 +1394,9 @@ class TestExtractTokensFromException:
 
             client._extract_tokens_from_exception(exc, "test")
 
-        mock_tracker.add_tokens.assert_called_once_with(500)
+        mock_tracker.add_tokens.assert_called_once_with(
+            500, provider="openai", key_env=None, model="gpt-5-mini"
+        )
 
     def test_noop_when_no_usage_data(self) -> None:
         """No-op when exception has no usage data."""
@@ -1578,7 +1590,9 @@ class TestInvokeWithRetry:
 
         assert result == "success"
         assert mock_model.invoke.call_count == 2
-        mock_tracker.add_tokens.assert_called_once_with(50)
+        mock_tracker.add_tokens.assert_called_once_with(
+            50, provider="openai", key_env=None, model="gpt-5-mini"
+        )
 
     def test_raises_on_non_retryable_error(self) -> None:
         """Raises immediately on non-retryable error."""

@@ -502,7 +502,9 @@ class TestBudgetDeferralWithholding:
 
         monkeypatch.setattr(transcriber, "_process_single_page", deferring)
         # The daily reset never comes (user cancels / limit unreachable).
-        monkeypatch.setattr(transcriber_module, "wait_for_token_reset", lambda: False)
+        monkeypatch.setattr(
+            transcriber_module, "wait_for_token_reset", lambda **_k: False
+        )
 
         assert transcriber.process_item() is False
         # Leg 2: the truncated .txt must not exist and must not be advertised.
@@ -552,7 +554,9 @@ class TestBudgetDeferralWithholding:
             )
 
         monkeypatch.setattr(ItemTranscriber, "_process_single_page", maybe_defer)
-        monkeypatch.setattr(transcriber_module, "wait_for_token_reset", lambda: False)
+        monkeypatch.setattr(
+            transcriber_module, "wait_for_token_reset", lambda **_k: False
+        )
 
         # --- First run: pages 1,2 deferred -> partial, withheld, exit 1 ---
         exit_code_1 = _run_main(monkeypatch, in_dir, out_dir)

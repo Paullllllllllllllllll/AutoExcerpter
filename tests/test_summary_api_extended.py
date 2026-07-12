@@ -761,7 +761,9 @@ class TestGenerateSummary:
 
             mgr.generate_summary("Text.", 1)
 
-        mock_tracker.add_tokens.assert_called_once_with(500)
+        mock_tracker.add_tokens.assert_called_once_with(
+            500, provider="openai", key_env=None, model="gpt-5-mini"
+        )
 
     def test_response_metadata_included(self) -> None:
         """Response metadata from LLM is included in result."""

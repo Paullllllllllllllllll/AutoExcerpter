@@ -372,6 +372,12 @@ def _emit_json_summary(
     }
     if stats.get("shared_budget_enabled"):
         summary["combined_tokens_today"] = stats.get("combined_tokens_used_today")
+    # Per-key pool caps and each pooled bucket's used/remaining, when any pooled
+    # key was used this run (existing keys above are untouched).
+    pool_buckets = stats.get("pool_buckets")
+    if pool_buckets:
+        summary["per_key_pool_caps_enabled"] = stats.get("per_key_pool_caps_enabled")
+        summary["pool_buckets"] = pool_buckets
     print(json.dumps(summary, ensure_ascii=False))
 
 

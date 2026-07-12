@@ -218,6 +218,26 @@ class ItemTranscriber:
                 rate_limiter=summary_rate_limiter,
             )
 
+        # Per-role token-tracker stamps (provider, key_env NAME, model) so each
+        # role's usage and reservations land on their own per-key-pool bucket.
+        # Resolved once here from the constructed managers; a free/local
+        # transcription endpoint (pool None) is never blocked by a paid summary
+        # key's exhaustion because they occupy independent buckets.
+        self._transcription_stamp: dict[str, str | None] = {
+            "provider": self.transcription_provider,
+            "key_env": getattr(self.transcribe_manager, "key_env", None),
+            "model": self.transcription_model,
+        }
+        self._summary_stamp: dict[str, str | None] = (
+            {
+                "provider": getattr(self.summary_manager, "provider", None),
+                "key_env": getattr(self.summary_manager, "key_env", None),
+                "model": self.summary_model,
+            }
+            if self.summary_manager is not None
+            else {}
+        )
+
         # Page number processor for adjusting and sorting summary page numbers
         self.page_number_processor = PageNumberProcessor()
 
@@ -395,7 +415,13 @@ class ItemTranscriber:
         # after the daily reset. try_reserve returns 0 when limiting is disabled.
         if self._budget_exhausted.is_set():
             return None
-        reserved = self._token_tracker.try_reserve()
+        # Stamp the page-level reservation with the TRANSCRIPTION key-pool bucket
+        # (the page's primary call). A free/local transcription endpoint (pool
+        # None) is never blocked here even when a paid summary key is exhausted;
+        # the summary call's own usage is stamped and accounted separately on
+        # its own bucket (see _summarize_transcription -> summary manager).
+        trans_stamp = getattr(self, "_transcription_stamp", {})
+        reserved = self._token_tracker.try_reserve(**trans_stamp)
         if reserved is None:
             self._budget_exhausted.set()
             return None
@@ -484,9 +510,10 @@ class ItemTranscriber:
                 processed_count_ref[0] += 1
             return error_result
         finally:
-            # Release the reservation; actual usage was committed via
-            # add_tokens inside the provider layer during the calls above.
-            self._token_tracker.release(reserved)
+            # Release the reservation (same stamp as the reserve); actual usage
+            # was committed via add_tokens inside the provider layer during the
+            # calls above.
+            self._token_tracker.release(reserved, **trans_stamp)
             # Feed this page's total actual usage (transcription + summary +
             # retries, accumulated per-thread by add_tokens) to the reservation
             # EWMA as ONE per-page observation, so the gate reserves per-page
@@ -568,7 +595,10 @@ class ItemTranscriber:
                 # it, so it is treated as deferred and its outputs withheld.
                 if self._budget_exhausted.is_set():
                     continue
-                reserved = self._token_tracker.try_reserve()
+                # Summary-only regeneration: stamp the SUMMARY key-pool bucket
+                # (no transcription call happens on this path).
+                summ_stamp = getattr(self, "_summary_stamp", {})
+                reserved = self._token_tracker.try_reserve(**summ_stamp)
                 if reserved is None:
                     self._budget_exhausted.set()
                     continue
@@ -578,7 +608,7 @@ class ItemTranscriber:
                         entry, idx, image_name
                     )
                 finally:
-                    self._token_tracker.release(reserved)
+                    self._token_tracker.release(reserved, **summ_stamp)
                     self._token_tracker.record_page_usage()
 
             transcription_results.append(entry)
@@ -718,7 +748,12 @@ class ItemTranscriber:
                     "Waiting for daily reset...",
                     len(pending),
                 )
-                if not wait_for_token_reset():
+                # Stamp the wait with the transcription bucket so a per-key pool
+                # cap (not just the combined budget) is what the wait polls on;
+                # otherwise a still-open combined budget would spin the re-pass.
+                if not wait_for_token_reset(
+                    **getattr(self, "_transcription_stamp", {})
+                ):
                     logger.info(
                         "Token-limit wait cancelled; %d page(s) left for a later run.",
                         len(pending),

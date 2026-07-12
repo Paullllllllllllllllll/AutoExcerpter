@@ -91,7 +91,42 @@ paths:
 # Disabled by default; set enabled: true and adjust daily_tokens to your budget.
 daily_token_limit:
   enabled: false  # Set to true to enforce the daily token budget
-  daily_tokens: 10_000_000  # Max tokens per day (resets at 00:01 UTC, one minute after OpenAI's free-tier counter reset at 00:00 UTC)
+  daily_tokens: 10_000_000  # Combined secondary guard: max tokens/day across all keys (resets at 00:01 UTC, one minute after the daily provider counter resets at 00:00 UTC)
+
+  # Combined-guard scope. "pooled" (default) enforces daily_tokens only against
+  # buckets that belong to a daily-allowance pool (plus legacy un-stamped
+  # usage), so one pooled key hitting its cap never blocks endpoints outside
+  # any pool; "all" enforces daily_tokens against every stamped key too.
+  scope: pooled
+
+  # Per-key daily pools (PRIMARY enforcement). Some providers grant each API
+  # key a daily token allowance shared across a set of models (a "pool").
+  # Usage is tracked per key-env-var NAME (e.g. OPENAI_API_KEY vs an
+  # OPENAI_API_KEY_2 remapped via api_keys.yaml), so different keys never
+  # share a cap.
+  #
+  # Built-in defaults mirror OpenAI's complimentary daily token program (a
+  # "large" and a "small" pool over the eligible model families) with caps
+  # slightly below the published allowances for safety headroom; adjust them
+  # to your own account terms, or define your own pools for any provider.
+  # Each pool entry is EITHER a bare integer (cap only; model list from the
+  # built-ins) OR a mapping with optional keys:
+  #   cap:    daily token cap for this pool, per key (omit = tracked, uncapped)
+  #   models: model-name prefixes belonging to this pool (longest prefix wins;
+  #           configured lists REPLACE the built-ins for that provider)
+  # Models matching no pool derive no pool and are never blocked by this gate.
+  # Absent block -> built-in defaults apply; enabled: false turns the per-key
+  # gate off, leaving only the combined daily_tokens guard.
+  per_key_pool_caps:
+    enabled: true
+    openai:
+      small: 9_750_000  # built-in mini/nano-family pool, per key
+      large: 975_000    # built-in frontier-family pool, per key
+    # Example of a custom pool for another provider or endpoint:
+    # myprovider:
+    #   standard:
+    #     cap: 5_000_000
+    #     models: ["my-model", "my-model-lite"]
 
   # The budget is enforced per page (transcription + optional summary reserved
   # together), not just between files, so a single large document cannot

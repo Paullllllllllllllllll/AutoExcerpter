@@ -239,6 +239,7 @@ def _display_processing_summary(
         )
         print_info(f"    • Remaining today: {stats['tokens_remaining']:,} tokens")
         _print_shared_budget_breakdown(stats)
+        _print_pool_budget_breakdown(stats)
         print_separator()
 
     # === Selected Items ===
@@ -309,11 +310,40 @@ def _display_completion_summary(
         )
         print_info(f"    • Remaining today: {stats['tokens_remaining']:,} tokens")
         _print_shared_budget_breakdown(stats)
+        _print_pool_budget_breakdown(stats)
         print_separator()
 
     print()
     print_highlight("  Thank you for using AutoExcerpter!")
     print()
+
+
+def _print_pool_budget_breakdown(stats: dict[str, Any]) -> None:
+    """Print per-key daily-pool caps and used/remaining, if any.
+
+    A no-op when the per-key gate is disabled or no pooled bucket has been seen
+    today, so runs without pooled keys are unchanged. A pool without a
+    resolvable cap is shown as tracked but uncapped.
+    """
+    if not stats.get("per_key_pool_caps_enabled", False):
+        return
+    buckets = stats.get("pool_buckets") or []
+    if not buckets:
+        return
+    print_dim("      - Per-key pool caps:")
+    for row in buckets:
+        cap = row.get("cap")
+        if cap is None:
+            print_dim(
+                f"        · {row['key_env']} [{row['pool']}]: "
+                f"{row['used']:,} used (uncapped)"
+            )
+        else:
+            print_dim(
+                f"        · {row['key_env']} [{row['pool']}]: "
+                f"{row['used']:,}/{cap:,} "
+                f"({row['remaining']:,} remaining)"
+            )
 
 
 def _print_shared_budget_breakdown(stats: dict[str, Any]) -> None:

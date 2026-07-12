@@ -18,7 +18,13 @@ from datetime import datetime
 from pathlib import Path
 
 import llm.token_tracker as tt
-from llm.shared_ledger import LEDGER_FILENAME, SharedTokenLedger, _today
+from llm.shared_ledger import (
+    LEDGER_FILENAME,
+    BucketKey,
+    SharedTokenLedger,
+    UsageSnapshot,
+    _today,
+)
 from llm.token_tracker import DailyTokenTracker, wait_for_token_reset
 
 
@@ -224,24 +230,46 @@ class TestSeeding:
 
 
 class _FakeLedger:
-    """Ledger stand-in whose I/O can be toggled to degrade and recover."""
+    """Ledger stand-in (v2) whose I/O can be toggled to degrade and recover.
+
+    Tracks this tool's own total and per-bucket rows so the degraded-mode
+    per-bucket preservation can be asserted precisely.
+    """
 
     def __init__(self) -> None:
         self.field = 0
         self.fail = True
         self.foreign = 0
+        self.buckets: dict[BucketKey, int] = {}
 
-    def seed(self, own: int) -> int | None:
+    def _snapshot(self) -> UsageSnapshot:
+        attributed = {
+            b: v for b, v in self.buckets.items() if b.provider != "unattributed"
+        }
+        return UsageSnapshot(
+            combined=self.field + self.foreign,
+            own_total=self.field,
+            buckets=dict(attributed),
+            own_buckets=dict(self.buckets),
+        )
+
+    def seed_usage(
+        self, own_total: int, own_buckets: dict[BucketKey, int] | None = None
+    ) -> UsageSnapshot | None:
         if self.fail:
             return None
-        self.field = max(self.field, int(own))
-        return self.field + self.foreign
+        self.field = max(self.field, int(own_total))
+        for bucket, amount in (own_buckets or {}).items():
+            self.buckets[bucket] = max(self.buckets.get(bucket, 0), int(amount))
+        return self._snapshot()
 
-    def sync(self, delta: int) -> int | None:
+    def sync_usage(self, deltas: dict[BucketKey, int]) -> UsageSnapshot | None:
         if self.fail:
             return None
-        self.field += max(0, int(delta))
-        return self.field + self.foreign
+        for bucket, amount in deltas.items():
+            self.buckets[bucket] = self.buckets.get(bucket, 0) + max(0, int(amount))
+        self.field += sum(max(0, int(v)) for v in deltas.values())
+        return self._snapshot()
 
     def read_breakdown(self) -> dict[str, int] | None:
         if self.fail:
@@ -269,7 +297,7 @@ class TestDegradedMode:
             t._ledger = fake  # type: ignore[assignment]
             t._seeded = False
             t._combined_total = 0
-            t._unsynced_delta = 0
+            t._unsynced_deltas = {}
             t._ledger_degraded = False
             t._last_ledger_sync_monotonic = 0.0
 
@@ -289,6 +317,43 @@ class TestDegradedMode:
         assert fake.field == 150  # accumulated 100 + 50 landed
         assert t._ledger_degraded is False
         assert t.get_tokens_used_today() == 150
+
+    def test_per_bucket_deltas_preserved_across_degradation(
+        self, tmp_path: Path
+    ) -> None:
+        """Per-bucket unsynced deltas survive a degraded window and all land."""
+        t = _make(
+            ledger_dir=tmp_path / "ledger",
+            state_file=tmp_path / "s.json",
+            daily_limit=10_000_000,
+        )
+        fake = _FakeLedger()
+        with t._lock:
+            t._ledger = fake  # type: ignore[assignment]
+            t._seeded = True  # skip seed so we exercise the sync path
+            t._combined_total = 0
+            t._bucket_totals = {}
+            t._unsynced_deltas = {}
+            t._ledger_degraded = False
+            t._last_ledger_sync_monotonic = 0.0
+
+        b_open = BucketKey("openai", "OPENAI_API_KEY", "large")
+        t.add_tokens(100, provider="openai", key_env="OPENAI_API_KEY", model="gpt-5")
+        # Degraded: nothing pushed, per-bucket delta retained.
+        assert t._ledger_degraded is True
+        assert t._unsynced_deltas.get(b_open) == 100
+
+        t.add_tokens(40, provider="openai", key_env="OPENAI_API_KEY", model="gpt-5")
+        t.add_tokens(7, provider="google", key_env="GOOGLE_API_KEY", model="gemini")
+        assert t._unsynced_deltas.get(b_open) == 140
+
+        fake.fail = False
+        t.sync_ledger_now()
+
+        # Every degraded-window delta lands on its own bucket, none lost.
+        assert fake.buckets[b_open] == 140
+        assert fake.field == 147
+        assert not t._unsynced_deltas  # fully drained
 
 
 class TestWaitLoopForcedSync:

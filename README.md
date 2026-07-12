@@ -1,4 +1,4 @@
-# AutoExcerpter v1.21.0
+# AutoExcerpter v1.22.0
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -384,7 +384,20 @@ citation:
 
 daily_token_limit:
   enabled: true
-  daily_tokens: 9000000
+  daily_tokens: 9000000   # combined cap across tools (secondary guard)
+  scope: pooled           # pooled = cap only calls in a defined pool; all = legacy
+  per_key_pool_caps:      # per-(API key, pool) daily caps (primary gate)
+    enabled: true
+    openai:
+      small: 9750000      # bare int: cap; model list from built-in defaults
+      large:
+        cap: 975000       # mapping form: custom cap and/or model prefixes
+        # models: ["gpt-5", "o3"]
+    # any provider can define its own named pools:
+    # myhost:
+    #   standard:
+    #     cap: 5000000
+    #     models: ["my-model"]
 ```
 
 ### Model Configuration (model.yaml)
@@ -595,6 +608,35 @@ tools; the strictest value simply stops its tool first. Editing
 `daily_tokens` while a run waits at the limit lifts the cap within a poll
 cycle, no restart needed.
 
+#### Per-Key-Pool Accounting and Caps
+
+A "pool" is a named set of models that share one daily token allowance per
+API key. Pools are defined per provider in `per_key_pool_caps` — each entry
+gives a cap and, optionally, a model prefix list — and built-in defaults
+mirroring OpenAI's complimentary daily token program apply when a provider
+has no configured model lists, so zero-config installs keep working. Every
+API call's usage is stamped with its provider, the NAME of the environment
+variable that served it (key values are never stored or logged), and the
+pool derived from the model name. The shared ledger records a per-(tool,
+provider, key env, pool) breakdown alongside the per-tool totals, so you
+can always tell how much of a daily allowance remains on any key you use.
+Enforcement is two-tier: `per_key_pool_caps` gates each key's own pool (set
+your own caps and pools, or disable the gate, to match your account's
+terms), and `daily_tokens` remains a combined secondary guard. Under the
+default `scope: pooled`, calls whose model belongs to no pool — local or
+self-hosted endpoints, providers without an allowance program — are counted
+but never blocked. The transcription and summary roles stamp their buckets
+independently, so an exhausted pooled summary key never blocks a pool-less
+transcription endpoint running in the same process (with `scope: all` the
+combined cap applies to every call, the legacy behavior). When a key's pool
+cap is reached, the wait message names the exhausted key and reports the
+remaining pool of any other keys visible in the ledger; remapping a
+provider to a different key env var in `api_keys.yaml` is picked up at the
+next item without a restart. Usage that predates the upgrade (or arrives
+from un-stamped paths) is kept under an "unattributed" row and counts
+toward the combined total only; a v1 ledger is adopted in place without
+losing the day's count.
+
 ## Output Files
 
 For each processed document (`<name>` is the input file/folder stem):
@@ -728,6 +770,26 @@ a single baseline commit at v1.0.0 on 25 April 2026; version numbers before
 v1.0.0 do not exist.
 
 ## Changelog
+
+- **v1.22.0** (12 July 2026) -- Per-key token accounting and definable daily
+    pools. The shared cross-tool ledger moves to schema v2: every API call
+    is stamped with its provider, the NAME of the env var that served it
+    (key values are never stored), and a pool label, recorded per
+    (tool, provider, key env, pool) alongside the per-tool totals. Budget
+    enforcement becomes two-tier: per-(key, pool) daily caps as the primary
+    gate -- pools definable per provider in
+    `daily_token_limit.per_key_pool_caps` (bare-int cap or `{cap, models}`
+    mapping), with built-in defaults mirroring OpenAI's complimentary daily
+    token program -- and the combined `daily_tokens` cap as a secondary
+    guard, scoped by the new `scope` knob (`pooled` default: calls whose
+    model belongs to no pool are counted but never blocked). The
+    transcription and summary roles stamp independent buckets, so an
+    exhausted pooled summary key never blocks a pool-less transcription
+    endpoint in the same run. The wait loop names the exhausted key,
+    reports other keys' remaining pools, live-reloads pool settings, and
+    picks up an `api_keys.yaml` remap at the next item. v1 ledgers are
+    adopted in place with un-attributable usage kept under an
+    "unattributed" row. Vendored `shared_ledger.py` v2.1.0.
 
 - **v1.21.0** (9 July 2026) -- Register current LLM models in the capability
     registry (`llm/capabilities.py`). OpenAI: the GPT-5.6 family

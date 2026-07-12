@@ -340,6 +340,21 @@ class LLMClientBase:
         # Store the resolved provider
         self.provider = llm_config.provider
 
+        # Resolve and stash the NAME of the env var that serves this client's
+        # key (never the key value) so token usage can be stamped per key-pool
+        # bucket. Best-effort: a client built with a literal api_key or a custom
+        # endpoint lacking an api_key_env_var simply stamps as unattributed.
+        self.key_env: str | None = None
+        if self.provider is not None:
+            try:
+                from llm.client import resolve_key_env
+
+                self.key_env = resolve_key_env(self.provider, section_hint)
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.debug(
+                    "Could not resolve key env var for token stamping: %s", exc
+                )
+
         # Instantiate LangChain chat model (no SDK-level retry)
         self.chat_model: BaseChatModel = get_chat_model(llm_config)
 
@@ -717,7 +732,12 @@ class LLMClientBase:
             if total_tokens and isinstance(total_tokens, int):
                 committed = total_tokens + cache_add
                 token_tracker = get_token_tracker()
-                token_tracker.add_tokens(committed)
+                token_tracker.add_tokens(
+                    committed,
+                    provider=getattr(self, "provider", None),
+                    key_env=getattr(self, "key_env", None),
+                    model=getattr(self, "model_name", None),
+                )
                 logger.debug(
                     f"[TOKEN] {context_label}: added {committed} tokens "
                     f"(cache +{cache_add}; "
@@ -790,7 +810,12 @@ class LLMClientBase:
 
             if isinstance(total, int) and total > 0:
                 token_tracker = get_token_tracker()
-                token_tracker.add_tokens(total)
+                token_tracker.add_tokens(
+                    total,
+                    provider=getattr(self, "provider", None),
+                    key_env=getattr(self, "key_env", None),
+                    model=getattr(self, "model_name", None),
+                )
                 logger.info(
                     f"[TOKEN] {context_label}: recovered {total} tokens"
                     " from failed request "

@@ -224,6 +224,20 @@ def _wait_for_token_reset(
         if new_limit is not None:
             token_tracker.set_daily_limit(new_limit)
 
+        # Also live re-read the per-key-pool settings (scope, pool-cap toggle,
+        # cap mapping, custom pool definitions) so a mid-wait edit takes effect
+        # without a restart. The per-item managers re-resolve their key env
+        # vars at the next item's construction, so an api_keys.yaml remap is
+        # picked up on the next item.
+        pool_cfg = config.reload_pool_settings()
+        if pool_cfg is not None:
+            token_tracker.set_pool_settings(
+                scope=pool_cfg.get("scope"),
+                pool_caps_enabled=pool_cfg.get("pool_caps_enabled"),
+                pool_caps=pool_cfg.get("pool_caps"),
+                pool_models=pool_cfg.get("pool_models"),
+            )
+
         # Re-check if it's a new day (or the cap was lifted above)
         if not token_tracker.is_limit_reached():
             logger.info("Token limit has been reset. Resuming processing.")

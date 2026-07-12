@@ -439,6 +439,48 @@ def _create_custom_model(
     return ChatOpenAI(**kwargs)
 
 
+def resolve_key_env(
+    provider: ProviderType,
+    section_hint: str | None = None,
+) -> str | None:
+    """Resolve the NAME of the env var that serves *provider*'s key.
+
+    Mirrors :func:`_get_api_key`'s resolution order but returns the env-var
+    NAME (never a key value) so the token tracker can stamp usage per key
+    without ever seeing the secret. Returns ``None`` when no name can be
+    determined (e.g. a custom endpoint whose ``api_key_env_var`` is unset).
+
+    - ``custom``: the ``custom_endpoint.api_key_env_var`` for the matching
+      section (``section_hint`` disambiguates transcription vs summary).
+    - other providers: the provider's default env-var name, honoring the
+      optional ``api_keys.yaml`` remapping.
+    """
+    if provider == "custom":
+        from config.loader import get_config_loader
+
+        model_cfg = get_config_loader().get_model_config()
+        sections = (
+            (section_hint,)
+            if section_hint
+            else ("transcription_model", "summary_model")
+        )
+        for section_key in sections:
+            section = model_cfg.get(section_key, {})
+            if section.get("provider") == "custom":
+                env_key = section.get("custom_endpoint", {}).get("api_key_env_var")
+                if env_key:
+                    return str(env_key)
+        return None
+
+    provider_info = SUPPORTED_PROVIDERS.get(provider, {})
+    env_key = provider_info.get("env_key")
+    if not env_key:
+        return None
+    from config.loader import resolve_env_var
+
+    return resolve_env_var(provider, env_key)
+
+
 def get_provider_for_model(model: str) -> ProviderType:
     """Get the provider name for a given model.
 
@@ -489,6 +531,7 @@ __all__ = [
     "get_chat_model",
     "get_model_capabilities",
     "detect_capabilities",
+    "resolve_key_env",
     "SUPPORTED_PROVIDERS",
     "ProviderType",
 ]
