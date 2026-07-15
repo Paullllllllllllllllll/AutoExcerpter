@@ -1071,9 +1071,7 @@ class TestCreateDocxSummarySmoke:
                     f"{style_name} retains w:{theme_attr}"
                 )
 
-    def test_citation_markdown_emphasis_rendered_as_runs(
-        self, tmp_path: Path
-    ) -> None:
+    def test_citation_markdown_emphasis_rendered_as_runs(self, tmp_path: Path) -> None:
         """Markdown emphasis in citation text becomes italic/bold runs, not
         literal asterisks."""
         from docx import Document
@@ -1101,9 +1099,7 @@ class TestCreateDocxSummarySmoke:
             p for p in doc.paragraphs if "American Economic Review" in p.text
         )
         assert "*" not in ref_paragraph.text
-        italic_text = "".join(
-            run.text for run in ref_paragraph.runs if run.italic
-        )
+        italic_text = "".join(run.text for run in ref_paragraph.runs if run.italic)
         assert "The American Economic Review, 87" in italic_text
 
 
