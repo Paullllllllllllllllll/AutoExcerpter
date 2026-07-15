@@ -16,6 +16,7 @@ from rendering.markdown import (
 from rendering.summary import (
     _extract_summary_payload,
     _is_meaningful_summary,
+    _normalize_references,
     _page_information,
     format_page_heading,
     format_structure_page_range,
@@ -23,6 +24,61 @@ from rendering.summary import (
     prepare_summary_data,
     sanitize_for_xml,
 )
+
+
+class TestNormalizeReferences:
+    """Tests for _normalize_references (schema object + legacy string forms)."""
+
+    def test_object_items(self) -> None:
+        """Schema objects yield (citation, is_partial) tuples."""
+        refs = [
+            {"citation": "Smith, J. (2020). Full Work. Journal.", "is_partial": False},
+            {"citation": "Doe, A. (1999).", "is_partial": True},
+        ]
+        assert _normalize_references(refs) == [
+            ("Smith, J. (2020). Full Work. Journal.", False),
+            ("Doe, A. (1999).", True),
+        ]
+
+    def test_legacy_string_items(self) -> None:
+        """Bare strings are treated as complete, non-partial references."""
+        refs = ["Smith, J. (2020). Full Work. Journal.", "  Doe, A. (1999).  "]
+        assert _normalize_references(refs) == [
+            ("Smith, J. (2020). Full Work. Journal.", False),
+            ("Doe, A. (1999).", False),
+        ]
+
+    def test_mixed_items(self) -> None:
+        """Objects and strings may be mixed in one list."""
+        refs = [
+            "Legacy, L. (2001). Cached. Press.",
+            {"citation": "New, N. (2002).", "is_partial": True},
+        ]
+        assert _normalize_references(refs) == [
+            ("Legacy, L. (2001). Cached. Press.", False),
+            ("New, N. (2002).", True),
+        ]
+
+    def test_malformed_items_skipped(self) -> None:
+        """Empty text, missing citation key, and non-str/dict items are skipped."""
+        refs = [
+            "",
+            "   ",
+            {"is_partial": True},
+            {"citation": "", "is_partial": False},
+            {"citation": None, "is_partial": True},
+            42,
+            None,
+            {"citation": "Kept, K. (2003). Real. Press.", "is_partial": False},
+        ]
+        assert _normalize_references(refs) == [
+            ("Kept, K. (2003). Real. Press.", False),
+        ]
+
+    def test_non_list_returns_empty(self) -> None:
+        """None or a non-list value yields an empty list."""
+        assert _normalize_references(None) == []
+        assert _normalize_references("not a list") == []
 
 
 class TestSanitizeForXml:

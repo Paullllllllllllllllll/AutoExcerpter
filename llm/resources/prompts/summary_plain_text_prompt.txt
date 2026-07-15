@@ -11,7 +11,7 @@ Key rules:
 - Use the same language as the input text for the bullet points.
 - Do not hallucinate; stick to the input.
 - Enclose mathematical formulas in $$ delimiters.
-- Extract citations from ALL page types in APA style.
+- Extract citations from ALL page types in APA style. If a page cites a work only by author and year (in-text citation) without full bibliographic details, set is_partial=true and record only what the page states (e.g. 'Conrad, A. H., & Meyer, J. R. (1957).') — never fabricate bracketed placeholder titles or descriptions. Set is_partial=false only for complete references (bibliography entries, full footnotes).
 - For page_types, select 1-3 classifications that ALL apply (e.g., ["content", "bibliography"] for a page with both prose and references).
 - Provide bullet points for pages with summarizable prose: content, abstract, preface, appendix, figures_tables_sources.
 - Two-page spreads: if the transcription contains two consecutive page numbers or clearly covers two facing pages (a page-spread scan), set is_two_page_spread=true, page_number_integer=left page, page_number_integer_end=right page; otherwise set is_two_page_spread=false and page_number_integer_end=null.

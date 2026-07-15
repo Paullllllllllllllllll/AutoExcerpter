@@ -194,6 +194,35 @@ PAGE_TYPE_LABELS = {
 }
 
 
+def _normalize_references(references: Any) -> list[tuple[str, bool]]:
+    """Normalize a page's ``references`` array into ``(text, is_partial)`` tuples.
+
+    Accepts both the current schema form (objects ``{"citation", "is_partial"}``)
+    and the legacy string form (older cached/resumed JSON), which is treated as a
+    complete, non-partial reference. Malformed items (non-string citation, empty
+    text) are skipped.
+    """
+    normalized: list[tuple[str, bool]] = []
+    if not isinstance(references, list):
+        return normalized
+    for item in references:
+        if isinstance(item, str):
+            text = item
+            is_partial = False
+        elif isinstance(item, dict):
+            raw = item.get("citation")
+            if not isinstance(raw, str):
+                continue
+            text = raw
+            is_partial = bool(item.get("is_partial", False))
+        else:
+            continue
+        if not text.strip():
+            continue
+        normalized.append((text.strip(), is_partial))
+    return normalized
+
+
 def _should_render_bullets(page_types: list[str]) -> bool:
     """Check if page should have bullet points rendered based on its types."""
     return bool(set(page_types) & PAGE_TYPES_WITH_BULLETS)
@@ -303,7 +332,7 @@ def prepare_summary_data(
         page_num_type = page_info["page_number_type"]
         is_spread = page_info["is_spread"]
         page_types = page_info["page_types"]
-        references = summary_payload.get("references") or []
+        references = _normalize_references(summary_payload.get("references"))
 
         # Collect the integer page number(s) this scan covers (both for spreads).
         numbered_pages: list[int] = []

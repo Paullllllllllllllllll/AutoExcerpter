@@ -638,3 +638,90 @@ class TestEnrichMaxRequestsContinues:
         third = manager.citations.get(keys[2])
         assert third is not None
         assert third.metadata is not None
+
+
+_FULL = (
+    "Conrad, A. H., & Meyer, J. R. (1957). The Economics of Slavery in the "
+    "Ante-Bellum South. Journal of Political Economy, 66(2), 95-130."
+)
+_FULL2 = (
+    "Conrad, A. H., & Meyer, J. R. (1957). Studies in Econometric History. "
+    "Cambridge University Press."
+)
+_PARTIAL = "Conrad, A. H., & Meyer, J. R. (1957)."
+
+
+class TestPartialCitations:
+    """Tests for the schema is_partial flag and containment merge/drop."""
+
+    def test_partial_merges_into_unique_full_pages_union(self) -> None:
+        """A partial stub folds into its one full match; pages union."""
+        manager = CitationManager()
+        manager.add_citations([(_PARTIAL, True)], 412)
+        manager.add_citations([(_FULL, False)], 414)
+        assert len(manager.citations) == 2  # distinct keys before consolidate
+
+        manager.consolidate()
+
+        assert len(manager.citations) == 1
+        survivor = next(iter(manager.citations.values()))
+        assert survivor.raw_text == _FULL  # full stays canonical
+        assert survivor.partial is False
+        assert survivor.get_page_range_str() == "pp. 412, 414"
+
+    def test_partial_with_no_full_match_dropped(self) -> None:
+        """A partial with no full superset candidate is dropped entirely."""
+        manager = CitationManager()
+        manager.add_citations([(_PARTIAL, True)], 5)
+
+        manager.consolidate()
+
+        assert len(manager.citations) == 0
+
+    def test_partial_with_two_full_candidates_dropped(self) -> None:
+        """An ambiguous partial (two same-author-year fulls) is dropped."""
+        manager = CitationManager()
+        manager.add_citations([(_FULL, False)], 1)
+        manager.add_citations([(_FULL2, False)], 2)
+        manager.add_citations([(_PARTIAL, True)], 3)
+
+        manager.consolidate()
+
+        # Both fulls survive; the ambiguous partial is dropped.
+        assert len(manager.citations) == 2
+        raws = {c.raw_text for c in manager.citations.values()}
+        assert raws == {_FULL, _FULL2}
+        assert all(c.partial is False for c in manager.citations.values())
+
+    def test_full_citation_unaffected(self) -> None:
+        """A lone full citation passes through consolidate untouched."""
+        manager = CitationManager()
+        manager.add_citations([(_FULL, False)], 7)
+
+        manager.consolidate()
+
+        assert len(manager.citations) == 1
+        survivor = next(iter(manager.citations.values()))
+        assert survivor.raw_text == _FULL
+        assert survivor.partial is False
+        assert survivor.pages == {7}
+
+    def test_full_wins_over_partial_same_key(self) -> None:
+        """Same normalized key seen as partial then full ends up non-partial."""
+        manager = CitationManager()
+        same = "Same, S. (2000). A Complete Work. Some Press."
+        manager.add_citations([(same, True)], 1)
+        manager.add_citations([(same, False)], 2)
+
+        assert len(manager.citations) == 1
+        citation = next(iter(manager.citations.values()))
+        assert citation.partial is False
+        assert citation.pages == {1, 2}
+
+    def test_plain_string_items_default_non_partial(self) -> None:
+        """Bare string items are treated as complete (non-partial) references."""
+        manager = CitationManager()
+        manager.add_citations([_FULL], 1)
+
+        citation = next(iter(manager.citations.values()))
+        assert citation.partial is False

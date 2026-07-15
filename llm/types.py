@@ -43,7 +43,9 @@ class SummaryContent(TypedDict, total=False):
 
     page_information: PageInformation
     bullet_points: list[str] | None
-    references: list[str] | None
+    # Schema form: list of {"citation": str, "is_partial": bool} objects.
+    # Legacy cached/resumed responses may still carry bare citation strings.
+    references: list[Any] | None
 
 
 class SummaryResult(TypedDict, total=False):
@@ -60,7 +62,9 @@ class SummaryResult(TypedDict, total=False):
     # Content fields (from LLM output, merged at top level)
     page_information: PageInformation
     bullet_points: list[str] | None
-    references: list[str] | None
+    # Schema form: list of {"citation": str, "is_partial": bool} objects.
+    # Legacy cached/resumed responses may still carry bare citation strings.
+    references: list[Any] | None
 
     # Processing metadata
     processing_time: float

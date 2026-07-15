@@ -1,4 +1,4 @@
-# AutoExcerpter v1.25.0
+# AutoExcerpter v1.26.0
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -555,7 +555,14 @@ together. A conservative fuzzy pass then merges near-identical variants only
 within a `(first-author surname, year)` block, gated by `merge_ratio`
 (SequenceMatcher) or `merge_jaccard` (token-set); differing years or volumes
 never merge, and every merge is logged. Page ranges are consolidated (including
-`unnumbered` pages). OpenAlex enrichment (free, no key required; set
+`unnumbered` pages). The summary schema (`Summary_2_3_0`) additionally flags
+in-text-only citations (`is_partial`): the model records bare author-year
+pointers as-is instead of fabricating placeholder titles, and after the fuzzy
+pass each partial stub whose tokens are contained in exactly one full
+reference within its author-year block merges into it (pages union); stubs
+with no full match, or with several ambiguous same-author same-year
+candidates, are dropped rather than guessed, with every merge and drop
+logged. OpenAlex enrichment (free, no key required; set
 `openalex_email` for the faster polite pool) runs exactly once per document and
 is shared by both writers. A candidate links only when title-word overlap
 clears `match_title_overlap` AND a corroborating signal matches (publication
@@ -777,6 +784,20 @@ v1.0.0 do not exist.
 
 ## Changelog
 
+- **v1.26.0** (15 July 2026) -- Stop fabricated citation stubs from
+    duplicating full references. The summary schema (`Summary_2_3_0`) turns
+    `references` items into `{citation, is_partial}` objects and both summary
+    prompts instruct the model to record in-text author-year pointers as-is
+    (never inventing bracketed placeholder titles) and to flag them
+    `is_partial`. After the fuzzy consolidation pass, a partial stub whose
+    token set is contained in exactly one full reference within its
+    author-year block merges into it (union of pages, full text stays
+    canonical), while stubs with no or several ambiguous full matches are
+    dropped rather than guessed; every merge and drop is logged. Legacy
+    cached/resumed responses with plain-string references still parse.
+    Verified end-to-end on a live document whose reference list shrank from
+    nine entries (four bracketed stubs) to five clean entries with correct
+    merged page ranges.
 - **v1.25.0** (15 July 2026) -- Restyle both summary writers into dense
     academic reference documents. The DOCX writer now applies explicit named
     styles (Times New Roman throughout, with theme-font and theme-color

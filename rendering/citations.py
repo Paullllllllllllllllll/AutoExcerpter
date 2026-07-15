@@ -8,6 +8,7 @@ import re
 import threading
 import time
 import unicodedata
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from typing import Any
@@ -222,6 +223,7 @@ class Citation:
     doi: str | None = None
     url: str | None = None
     unnumbered: bool = False
+    partial: bool = False
     variants: list[str] = field(default_factory=list)
     # Structured discriminators / comparison material (populated in __post_init__)
     year: int | None = None
@@ -328,26 +330,42 @@ class CitationManager:
             _load_persistent_openalex_cache()
         )
 
-    def add_citations(self, citations: list[str], page_number: int | None) -> None:
+    def add_citations(
+        self,
+        citations: Sequence[str | tuple[str, bool]],
+        page_number: int | None,
+    ) -> None:
         """
         Add citations from a page, handling deduplication.
 
         Args:
-            citations: List of citation strings from a page.
+            citations: List of citations from a page. Each item is either a
+                plain citation string (treated as a complete, non-partial
+                reference) or a ``(text, is_partial)`` tuple where
+                ``is_partial`` marks an in-text-only stub (author-year without
+                full bibliographic data).
             page_number: The page number where these citations appear, or None
                 for an unnumbered page (still recorded; rendered "unnumbered").
         """
-        for citation_text in citations:
+        for item in citations:
+            if isinstance(item, tuple):
+                citation_text, is_partial = item
+            else:
+                citation_text, is_partial = item, False
+
             if not citation_text or not citation_text.strip():
                 continue
 
             # Create or retrieve citation
-            citation = Citation(raw_text=citation_text.strip())
+            citation = Citation(raw_text=citation_text.strip(), partial=is_partial)
             normalized_key = citation.normalized_key
 
             if normalized_key in self.citations:
-                # Citation already exists, just add the page
-                self.citations[normalized_key].add_page(page_number)
+                # Citation already exists, just add the page. Full wins over
+                # partial when the same key is seen with both flags.
+                existing = self.citations[normalized_key]
+                existing.add_page(page_number)
+                existing.partial = existing.partial and is_partial
             else:
                 # New citation
                 citation.add_page(page_number)
@@ -382,6 +400,75 @@ class CitationManager:
                 merged[survivor.normalized_key] = survivor
 
         self.citations = merged
+        self._resolve_partials()
+
+    def _resolve_partials(self) -> None:
+        """Merge or drop partial (in-text-only) citations by containment.
+
+        Runs after the fuzzy-merge pass. Within each (first-author surname,
+        exact year) block, a partial citation's comparison-text token set is
+        typically just author names + year; a full reference for the same work
+        is its token superset. For each partial:
+
+        - exactly one full (non-partial) superset candidate -> merge the
+          partial into it (full raw_text stays canonical; pages/unnumbered
+          union);
+        - zero candidates, or more than one (ambiguous) -> drop the partial
+          entirely (do not guess), logged at info level.
+
+        Full citations are never dropped or altered by this step.
+        """
+        from collections import defaultdict
+
+        partials = [c for c in self.citations.values() if c.partial]
+        if not partials:
+            return
+
+        blocks: dict[tuple[str, int | None], list[Citation]] = defaultdict(list)
+        for citation in self.citations.values():
+            blocks[(citation.author, citation.year)].append(citation)
+
+        for partial in partials:
+            block = blocks[(partial.author, partial.year)]
+            partial_tokens = _token_set(partial.comparison_text)
+            candidates = [
+                full
+                for full in block
+                if not full.partial
+                and full is not partial
+                and partial_tokens <= _token_set(full.comparison_text)
+            ]
+            if len(candidates) == 1:
+                self._merge_partial_into(candidates[0], partial)
+                self.citations.pop(partial.normalized_key, None)
+            else:
+                reason = (
+                    "no full match"
+                    if not candidates
+                    else f"ambiguous ({len(candidates)} full matches)"
+                )
+                logger.info(
+                    "Dropping partial citation (%s): %s",
+                    reason,
+                    partial.raw_text,
+                )
+                self.citations.pop(partial.normalized_key, None)
+
+    @staticmethod
+    def _merge_partial_into(full: Citation, partial: Citation) -> None:
+        """Merge a partial citation into a full one; full stays canonical.
+
+        Unlike :meth:`_merge_into`, the full reference's ``raw_text`` always
+        remains canonical regardless of length — a partial stub must never
+        become the displayed citation. Pages/unnumbered union.
+        """
+        logger.info(
+            "Merging partial citation into full:\n  - full:    %s\n  - partial: %s",
+            full.raw_text,
+            partial.raw_text,
+        )
+        full.pages |= partial.pages
+        full.unnumbered = full.unnumbered or partial.unnumbered
 
     def _find_merge_target(
         self, candidate: Citation, survivors: list[Citation]

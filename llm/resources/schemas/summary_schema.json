@@ -2,7 +2,7 @@
   "name": "article_page_summary",
   "strict": true,
   "schema": {
-    "$schema": "Summary_2_2_0",
+    "$schema": "Summary_2_3_0",
     "title": "Article Page Summary",
     "type": "object",
     "properties": {
@@ -71,7 +71,19 @@
         "type": ["array", "null"],
         "description": "Bibliographic citations in APA style. Extract from ALL page types. Set to null only if no citations present.",
         "items": {
-          "type": "string"
+          "type": "object",
+          "properties": {
+            "citation": {
+              "type": "string",
+              "description": "The citation in APA style, exactly as reconstructable from the page. Never invent or paraphrase a title; record only bibliographic data the page actually states."
+            },
+            "is_partial": {
+              "type": "boolean",
+              "description": "True when the page gives only an in-text pointer (author-year, 'op. cit.', ibid.) without full bibliographic data (title and venue). False only for complete references, e.g. from a bibliography entry or a full footnote."
+            }
+          },
+          "required": ["citation", "is_partial"],
+          "additionalProperties": false
         }
       }
     },
