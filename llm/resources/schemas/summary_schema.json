@@ -2,7 +2,7 @@
   "name": "article_page_summary",
   "strict": true,
   "schema": {
-    "$schema": "Summary_2_1_0",
+    "$schema": "Summary_2_2_0",
     "title": "Article Page Summary",
     "type": "object",
     "properties": {
@@ -12,7 +12,15 @@
         "properties": {
           "page_number_integer": {
             "type": ["integer", "null"],
-            "description": "Page number converted to an integer, or null if not present. Convert Roman numerals (i, ii, xii) to Arabic (1, 2, 12). Page numbers typically appear in headers or footers."
+            "description": "Page number converted to an integer, or null if not present. Convert Roman numerals (i, ii, xii) to Arabic (1, 2, 12). For a two-page spread this is the LEFT page. Page numbers typically appear in headers or footers."
+          },
+          "is_two_page_spread": {
+            "type": "boolean",
+            "description": "True when the scanned image shows a two-page spread (two facing pages side by side); false for a single page."
+          },
+          "page_number_integer_end": {
+            "type": ["integer", "null"],
+            "description": "For a two-page spread, the integer page number of the RIGHT page (Roman numerals converted to integers, same as page_number_integer); null for single pages or unnumbered spreads."
           },
           "page_number_type": {
             "type": "string",
@@ -45,6 +53,8 @@
         },
         "required": [
           "page_number_integer",
+          "is_two_page_spread",
+          "page_number_integer_end",
           "page_number_type",
           "page_types"
         ],

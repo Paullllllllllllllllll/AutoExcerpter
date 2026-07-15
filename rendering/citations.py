@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import threading
 import time
 import unicodedata
 from dataclasses import dataclass, field
@@ -185,6 +186,9 @@ MAX_API_RETRIES = 3
 API_POLITE_DELAY = 0.1  # Delay between API calls to be polite
 # 429 budget-exhaustion: skip remaining enrichment if retryAfter exceeds this (seconds)
 BUDGET_EXHAUSTED_RETRY_AFTER_THRESHOLD = 300  # 5 minutes
+# 429 short rate-limit: sleep-and-retry within the attempt loop when retryAfter
+# is at or below this (seconds); larger values keep the skip behavior.
+RATE_LIMIT_MAX_SLEEP = 30  # seconds
 
 # Constants for citation matching
 MIN_AUTHOR_LENGTH = 3
@@ -432,8 +436,18 @@ class CitationManager:
         """
         logger.info("Enriching %d unique citations with metadata", len(self.citations))
 
+        # Consult the process-wide / cross-run latch up front so the once-only
+        # "budget exhausted" message fires even when this manager never issues a
+        # request itself (a prior item or run tripped the daily quota).
+        if _is_budget_exhausted():
+            self._openalex_budget_exhausted = True
+
         requests_made = 0
-        enriched = 0
+        cache_hits = 0
+        api_enriched = 0
+        skipped_api = 0
+        max_requests_notified = False
+        budget_notified = False
         for processed, citation in enumerate(self.citations.values(), start=1):
             # Log progress periodically
             if processed % PROGRESS_LOG_INTERVAL == 0:
@@ -441,29 +455,45 @@ class CitationManager:
                     "Processed %d/%d citations, enriched %d with metadata",
                     processed,
                     len(self.citations),
-                    enriched,
+                    cache_hits + api_enriched,
                 )
 
             # Persistent cross-run cache: reuse a prior lookup without spending
-            # a request against the daily budget.
+            # a request against the daily budget. Cache hits are always served,
+            # even after the API budget is exhausted or the request cap is hit.
             cached = self._persistent_cache.get(citation.normalized_key)
             if cached is not None:
                 self._apply_metadata(citation, cached)
-                enriched += 1
+                cache_hits += 1
+                continue
+
+            # Cache miss: this citation would require an API request. When the
+            # API is unavailable (budget exhausted) or the per-item cap is
+            # reached, do NOT break — keep iterating so later citations still
+            # get their persistent-cache hits; only the request itself is
+            # skipped, and the reason is logged once (not per citation).
+            budget_out = self._openalex_budget_exhausted or _is_budget_exhausted()
+            if budget_out:
+                if not budget_notified:
+                    logger.warning(
+                        "OpenAlex daily budget exhausted — serving remaining "
+                        "citations from the persistent cache only; skipping "
+                        "API lookups for the rest of this item."
+                    )
+                    budget_notified = True
+                skipped_api += 1
                 continue
 
             if max_requests is not None and requests_made >= max_requests:
-                logger.info("Reached maximum API requests limit (%d)", max_requests)
-                break
-
-            if self._openalex_budget_exhausted:
-                remaining = len(self.citations) - processed
-                logger.warning(
-                    "OpenAlex daily budget exhausted — skipping %d "
-                    "remaining citation(s).",
-                    remaining,
-                )
-                break
+                if not max_requests_notified:
+                    logger.info(
+                        "Reached maximum API requests limit (%d) — serving "
+                        "remaining citations from the persistent cache only.",
+                        max_requests,
+                    )
+                    max_requests_notified = True
+                skipped_api += 1
+                continue
 
             # Every attempt counts against the budget (hit or miss), so a
             # document of hard-to-match citations cannot silently exceed the cap.
@@ -472,15 +502,25 @@ class CitationManager:
             if metadata:
                 self._apply_metadata(citation, metadata)
                 self._persistent_cache[citation.normalized_key] = metadata
-                enriched += 1
+                api_enriched += 1
                 # Be polite to the API
                 time.sleep(API_POLITE_DELAY)
 
         # Post-enrichment: merge any citations that resolved to the same work.
+        # This (and the cache save) must run even in cache-only mode, so it lives
+        # after the loop completes rather than behind an early break.
         self._merge_by_shared_identifier()
         _save_persistent_openalex_cache(self._persistent_cache)
 
-        logger.info("Successfully enriched %d citations with metadata", enriched)
+        logger.info(
+            "Successfully enriched %d citations with metadata "
+            "(%d from persistent cache, %d via API); "
+            "skipped API lookup for %d citation(s).",
+            cache_hits + api_enriched,
+            cache_hits,
+            api_enriched,
+            skipped_api,
+        )
 
     @staticmethod
     def _apply_metadata(citation: Citation, metadata: dict[str, Any]) -> None:
@@ -557,6 +597,28 @@ class CitationManager:
 
         return None
 
+    @staticmethod
+    def _parse_retry_after(error_detail: dict[str, Any], response: Any) -> int:
+        """Return the 429 retry-after delay in whole seconds (0 if unknown).
+
+        Prefers the OpenAlex JSON body's ``retryAfter`` field; falls back to the
+        standard HTTP ``Retry-After`` response header when the body lacks it.
+        Only integer-second values are honored; a date-format ``Retry-After``
+        header (or any unparsable value) is treated as unknown (``0``).
+        """
+        raw: Any = error_detail.get("retryAfter")
+        if raw is None:
+            headers = getattr(response, "headers", None)
+            if headers is not None:
+                try:
+                    raw = headers.get("Retry-After")
+                except Exception:
+                    raw = None
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            return 0
+
     def _make_openalex_request(
         self, url: str, params: dict[str, Any], context_description: str = ""
     ) -> dict[str, Any] | None:
@@ -571,6 +633,17 @@ class CitationManager:
         Returns:
             Response data if successful, None otherwise.
         """
+        # Single choke point for both the DOI and text-search paths: if the
+        # daily budget is known to be exhausted (this run or a prior run, via
+        # the process-wide / cross-run latch), do not spend a request.
+        if _is_budget_exhausted():
+            self._openalex_budget_exhausted = True
+            logger.debug(
+                "OpenAlex daily budget latched as exhausted; skipping request for %s.",
+                context_description,
+            )
+            return None
+
         for attempt in range(MAX_API_RETRIES):
             try:
                 response = requests.get(url, params=params, timeout=API_REQUEST_TIMEOUT)
@@ -591,24 +664,53 @@ class CitationManager:
                         error_detail = response.json()
                     except Exception:
                         error_detail = {}
-                    retry_after = int(error_detail.get("retryAfter", 0))
+                    retry_after = self._parse_retry_after(error_detail, response)
                     if retry_after > BUDGET_EXHAUSTED_RETRY_AFTER_THRESHOLD:
-                        # Long retryAfter means budget is depleted for the day;
-                        # disable OpenAlex for the rest of this run.
+                        # Long retryAfter means the daily budget is depleted;
+                        # latch it process-wide + cross-run so no further items
+                        # (this run or the next) re-hammer the API.
                         self._openalex_budget_exhausted = True
+                        _mark_budget_exhausted(retry_after)
                         logger.warning(
                             "OpenAlex daily budget exhausted (retryAfter=%ds). "
-                            "Disabling OpenAlex enrichment for this run.",
+                            "Disabling OpenAlex enrichment for %.0f minute(s).",
                             retry_after,
+                            retry_after / 60.0,
                         )
+                        return None
+                    elif 0 < retry_after <= RATE_LIMIT_MAX_SLEEP:
+                        # Short rate-limit: wait it out and retry within the
+                        # existing attempt budget rather than dropping the
+                        # citation.
+                        if attempt < MAX_API_RETRIES - 1:
+                            logger.warning(
+                                "OpenAlex rate limit hit for %s (retryAfter=%ds; "
+                                "attempt %d/%d). Sleeping and retrying.",
+                                context_description,
+                                retry_after,
+                                attempt + 1,
+                                MAX_API_RETRIES,
+                            )
+                            time.sleep(retry_after)
+                            continue
+                        logger.warning(
+                            "OpenAlex rate limit hit for %s (retryAfter=%ds) "
+                            "after %d attempts; giving up.",
+                            context_description,
+                            retry_after,
+                            MAX_API_RETRIES,
+                        )
+                        return None
                     else:
+                        # No usable retryAfter, or one between the short-sleep
+                        # ceiling and the budget threshold: skip this citation.
                         logger.warning(
                             "OpenAlex rate limit hit for %s (retryAfter=%ds). "
                             "Skipping this citation.",
                             context_description,
                             retry_after,
                         )
-                    return None
+                        return None
                 elif response.status_code == 500:
                     # Transient server error — retry with exponential backoff.
                     delay = API_RETRY_DELAY * (2**attempt)
@@ -900,3 +1002,95 @@ def _save_persistent_openalex_cache(cache: dict[str, dict[str, Any]]) -> None:
         write_json_atomic(path, cache)
     except Exception as exc:  # pragma: no cover - defensive
         logger.debug("Could not save persistent OpenAlex cache: %s", exc)
+
+
+# ============================================================================
+# Process-wide + cross-run OpenAlex daily-budget exhaustion latch
+# ============================================================================
+#
+# When OpenAlex signals daily-quota exhaustion (a 429 with a long ``retryAfter``),
+# a single ``CitationManager`` disabling itself is not enough: the pipeline builds
+# a fresh manager per processed item, so a multi-document run would otherwise
+# re-hammer the API after the quota is gone. This module-level latch records an
+# ``exhausted_until`` epoch timestamp guarded by a lock, mirrors it to a state
+# file so a subsequent process honors it too, and is consulted before every
+# OpenAlex request.
+
+_BUDGET_STATE_FILE = "openalex_budget.json"
+
+_budget_lock = threading.Lock()
+_budget_exhausted_until: float | None = None
+_budget_state_loaded: bool = False
+
+
+def _read_budget_state_file() -> float | None:
+    """Read the persisted ``exhausted_until`` timestamp, or None on any failure."""
+    try:
+        from config.state import read_json, resolve_state_file
+
+        path = resolve_state_file(_BUDGET_STATE_FILE)
+        data = read_json(path)
+        value = data.get("exhausted_until")
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return float(value)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.debug("Could not load OpenAlex budget state: %s", exc)
+    return None
+
+
+def _persist_budget_state(until: float) -> None:
+    """Persist the ``exhausted_until`` timestamp atomically to the state dir."""
+    try:
+        from config.state import resolve_state_file, write_json_atomic
+
+        path = resolve_state_file(_BUDGET_STATE_FILE)
+        write_json_atomic(path, {"exhausted_until": until})
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.debug("Could not save OpenAlex budget state: %s", exc)
+
+
+def _openalex_budget_exhausted_until() -> float | None:
+    """Return the epoch timestamp until which the OpenAlex budget is exhausted.
+
+    Lazily loads the persisted state file exactly once per process (under the
+    lock) so a run started after the quota tripped honors the remaining
+    cooldown; subsequent calls read the cached in-memory value.
+    """
+    global _budget_exhausted_until, _budget_state_loaded
+    with _budget_lock:
+        if not _budget_state_loaded:
+            _budget_state_loaded = True
+            _budget_exhausted_until = _read_budget_state_file()
+        return _budget_exhausted_until
+
+
+def _is_budget_exhausted() -> bool:
+    """Return True while the OpenAlex daily budget is latched as exhausted.
+
+    A timestamp at or before the current time is treated as expired (the daily
+    quota has reset), so requests are allowed again.
+    """
+    until = _openalex_budget_exhausted_until()
+    return until is not None and until > time.time()
+
+
+def _mark_budget_exhausted(retry_after: float) -> None:
+    """Latch the OpenAlex budget as exhausted for *retry_after* seconds.
+
+    Updates the in-memory state (under the lock) and mirrors it to the state
+    file so a later process in the same daily window also backs off.
+    """
+    global _budget_exhausted_until, _budget_state_loaded
+    until = time.time() + retry_after
+    with _budget_lock:
+        _budget_state_loaded = True
+        _budget_exhausted_until = until
+    _persist_budget_state(until)
+
+
+def _reset_budget_state_for_tests() -> None:
+    """Clear the in-memory budget latch (test hook only)."""
+    global _budget_exhausted_until, _budget_state_loaded
+    with _budget_lock:
+        _budget_exhausted_until = None
+        _budget_state_loaded = False

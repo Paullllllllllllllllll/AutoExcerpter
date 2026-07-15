@@ -17,6 +17,7 @@ Key rules:
 - Extract citations from ALL page types in APA style.
 - For page_types, select 1-3 classifications that ALL apply (e.g., ["content", "bibliography"] for a page with both prose and references).
 - Provide bullet points for pages with summarizable prose (content, abstract, preface, appendix, figures_tables_sources).
+- Two-page spreads: if the transcription contains two consecutive page numbers or clearly covers two facing pages (a page-spread scan), set is_two_page_spread=true, page_number_integer=left page, page_number_integer_end=right page; otherwise set is_two_page_spread=false and page_number_integer_end=null.
 - Reason hard to extract all data properly.
 - Pay special attention to the following topics during summarization. Content related to these topics should be summarized in greater detail: {{CONTEXT}}
 

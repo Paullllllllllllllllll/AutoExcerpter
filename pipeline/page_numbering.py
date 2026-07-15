@@ -15,6 +15,7 @@ The key algorithm is per-section anchor-based adjustment:
 
 from __future__ import annotations
 
+from statistics import median
 from typing import Any
 
 from config.logger import setup_logger
@@ -43,7 +44,7 @@ class PageNumberProcessor:
 
     def parse_page_information(
         self, summary_result: dict[str, Any]
-    ) -> tuple[int | None, str, list[str], bool]:
+    ) -> tuple[int | None, str, list[str], bool, bool, int | None]:
         """
         Extract page information from a summary result.
 
@@ -52,9 +53,14 @@ class PageNumberProcessor:
 
         Returns:
             Tuple of (model_page_number, page_number_type, page_types,
-            is_genuinely_unnumbered).
+            is_genuinely_unnumbered, is_two_page_spread, page_number_integer_end).
             page_number_type is one of: 'roman', 'arabic', 'none'.
             page_types is a list of page type classifications.
+
+        Two-page spreads are normalized: when the page is a spread and the start
+        number is known, the end number is forced to ``start + 1`` (a debug
+        message is logged when the model reported a different end). When the page
+        is not a spread, the end number is ``None``.
         """
         page_info_obj = summary_result.get("page_information")
         if not isinstance(page_info_obj, dict) or not page_info_obj:
@@ -64,6 +70,8 @@ class PageNumberProcessor:
         page_number_type = "none"
         page_types = ["content"]
         is_genuinely_unnumbered = True
+        is_two_page_spread = False
+        page_number_integer_end: int | None = None
 
         if isinstance(page_info_obj, dict) and page_info_obj:
             # New schema format with page_information object
@@ -87,7 +95,34 @@ class PageNumberProcessor:
             if is_genuinely_unnumbered:
                 page_number_type = "none"
 
-        return model_page_num, page_number_type, page_types, is_genuinely_unnumbered
+            is_two_page_spread = bool(page_info_obj.get("is_two_page_spread", False))
+            page_number_integer_end = page_info_obj.get("page_number_integer_end")
+
+        # Normalize the end page number against the spread flag.
+        if is_two_page_spread and isinstance(model_page_num, int):
+            expected_end = model_page_num + 1
+            if (
+                isinstance(page_number_integer_end, int)
+                and page_number_integer_end != expected_end
+            ):
+                logger.debug(
+                    "Spread end page %s != start+1 (%s); normalizing to %s",
+                    page_number_integer_end,
+                    expected_end,
+                    expected_end,
+                )
+            page_number_integer_end = expected_end
+        elif not is_two_page_spread:
+            page_number_integer_end = None
+
+        return (
+            model_page_num,
+            page_number_type,
+            page_types,
+            is_genuinely_unnumbered,
+            is_two_page_spread,
+            page_number_integer_end,
+        )
 
     def find_longest_consecutive_sequence(
         self, summaries_with_pages: list[dict[str, Any]]
@@ -111,13 +146,18 @@ class PageNumberProcessor:
             # Start a new sequence or add to current if consecutive
             if not current_sequence:
                 current_sequence = [item]
-            elif (
+                continue
+
+            prev = current_sequence[-1]
+            prev_span = prev.get("span", 1)
+            is_consecutive = (
                 item["model_page_number_int"]
-                == current_sequence[-1]["model_page_number_int"] + 1
-                and item["original_input_order_index"]
-                == current_sequence[-1]["original_input_order_index"] + 1
-            ):
-                # Both page number and document position are consecutive
+                == prev["model_page_number_int"] + prev_span
+                and item["virtual_pos"] == prev["virtual_pos"] + prev_span
+            )
+            if is_consecutive:
+                # Page number and virtual document position both advance by the
+                # previous item's span (2 for a spread, 1 for a single page).
                 current_sequence.append(item)
             else:
                 # End of sequence, check if it's longer than our longest
@@ -133,20 +173,23 @@ class PageNumberProcessor:
         return longest_sequence
 
     def calculate_adjusted_page_number(
-        self, original_index: int, anchor_model_page: int, anchor_original_index: int
+        self, virtual_pos: int, anchor_model_page: int, anchor_virtual_pos: int
     ) -> int:
         """
         Calculate adjusted page number based on anchor point.
 
+        Uses document-wide virtual page positions (which account for two-page
+        spreads occupying two page slots) rather than raw input indices.
+
         Args:
-            original_index: Original position in document.
+            virtual_pos: Virtual page position of the page being adjusted.
             anchor_model_page: Model-detected page number at anchor.
-            anchor_original_index: Original position of anchor.
+            anchor_virtual_pos: Virtual page position of the anchor.
 
         Returns:
             Adjusted page number.
         """
-        offset = original_index - anchor_original_index
+        offset = virtual_pos - anchor_virtual_pos
         adjusted_page = anchor_model_page + offset
         return adjusted_page
 
@@ -188,6 +231,9 @@ class PageNumberProcessor:
             prev_page = sorted_summaries[i - 1]
             next_page = sorted_summaries[i + 1]
 
+            prev_span = prev_page.get("span", 1)
+            current_span = current.get("span", 1)
+
             # Both surrounding pages must be numbered with the same type
             if (
                 prev_page["page_number_type"] == page_type
@@ -201,17 +247,22 @@ class PageNumberProcessor:
                 == current["original_input_order_index"] - 1
                 and next_page["original_input_order_index"]
                 == current["original_input_order_index"] + 1
-                # Page numbers must indicate a single-page gap
+                # Page numbers must indicate a single-image gap. The next page's
+                # number equals the previous page's number plus the spans of the
+                # previous image and the current (possibly spread) image.
                 and next_page["model_page_number_int"]
-                == prev_page["model_page_number_int"] + 2
+                == prev_page["model_page_number_int"] + prev_span + current_span
             ):
-                inferred_page = prev_page["model_page_number_int"] + 1
+                inferred_page = prev_page["model_page_number_int"] + prev_span
 
                 if inferred_page >= 1 and inferred_page not in claimed_pages:
                     current["model_page_number_int"] = inferred_page
                     current["page_number_type"] = page_type
                     current["is_genuinely_unnumbered"] = False
                     claimed_pages.add(inferred_page)
+                    if current_span == 2:
+                        # A spread also occupies the following page slot.
+                        claimed_pages.add(inferred_page + 1)
                     inferred_count += 1
                     logger.info(
                         f"Inferred {page_type} page {inferred_page} for unnumbered "
@@ -252,21 +303,24 @@ class PageNumberProcessor:
             parsed_summaries, key=lambda x: x["original_input_order_index"]
         )
 
-        # Build sets of already-claimed page numbers to avoid conflicts
-        claimed_arabic_pages = {
-            s["model_page_number_int"]
-            for s in sorted_summaries
-            if s["page_number_type"] == "arabic"
-            and s["model_page_number_int"] is not None
-            and not s["is_genuinely_unnumbered"]
-        }
-        claimed_roman_pages = {
-            s["model_page_number_int"]
-            for s in sorted_summaries
-            if s["page_number_type"] == "roman"
-            and s["model_page_number_int"] is not None
-            and not s["is_genuinely_unnumbered"]
-        }
+        # Build sets of already-claimed page numbers to avoid conflicts. A spread
+        # claims both the start slot and the following (start + 1) slot.
+        def _claimed_for_type(page_type: str) -> set[int]:
+            claimed: set[int] = set()
+            for s in sorted_summaries:
+                if (
+                    s["page_number_type"] == page_type
+                    and s["model_page_number_int"] is not None
+                    and not s["is_genuinely_unnumbered"]
+                ):
+                    start = s["model_page_number_int"]
+                    claimed.add(start)
+                    if s.get("span", 1) == 2:
+                        claimed.add(start + 1)
+            return claimed
+
+        claimed_arabic_pages = _claimed_for_type("arabic")
+        claimed_roman_pages = _claimed_for_type("roman")
 
         inferred_count = 0
 
@@ -320,7 +374,7 @@ class PageNumberProcessor:
                 (sorted by doc order).
 
         Returns:
-            Tuple of (anchor_page_number, anchor_document_index)
+            Tuple of (anchor_page_number, anchor_virtual_pos)
             or (None, None) if no anchor.
         """
         if not section_pages:
@@ -344,14 +398,14 @@ class PageNumberProcessor:
             anchor_item = longest_seq[0]
             return (
                 anchor_item["model_page_number_int"],
-                anchor_item["original_input_order_index"],
+                anchor_item["virtual_pos"],
             )
         elif numbered_pages:
             # Fallback to first numbered page
             anchor_item = numbered_pages[0]
             return (
                 anchor_item["model_page_number_int"],
-                anchor_item["original_input_order_index"],
+                anchor_item["virtual_pos"],
             )
 
         return None, None
@@ -381,9 +435,14 @@ class PageNumberProcessor:
         # Parse page information from all summaries
         parsed_summaries = []
         for r in summary_results:
-            model_page_num, page_num_type, page_types, is_unnumbered = (
-                self.parse_page_information(r)
-            )
+            (
+                model_page_num,
+                page_num_type,
+                page_types,
+                is_unnumbered,
+                is_spread,
+                page_num_end,
+            ) = self.parse_page_information(r)
             primary_section = self._get_primary_section_type(page_types)
             parsed_summaries.append(
                 {
@@ -394,11 +453,23 @@ class PageNumberProcessor:
                     "primary_section": primary_section,
                     "data": r,
                     "is_genuinely_unnumbered": is_unnumbered,
+                    "is_two_page_spread": is_spread,
+                    "page_number_integer_end": page_num_end,
+                    # A two-page spread occupies two page slots.
+                    "span": 2 if is_spread else 1,
                 }
             )
 
         # Sort by document order for sequential processing
         parsed_summaries.sort(key=lambda x: x["original_input_order_index"])
+
+        # Compute a document-wide virtual page position per summary: the sum of
+        # the spans of all earlier images in document order. Spreads advance the
+        # position by two so anchor offsets stay aligned across them.
+        cumulative = 0
+        for p in parsed_summaries:
+            p["virtual_pos"] = cumulative
+            cumulative += p["span"]
 
         # Group pages by section type
         section_groups: dict[str, list[dict[str, Any]]] = {}
@@ -418,12 +489,12 @@ class PageNumberProcessor:
         for section, pages in section_groups.items():
             # Sort section pages by document order
             pages.sort(key=lambda x: x["original_input_order_index"])
-            anchor_page, anchor_index = self._find_section_anchor(pages)
-            section_anchors[section] = (anchor_page, anchor_index)
+            anchor_page, anchor_virtual_pos = self._find_section_anchor(pages)
+            section_anchors[section] = (anchor_page, anchor_virtual_pos)
             if anchor_page is not None:
                 logger.info(
                     f"Section '{section}' anchor: page {anchor_page} "
-                    f"at document index {anchor_index}"
+                    f"at virtual position {anchor_virtual_pos}"
                 )
             else:
                 logger.info(f"Section '{section}': no valid anchor found")
@@ -438,12 +509,11 @@ class PageNumberProcessor:
             )
 
         # Apply per-section page number adjustment
-        final_ordered_summaries = []
         for p in parsed_summaries:
-            original_index = p["original_input_order_index"]
             page_num_type = p["page_number_type"]
             content_page_types = p["page_types"]
             primary_section = p["primary_section"]
+            is_spread = p["is_two_page_spread"]
             data = p["data"]
 
             # Ensure page_information exists at top level (flat structure)
@@ -456,47 +526,72 @@ class PageNumberProcessor:
                     "page_types": content_page_types,
                 }
 
+            page_info = data["page_information"]
+            # Spread-ness is a physical property of the scan; preserve it even
+            # when the page ends up unnumbered so rendering can label it.
+            page_info["is_two_page_spread"] = is_spread
+
             # Get section anchor
-            anchor_page, anchor_index = section_anchors.get(
+            anchor_page, anchor_virtual_pos = section_anchors.get(
                 primary_section, (None, None)
             )
 
+            resolved_page: int | None
             if p["is_genuinely_unnumbered"]:
                 # Genuinely unnumbered page - keep as unnumbered
-                data["page_information"]["page_number_integer"] = None
-                data["page_information"]["page_number_type"] = "none"
-            elif anchor_page is not None and anchor_index is not None:
+                resolved_page = None
+                page_info["page_number_integer"] = None
+                page_info["page_number_type"] = "none"
+            elif anchor_page is not None and anchor_virtual_pos is not None:
                 # Calculate adjusted page number using section anchor
                 adjusted_page = self.calculate_adjusted_page_number(
-                    original_index, anchor_page, anchor_index
+                    p["virtual_pos"], anchor_page, anchor_virtual_pos
                 )
                 if adjusted_page < 1:
                     # Invalid page number - mark as unnumbered
-                    data["page_information"]["page_number_integer"] = None
-                    data["page_information"]["page_number_type"] = "none"
+                    resolved_page = None
+                    page_info["page_number_integer"] = None
+                    page_info["page_number_type"] = "none"
                 else:
-                    data["page_information"]["page_number_integer"] = adjusted_page
+                    resolved_page = adjusted_page
+                    page_info["page_number_integer"] = adjusted_page
                     # Preserve original number type (roman/arabic) from model
-                    data["page_information"]["page_number_type"] = (
+                    page_info["page_number_type"] = (
                         page_num_type if page_num_type != "none" else "arabic"
                     )
             else:
-                # No anchor available - use index-based fallback (1-indexed)
-                adjusted_page = original_index + 1
-                data["page_information"]["page_number_integer"] = adjusted_page
-                data["page_information"]["page_number_type"] = (
+                # No anchor available - use virtual-position fallback (1-indexed)
+                resolved_page = p["virtual_pos"] + 1
+                page_info["page_number_integer"] = resolved_page
+                page_info["page_number_type"] = (
                     page_num_type if page_num_type != "none" else "arabic"
                 )
 
+            # Record the spread end page (right page) when numbered.
+            if is_spread and resolved_page is not None:
+                page_info["page_number_integer_end"] = resolved_page + 1
+            else:
+                page_info["page_number_integer_end"] = None
+
             # Preserve page_types from the model
-            data["page_information"]["page_types"] = content_page_types
+            page_info["page_types"] = content_page_types
 
-            final_ordered_summaries.append(data)
+        # Order sections by the MEDIAN original input index of their pages so a
+        # single misclassified straggler cannot reorder a whole section; break
+        # ties by the section's minimum index. Within a section, keep physical
+        # scan order (original_input_order_index).
+        section_rank: dict[str, tuple[float, int]] = {}
+        for section, pages in section_groups.items():
+            indices = [p["original_input_order_index"] for p in pages]
+            section_rank[section] = (median(indices), min(indices))
 
-        # Sort by original input order to preserve document sequence
-        final_ordered_summaries.sort(
-            key=lambda x: x.get("original_input_order_index", float("inf"))
+        parsed_summaries.sort(
+            key=lambda p: (
+                section_rank[p["primary_section"]],
+                p["original_input_order_index"],
+            )
         )
+        final_ordered_summaries = [p["data"] for p in parsed_summaries]
 
         # Log final page number distribution for debugging
         page_nums = [

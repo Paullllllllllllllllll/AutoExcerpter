@@ -821,3 +821,292 @@ class TestAdjustAndSortPageNumbers:
             page_info = result[i]["page_information"]
             assert page_info["page_number_type"] == "arabic"
             assert page_info["page_number_integer"] == i - 5
+
+
+class TestSpreadParsing:
+    """Tests for two-page-spread parsing and normalization."""
+
+    @pytest.fixture
+    def processor(self) -> PageNumberProcessor:
+        return PageNumberProcessor()
+
+    def _result(
+        self,
+        page_number: int | None,
+        is_spread: bool,
+        page_end: int | None,
+        page_type: str = "arabic",
+    ) -> dict[str, Any]:
+        return {
+            "original_input_order_index": 0,
+            "page_information": {
+                "page_number_integer": page_number,
+                "is_two_page_spread": is_spread,
+                "page_number_integer_end": page_end,
+                "page_number_type": page_type,
+                "page_types": ["content"],
+            },
+        }
+
+    def test_spread_end_normalized_to_start_plus_one(self, processor) -> None:
+        """A spread with a wrong model end is normalized to start + 1."""
+        result = self._result(11, True, 99)
+        page, _ptype, _ptypes, unnum, spread, end = processor.parse_page_information(
+            result
+        )
+        assert page == 11
+        assert spread is True
+        assert end == 12
+        assert unnum is False
+
+    def test_spread_missing_end_derived(self, processor) -> None:
+        """A spread with a null end derives start + 1."""
+        result = self._result(11, True, None)
+        _page, _ptype, _ptypes, _unnum, spread, end = processor.parse_page_information(
+            result
+        )
+        assert spread is True
+        assert end == 12
+
+    def test_non_spread_forces_end_none(self, processor) -> None:
+        """A non-spread page never carries an end number."""
+        result = self._result(11, False, 12)
+        _page, _ptype, _ptypes, _unnum, spread, end = processor.parse_page_information(
+            result
+        )
+        assert spread is False
+        assert end is None
+
+    def test_missing_spread_flag_defaults_false(self, processor) -> None:
+        """Legacy page_information without the spread flag defaults to single."""
+        result = {
+            "original_input_order_index": 0,
+            "page_information": {
+                "page_number_integer": 5,
+                "page_number_type": "arabic",
+                "page_types": ["content"],
+            },
+        }
+        _page, _ptype, _ptypes, _unnum, spread, end = processor.parse_page_information(
+            result
+        )
+        assert spread is False
+        assert end is None
+
+    def test_unnumbered_spread_end_none(self, processor) -> None:
+        """An unnumbered spread has no start and no end but keeps the flag."""
+        result = self._result(None, True, None, page_type="none")
+        page, _ptype, _ptypes, unnum, spread, end = processor.parse_page_information(
+            result
+        )
+        assert page is None
+        assert unnum is True
+        assert spread is True
+        assert end is None
+
+
+class TestSpreadConsecutiveSequence:
+    """Tests for span-aware longest-consecutive-sequence detection."""
+
+    @pytest.fixture
+    def processor(self) -> PageNumberProcessor:
+        return PageNumberProcessor()
+
+    def test_spread_inside_sequence(self, processor) -> None:
+        """A spread advances page number and virtual position by two."""
+        items = [
+            {
+                "model_page_number_int": 10,
+                "virtual_pos": 0,
+                "span": 1,
+                "original_input_order_index": 0,
+            },
+            {
+                "model_page_number_int": 11,
+                "virtual_pos": 1,
+                "span": 2,
+                "original_input_order_index": 1,
+            },
+            {
+                "model_page_number_int": 13,
+                "virtual_pos": 3,
+                "span": 1,
+                "original_input_order_index": 2,
+            },
+        ]
+        seq = processor.find_longest_consecutive_sequence(items)
+        assert [it["model_page_number_int"] for it in seq] == [10, 11, 13]
+
+    def test_spread_break_when_not_advancing_by_span(self, processor) -> None:
+        """A page that does not honor the previous spread's span breaks the run."""
+        items = [
+            {
+                "model_page_number_int": 10,
+                "virtual_pos": 0,
+                "span": 2,
+                "original_input_order_index": 0,
+            },
+            # Advances by 1 rather than the spread's span of 2 -> breaks.
+            {
+                "model_page_number_int": 11,
+                "virtual_pos": 1,
+                "span": 1,
+                "original_input_order_index": 1,
+            },
+            {
+                "model_page_number_int": 12,
+                "virtual_pos": 2,
+                "span": 1,
+                "original_input_order_index": 2,
+            },
+        ]
+        seq = processor.find_longest_consecutive_sequence(items)
+        # Longest run is the trailing [11, 12] pair.
+        assert [it["model_page_number_int"] for it in seq] == [11, 12]
+
+
+class TestSpreadAdjustment:
+    """Tests for anchor adjustment and gap inference across spreads."""
+
+    @pytest.fixture
+    def processor(self) -> PageNumberProcessor:
+        return PageNumberProcessor()
+
+    def _spread(
+        self,
+        original_index: int,
+        page_number: int | None,
+        page_end: int | None,
+        is_spread: bool,
+        page_type: str = "arabic",
+        page_types: list[str] | None = None,
+    ) -> dict[str, Any]:
+        if page_types is None:
+            page_types = ["content"]
+        return {
+            "original_input_order_index": original_index,
+            "page_information": {
+                "page_number_integer": page_number,
+                "is_two_page_spread": is_spread,
+                "page_number_integer_end": page_end,
+                "page_number_type": page_type,
+                "page_types": page_types,
+            },
+            "bullet_points": ["bp"],
+        }
+
+    def test_anchor_adjustment_across_spread(self, processor) -> None:
+        """Pages 10, [11-12 spread], 13 stay consistent after adjustment."""
+        summary_results = [
+            self._spread(0, 10, None, False),
+            self._spread(1, 11, 12, True),
+            self._spread(2, 13, None, False),
+        ]
+
+        result = processor.adjust_and_sort_page_numbers(summary_results)
+
+        assert result[0]["page_information"]["page_number_integer"] == 10
+        assert result[0]["page_information"]["page_number_integer_end"] is None
+        assert result[0]["page_information"]["is_two_page_spread"] is False
+
+        spread_info = result[1]["page_information"]
+        assert spread_info["page_number_integer"] == 11
+        assert spread_info["page_number_integer_end"] == 12
+        assert spread_info["is_two_page_spread"] is True
+
+        assert result[2]["page_information"]["page_number_integer"] == 13
+        assert result[2]["page_information"]["page_number_integer_end"] is None
+
+    def test_anchor_realigns_wrong_spread_start(self, processor) -> None:
+        """A spread with a wrong model start is corrected by the section anchor."""
+        summary_results = [
+            self._spread(0, 10, None, False),
+            self._spread(1, 11, None, False),
+            self._spread(2, 12, None, False),
+            # Model mislabeled this spread's start as 99; anchor should fix to 13.
+            self._spread(3, 99, 100, True),
+            self._spread(4, 15, None, False),
+        ]
+
+        result = processor.adjust_and_sort_page_numbers(summary_results)
+
+        spread_info = result[3]["page_information"]
+        assert spread_info["page_number_integer"] == 13
+        assert spread_info["page_number_integer_end"] == 14
+        assert result[4]["page_information"]["page_number_integer"] == 15
+
+    def test_gap_inference_around_spread(self, processor) -> None:
+        """An unnumbered spread between 5 and 8 is inferred as 6 (occupying 6-7)."""
+        parsed_summaries: list[dict[str, Any]] = [
+            {
+                "original_input_order_index": 0,
+                "model_page_number_int": 5,
+                "page_number_type": "arabic",
+                "page_types": ["content"],
+                "is_genuinely_unnumbered": False,
+                "span": 1,
+                "data": {},
+            },
+            {
+                "original_input_order_index": 1,
+                "model_page_number_int": None,
+                "page_number_type": "none",
+                "page_types": ["content"],
+                "is_genuinely_unnumbered": True,
+                "span": 2,
+                "data": {},
+            },
+            {
+                "original_input_order_index": 2,
+                "model_page_number_int": 8,
+                "page_number_type": "arabic",
+                "page_types": ["content"],
+                "is_genuinely_unnumbered": False,
+                "span": 1,
+                "data": {},
+            },
+        ]
+
+        result = processor.infer_unnumbered_page_numbers(parsed_summaries)
+
+        assert result == 1
+        assert parsed_summaries[1]["model_page_number_int"] == 6
+        assert parsed_summaries[1]["is_genuinely_unnumbered"] is False
+
+
+class TestSectionMedianOrdering:
+    """Tests for section-median final ordering."""
+
+    @pytest.fixture
+    def processor(self) -> PageNumberProcessor:
+        return PageNumberProcessor()
+
+    def _page(self, original_index: int, page_types: list[str]) -> dict[str, Any]:
+        return {
+            "original_input_order_index": original_index,
+            "page_information": {
+                "page_number_integer": None,
+                "is_two_page_spread": False,
+                "page_number_integer_end": None,
+                "page_number_type": "none",
+                "page_types": page_types,
+            },
+            "bullet_points": ["bp"],
+        }
+
+    def test_straggler_grouped_with_section(self, processor) -> None:
+        """A straggler page groups with its section, keeping in-section scan order.
+
+        Appendix pages sit mostly at indices 10-12 with a single straggler at
+        index 0. The section median (10.5) keeps appendix ordered AFTER content
+        (median 5), even though a min-based rank would wrongly float appendix
+        first. In-section scan order is preserved.
+        """
+        summary_results = [self._page(0, ["appendix"])]
+        summary_results += [self._page(i, ["content"]) for i in range(1, 10)]
+        summary_results += [self._page(i, ["appendix"]) for i in range(10, 13)]
+
+        result = processor.adjust_and_sort_page_numbers(summary_results)
+
+        order = [r["original_input_order_index"] for r in result]
+        assert order == [1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 10, 11, 12]

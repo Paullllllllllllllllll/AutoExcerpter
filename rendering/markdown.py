@@ -7,10 +7,11 @@ from pathlib import Path
 from typing import Any
 
 from config.logger import setup_logger
-from rendering.citations import CitationManager, _format_page_range, enrich_if_enabled
+from rendering.citations import CitationManager, enrich_if_enabled
 from rendering.summary import (
     PAGE_TYPE_LABELS,
     STRUCTURE_PAGE_TYPE_ORDER,
+    format_structure_page_range,
     prepare_summary_data,
     sanitize_for_xml,
 )
@@ -78,7 +79,7 @@ def create_markdown_summary(
             pages = page_type_pages.get(pt, [])
             if pages:
                 label = PAGE_TYPE_LABELS.get(pt, pt.replace("_", " ").title())
-                page_range = _format_page_range(pages)
+                page_range = format_structure_page_range(pages)
                 lines.append(f"- **{label}**: {page_range}")
 
         lines.append("")

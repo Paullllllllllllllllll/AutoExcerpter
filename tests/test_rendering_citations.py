@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+import time
+from collections.abc import Generator
 from typing import Any
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from rendering.citations import (
     Citation,
     CitationManager,
+    _is_budget_exhausted,
+    _mark_budget_exhausted,
+    _reset_budget_state_for_tests,
 )
 
 
@@ -387,3 +394,247 @@ class TestCitationManagerAPIRequest:
             # Should not make API call
             mock_get.assert_not_called()
             assert result == {"cached": True}
+
+
+@pytest.fixture(autouse=True)
+def _reset_openalex_budget_latch() -> Generator[None]:
+    """Clear the module-level budget latch around every test.
+
+    The ``config.state`` dir is already isolated per test by the autouse
+    ``_isolate_state_dir`` fixture in ``conftest.py`` (so no real state files are
+    touched); this fixture additionally clears the in-memory latch so exhaustion
+    set by one test never leaks into the next.
+    """
+    _reset_budget_state_for_tests()
+    yield
+    _reset_budget_state_for_tests()
+
+
+def _mock_429(retry_after: Any = None, header: str | None = None) -> MagicMock:
+    """Build a MagicMock 429 response with an optional body/header retry-after."""
+    resp = MagicMock()
+    resp.status_code = 429
+    resp.json.return_value = {} if retry_after is None else {"retryAfter": retry_after}
+    resp.headers = {} if header is None else {"Retry-After": header}
+    return resp
+
+
+def _mock_200(payload: dict[str, Any]) -> MagicMock:
+    """Build a MagicMock 200 response returning *payload* from ``.json()``."""
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.json.return_value = payload
+    return resp
+
+
+class TestRetryAfterParsing:
+    """Tests for _parse_retry_after (body preferred, header fallback)."""
+
+    def test_prefers_body_over_header(self) -> None:
+        """A JSON-body retryAfter wins over the Retry-After header."""
+        resp = MagicMock()
+        resp.headers = {"Retry-After": "999"}
+        assert CitationManager._parse_retry_after({"retryAfter": 7}, resp) == 7
+
+    def test_falls_back_to_header(self) -> None:
+        """Retry-After header is used when the body lacks retryAfter."""
+        resp = MagicMock()
+        resp.headers = {"Retry-After": "12"}
+        assert CitationManager._parse_retry_after({}, resp) == 12
+
+    def test_ignores_date_format_header(self) -> None:
+        """A date-format Retry-After header is treated as unknown (0)."""
+        resp = MagicMock()
+        resp.headers = {"Retry-After": "Wed, 21 Oct 2015 07:28:00 GMT"}
+        assert CitationManager._parse_retry_after({}, resp) == 0
+
+    def test_missing_everywhere_returns_zero(self) -> None:
+        """No body field and no header yields 0."""
+        resp = MagicMock()
+        resp.headers = {}
+        assert CitationManager._parse_retry_after({}, resp) == 0
+
+
+class TestOpenAlexBudgetLatch:
+    """Tests for the process-wide + cross-run daily-budget exhaustion latch."""
+
+    def test_large_retry_after_latches_and_persists(self) -> None:
+        """429 with a large retryAfter sets the instance flag, the module latch,
+        and persists the state file."""
+        manager = CitationManager()
+
+        with patch("rendering.citations.requests.get", return_value=_mock_429(3600)):
+            result = manager._make_openalex_request(
+                "https://api.openalex.org/works", {}, "ctx"
+            )
+
+        assert result is None
+        assert manager._openalex_budget_exhausted is True
+        assert _is_budget_exhausted() is True
+
+        # State file was written with a future timestamp.
+        from config.state import read_json, resolve_state_file
+
+        data = read_json(resolve_state_file("openalex_budget.json"))
+        assert "exhausted_until" in data
+        assert data["exhausted_until"] > time.time()
+
+    def test_cache_served_after_exhaustion_without_http(self) -> None:
+        """After exhaustion, enrichment still serves persistent-cache hits and
+        makes zero further HTTP calls."""
+        manager = CitationManager()
+        manager.add_citations(["Alpha, A. (2001). Cached Work One. Some Press."], 1)
+        manager.add_citations(["Beta, B. (2002). Uncached Work Two. Other Press."], 2)
+        keys = list(manager.citations.keys())
+        manager._persistent_cache[keys[0]] = {
+            "doi": "10.1/one",
+            "url": "https://doi.org/10.1/one",
+            "title": "Cached Work One",
+        }
+
+        _mark_budget_exhausted(3600)
+
+        with patch("rendering.citations.requests.get") as mock_get:
+            manager.enrich_with_metadata(max_requests=10)
+            mock_get.assert_not_called()
+
+        cached = manager.citations.get(keys[0])
+        assert cached is not None
+        assert cached.metadata is not None
+        assert cached.doi == "10.1/one"
+
+    def test_new_manager_no_http_while_latched(self) -> None:
+        """A fresh CitationManager in the same process makes no API calls while
+        the latch is active."""
+        _mark_budget_exhausted(3600)
+
+        manager = CitationManager()
+        manager.add_citations(["Gamma, G. (2003). Work with DOI 10.1234/gamma."], 1)
+
+        with patch("rendering.citations.requests.get") as mock_get:
+            manager.enrich_with_metadata(max_requests=10)
+            mock_get.assert_not_called()
+
+    def test_expired_latch_allows_requests(self) -> None:
+        """A past exhausted_until (pre-written state file) allows API calls."""
+        from config.state import resolve_state_file, write_json_atomic
+
+        write_json_atomic(
+            resolve_state_file("openalex_budget.json"),
+            {"exhausted_until": time.time() - 100},
+        )
+        # Force a re-read of the (now stale) state file.
+        _reset_budget_state_for_tests()
+        assert _is_budget_exhausted() is False
+
+        manager = CitationManager()
+        manager.add_citations(["Delta, D. (2004). Work with DOI 10.1234/delta."], 1)
+
+        work = {
+            "title": "Delta Work",
+            "doi": "https://doi.org/10.1234/delta",
+            "publication_year": 2004,
+            "authorships": [],
+            "primary_location": {},
+        }
+        with patch(
+            "rendering.citations.requests.get", return_value=_mock_200(work)
+        ) as mock_get:
+            manager.enrich_with_metadata(max_requests=10)
+            mock_get.assert_called()
+
+
+class TestOpenAlexRateLimitRetry:
+    """Tests for short-retryAfter sleep-and-retry behavior."""
+
+    def test_small_retry_after_sleeps_and_retries(self) -> None:
+        """429 with a small retryAfter sleeps then retries within the loop."""
+        manager = CitationManager()
+        seq = [_mock_429(5), _mock_200({"results": []})]
+
+        with (
+            patch(
+                "rendering.citations.requests.get",
+                side_effect=lambda *a, **k: seq.pop(0),
+            ) as mock_get,
+            patch("rendering.citations.time.sleep") as mock_sleep,
+        ):
+            result = manager._make_openalex_request(
+                "https://api.openalex.org/works", {}, "ctx"
+            )
+
+        assert result == {"results": []}
+        assert mock_get.call_count == 2
+        mock_sleep.assert_any_call(5)
+
+    def test_small_retry_after_from_header_retries(self) -> None:
+        """A short Retry-After header (body empty) also triggers sleep-retry."""
+        manager = CitationManager()
+        seq = [_mock_429(header="3"), _mock_200({"ok": True})]
+
+        with (
+            patch(
+                "rendering.citations.requests.get",
+                side_effect=lambda *a, **k: seq.pop(0),
+            ),
+            patch("rendering.citations.time.sleep") as mock_sleep,
+        ):
+            result = manager._make_openalex_request(
+                "https://api.openalex.org/works", {}, "ctx"
+            )
+
+        assert result == {"ok": True}
+        mock_sleep.assert_any_call(3)
+
+    def test_medium_retry_after_skips_without_latch(self) -> None:
+        """A retryAfter between the sleep ceiling and the budget threshold skips
+        the citation but does not latch the budget."""
+        manager = CitationManager()
+
+        with patch(
+            "rendering.citations.requests.get", return_value=_mock_429(120)
+        ) as mock_get:
+            result = manager._make_openalex_request(
+                "https://api.openalex.org/works", {}, "ctx"
+            )
+
+        assert result is None
+        assert mock_get.call_count == 1
+        assert manager._openalex_budget_exhausted is False
+        assert _is_budget_exhausted() is False
+
+
+class TestEnrichMaxRequestsContinues:
+    """Tests that max_requests no longer breaks the enrichment loop."""
+
+    def test_max_requests_continues_and_serves_later_cache_hits(self) -> None:
+        """Reaching max_requests must not stop later citations from getting
+        their persistent-cache hits."""
+        manager = CitationManager()
+        manager.add_citations(["Aaa, A. (2001). First Uncached. Press."], 1)
+        manager.add_citations(["Bbb, B. (2002). Second Uncached. Press."], 2)
+        manager.add_citations(["Ccc, C. (2003). Third Cached. Press."], 3)
+        keys = list(manager.citations.keys())
+        manager._persistent_cache[keys[2]] = {
+            "doi": None,
+            "url": None,
+            "title": "Third Cached",
+        }
+
+        fetch_calls: list[str] = []
+
+        def fake_fetch(text: str) -> None:
+            fetch_calls.append(text)
+            return None
+
+        with patch.object(
+            manager, "_fetch_metadata_from_openalex", side_effect=fake_fetch
+        ):
+            manager.enrich_with_metadata(max_requests=1)
+
+        # Only the first citation consumed the single allowed request; the
+        # second (a cache miss past the cap) was skipped, not a hard break.
+        assert len(fetch_calls) == 1
+        third = manager.citations.get(keys[2])
+        assert third is not None
+        assert third.metadata is not None

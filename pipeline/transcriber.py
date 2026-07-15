@@ -322,6 +322,8 @@ class ItemTranscriber:
             "page": page_number if page_number is not None else 0,
             "page_information": {
                 "page_number_integer": page_number,
+                "is_two_page_spread": False,
+                "page_number_integer_end": None,
                 "page_number_type": page_number_type,
                 "page_types": page_types,
             },

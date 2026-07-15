@@ -1,4 +1,4 @@
-# AutoExcerpter v1.23.0
+# AutoExcerpter v1.24.0
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -70,7 +70,9 @@ wrapping).
 **Summarization:**
 bullet-point summaries per page; automatic exclusion of
 non-semantic pages (title pages, blanks, reference lists);
-page-number tracking from document headers/footers; dual output
+page-number tracking from document headers/footers, including
+two-page-spread scans rendered as page ranges ("Pages 13-14");
+section-grouped page ordering in the final summary; dual output
 (DOCX + Markdown); hierarchical context system for topic-focused
 summarization.
 
@@ -560,7 +562,11 @@ clears `match_title_overlap` AND a corroborating signal matches (publication
 year within +/-1 of a cited year, or the candidate author surname appears in
 the citation) -- preferring no link over a wrong one. Every OpenAlex request
 counts against `max_api_requests`, and results are cached across runs in the
-state directory.
+state directory. When OpenAlex signals daily-quota exhaustion (a 429 with a
+long `retryAfter`), enrichment latches off process-wide and across runs
+(`openalex_budget.json` in the state directory) until the quota window
+passes; remaining citations are still served from the persistent cache, and
+short rate-limit waits are slept through and retried.
 
 ### State Directory
 
@@ -771,6 +777,26 @@ v1.0.0 do not exist.
 
 ## Changelog
 
+- **v1.24.0** (15 July 2026) -- Page-spread support, section-grouped summary
+    ordering, and OpenAlex quota hardening. The summary schema
+    (`Summary_2_2_0`) gains `is_two_page_spread` and
+    `page_number_integer_end`; two facing pages scanned as one image are now
+    detected, transcribed left page first with both page numbers tagged, and
+    rendered as a page range ("Pages 13-14" / "Pages xii-xiii"), with
+    citations and Document Structure entries attributed to both pages. Page
+    numbering is spread-aware end to end: anchors, offsets, and gap inference
+    operate on document-wide virtual page positions (a spread occupies two
+    slots). The final summary now groups each section's pages together
+    (sections ordered by median document position, scan order preserved
+    within a section), and the Document Structure section renders
+    Roman-numbered front matter as Roman numerals ("pp. iii-xii, 100-105")
+    instead of colliding with Arabic page numbers. OpenAlex daily-quota
+    exhaustion (429 with a long `retryAfter`) now latches enrichment off
+    process-wide and across runs via `openalex_budget.json` in the state
+    directory, remaining citations are still served from the persistent
+    cache instead of being skipped, short rate-limit waits (<= 30 s) are
+    slept through and retried, and the standard `Retry-After` header is
+    honored as a fallback.
 - **v1.23.0** (12 July 2026) -- Bug-fix release closing five defects found in
     an automated audit. The per-key pool cap is now enforced for the summary
     role on the fresh-page path: when the summary stamp resolves to a

@@ -6,6 +6,7 @@ Instructions:
 - Provide a transcription whenever possible, even if the content is partially illegible or difficult to read.
 - Only set transcription_not_possible or no_transcribable_text to true if the page is completely empty or entirely untranscribable.
 - Transcribe only what's visible on the image; do not hallucinate.
+- If the image is a two-page spread, transcribe the left page fully first, then the right page, and tag BOTH page numbers with <page_number> tags.
 
 Formula handling:
 - Enclose ALL mathematical formulas in $$ delimiters (e.g., $$E = mc^2$$, $$\int_a^b f(x)dx$$).

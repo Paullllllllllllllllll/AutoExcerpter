@@ -18,7 +18,9 @@ from rendering.summary import (
     _is_meaningful_summary,
     _page_information,
     format_page_heading,
+    format_structure_page_range,
     int_to_roman,
+    prepare_summary_data,
     sanitize_for_xml,
 )
 
@@ -887,3 +889,116 @@ class TestCreateMarkdownSummary:
         content = output_path.read_text(encoding="utf-8")
         # Unnumbered page should be filtered out
         assert "## Page 1" in content
+
+
+class TestFormatPageHeadingSpread:
+    """Tests for format_page_heading with two-page spreads."""
+
+    def test_arabic_spread(self) -> None:
+        """Arabic spread renders a page range."""
+        result = format_page_heading(
+            12, "arabic", ["content"], False, page_number_end=13, is_spread=True
+        )
+        assert result == "Pages 12-13"
+
+    def test_roman_spread(self) -> None:
+        """Roman spread renders a roman page range."""
+        result = format_page_heading(
+            12, "roman", ["content"], False, page_number_end=13, is_spread=True
+        )
+        assert result == "Pages xii-xiii"
+
+    def test_unnumbered_spread(self) -> None:
+        """Unnumbered spread renders the spread placeholder."""
+        result = format_page_heading(
+            "?", "none", ["content"], True, page_number_end=None, is_spread=True
+        )
+        assert result == "[Unnumbered spread]"
+
+    def test_spread_missing_end_derived(self) -> None:
+        """Spread without an explicit end derives start + 1."""
+        result = format_page_heading(12, "arabic", ["content"], False, is_spread=True)
+        assert result == "Pages 12-13"
+
+    def test_spread_keeps_type_prefix(self) -> None:
+        """Type prefixes are preserved for spreads."""
+        result = format_page_heading(
+            12, "roman", ["preface"], False, page_number_end=13, is_spread=True
+        )
+        assert result == "[Preface] Pages xii-xiii"
+
+    def test_single_page_unaffected(self) -> None:
+        """Single pages keep their existing behavior."""
+        assert format_page_heading(5, "arabic", ["content"], False) == "Page 5"
+
+
+class TestFormatStructurePageRange:
+    """Tests for format_structure_page_range."""
+
+    def test_empty(self) -> None:
+        """No entries yields an empty string."""
+        assert format_structure_page_range([]) == ""
+
+    def test_single_arabic(self) -> None:
+        """A single arabic page uses the singular prefix."""
+        assert format_structure_page_range([(5, "arabic")]) == "p. 5"
+
+    def test_single_roman(self) -> None:
+        """A single roman page renders as a roman numeral."""
+        assert format_structure_page_range([(3, "roman")]) == "p. iii"
+
+    def test_roman_before_arabic(self) -> None:
+        """Roman front matter is listed before arabic pages, each compacted."""
+        entries = [
+            (12, "roman"),
+            (11, "roman"),
+            (100, "arabic"),
+            (101, "arabic"),
+            (102, "arabic"),
+        ]
+        assert format_structure_page_range(entries) == "pp. xi-xii, 100-102"
+
+    def test_roman_and_arabic_page_twelve_do_not_collide(self) -> None:
+        """Roman xii and arabic 12 render distinctly rather than merging."""
+        entries = [(12, "roman"), (12, "arabic")]
+        assert format_structure_page_range(entries) == "pp. xii, 12"
+
+    def test_spread_pages_included(self) -> None:
+        """Both spread page numbers are compacted into the range."""
+        entries = [(12, "arabic"), (13, "arabic"), (14, "arabic")]
+        assert format_structure_page_range(entries) == "pp. 12-14"
+
+
+class TestPrepareSummaryDataSpread:
+    """Tests for prepare_summary_data handling of spreads."""
+
+    def test_spread_records_both_pages_and_citations(self) -> None:
+        """A numbered spread records both pages in structure and citations."""
+        from rendering.citations import CitationManager
+
+        cm = CitationManager()
+        summary_results = [
+            {
+                "page_information": {
+                    "page_number_integer": 12,
+                    "is_two_page_spread": True,
+                    "page_number_integer_end": 13,
+                    "page_number_type": "arabic",
+                    "page_types": ["content", "bibliography"],
+                },
+                "bullet_points": ["A point"],
+                "references": ["Author (2020). Title."],
+            }
+        ]
+
+        data = prepare_summary_data(summary_results, cm)
+
+        assert (12, "arabic") in data.page_type_pages["bibliography"]
+        assert (13, "arabic") in data.page_type_pages["bibliography"]
+
+        citations = list(cm.citations.values())
+        assert len(citations) == 1
+        assert citations[0].pages == {12, 13}
+
+        assert data.page_render_items[0].heading_text == "Pages 12-13"
+        assert data.page_render_items[0].is_spread is True

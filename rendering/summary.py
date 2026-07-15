@@ -99,10 +99,12 @@ def _page_information(summary_data: dict[str, Any]) -> dict[str, Any]:
 
     Returns dict with:
         - page_number_integer: The numeric page number (or "?" if null/missing)
+        - page_number_end: The right-page number for a two-page spread (or None)
         - page_number_type: 'roman', 'arabic', or 'none'
         - page_types: List of content classifications (content, bibliography, etc.)
         - is_unnumbered: Boolean flag derived from page_number_type == 'none' or
           null integer
+        - is_spread: Boolean flag for two-page-spread scans
     """
     page_info = summary_data.get("page_information", {})
 
@@ -118,24 +120,37 @@ def _page_information(summary_data: dict[str, Any]) -> dict[str, Any]:
         elif not isinstance(page_types, list) or not page_types:
             page_types = ["content"]
 
+        is_spread = bool(page_info.get("is_two_page_spread", False))
+        page_end = page_info.get("page_number_integer_end")
+        if not is_spread:
+            page_end = None
+
         is_unnumbered = page_num_type == "none" or page_int is None
         if is_unnumbered:
             page_num_type = "none"
             page_int = "?"
+            page_end = None
+        elif is_spread and not isinstance(page_end, int) and isinstance(page_int, int):
+            # Numbered spread missing an explicit end: derive it.
+            page_end = page_int + 1
 
         return {
             "page_number_integer": page_int,
+            "page_number_end": page_end,
             "page_number_type": page_num_type,
             "page_types": page_types,
             "is_unnumbered": is_unnumbered,
+            "is_spread": is_spread,
         }
 
     page_val = summary_data.get("page", "?")
     return {
         "page_number_integer": page_val,
+        "page_number_end": None,
         "page_number_type": "arabic",
         "page_types": ["content"],
         "is_unnumbered": False,
+        "is_spread": False,
     }
 
 
@@ -227,6 +242,8 @@ class PageRenderData:
     is_unnumbered: bool
     bullet_points: list[str]
     heading_text: str
+    page_number_end: int | None = None
+    is_spread: bool = False
 
 
 @dataclass
@@ -235,13 +252,15 @@ class SummaryData:
 
     Attributes:
         filtered_results: Summary results after filtering empty pages.
-        page_type_pages: Mapping from structure page type to list of page numbers.
+        page_type_pages: Mapping from structure page type to a list of
+            ``(page_number, numbering_type)`` tuples, where numbering_type is
+            'roman' or 'arabic'. Two-page spreads contribute both page numbers.
         content_page_count: Number of pages with bullet-renderable content.
         page_render_items: Per-page rendering data (only pages with bullets).
     """
 
     filtered_results: list[dict[str, Any]]
-    page_type_pages: dict[str, list[int]]
+    page_type_pages: dict[str, list[tuple[int, str]]]
     content_page_count: int
     page_render_items: list[PageRenderData] = field(default_factory=list)
 
@@ -270,7 +289,9 @@ def prepare_summary_data(
             len(summary_results) - len(filtered_results),
         )
 
-    page_type_pages: dict[str, list[int]] = {pt: [] for pt in STRUCTURE_PAGE_TYPE_ORDER}
+    page_type_pages: dict[str, list[tuple[int, str]]] = {
+        pt: [] for pt in STRUCTURE_PAGE_TYPE_ORDER
+    }
     page_render_items: list[PageRenderData] = []
     content_page_count = 0
 
@@ -278,21 +299,33 @@ def prepare_summary_data(
         summary_payload = _extract_summary_payload(result)
         page_info = _page_information(summary_payload)
         page_number = page_info["page_number_integer"]
+        page_end = page_info["page_number_end"]
+        page_num_type = page_info["page_number_type"]
+        is_spread = page_info["is_spread"]
         page_types = page_info["page_types"]
         references = summary_payload.get("references") or []
 
-        if references:
-            # Include citations on unnumbered pages (page_number is "?"): they
-            # are recorded with page=None and rendered as "unnumbered" rather
-            # than silently discarded.
-            citation_manager.add_citations(
-                references,
-                page_number if isinstance(page_number, int) else None,
-            )
-
+        # Collect the integer page number(s) this scan covers (both for spreads).
+        numbered_pages: list[int] = []
         if isinstance(page_number, int):
+            numbered_pages.append(page_number)
+            if is_spread and isinstance(page_end, int):
+                numbered_pages.append(page_end)
+
+        if references:
+            # Include citations on unnumbered pages (recorded with page=None and
+            # rendered as "unnumbered") rather than silently discarding them. For
+            # a numbered spread, record the references against both pages; the
+            # citation manager deduplicates per page.
+            if numbered_pages:
+                for pg in numbered_pages:
+                    citation_manager.add_citations(references, pg)
+            else:
+                citation_manager.add_citations(references, None)
+
+        for pg in numbered_pages:
             for pt in _get_structure_types(page_types):
-                page_type_pages[pt].append(page_number)
+                page_type_pages[pt].append((pg, page_num_type))
 
         # Track content pages and build render data
         if _should_render_bullets(page_types):
@@ -301,18 +334,22 @@ def prepare_summary_data(
             if bullet_points:
                 heading = format_page_heading(
                     page_number,
-                    page_info["page_number_type"],
+                    page_num_type,
                     page_types,
                     page_info["is_unnumbered"],
+                    page_number_end=page_end,
+                    is_spread=is_spread,
                 )
                 page_render_items.append(
                     PageRenderData(
                         page_number=page_number,
-                        page_number_type=page_info["page_number_type"],
+                        page_number_type=page_num_type,
                         page_types=page_types,
                         is_unnumbered=page_info["is_unnumbered"],
                         bullet_points=bullet_points,
                         heading_text=heading,
+                        page_number_end=page_end,
+                        is_spread=is_spread,
                     )
                 )
 
@@ -354,11 +391,14 @@ def format_page_heading(
     page_number_type: str,
     page_types: list[str],
     is_unnumbered: bool,
+    page_number_end: int | None = None,
+    is_spread: bool = False,
 ) -> str:
     """Format page heading text based on page_types and numbering.
 
     Returns bare heading text (no markdown prefix). Writers add their own
-    format-specific prefix (e.g. ``## `` for Markdown).
+    format-specific prefix (e.g. ``## `` for Markdown). Two-page spreads render
+    a page range ("Pages 12-13" / "Pages xii-xiii") or "[Unnumbered spread]".
     """
     type_prefix = ""
     if "abstract" in page_types and "content" not in page_types:
@@ -370,6 +410,18 @@ def format_page_heading(
     elif "figures_tables_sources" in page_types:
         type_prefix = "[Figures/Tables] "
 
+    if is_spread:
+        if (
+            page_number_type == "none"
+            or is_unnumbered
+            or not isinstance(page_number, int)
+        ):
+            return f"{type_prefix}[Unnumbered spread]"
+        end = page_number_end if isinstance(page_number_end, int) else page_number + 1
+        if page_number_type == "roman":
+            return f"{type_prefix}Pages {int_to_roman(page_number)}-{int_to_roman(end)}"
+        return f"{type_prefix}Pages {page_number}-{end}"
+
     if page_number_type == "roman" and isinstance(page_number, int):
         roman_str = int_to_roman(page_number)
         return f"{type_prefix}Page {roman_str}"
@@ -377,6 +429,54 @@ def format_page_heading(
         return f"{type_prefix}[Unnumbered page]"
     else:
         return f"{type_prefix}Page {page_number}"
+
+
+def _compact_int_ranges(nums: list[int]) -> list[tuple[int, int]]:
+    """Return inclusive ``(start, end)`` ranges of consecutive integers."""
+    ordered = sorted(set(nums))
+    ranges: list[tuple[int, int]] = []
+    start = end = ordered[0]
+    for n in ordered[1:]:
+        if n == end + 1:
+            end = n
+        else:
+            ranges.append((start, end))
+            start = end = n
+    ranges.append((start, end))
+    return ranges
+
+
+def format_structure_page_range(entries: list[tuple[int, str]]) -> str:
+    """Format Document Structure page entries as a compact range string.
+
+    Each entry is ``(page_number, numbering_type)`` where numbering_type is
+    'roman' or 'arabic'. Roman (front-matter) pages are rendered first as
+    lowercase Roman numerals, then Arabic pages, e.g. ``"pp. iii-xii, 100-105"``.
+    Consecutive integers are compacted within each numbering system.
+    """
+    if not entries:
+        return ""
+
+    roman_nums = sorted({n for n, t in entries if t == "roman"})
+    arabic_nums = sorted({n for n, t in entries if t != "roman"})
+
+    parts: list[str] = []
+    if roman_nums:
+        for start, end in _compact_int_ranges(roman_nums):
+            if start == end:
+                parts.append(int_to_roman(start))
+            else:
+                parts.append(f"{int_to_roman(start)}-{int_to_roman(end)}")
+    if arabic_nums:
+        for start, end in _compact_int_ranges(arabic_nums):
+            if start == end:
+                parts.append(str(start))
+            else:
+                parts.append(f"{start}-{end}")
+
+    total = len(roman_nums) + len(arabic_nums)
+    prefix = "p." if total == 1 else "pp."
+    return f"{prefix} {', '.join(parts)}"
 
 
 # ============================================================================

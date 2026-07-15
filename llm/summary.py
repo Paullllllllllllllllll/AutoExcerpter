@@ -182,6 +182,8 @@ class SummaryManager(LLMClientBase):
             "page": page_num,
             "page_information": {
                 "page_number_integer": page_num,
+                "is_two_page_spread": False,
+                "page_number_integer_end": None,
                 "page_number_type": "arabic",
                 "page_types": page_types,
             },
@@ -232,6 +234,8 @@ class SummaryManager(LLMClientBase):
         ):
             summary_json["page_information"] = {
                 "page_number_integer": page_num,
+                "is_two_page_spread": False,
+                "page_number_integer_end": None,
                 "page_number_type": "arabic",
                 "page_types": ["content"],
             }
@@ -246,6 +250,10 @@ class SummaryManager(LLMClientBase):
                 )
             if "page_types" not in page_info:
                 page_info["page_types"] = ["content"]
+            if "is_two_page_spread" not in page_info:
+                page_info["is_two_page_spread"] = False
+            if "page_number_integer_end" not in page_info:
+                page_info["page_number_integer_end"] = None
 
     def _validate_summary_schema(self, raw_text: str) -> tuple[bool, str]:
         """Validate that *raw_text* is valid JSON with required summary keys.
