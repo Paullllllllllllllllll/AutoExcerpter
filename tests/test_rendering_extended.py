@@ -38,7 +38,9 @@ from rendering.docx import (
     add_formatted_text_to_paragraph,
     add_hyperlink,
     create_docx_summary,
+    parse_markdown_emphasis,
     sanitize_omml_xml,
+    strip_markdown_emphasis,
 )
 from rendering.markdown import create_markdown_summary
 from rendering.summary import (
@@ -495,7 +497,7 @@ class TestCreateDocxSummary:
         """create_docx_summary calls Document and saves to output_path."""
         output_path = tmp_path / "summary.docx"
         mock_doc = MagicMock()
-        mock_doc.styles = {"Normal": MagicMock()}
+        mock_doc.styles = MagicMock()
         mock_doc_class.return_value = mock_doc
 
         mock_cm = MagicMock()
@@ -526,7 +528,7 @@ class TestCreateDocxSummary:
         """Empty results still produce a valid document."""
         output_path = tmp_path / "summary.docx"
         mock_doc = MagicMock()
-        mock_doc.styles = {"Normal": MagicMock()}
+        mock_doc.styles = MagicMock()
         mock_doc_class.return_value = mock_doc
 
         mock_cm = MagicMock()
@@ -552,7 +554,7 @@ class TestCreateDocxSummary:
         """References section is added when citations are present."""
         output_path = tmp_path / "summary.docx"
         mock_doc = MagicMock()
-        mock_doc.styles = {"Normal": MagicMock()}
+        mock_doc.styles = MagicMock()
         mock_doc_class.return_value = mock_doc
 
         mock_config.CITATION_OPENALEX_EMAIL = "test@test.com"
@@ -597,7 +599,7 @@ class TestCreateDocxSummary:
         """Bibliography pages contribute to the Document Structure section."""
         output_path = tmp_path / "summary.docx"
         mock_doc = MagicMock()
-        mock_doc.styles = {"Normal": MagicMock()}
+        mock_doc.styles = MagicMock()
         mock_doc_class.return_value = mock_doc
 
         mock_cm = MagicMock()
@@ -695,7 +697,8 @@ class TestCreateMarkdownSummaryExtended:
         create_markdown_summary(summary_results, output_path, "Test")
 
         content = output_path.read_text(encoding="utf-8")
-        assert "## [Appendix] Page 100" in content
+        assert "### [Appendix] Page 100" in content
+        assert "## Page Summaries" in content
 
     @patch("rendering.markdown.CitationManager")
     def test_figures_tables_page_heading(self, mock_cm_class, tmp_path: Path) -> None:
@@ -917,3 +920,217 @@ class TestFilterEmptyPages:
     def test_empty_input(self) -> None:
         """Empty input returns empty output."""
         assert filter_empty_pages([]) == []
+
+
+# ============================================================================
+# Markdown layout structure (restyled writer)
+# ============================================================================
+class TestMarkdownStructure:
+    """Structural assertions for the restyled Markdown writer."""
+
+    def test_h1_without_summary_prefix_and_page_grouping(self, tmp_path: Path) -> None:
+        """H1 is the bare document name; pages are grouped under Page Summaries."""
+        output_path = tmp_path / "summary.md"
+        summary_results = [
+            {
+                "page_information": {
+                    "page_number_integer": 1,
+                    "page_number_type": "arabic",
+                    "page_types": ["content"],
+                },
+                "bullet_points": ["Point A"],
+                "references": [],
+            }
+        ]
+
+        create_markdown_summary(summary_results, output_path, "Doc Name")
+
+        content = output_path.read_text(encoding="utf-8")
+        assert content.startswith("# Doc Name")
+        assert "# Summary of" not in content
+        assert "## Page Summaries" in content
+        assert "### Page 1" in content
+        # No horizontal rule when there are no references.
+        assert "\n---\n" not in content
+
+    @patch("rendering.markdown.CitationManager")
+    def test_single_rule_only_before_references(
+        self, mock_cm_class, tmp_path: Path
+    ) -> None:
+        """Exactly one horizontal rule appears, fencing the references block."""
+        output_path = tmp_path / "summary.md"
+
+        citation = MagicMock()
+        citation.raw_text = "Author (2020). Title."
+        citation.url = None
+        citation.doi = None
+        citation.metadata = {}
+
+        mock_cm = MagicMock()
+        mock_cm.citations = {"k": citation}
+        mock_cm.get_citations_with_pages.return_value = [(citation, "p. 1")]
+        mock_cm_class.return_value = mock_cm
+
+        summary_results = [
+            {
+                "page_information": {
+                    "page_number_integer": 1,
+                    "page_number_type": "arabic",
+                    "page_types": ["content", "bibliography"],
+                },
+                "bullet_points": ["Point A"],
+                "references": ["Author (2020). Title."],
+            }
+        ]
+
+        create_markdown_summary(summary_results, output_path, "Doc")
+
+        content = output_path.read_text(encoding="utf-8")
+        assert content.count("\n---\n") == 1
+        rule_idx = content.index("\n---\n")
+        assert content.index("## Document Structure") < rule_idx
+        assert rule_idx < content.index("## Consolidated References")
+
+
+# ============================================================================
+# create_docx_summary (real, non-mocked smoke test)
+# ============================================================================
+class TestCreateDocxSummarySmoke:
+    """Real DOCX rendering: write to disk and reopen to verify core styling."""
+
+    def test_docx_styles_geometry_and_footer(self, tmp_path: Path) -> None:
+        """A written document carries the expected Normal style, A4 geometry,
+        2 cm margins, a page-number footer, and a prefix-free title."""
+        from docx import Document
+        from docx.shared import Pt
+
+        output_path = tmp_path / "summary.docx"
+        summary_results = [
+            {
+                "page_information": {
+                    "page_number_integer": 12,
+                    "page_number_type": "arabic",
+                    "page_types": ["content"],
+                },
+                "bullet_points": [
+                    "First insight.",
+                    "Second insight with $x + y$.",
+                ],
+                "references": [],
+            }
+        ]
+
+        create_docx_summary(summary_results, output_path, "Sample Document")
+
+        assert output_path.exists()
+
+        doc = Document(str(output_path))
+
+        # Normal style: Times New Roman 11 pt.
+        normal = doc.styles["Normal"]
+        assert normal.font.name == "Times New Roman"
+        assert normal.font.size == Pt(11)
+
+        # A4 geometry with uniform 2 cm margins.
+        section = doc.sections[0]
+        assert section.page_width is not None
+        assert section.page_height is not None
+        assert section.top_margin is not None
+        assert section.bottom_margin is not None
+        assert section.left_margin is not None
+        assert section.right_margin is not None
+        assert round(section.page_width.cm, 1) == 21.0
+        assert round(section.page_height.cm, 1) == 29.7
+        assert round(section.top_margin.cm, 1) == 2.0
+        assert round(section.bottom_margin.cm, 1) == 2.0
+        assert round(section.left_margin.cm, 1) == 2.0
+        assert round(section.right_margin.cm, 1) == 2.0
+
+        # Footer carries a PAGE field.
+        footer_xml = section.footer.paragraphs[0]._p.xml
+        assert "PAGE" in footer_xml
+
+        # Title present without the legacy "Summary of" prefix.
+        paragraph_texts = [p.text for p in doc.paragraphs]
+        assert "Sample Document" in paragraph_texts
+        assert all(not t.startswith("Summary of") for t in paragraph_texts)
+
+        # Heading styles pin an explicit face and carry no theme-font attrs, so
+        # Word/LibreOffice render them in Times New Roman rather than the theme
+        # major font (Calibri/Carlito).
+        from docx.oxml.ns import qn
+
+        for style_name in ("Title", "Heading 1", "Heading 2"):
+            rpr = doc.styles[style_name].element.get_or_add_rPr()
+            rfonts = rpr.find(qn("w:rFonts"))
+            assert rfonts is not None, f"{style_name} has no rFonts"
+            assert rfonts.get(qn("w:ascii")) == "Times New Roman"
+            assert rfonts.get(qn("w:hAnsi")) == "Times New Roman"
+            for theme_attr in ("asciiTheme", "hAnsiTheme", "eastAsiaTheme", "cstheme"):
+                assert rfonts.get(qn(f"w:{theme_attr}")) is None, (
+                    f"{style_name} retains w:{theme_attr}"
+                )
+
+    def test_citation_markdown_emphasis_rendered_as_runs(
+        self, tmp_path: Path
+    ) -> None:
+        """Markdown emphasis in citation text becomes italic/bold runs, not
+        literal asterisks."""
+        from docx import Document
+
+        output_path = tmp_path / "summary.docx"
+        summary_results = [
+            {
+                "page_information": {
+                    "page_number_integer": 5,
+                    "page_number_type": "arabic",
+                    "page_types": ["content"],
+                },
+                "bullet_points": ["A point."],
+                "references": [
+                    "North, D. C. (1997). Cliometrics. "
+                    "*The American Economic Review, 87*(2), 412-414."
+                ],
+            }
+        ]
+
+        create_docx_summary(summary_results, output_path, "Doc")
+
+        doc = Document(str(output_path))
+        ref_paragraph = next(
+            p for p in doc.paragraphs if "American Economic Review" in p.text
+        )
+        assert "*" not in ref_paragraph.text
+        italic_text = "".join(
+            run.text for run in ref_paragraph.runs if run.italic
+        )
+        assert "The American Economic Review, 87" in italic_text
+
+
+class TestMarkdownEmphasisHelpers:
+    """parse_markdown_emphasis / strip_markdown_emphasis edge cases."""
+
+    def test_parse_mixed_emphasis(self) -> None:
+        segments = parse_markdown_emphasis("a *b* c **d** e")
+        assert segments == [
+            ("text", "a "),
+            ("italic", "b"),
+            ("text", " c "),
+            ("bold", "d"),
+            ("text", " e"),
+        ]
+
+    def test_parse_plain_text_passthrough(self) -> None:
+        assert parse_markdown_emphasis("no emphasis") == [("text", "no emphasis")]
+
+    def test_parse_empty_string(self) -> None:
+        assert parse_markdown_emphasis("") == [("text", "")]
+
+    def test_unbalanced_asterisk_left_verbatim(self) -> None:
+        assert parse_markdown_emphasis("87* (2)") == [("text", "87* (2)")]
+
+    def test_strip_markdown_emphasis(self) -> None:
+        assert (
+            strip_markdown_emphasis("*The Review, 87*(2) and **bold**")
+            == "The Review, 87(2) and bold"
+        )

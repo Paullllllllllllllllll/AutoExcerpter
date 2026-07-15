@@ -58,14 +58,16 @@ def create_markdown_summary(
 
     lines: list[str] = []
 
-    # === SECTION 1: Title ===
-    lines.append(f"# Summary of {sanitize_for_xml(document_name)}")
+    # === SECTION 1: Title + metadata ===
+    # The document name is the H1; the metadata line records that this is a
+    # generated summary (using middle dots as separators).
+    lines.append(f"# {sanitize_for_xml(document_name)}")
     lines.append("")
 
     lines.append(
-        f"*Processed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | "
-        f"Content pages: {data.content_page_count} | "
-        f"Total pages: {len(filtered_results)}*"
+        f"*Summary generated {datetime.now().strftime('%Y-%m-%d %H:%M')} "
+        f"· {data.content_page_count} content pages "
+        f"· {len(filtered_results)} total pages*"
     )
     lines.append("")
 
@@ -83,12 +85,16 @@ def create_markdown_summary(
                 lines.append(f"- **{label}**: {page_range}")
 
         lines.append("")
-        lines.append("---")
-        lines.append("")
 
     # === SECTION 3: Content Summaries ===
+    # Grouped under one H2 so the outline stays clean and collapsible; each page
+    # is an H3.
+    if data.page_render_items:
+        lines.append("## Page Summaries")
+        lines.append("")
+
     for page_item in data.page_render_items:
-        lines.append(f"## {page_item.heading_text}")
+        lines.append(f"### {page_item.heading_text}")
         lines.append("")
 
         for point in page_item.bullet_points:

@@ -642,7 +642,8 @@ class TestCreateMarkdownSummary:
         create_markdown_summary(summary_results, output_path, "My Test Doc")
 
         content = output_path.read_text(encoding="utf-8")
-        assert "# Summary of My Test Doc" in content
+        assert "# My Test Doc" in content
+        assert "# Summary of My Test Doc" not in content
 
     def test_contains_metadata(self, tmp_path) -> None:
         """Output contains processing metadata."""
@@ -662,8 +663,8 @@ class TestCreateMarkdownSummary:
         create_markdown_summary(summary_results, output_path, "Test")
 
         content = output_path.read_text(encoding="utf-8")
-        assert "*Processed:" in content
-        assert "Total pages: 1*" in content
+        assert "*Summary generated" in content
+        assert "1 total pages*" in content
 
     def test_contains_page_headings(self, tmp_path) -> None:
         """Output contains page headings."""
@@ -683,7 +684,8 @@ class TestCreateMarkdownSummary:
         create_markdown_summary(summary_results, output_path, "Test")
 
         content = output_path.read_text(encoding="utf-8")
-        assert "## Page 5" in content
+        assert "### Page 5" in content
+        assert "## Page Summaries" in content
 
     def test_contains_bullet_points(self, tmp_path) -> None:
         """Output contains bullet points."""
@@ -724,7 +726,7 @@ class TestCreateMarkdownSummary:
         create_markdown_summary(summary_results, output_path, "Test")
 
         content = output_path.read_text(encoding="utf-8")
-        assert "## Page iii" in content
+        assert "### Page iii" in content
 
     def test_filters_empty_pages(self, tmp_path) -> None:
         """Empty pages are filtered out."""
@@ -753,8 +755,8 @@ class TestCreateMarkdownSummary:
         create_markdown_summary(summary_results, output_path, "Test")
 
         content = output_path.read_text(encoding="utf-8")
-        assert "## Page 1" in content
-        assert "## Page 2" not in content
+        assert "### Page 1" in content
+        assert "### Page 2" not in content
 
     def test_preserves_latex_formulas(self, tmp_path) -> None:
         """LaTeX formulas are preserved in markdown."""
@@ -803,10 +805,10 @@ class TestCreateMarkdownSummary:
         create_markdown_summary(summary_results, output_path, "Test")
 
         content = output_path.read_text(encoding="utf-8")
-        assert "## Page 1" in content
-        assert "## Page 2" in content
+        assert "### Page 1" in content
+        assert "### Page 2" in content
         # Page 1 should come before Page 2
-        assert content.index("## Page 1") < content.index("## Page 2")
+        assert content.index("### Page 1") < content.index("### Page 2")
 
     def test_empty_results(self, tmp_path) -> None:
         """Empty results create minimal file."""
@@ -816,8 +818,8 @@ class TestCreateMarkdownSummary:
 
         assert output_path.exists()
         content = output_path.read_text(encoding="utf-8")
-        assert "# Summary of Empty Doc" in content
-        assert "Total pages: 0*" in content
+        assert "# Empty Doc" in content
+        assert "0 total pages*" in content
 
     @patch("rendering.markdown.CitationManager")
     def test_references_section_with_citations(
@@ -888,7 +890,7 @@ class TestCreateMarkdownSummary:
 
         content = output_path.read_text(encoding="utf-8")
         # Unnumbered page should be filtered out
-        assert "## Page 1" in content
+        assert "### Page 1" in content
 
 
 class TestFormatPageHeadingSpread:

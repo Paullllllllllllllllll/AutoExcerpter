@@ -48,14 +48,57 @@ ERROR_BASE_PENALTY_SECONDS = 0.5
 # ============================================================================
 # Document Formatting Constants
 # ============================================================================
+# Heading levels (python-docx built-in style indices, retained for structure).
 TITLE_HEADING_LEVEL = 0
 PAGE_HEADING_LEVEL = 1
 REFERENCES_HEADING_LEVEL = 2
+# Semantic heading levels used by the DOCX writer: section headings ("Document
+# Structure", "Consolidated References") map to Word's Heading 1, per-page item
+# headings ("Page 12") map to Heading 2.
+SECTION_HEADING_LEVEL = 1
+PAGE_ITEM_HEADING_LEVEL = 2
+
+# --- Page setup (centimeters, A4) ---
+PAGE_WIDTH_CM = 21.0
+PAGE_HEIGHT_CM = 29.7
+PAGE_MARGIN_CM = 2.0
+
+# --- Typography: font family and sizes (points) ---
+BODY_FONT_NAME = "Times New Roman"
+BODY_FONT_PT = 11.0
+TITLE_FONT_PT = 16.0
+METADATA_FONT_PT = 9.0
+SECTION_HEADING_FONT_PT = 13.0
+PAGE_HEADING_FONT_PT = 11.5
+BULLET_FONT_PT = 11.0
+REF_FONT_PT = 10.0
+REF_META_FONT_PT = 9.0
+FOOTER_FONT_PT = 9.0
+
+# --- Colors (0xRRGGBB, consumed by docx.shared.RGBColor) ---
+COLOR_BLACK = 0x000000
+COLOR_METADATA_GRAY = 0x595959
+COLOR_SECTION_RULE = 0xAAAAAA
+COLOR_PAGE_HEADING = 0x1F3864
+COLOR_REF_META_GRAY = 0x595959
+
+# --- Vertical spacing (points) ---
+BODY_SPACE_AFTER_PT = 4
 TITLE_SPACE_AFTER_PT = 6
-PAGE_HEADING_SPACE_BEFORE_PT = 6
-PAGE_HEADING_SPACE_AFTER_PT = 3
-REF_HEADING_SPACE_BEFORE_PT = 4
+SECTION_HEADING_SPACE_BEFORE_PT = 10
+SECTION_HEADING_SPACE_AFTER_PT = 4
+PAGE_HEADING_SPACE_BEFORE_PT = 8
+PAGE_HEADING_SPACE_AFTER_PT = 2
+REF_HEADING_SPACE_BEFORE_PT = 10
 BULLET_SPACE_AFTER_PT = 2
+REF_SPACE_AFTER_PT = 2
+
+# --- Indentation (centimeters) ---
+BULLET_LEFT_INDENT_CM = 0.5
+BULLET_HANGING_INDENT_CM = 0.25
+REF_HANGING_INDENT_CM = 0.5
+
+# --- Legacy indent constants (points), retained for compatibility ---
 REF_INDENT_PT = 18
 BULLET_INDENT_PT = 18
 
@@ -166,11 +209,36 @@ __all__ = [
     "TITLE_HEADING_LEVEL",
     "PAGE_HEADING_LEVEL",
     "REFERENCES_HEADING_LEVEL",
+    "PAGE_WIDTH_CM",
+    "PAGE_HEIGHT_CM",
+    "PAGE_MARGIN_CM",
+    "BODY_FONT_NAME",
+    "BODY_FONT_PT",
+    "TITLE_FONT_PT",
+    "METADATA_FONT_PT",
+    "SECTION_HEADING_FONT_PT",
+    "PAGE_HEADING_FONT_PT",
+    "BULLET_FONT_PT",
+    "REF_FONT_PT",
+    "REF_META_FONT_PT",
+    "FOOTER_FONT_PT",
+    "COLOR_BLACK",
+    "COLOR_METADATA_GRAY",
+    "COLOR_SECTION_RULE",
+    "COLOR_PAGE_HEADING",
+    "COLOR_REF_META_GRAY",
+    "BODY_SPACE_AFTER_PT",
     "TITLE_SPACE_AFTER_PT",
+    "SECTION_HEADING_SPACE_BEFORE_PT",
+    "SECTION_HEADING_SPACE_AFTER_PT",
     "PAGE_HEADING_SPACE_BEFORE_PT",
     "PAGE_HEADING_SPACE_AFTER_PT",
     "REF_HEADING_SPACE_BEFORE_PT",
     "BULLET_SPACE_AFTER_PT",
+    "REF_SPACE_AFTER_PT",
+    "BULLET_LEFT_INDENT_CM",
+    "BULLET_HANGING_INDENT_CM",
+    "REF_HANGING_INDENT_CM",
     "REF_INDENT_PT",
     "BULLET_INDENT_PT",
     # Working-log format

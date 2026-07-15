@@ -1,4 +1,4 @@
-# AutoExcerpter v1.24.0
+# AutoExcerpter v1.25.0
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -777,6 +777,19 @@ v1.0.0 do not exist.
 
 ## Changelog
 
+- **v1.25.0** (15 July 2026) -- Restyle both summary writers into dense
+    academic reference documents. The DOCX writer now applies explicit named
+    styles (Times New Roman throughout, with theme-font and theme-color
+    attributes stripped so Word cannot substitute Calibri), A4 geometry with
+    2 cm margins, a bottom-right page-number footer, a thin rule under
+    section headings, keep-with-next page headings in a restrained navy,
+    compact hanging-indent bullets, and a tighter references layout;
+    Markdown emphasis inside citation text is rendered as italic/bold runs
+    instead of literal asterisks. The Markdown writer drops the "Summary of"
+    title prefix, adds a compact metadata line, groups pages as H3 sections
+    under "Page Summaries", and fences references behind a single rule.
+    Verified end-to-end with a live gpt-5.6-luna run and visual inspection
+    of the rasterized output.
 - **v1.24.0** (15 July 2026) -- Page-spread support, section-grouped summary
     ordering, and OpenAlex quota hardening. The summary schema
     (`Summary_2_2_0`) gains `is_two_page_spread` and

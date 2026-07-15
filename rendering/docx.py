@@ -21,17 +21,42 @@ from docx import Document
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 from docx.oxml import OxmlElement, parse_xml
 from docx.oxml.ns import qn
-from docx.shared import Pt
+from docx.shared import Cm, Pt, RGBColor
 from latex2mathml.converter import convert as latex_to_mathml
 
 from config import app as config
 from config.constants import (
+    BODY_FONT_NAME,
+    BODY_FONT_PT,
+    BODY_SPACE_AFTER_PT,
+    BULLET_FONT_PT,
+    BULLET_HANGING_INDENT_CM,
+    BULLET_LEFT_INDENT_CM,
     BULLET_SPACE_AFTER_PT,
+    COLOR_BLACK,
+    COLOR_METADATA_GRAY,
+    COLOR_PAGE_HEADING,
+    COLOR_REF_META_GRAY,
+    COLOR_SECTION_RULE,
+    FOOTER_FONT_PT,
     MATH_NAMESPACE,
-    PAGE_HEADING_LEVEL,
+    METADATA_FONT_PT,
+    PAGE_HEADING_FONT_PT,
     PAGE_HEADING_SPACE_AFTER_PT,
     PAGE_HEADING_SPACE_BEFORE_PT,
-    REF_INDENT_PT,
+    PAGE_HEIGHT_CM,
+    PAGE_ITEM_HEADING_LEVEL,
+    PAGE_MARGIN_CM,
+    PAGE_WIDTH_CM,
+    REF_FONT_PT,
+    REF_HANGING_INDENT_CM,
+    REF_META_FONT_PT,
+    REF_SPACE_AFTER_PT,
+    SECTION_HEADING_FONT_PT,
+    SECTION_HEADING_LEVEL,
+    SECTION_HEADING_SPACE_AFTER_PT,
+    SECTION_HEADING_SPACE_BEFORE_PT,
+    TITLE_FONT_PT,
     TITLE_HEADING_LEVEL,
     TITLE_SPACE_AFTER_PT,
 )
@@ -548,6 +573,40 @@ def add_formatted_text_to_paragraph(paragraph: Any, text: str) -> None:
             paragraph.add_run(sanitize_for_xml(content))
 
 
+_MARKDOWN_EMPHASIS_PATTERN = re.compile(
+    r"\*\*(?P<bold>[^*]+)\*\*|\*(?P<italic>[^*]+)\*"
+)
+
+
+def parse_markdown_emphasis(text: str) -> list[tuple[str, str]]:
+    """Split text into ('text' | 'bold' | 'italic', content) segments.
+
+    Citation strings extracted by the LLM occasionally carry Markdown emphasis
+    (e.g. ``*The American Economic Review, 87*(2)``). The Markdown writer
+    renders these natively; the DOCX writer maps them to run formatting.
+    """
+    segments: list[tuple[str, str]] = []
+    last_end = 0
+    for match in _MARKDOWN_EMPHASIS_PATTERN.finditer(text):
+        if match.start() > last_end:
+            segments.append(("text", text[last_end : match.start()]))
+        if match.group("bold") is not None:
+            segments.append(("bold", match.group("bold")))
+        else:
+            segments.append(("italic", match.group("italic")))
+        last_end = match.end()
+    if last_end < len(text):
+        segments.append(("text", text[last_end:]))
+    return segments or [("text", text)]
+
+
+def strip_markdown_emphasis(text: str) -> str:
+    """Remove Markdown emphasis markers, keeping the emphasized text."""
+    return _MARKDOWN_EMPHASIS_PATTERN.sub(
+        lambda m: m.group("bold") or m.group("italic"), text
+    )
+
+
 def add_hyperlink(paragraph: Any, url: str, text: str) -> None:
     """Add a hyperlink to a paragraph in a DOCX document."""
     part = paragraph.part
@@ -570,6 +629,174 @@ def add_hyperlink(paragraph: Any, url: str, text: str) -> None:
     hyperlink.append(new_run)
 
     paragraph._p.append(hyperlink)
+
+
+def _rgb(color: int) -> RGBColor:
+    """Build an :class:`RGBColor` from a ``0xRRGGBB`` integer."""
+    return RGBColor((color >> 16) & 0xFF, (color >> 8) & 0xFF, color & 0xFF)
+
+
+def _set_east_asian_font(element: Any, name: str) -> None:
+    """Pin the East Asian font so Word does not substitute a different face.
+
+    Also strips the theme-font attributes that the built-in Title/Heading styles
+    carry on their ``w:rFonts`` element. Word and LibreOffice give ``*Theme``
+    attributes precedence over an explicit ``w:ascii``/``w:hAnsi`` face, so
+    without this the headings would render in the theme's major font (Calibri/
+    Carlito) instead of the requested body face. ``w:cs`` is set for
+    completeness so complex-script runs match too.
+    """
+    rpr = element.get_or_add_rPr()
+    rfonts = rpr.get_or_add_rFonts()
+    rfonts.set(qn("w:eastAsia"), name)
+    rfonts.set(qn("w:cs"), name)
+    for theme_attr in ("asciiTheme", "hAnsiTheme", "eastAsiaTheme", "cstheme"):
+        key = qn(f"w:{theme_attr}")
+        if rfonts.get(key) is not None:
+            del rfonts.attrib[key]
+
+
+def _style_font(
+    style: Any,
+    *,
+    size_pt: float,
+    bold: bool | None = None,
+    color: int | None = None,
+    name: str = BODY_FONT_NAME,
+) -> None:
+    """Apply an explicit font to a named style (never rely on docx defaults)."""
+    font = style.font
+    font.name = name
+    font.size = Pt(size_pt)
+    if bold is not None:
+        font.bold = bold
+    if color is not None:
+        font.color.rgb = _rgb(color)
+        # Strip inherited theme colors so the explicit RGB always wins in Word.
+        rpr = style.element.get_or_add_rPr()
+        color_el = rpr.find(qn("w:color"))
+        if color_el is not None:
+            for attr in ("themeColor", "themeTint", "themeShade"):
+                key = qn(f"w:{attr}")
+                if color_el.get(key) is not None:
+                    del color_el.attrib[key]
+    _set_east_asian_font(style.element, name)
+
+
+def _clear_style_borders(style: Any) -> None:
+    """Remove any paragraph border defined on a style (e.g. Title underline)."""
+    ppr = style.element.get_or_add_pPr()
+    for existing in ppr.findall(qn("w:pBdr")):
+        ppr.remove(existing)
+
+
+def _set_style_bottom_border(style: Any, color: int) -> None:
+    """Give a style a thin gray bottom border used as a visual section rule."""
+    ppr = style.element.get_or_add_pPr()
+    for existing in ppr.findall(qn("w:pBdr")):
+        ppr.remove(existing)
+    pbdr = OxmlElement("w:pBdr")
+    bottom = OxmlElement("w:bottom")
+    bottom.set(qn("w:val"), "single")
+    bottom.set(qn("w:sz"), "4")  # eighths of a point -> ~0.5 pt
+    bottom.set(qn("w:space"), "2")
+    bottom.set(qn("w:color"), f"{color:06X}")
+    pbdr.append(bottom)
+    ppr.append(pbdr)
+
+
+def _apply_document_styles(document: Any) -> None:
+    """Define the summary document's typography once, on named styles.
+
+    Sets Normal (body), Title, Heading 1 (section headings), Heading 2 (per-page
+    headings), and List Bullet so downstream paragraphs need no per-run
+    formatting. Concrete sizes, colors, and spacing live in ``config.constants``.
+    """
+    styles = document.styles
+
+    normal = styles["Normal"]
+    _style_font(normal, size_pt=BODY_FONT_PT, bold=False, color=COLOR_BLACK)
+    npf = normal.paragraph_format
+    npf.space_before = Pt(0)
+    npf.space_after = Pt(BODY_SPACE_AFTER_PT)
+    npf.line_spacing = 1.0
+    npf.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
+
+    title = styles["Title"]
+    _style_font(title, size_pt=TITLE_FONT_PT, bold=True, color=COLOR_BLACK)
+    _clear_style_borders(title)
+    tpf = title.paragraph_format
+    tpf.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+    tpf.space_before = Pt(0)
+    tpf.space_after = Pt(TITLE_SPACE_AFTER_PT)
+
+    section_heading = styles["Heading 1"]
+    _style_font(
+        section_heading,
+        size_pt=SECTION_HEADING_FONT_PT,
+        bold=True,
+        color=COLOR_BLACK,
+    )
+    _set_style_bottom_border(section_heading, COLOR_SECTION_RULE)
+    shp = section_heading.paragraph_format
+    shp.space_before = Pt(SECTION_HEADING_SPACE_BEFORE_PT)
+    shp.space_after = Pt(SECTION_HEADING_SPACE_AFTER_PT)
+    shp.keep_with_next = True
+
+    page_heading = styles["Heading 2"]
+    _style_font(
+        page_heading,
+        size_pt=PAGE_HEADING_FONT_PT,
+        bold=True,
+        color=COLOR_PAGE_HEADING,
+    )
+    php = page_heading.paragraph_format
+    php.space_before = Pt(PAGE_HEADING_SPACE_BEFORE_PT)
+    php.space_after = Pt(PAGE_HEADING_SPACE_AFTER_PT)
+    php.keep_with_next = True
+
+    bullet = styles["List Bullet"]
+    _style_font(bullet, size_pt=BULLET_FONT_PT, color=COLOR_BLACK)
+    bpf = bullet.paragraph_format
+    bpf.left_indent = Cm(BULLET_LEFT_INDENT_CM)
+    bpf.first_line_indent = -Cm(BULLET_HANGING_INDENT_CM)
+    bpf.space_before = Pt(0)
+    bpf.space_after = Pt(BULLET_SPACE_AFTER_PT)
+
+
+def _add_page_number_footer(section: Any) -> None:
+    """Add a bottom-right page-number field to a section footer."""
+    footer = section.footer
+    footer.is_linked_to_previous = False
+    paragraph = footer.paragraphs[0]
+    paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.RIGHT
+    run = paragraph.add_run()
+    run.font.name = BODY_FONT_NAME
+    run.font.size = Pt(FOOTER_FONT_PT)
+    _set_east_asian_font(run._r, BODY_FONT_NAME)
+
+    begin = OxmlElement("w:fldChar")
+    begin.set(qn("w:fldCharType"), "begin")
+    instr = OxmlElement("w:instrText")
+    instr.set(qn("xml:space"), "preserve")
+    instr.text = " PAGE "
+    end = OxmlElement("w:fldChar")
+    end.set(qn("w:fldCharType"), "end")
+    run._r.append(begin)
+    run._r.append(instr)
+    run._r.append(end)
+
+
+def _configure_page(document: Any) -> None:
+    """Apply A4 geometry, uniform margins, and a page-number footer."""
+    for section in document.sections:
+        section.page_width = Cm(PAGE_WIDTH_CM)
+        section.page_height = Cm(PAGE_HEIGHT_CM)
+        section.top_margin = Cm(PAGE_MARGIN_CM)
+        section.bottom_margin = Cm(PAGE_MARGIN_CM)
+        section.left_margin = Cm(PAGE_MARGIN_CM)
+        section.right_margin = Cm(PAGE_MARGIN_CM)
+        _add_page_number_footer(section)
 
 
 def create_docx_summary(
@@ -603,33 +830,32 @@ def create_docx_summary(
     page_type_pages = data.page_type_pages
 
     document = Document()
+    _apply_document_styles(document)
+    _configure_page(document)
 
-    normal_style = document.styles["Normal"]
-    normal_style.paragraph_format.space_before = Pt(0)
-    normal_style.paragraph_format.space_after = Pt(BULLET_SPACE_AFTER_PT)
-
-    # === SECTION 1: Title ===
-    title = document.add_heading(
-        f"Summary of {sanitize_for_xml(document_name)}", TITLE_HEADING_LEVEL
-    )
+    # === SECTION 1: Title + metadata ===
+    # The document name is the title (prominent); the metadata line records that
+    # this is a generated summary.
+    title = document.add_heading(sanitize_for_xml(document_name), TITLE_HEADING_LEVEL)
     title.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
-    title.paragraph_format.space_after = Pt(TITLE_SPACE_AFTER_PT)
 
     metadata = (
-        f"Processed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-        f" | Content pages: {data.content_page_count}"
-        f" | Total pages: {len(filtered_results)}"
+        f"Processed {datetime.now():%Y-%m-%d %H:%M}"
+        f" | {data.content_page_count} content pages"
+        f" | {len(filtered_results)} total pages"
     )
-    meta_paragraph = document.add_paragraph(metadata)
+    meta_paragraph = document.add_paragraph()
     meta_paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
     meta_paragraph.paragraph_format.space_after = Pt(TITLE_SPACE_AFTER_PT)
+    meta_run = meta_paragraph.add_run(metadata)
+    meta_run.font.name = BODY_FONT_NAME
+    meta_run.font.size = Pt(METADATA_FONT_PT)
+    meta_run.font.color.rgb = _rgb(COLOR_METADATA_GRAY)
 
     # === SECTION 2: Document Structure ===
     has_structure_info = any(pages for pages in page_type_pages.values())
     if has_structure_info:
-        struct_heading = document.add_heading("Document Structure", PAGE_HEADING_LEVEL)
-        struct_heading.paragraph_format.space_before = Pt(PAGE_HEADING_SPACE_BEFORE_PT)
-        struct_heading.paragraph_format.space_after = Pt(PAGE_HEADING_SPACE_AFTER_PT)
+        document.add_heading("Document Structure", SECTION_HEADING_LEVEL)
 
         for pt in STRUCTURE_PAGE_TYPE_ORDER:
             pages = page_type_pages.get(pt, [])
@@ -637,22 +863,16 @@ def create_docx_summary(
                 label = PAGE_TYPE_LABELS.get(pt, pt.replace("_", " ").title())
                 page_range = format_structure_page_range(pages)
                 struct_para = document.add_paragraph()
-                struct_para.paragraph_format.space_before = Pt(0)
-                struct_para.paragraph_format.space_after = Pt(BULLET_SPACE_AFTER_PT)
                 label_run = struct_para.add_run(f"{label}: ")
                 label_run.bold = True
                 struct_para.add_run(page_range)
 
     # === SECTION 3: Content Summaries ===
     for page_item in data.page_render_items:
-        page_heading = document.add_heading(page_item.heading_text, PAGE_HEADING_LEVEL)
-        page_heading.paragraph_format.space_before = Pt(PAGE_HEADING_SPACE_BEFORE_PT)
-        page_heading.paragraph_format.space_after = Pt(PAGE_HEADING_SPACE_AFTER_PT)
+        document.add_heading(page_item.heading_text, PAGE_ITEM_HEADING_LEVEL)
 
         for point in page_item.bullet_points:
             paragraph = document.add_paragraph(style="List Bullet")
-            paragraph.paragraph_format.space_before = Pt(0)
-            paragraph.paragraph_format.space_after = Pt(BULLET_SPACE_AFTER_PT)
             add_formatted_text_to_paragraph(paragraph, point)
 
     # === SECTION 4: Consolidated References ===
@@ -663,13 +883,7 @@ def create_docx_summary(
         )
 
         document.add_page_break()  # type: ignore[no-untyped-call]
-        ref_main_heading = document.add_heading(
-            "Consolidated References", TITLE_HEADING_LEVEL
-        )
-        ref_main_heading.paragraph_format.space_before = Pt(
-            PAGE_HEADING_SPACE_BEFORE_PT
-        )
-        ref_main_heading.paragraph_format.space_after = Pt(PAGE_HEADING_SPACE_AFTER_PT)
+        document.add_heading("Consolidated References", SECTION_HEADING_LEVEL)
 
         note_text = (
             "The following references were extracted from the document and "
@@ -677,31 +891,45 @@ def create_docx_summary(
             "pages where each citation appears. Where available, hyperlinks "
             "provide access to extended metadata via OpenAlex."
         )
-        note_paragraph = document.add_paragraph(note_text)
-        note_paragraph.paragraph_format.space_after = Pt(PAGE_HEADING_SPACE_AFTER_PT)
+        note_paragraph = document.add_paragraph()
+        note_run = note_paragraph.add_run(note_text)
+        note_run.italic = True
+        note_run.font.size = Pt(METADATA_FONT_PT)
+        note_run.font.color.rgb = _rgb(COLOR_METADATA_GRAY)
 
         citations_with_pages = citation_manager.get_citations_with_pages()
 
         for idx, (citation, page_range_str) in enumerate(citations_with_pages, start=1):
             ref_paragraph = document.add_paragraph()
-            ref_paragraph.paragraph_format.space_before = Pt(0)
-            ref_paragraph.paragraph_format.space_after = Pt(BULLET_SPACE_AFTER_PT)
-            ref_paragraph.paragraph_format.left_indent = Pt(REF_INDENT_PT)
-            ref_paragraph.paragraph_format.first_line_indent = Pt(-REF_INDENT_PT)
+            rpf = ref_paragraph.paragraph_format
+            rpf.left_indent = Cm(REF_HANGING_INDENT_CM)
+            rpf.first_line_indent = -Cm(REF_HANGING_INDENT_CM)
+            rpf.space_after = Pt(REF_SPACE_AFTER_PT)
 
             num_run = ref_paragraph.add_run(f"[{idx}] ")
             num_run.bold = True
+            num_run.font.size = Pt(REF_FONT_PT)
 
             citation_text = sanitize_for_xml(citation.raw_text)
 
             if citation.url:
-                add_hyperlink(ref_paragraph, citation.url, citation_text)
+                # A hyperlink is a single styled run; drop emphasis markers.
+                add_hyperlink(
+                    ref_paragraph, citation.url, strip_markdown_emphasis(citation_text)
+                )
             else:
-                ref_paragraph.add_run(citation_text)
+                for kind, content in parse_markdown_emphasis(citation_text):
+                    text_run = ref_paragraph.add_run(content)
+                    text_run.font.size = Pt(REF_FONT_PT)
+                    if kind == "italic":
+                        text_run.italic = True
+                    elif kind == "bold":
+                        text_run.bold = True
 
             if page_range_str:
                 page_run = ref_paragraph.add_run(f" ({page_range_str})")
                 page_run.italic = True
+                page_run.font.size = Pt(REF_FONT_PT)
 
             if citation.metadata:
                 meta_info_parts = []
@@ -714,8 +942,9 @@ def create_docx_summary(
 
                 if meta_info_parts:
                     meta_run = ref_paragraph.add_run(f" [{', '.join(meta_info_parts)}]")
-                    meta_run.font.size = Pt(9)
+                    meta_run.font.size = Pt(REF_META_FONT_PT)
                     meta_run.italic = True
+                    meta_run.font.color.rgb = _rgb(COLOR_REF_META_GRAY)
 
     document.save(str(output_path))
     logger.info("Summary document saved to %s", output_path)
