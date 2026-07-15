@@ -51,6 +51,11 @@ api_image_processing:
   low_max_side_px: 512         # Max dimension for 'low' profile
   high_target_box: [768, 1536] # [width, height] box for 'high' profile (with padding)
 
+  # Full-resolution ('original') detail caps (GPT-5.6 family, image_size: original):
+  # native resolution is preserved but bounded, aspect-preserving, no padding/upscaling.
+  original_max_side_px: 6000     # Cap longest side (px) for 'original' detail
+  original_max_pixels: 10240000  # Cap total pixel budget for 'original' detail
+
 
 # =============================================================================
 # Google Gemini API Image Processing
@@ -145,9 +150,12 @@ text_cleaning:
   # Repairs common OCR errors in mathematical notation
   latex_fixing:
     enabled: true
-    balance_dollar_signs: true   # Fix unbalanced $ and $$ delimiters
-    close_unclosed_braces: true  # Close orphan { in LaTeX commands
-    fix_common_commands: true    # Fix typos like "\frac {" -> "\frac{"
+    balance_dollar_signs: true       # Fix unbalanced $ and $$ delimiters
+    close_unclosed_braces: true      # Close orphan { in LaTeX commands
+    fix_common_commands: true        # Fix typos like "\frac {" -> "\frac{"
+    normalize_math_delimiters: true  # \(..\) -> $..$ and \[..\] -> $$..$$
+    balance_left_right: true         # Add \left./\right. for unmatched \left/\right (per $$ block)
+    convert_html_subsup: true        # X<sub>y</sub> -> $X_y$ / X<sup>y</sup> -> $X^y$ (outside math)
 
   # ---------------------------------------------------------------------------
   # Hyphenation Merging

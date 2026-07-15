@@ -1128,12 +1128,18 @@ class ItemTranscriber:
                 finalize_log_file(self.summary_log_path)
 
             source.close()
-            # Managers (and their provider SDK / httpx clients) are built per
-            # item; close them so connection pools do not leak across items.
+            # Managers are built per item; signal end-of-item teardown. The
+            # provider httpx clients are process-shared and must NOT be closed
+            # here (see LLMClientBase.close), so this is now effectively a
+            # debug-logging hook kept for lifecycle symmetry.
             self._close_managers()
 
     def _close_managers(self) -> None:
-        """Best-effort teardown of the per-item LLM managers' SDK clients."""
+        """Invoke each per-item manager's ``close`` (a documented no-op).
+
+        Retained for lifecycle symmetry and API compatibility;
+        ``LLMClientBase.close`` no longer touches the shared httpx clients.
+        """
         for manager in (
             getattr(self, "transcribe_manager", None),
             getattr(self, "summary_manager", None),

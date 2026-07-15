@@ -11,7 +11,7 @@ The text generally uses these formatting conventions (slight deviations are poss
 - Images/diagrams: Descriptions in square brackets, e.g., `[Image: diagram of a cell]`.
 
 Key rules:
-- Use the same language as the input text for the bullet points.
+- Write every bullet point in the ORIGINAL LANGUAGE of the document itself. Judge that language from the body prose of the transcription, never from author names, place names, titles, or passages quoted in another language. Keep the whole summary in that one language.
 - Do not hallucinate; stick to the input.
 - Enclose mathematical formulas in $$ delimiters.
 - Extract citations from ALL page types in APA style. If a page cites a work only by author and year (in-text citation) without full bibliographic details, set is_partial=true and record only what the page states (e.g. 'Conrad, A. H., & Meyer, J. R. (1957).') — never fabricate bracketed placeholder titles or descriptions. Set is_partial=false only for complete references (bibliography entries, full footnotes).

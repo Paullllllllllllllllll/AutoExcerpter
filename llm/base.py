@@ -25,9 +25,6 @@ This module provides the foundational LLM client implementation with:
 
 from __future__ import annotations
 
-import asyncio
-import contextlib
-import inspect
 import json as _json
 import random
 import statistics
@@ -88,6 +85,14 @@ DEFAULT_MAX_RETRIES = max(0, int(_RETRY_CONFIG.get("max_attempts", 8)) - 1)
 # Retry-After. Keeps a hostile Retry-After header from stalling a worker for an
 # unbounded time.
 BACKOFF_CAP_S = float(_RETRY_CONFIG.get("backoff_cap", 120))
+
+# Time-based retry horizon (seconds) bounding the TOTAL time spent retrying one
+# request from its first attempt. Precedence: a retryable error is retried while
+# EITHER attempts remain (attempt < max_retries) OR the window is still open
+# (elapsed < MAX_ELAPSED_S); it stops only once BOTH are exhausted. A value of 0
+# disables the window, restoring legacy attempts-only behavior (governed solely
+# by DEFAULT_MAX_RETRIES). Recommended ~900 for OpenAI flex-tier queuing.
+MAX_ELAPSED_S = float(_RETRY_CONFIG.get("max_elapsed", 0))
 
 _JITTER = _RETRY_CONFIG.get("jitter", {})
 JITTER_MIN = _JITTER.get("min", 0.5)
@@ -285,6 +290,11 @@ class LLMClientBase:
     timeout: int
     rate_limiter: RateLimiter | None
     max_retries: int
+    # Time-based retry horizon (seconds); see MAX_ELAPSED_S. Class-level default
+    # of 0.0 (disabled) so instances built via ``__new__`` (e.g. in unit tests,
+    # bypassing ``__init__``) fall back to legacy attempts-only behavior; the
+    # real horizon is assigned from MAX_ELAPSED_S in ``__init__``.
+    max_elapsed: float = 0.0
     chat_model: BaseChatModel
     successful_requests: int
     failed_requests: int
@@ -327,6 +337,8 @@ class LLMClientBase:
         self.timeout = timeout if timeout is not None else get_api_timeout()
         self.rate_limiter = rate_limiter
         self.max_retries = max_retries
+        # Time-based retry horizon from concurrency.yaml (0 = disabled/legacy).
+        self.max_elapsed = MAX_ELAPSED_S
 
         # Create LLM configuration — SDK retries disabled; handled by _invoke_with_retry
         llm_config = LLMConfig(
@@ -973,21 +985,33 @@ class LLMClientBase:
         Raises:
             Exception: Re-raises the last exception after exhausting retries or on
                 non-retryable errors.
-        """
-        last_exception: Exception | None = None
 
-        for attempt in range(self.max_retries + 1):
+        Retry horizon (precedence): a retryable error is retried while EITHER
+        attempts remain (``attempt < self.max_retries``) OR the time window is
+        still open (``elapsed < self.max_elapsed``); it stops only once BOTH are
+        exhausted. ``max_attempts`` is thus a legacy floor, not a ceiling, when a
+        window is configured. ``self.max_elapsed == 0`` disables the window and
+        restores attempts-only behavior. Each sleep is capped at ``BACKOFF_CAP_S``
+        and additionally clamped so it never overshoots the remaining window by
+        more than one ``BACKOFF_CAP_S``.
+        """
+        first_attempt_start = time.monotonic()
+        max_elapsed = self.max_elapsed
+        attempt = 0
+
+        # Loop exits only via ``return`` (success) or ``raise`` (terminal), so
+        # there is no fall-through path after the ``while``.
+        while True:
             try:
                 self._wait_for_rate_limit()
                 response = structured_model.invoke(messages, **invoke_kwargs)
                 return response
             except Exception as e:
-                last_exception = e
                 retryable, error_type = self._classify_error(e)
 
                 # Track tokens from this failed attempt (when available)
                 self._extract_tokens_from_exception(
-                    e, f"{context_label} (attempt {attempt + 1}/{self.max_retries + 1})"
+                    e, f"{context_label} (attempt {attempt + 1})"
                 )
 
                 # A server-provided Retry-After is itself a rate-limit signal.
@@ -1001,7 +1025,11 @@ class LLMClientBase:
                 )
                 self._report_error(is_rate_signal)
 
-                if not retryable or attempt >= self.max_retries:
+                # Continue while attempts remain OR the time window is still open.
+                elapsed = time.monotonic() - first_attempt_start
+                attempts_left = attempt < self.max_retries
+                window_open = max_elapsed > 0 and elapsed < max_elapsed
+                if not retryable or not (attempts_left or window_open):
                     raise
 
                 # Honor Retry-After: wait at least as long as the server asks,
@@ -1009,16 +1037,20 @@ class LLMClientBase:
                 backoff = self._calculate_backoff(attempt, error_type)
                 if retry_after is not None:
                     backoff = min(BACKOFF_CAP_S, max(backoff, retry_after))
+                # Never overshoot the remaining window by more than one
+                # backoff_cap (no-op once attempts-only or window disabled).
+                if max_elapsed > 0:
+                    remaining = max(0.0, max_elapsed - elapsed)
+                    backoff = min(backoff, remaining + BACKOFF_CAP_S)
                 logger.warning(
-                    f"Retryable {error_type} on attempt"
-                    f" {attempt + 1}/{self.max_retries + 1} "
+                    f"Retryable {error_type} on attempt {attempt + 1} "
                     f"for {context_label}: {type(e).__name__}. "
-                    f"Retrying in {backoff:.1f}s"
+                    f"Retrying in {backoff:.1f}s (elapsed {elapsed:.1f}s"
+                    f"{f'/{max_elapsed:.0f}s window' if max_elapsed > 0 else ''})"
                     f"{' (Retry-After honored)' if retry_after is not None else ''}..."
                 )
                 time.sleep(backoff)
-
-        raise last_exception  # type: ignore[misc]  # unreachable; satisfies mypy
+                attempt += 1
 
     def get_stats(self) -> dict[str, Any]:
         """Get statistics about API usage."""
@@ -1228,51 +1260,25 @@ class LLMClientBase:
 
         return invoke_kwargs
 
-    @staticmethod
-    def _close_client_obj(client: Any) -> None:
-        """Best-effort close of one SDK/httpx client object.
-
-        Tries the client's own ``close()`` and, if it wraps a lower-level httpx
-        client (SDKs expose it as ``_client``), closes that too. Swallows all
-        errors: teardown is defensive and must never raise.
-        """
-        if client is None:
-            return
-        for target in (client, getattr(client, "_client", None)):
-            if target is None:
-                continue
-            close = getattr(target, "close", None)
-            if callable(close):
-                with contextlib.suppress(Exception):
-                    result = close()
-                    if inspect.iscoroutine(result):
-                        # Async SDK clients return a coroutine; run it on a
-                        # fresh loop (we are in sync CLI context) or discard
-                        # it cleanly if a loop is already running.
-                        try:
-                            asyncio.run(result)
-                        except RuntimeError:
-                            result.close()
-
     def close(self) -> None:
-        """Release the underlying SDK/httpx clients held by the chat model.
+        """No-op teardown, retained for API compatibility.
 
-        Managers are constructed per item; without an explicit teardown the
-        wrapped provider SDK clients (and their httpx connection pools) leak
-        until GC. This walks the known LangChain client attributes and closes
-        each, sync and async. Idempotent and never raises (adapts ChronoMiner's
-        ``_aclose_maybe`` pattern to sync clients).
+        Managers are constructed per item, so an earlier version closed the
+        chat model's SDK/httpx clients here to avoid leaking connection pools.
+        That was actively harmful: every langchain provider we use hands its
+        ChatModel an httpx client drawn from a process-wide ``@lru_cache``
+        keyed on (base_url, timeout, socket_options) -- see langchain_openai
+        and langchain_anthropic ``_client_utils`` (``_cached_sync_httpx_client``
+        / ``_get_default_httpx_client``). Every manager built for the same
+        provider therefore SHARES one httpx client. Closing it at the end of
+        item 1 poisoned that shared pool, so item 2+ failed instantly with
+        ``APIConnectionError`` ("Connection error."). langchain_google_genai
+        holds a per-instance ``google.genai`` client with no such cache, but
+        it too needs no per-item teardown: the pool is bounded and dies with
+        the process. Hence closing is both unnecessary and dangerous, and this
+        method now only logs at debug level.
         """
-        model = getattr(self, "chat_model", None)
-        if model is None:
-            return
-        for attr in (
-            "client",
-            "async_client",
-            "root_client",
-            "root_async_client",
-        ):
-            self._close_client_obj(getattr(model, attr, None))
+        logger.debug("close() is a no-op (provider httpx clients are shared)")
 
 
 # ============================================================================

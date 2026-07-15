@@ -9,10 +9,12 @@ Instructions:
 - If the image is a two-page spread, transcribe the left page fully first, then the right page, and tag BOTH page numbers with <page_number> tags.
 
 Formula handling:
-- Enclose ALL mathematical formulas in $$ delimiters (e.g., $$E = mc^2$$, $$\int_a^b f(x)dx$$).
-- Use standard LaTeX commands: \frac{}{}, \sqrt{}, \sum, \int, \alpha, \beta, etc.
-- Avoid unsupported constructs: \text{}, \Big, \left/\right, \overbrace, \underbrace.
-- Instead use: \mathrm{} for text in math, plain parentheses () instead of \left(\right).
+- Inline math (symbols or expressions inside a sentence): wrap in single dollar signs, $...$ (e.g., the ratio $A_m$, where $x > 0$).
+- Display equations (set on their own line): wrap in double dollar signs, $$...$$ (e.g., $$E = mc^2$$). Reserve $$...$$ for display equations only; never wrap an inline symbol in $$...$$ mid-sentence.
+- Never use \(...\) or \[...\] delimiters, and never use HTML tags such as <sub> or <sup> for math; use $...$ with _ and ^ instead.
+- Transcribe every mathematical relation EXACTLY as printed: do not substitute \geq for > or \leq for <, do not turn a \equiv definition into a plain equality, and do not restructure an equation's layout or symbols.
+- Use standard LaTeX commands: \frac{}{}, \sqrt{}, \sum, \int, \alpha, \beta, etc., and \mathrm{} for upright text in math.
+- Balance every \left with a matching \right; for a one-sided delimiter use \left. or \right. (e.g., \left\{ ... \right.).
 
 The JSON schema:
 {{SCHEMA}}

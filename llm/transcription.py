@@ -28,6 +28,7 @@ from config.loader import PROMPTS_DIR, SCHEMAS_DIR
 from config.logger import setup_logger
 from imaging.payload import PagePayload
 from llm.base import LLMClientBase
+from llm.capabilities import detect_capabilities
 from llm.client import ProviderType, get_model_capabilities
 from llm.prompts import render_prompt_with_schema, strip_markdown_code_block
 from llm.rate_limit import RateLimiter, get_shared_rate_limiter
@@ -347,6 +348,44 @@ class TranscriptionManager(LLMClientBase):
         # Fallback: return original text
         return text
 
+    def _resolve_image_detail(self) -> str | None:
+        """Resolve the OpenAI per-image ``detail`` value from model config.
+
+        Reads the ``image_size`` knob (low/high/auto/original) from the
+        transcription model config. Returns the value to place inside the
+        ``image_url`` dict, or ``None`` when nothing should be sent (knob
+        unset, non-OpenAI provider, or model lacks detail support). When
+        ``original`` is configured for a model that does not accept it, logs a
+        warning and falls back to ``high`` rather than sending an invalid value.
+        """
+        # OpenAI-only: leave anthropic/google/openrouter/custom shapes untouched.
+        if self.provider != "openai":
+            return None
+        image_size = self.model_config.get("image_size")
+        if not image_size:
+            return None
+        detail = str(image_size).strip().lower()
+        if detail not in ("low", "high", "auto", "original"):
+            logger.warning(
+                f"Ignoring unsupported image_size '{image_size}' for "
+                f"{self.model_name}; expected low/high/auto/original."
+            )
+            return None
+        capabilities = detect_capabilities(self.model_name)
+        if not capabilities.supports_image_detail:
+            logger.warning(
+                f"Model '{self.model_name}' does not support the image detail "
+                "parameter; ignoring image_size."
+            )
+            return None
+        if detail == "original" and not capabilities.supports_original_image_detail:
+            logger.warning(
+                f"Model '{self.model_name}' does not support image_size "
+                "'original'; falling back to 'high'."
+            )
+            return "high"
+        return detail
+
     def _build_model_inputs(
         self, base64_image: str
     ) -> tuple[list[Any], dict[str, Any]]:
@@ -378,13 +417,20 @@ class TranscriptionManager(LLMClientBase):
                 }
             ]
         else:
-            # OpenAI / OpenRouter format
+            # OpenAI / OpenRouter format. The optional "detail" key is added
+            # only for OpenAI (via _resolve_image_detail); langchain-openai
+            # forwards image_url.detail into the Responses API "input_image"
+            # block. Absent detail keeps the request byte-identical to before.
+            image_url: dict[str, Any] = {
+                "url": f"data:image/jpeg;base64,{base64_image}",
+            }
+            detail = self._resolve_image_detail()
+            if detail is not None:
+                image_url["detail"] = detail
             user_content = [
                 {
                     "type": "image_url",
-                    "image_url": {
-                        "url": f"data:image/jpeg;base64,{base64_image}",
-                    },
+                    "image_url": image_url,
                 }
             ]
 

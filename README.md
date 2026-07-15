@@ -1,4 +1,4 @@
-# AutoExcerpter v1.26.0
+# AutoExcerpter v1.27.0
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -784,6 +784,22 @@ v1.0.0 do not exist.
 
 ## Changelog
 
+- **v1.27.0** (16 July 2026) -- Send OpenAI's per-image `detail` parameter
+    via a new `transcription_model.image_size` knob (low/high/auto/original;
+    `original` is capability-gated to the GPT-5.6 family and capped locally at
+    6,000 px longest side / 10.24 MP, mirroring ChronoMiner and
+    ChronoTranscriber), fix a critical bug where the per-item `close()`
+    teardown closed langchain's process-wide cached httpx client and made
+    every item after the first fail instantly with connection errors, add a
+    config-driven time-based retry horizon (`retry.max_elapsed`, recommended
+    900 s for flex-tier queuing) plus a prominent end-of-run console warning
+    naming items that finished incomplete, pin the summary language to the
+    document's own language, and tighten math handling end to end (prompt now
+    mandates `$`/`$$` delimiter discipline, exact symbol fidelity, and
+    balanced `\left`/`\right`; the text cleaner gains conservative LaTeX
+    post-processing that normalizes `\(...\)`/`\[...\]` delimiters, converts
+    stray HTML sub/sup tags outside math, and repairs one-sided
+    `\left`/`\right` pairs inside display blocks).
 - **v1.26.0** (15 July 2026) -- Stop fabricated citation stubs from
     duplicating full references. The summary schema (`Summary_2_3_0`) turns
     `references` items into `{citation, is_partial}` objects and both summary

@@ -71,6 +71,26 @@ LATEX_COMMAND_FIXES = [
 # Regex pattern for hyphenated line breaks
 _HYPHEN_PATTERN = re.compile(r"(\w{3,})-\n(\w{2,})")
 
+# `\left`/`\right` as delimiter commands (not \leftarrow, \rightarrow, etc.):
+# the trailing negative lookahead excludes command names that merely start
+# with "left"/"right".
+_LEFT_CMD = re.compile(r"\\left(?![a-zA-Z])")
+_RIGHT_CMD = re.compile(r"\\right(?![a-zA-Z])")
+
+# Display math blocks and math spans used for scoped, in-block LaTeX repairs.
+_DISPLAY_BLOCK = re.compile(r"\$\$(.*?)\$\$", re.DOTALL)
+_MATH_SPAN = re.compile(r"\$\$.*?\$\$|\$.*?\$", re.DOTALL)
+_ENV_BEGIN = re.compile(r"\\begin\{[^}]*\}")
+_ENV_END = re.compile(r"\\end\{[^}]*\}")
+
+# Single-token HTML sub/superscript, optionally wrapped in markdown emphasis
+# asterisks (e.g. "*A*<sub>m</sub>", "x<sup>2</sup>"). The leading lookbehind
+# keeps the base token off the tail of a longer word; the `</\2>` backreference
+# requires a matching closing tag. Kept deliberately narrow: 1-3 alphanumerics.
+_HTML_SUBSUP = re.compile(
+    r"(?<![A-Za-z0-9])\*?([A-Za-z0-9]{1,3})\*?<(sub|sup)>([A-Za-z0-9]{1,3})</\2>"
+)
+
 # Prefixes that are almost always genuinely hyphenated. Following the
 # conservative "keep the hyphen when unsure" policy, a line-break hyphen whose
 # left fragment is one of these is preserved (for example "co-ordinating",
@@ -123,6 +143,9 @@ def get_text_cleaning_config() -> dict[str, Any]:
                 "balance_dollar_signs": True,
                 "close_unclosed_braces": True,
                 "fix_common_commands": True,
+                "normalize_math_delimiters": True,
+                "balance_left_right": True,
+                "convert_html_subsup": True,
             },
         ),
         "merge_hyphenation": cleaning_cfg.get("merge_hyphenation", True),
@@ -378,6 +401,127 @@ def fix_common_latex_commands(text: str) -> str:
     return text
 
 
+def normalize_math_delimiters(text: str) -> str:
+    """Normalize alternate LaTeX math delimiters to dollar-sign form.
+
+    Maps ``\\(...\\)`` to inline ``$...$`` and ``\\[...\\]`` to display
+    ``$$...$$``. This is a safe textual substitution: the delimiter tokens
+    only occur as math markers, so the mapping preserves the enclosed content
+    while unifying the delimiter style the downstream renderer expects.
+
+    Args:
+        text: Text potentially using ``\\(...\\)`` / ``\\[...\\]`` delimiters.
+
+    Returns:
+        Text with math delimiters normalized to dollar-sign form.
+    """
+    if not any(tok in text for tok in ("\\(", "\\)", "\\[", "\\]")):
+        return text
+
+    # Display first, then inline (distinct tokens, so order is not critical).
+    text = text.replace("\\[", "$$").replace("\\]", "$$")
+    text = text.replace("\\(", "$").replace("\\)", "$")
+    return text
+
+
+def _apply_outside_math(text: str, transform: Any) -> str:
+    """Apply ``transform`` only to text outside ``$...$`` / ``$$...$$`` spans.
+
+    Math spans are passed through byte-identically so repairs meant for prose
+    never touch already-delimited math.
+
+    Args:
+        text: Input text possibly containing math spans.
+        transform: Callable mapping a plain-text segment to its replacement.
+
+    Returns:
+        Text with ``transform`` applied to non-math segments only.
+    """
+    result: list[str] = []
+    last = 0
+    for match in _MATH_SPAN.finditer(text):
+        result.append(transform(text[last : match.start()]))
+        result.append(match.group(0))  # math span left untouched
+        last = match.end()
+    result.append(transform(text[last:]))
+    return "".join(result)
+
+
+def convert_html_subsup(text: str) -> str:
+    """Convert single-token HTML sub/superscripts to inline math.
+
+    Rewrites ``X<sub>y</sub>`` -> ``$X_y$`` and ``X<sup>y</sup>`` -> ``$X^y$``
+    (optionally with markdown emphasis asterisks around the base, e.g.
+    ``*A*<sub>m</sub>``), but only when the pattern appears OUTSIDE existing
+    math delimiters. Scope is intentionally narrow -- 1-3 alphanumeric base and
+    script tokens -- to avoid touching genuine HTML or prose.
+
+    Args:
+        text: Text possibly containing HTML sub/superscript notation.
+
+    Returns:
+        Text with qualifying HTML sub/superscripts rewritten as inline math.
+    """
+    if "<sub>" not in text and "<sup>" not in text:
+        return text
+
+    def _repl(match: re.Match[str]) -> str:
+        base, kind, script = match.group(1), match.group(2), match.group(3)
+        op = "_" if kind == "sub" else "^"
+        return f"${base}{op}{script}$"
+
+    return _apply_outside_math(text, lambda seg: _HTML_SUBSUP.sub(_repl, seg))
+
+
+def balance_left_right(text: str) -> str:
+    """Balance ``\\left``/``\\right`` pairs within each display math block.
+
+    Operates conservatively and only inside a single ``$$...$$`` block: if the
+    block has more ``\\right`` than ``\\left``, the missing openers are added as
+    ``\\left.`` at the block (or enclosing environment) start; the mirror case
+    appends ``\\right.`` at the block end. Blocks whose counts already match --
+    including misordered-but-balanced or nested cases -- are left unchanged, and
+    inline ``$...$`` math is never touched.
+
+    Args:
+        text: Text potentially containing unbalanced ``\\left``/``\\right``.
+
+    Returns:
+        Text with per-block ``\\left``/``\\right`` counts balanced.
+    """
+    if "\\left" not in text and "\\right" not in text:
+        return text
+
+    def _fix_block(match: re.Match[str]) -> str:
+        inner = match.group(1)
+        n_left = len(_LEFT_CMD.findall(inner))
+        n_right = len(_RIGHT_CMD.findall(inner))
+        if n_left == n_right:
+            return match.group(0)  # balanced (or ambiguous) -> leave unchanged
+
+        if n_right > n_left:
+            # Unmatched \right: prepend \left. inside the enclosing environment
+            # (after \begin{...} when present) so the opener stays in scope.
+            prefix = "\\left." * (n_right - n_left)
+            begin = _ENV_BEGIN.search(inner)
+            if begin:
+                inner = inner[: begin.end()] + prefix + inner[begin.end() :]
+            else:
+                inner = prefix + inner
+        else:
+            # Unmatched \left: append \right. before the environment close.
+            suffix = "\\right." * (n_left - n_right)
+            end = _ENV_END.search(inner)
+            if end:
+                inner = inner[: end.start()] + suffix + inner[end.start() :]
+            else:
+                inner = inner + suffix
+
+        return "$$" + inner + "$$"
+
+    return _DISPLAY_BLOCK.sub(_fix_block, text)
+
+
 def fix_latex_formulas(text: str, config: dict[str, Any]) -> str:
     """Apply all LaTeX fixing operations based on configuration.
 
@@ -391,8 +535,20 @@ def fix_latex_formulas(text: str, config: dict[str, Any]) -> str:
     if not config.get("enabled", True):
         return text
 
+    # Unify delimiters first so later steps see canonical $...$ / $$...$$ forms.
+    if config.get("normalize_math_delimiters", True):
+        text = normalize_math_delimiters(text)
+
+    # Convert HTML sub/sup (outside math) before dollar balancing, since it
+    # introduces balanced inline $...$ spans.
+    if config.get("convert_html_subsup", True):
+        text = convert_html_subsup(text)
+
     if config.get("fix_common_commands", True):
         text = fix_common_latex_commands(text)
+
+    if config.get("balance_left_right", True):
+        text = balance_left_right(text)
 
     if config.get("balance_dollar_signs", True):
         text = balance_dollar_signs(text)
@@ -749,6 +905,9 @@ __all__ = [
     "get_text_cleaning_config",
     "normalize_unicode",
     "fix_latex_formulas",
+    "normalize_math_delimiters",
+    "convert_html_subsup",
+    "balance_left_right",
     "merge_hyphenation",
     "should_keep_hyphen",
     "normalize_whitespace",

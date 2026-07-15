@@ -294,17 +294,20 @@ def _run_processing_loop(
     item_resume_map: dict[Path, ResumeResult],
     summary_context: str | None,
     resume_mode: str,
-) -> tuple[int, list[str], int]:
+) -> tuple[int, list[str], int, list[str]]:
     """Process items sequentially.
 
     Returns:
-        ``(processed_count, outputs, unattempted_count)``: the number of items
-        that fully succeeded, the absolute paths of all output files written
-        this run, and the number of items never reached because the user
-        cancelled the token-limit wait.
+        ``(processed_count, outputs, unattempted_count, incomplete_items)``: the
+        number of items that fully succeeded, the absolute paths of all output
+        files written this run, the number of items never reached because the
+        user cancelled the token-limit wait, and the display names of items that
+        were attempted but finished incomplete (failed/partial pages or missing
+        outputs).
     """
     processed_count = 0
     run_outputs: list[str] = []
+    incomplete_items: list[str] = []
     total_to_process = len(items_to_process)
     attempted_count = 0
 
@@ -340,10 +343,17 @@ def _run_processing_loop(
         run_outputs.extend(item_outputs)
         if success:
             processed_count += 1
+        else:
+            incomplete_items.append(item_spec.output_stem)
 
         _log_token_usage(f"Token usage after file {index}/{total_to_process}")
 
-    return processed_count, run_outputs, total_to_process - attempted_count
+    return (
+        processed_count,
+        run_outputs,
+        total_to_process - attempted_count,
+        incomplete_items,
+    )
 
 
 def _emit_json_summary(
@@ -379,6 +389,30 @@ def _emit_json_summary(
         summary["per_key_pool_caps_enabled"] = stats.get("per_key_pool_caps_enabled")
         summary["pool_buckets"] = pool_buckets
     print(json.dumps(summary, ensure_ascii=False))
+
+
+def _warn_incomplete_items(incomplete_items: list[str]) -> None:
+    """Print a prominent, user-facing warning naming items that finished
+    incomplete (failed/partial pages or missing outputs).
+
+    Emitted once after all items in BOTH interactive and CLI modes via the
+    shared console helper (a real stdout print, not just a log record), so the
+    partial failure is visible even when only log-level errors were recorded.
+    Exact failed/deferred page counts per item live in the per-item logs (the
+    transcriber records them there); this level sees only the pass/fail verdict.
+    """
+    if not incomplete_items:
+        return
+    print_warning(
+        f"{len(incomplete_items)} item(s) finished INCOMPLETE. Their "
+        ".txt/.docx/.md outputs may contain error placeholders:"
+    )
+    for name in incomplete_items:
+        print_warning(f"    - {name} (one or more pages failed or were deferred)")
+    print_warning(
+        "Re-run with --resume to retry only the missing pages; see each item's "
+        "log for the exact failed/deferred page counts."
+    )
 
 
 def _run_dry_run(
@@ -480,12 +514,14 @@ def main() -> int:
 
     _log_token_usage()
 
-    processed_count, run_outputs, unattempted_count = _run_processing_loop(
-        items_to_process,
-        base_output_dir,
-        item_resume_map,
-        summary_context,
-        resume_mode,
+    processed_count, run_outputs, unattempted_count, incomplete_items = (
+        _run_processing_loop(
+            items_to_process,
+            base_output_dir,
+            item_resume_map,
+            summary_context,
+            resume_mode,
+        )
     )
 
     # Final summary
@@ -526,6 +562,11 @@ def main() -> int:
             "%d item(s) were not attempted (processing stopped before reaching them).",
             unattempted_count,
         )
+
+    # Prominent, once-per-run warning naming any item that finished incomplete.
+    # Printed before the JSON line so a --json consumer still finds the summary
+    # as the last stdout line.
+    _warn_incomplete_items(incomplete_items)
 
     if emit_json:
         _emit_json_summary(

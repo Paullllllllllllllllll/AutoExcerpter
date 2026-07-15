@@ -9,6 +9,8 @@ from PIL import Image
 
 from imaging.preprocessing import (
     DEFAULT_ANTHROPIC_HIGH_MAX_SIDE,
+    DEFAULT_ORIGINAL_MAX_PIXELS,
+    DEFAULT_ORIGINAL_MAX_SIDE_PX,
     ImageProcessor,
     _get_resampling_filter,
 )
@@ -110,6 +112,50 @@ class TestResizeForDetail:
         )
 
         assert result.size == (768, 1536)
+
+    def test_original_caps_oversized_image(self, openai_config: dict[str, Any]) -> None:
+        """'original' caps an oversized scan to max side and pixel budget."""
+        image = Image.new("RGB", (7000, 9000))
+        result = ImageProcessor.resize_for_detail(
+            image, "original", openai_config, "openai"
+        )
+
+        w, h = result.size
+        assert max(w, h) <= DEFAULT_ORIGINAL_MAX_SIDE_PX
+        assert w * h <= DEFAULT_ORIGINAL_MAX_PIXELS
+        # Aspect ratio preserved (7:9).
+        assert abs((w / h) - (7000 / 9000)) < 0.01
+
+    def test_original_passes_small_image_through(
+        self, openai_config: dict[str, Any]
+    ) -> None:
+        """'original' leaves an image within the caps untouched (no upscale)."""
+        image = Image.new("RGB", (1000, 1500))
+        result = ImageProcessor.resize_for_detail(
+            image, "original", openai_config, "openai"
+        )
+
+        assert result.size == (1000, 1500)
+
+    def test_original_overrides_resize_profile_none(self) -> None:
+        """resize_profile='none' does not defeat the 'original' cap."""
+        config = {"resize_profile": "none"}
+        image = Image.new("RGB", (7000, 9000))
+        result = ImageProcessor.resize_for_detail(image, "original", config, "openai")
+
+        w, h = result.size
+        assert max(w, h) <= DEFAULT_ORIGINAL_MAX_SIDE_PX
+        assert w * h <= DEFAULT_ORIGINAL_MAX_PIXELS
+
+    def test_custom_original_caps_from_config(self) -> None:
+        """'original' reads original_max_side_px / original_max_pixels overrides."""
+        config = {"original_max_side_px": 2000, "original_max_pixels": 1_000_000}
+        image = Image.new("RGB", (7000, 9000))
+        result = ImageProcessor.resize_for_detail(image, "original", config, "openai")
+
+        w, h = result.size
+        assert max(w, h) <= 2000
+        assert w * h <= 1_000_000
 
 
 class TestResizeHelpers:

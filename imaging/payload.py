@@ -55,6 +55,29 @@ logger = setup_logger(__name__)
 _HASH_CHUNK_SIZE = 1024 * 1024
 
 
+def _openai_detail_is_original(model_name: str) -> bool:
+    """Whether the transcription model wants full-resolution ("original") detail.
+
+    True only when the transcription model config sets ``image_size: original``
+    AND the model actually accepts it (GPT-5.6 family). Used to skip the local
+    box-fit resize so the bytes sent to the API keep their native resolution.
+    Any config/registry hiccup yields False (keep the default resize) and never
+    raises.
+    """
+    try:
+        model_cfg = (
+            get_config_loader().get_model_config().get("transcription_model", {})
+        )
+        image_size = str(model_cfg.get("image_size", "") or "").strip().lower()
+        if image_size != "original":
+            return False
+        from llm.capabilities import detect_capabilities
+
+        return detect_capabilities(model_name).supports_original_image_detail
+    except Exception:
+        return False
+
+
 @dataclass(frozen=True)
 class PagePayload:
     """A single page, preprocessed and base64-encoded, ready for the API."""
@@ -114,6 +137,13 @@ class _PayloadSourceBase:
         section_name = get_image_config_section_name(self.model_type)
         full_img_cfg = get_config_loader().get_image_processing_config()
         self.img_cfg: dict[str, Any] = full_img_cfg.get(section_name, {})
+        # Full-resolution ("original") OpenAI detail: route through the capped
+        # 'original' resize path instead of the 768x1536 box-fit, keeping native
+        # resolution but bounding the longest side / pixel budget so a folio
+        # scan cannot exceed the API's input limits. Grayscale/transparency
+        # handling is untouched.
+        if self.model_type == "openai" and _openai_detail_is_original(model_name):
+            self.img_cfg = {**self.img_cfg, "llm_detail": "original"}
         self.jpeg_quality = int(self.img_cfg.get("jpeg_quality", DEFAULT_JPEG_QUALITY))
         self._config_section_name = section_name
 

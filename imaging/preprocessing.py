@@ -44,6 +44,12 @@ logger = setup_logger(__name__)
 # Default max side for Anthropic high-detail mode
 DEFAULT_ANTHROPIC_HIGH_MAX_SIDE = 1568
 
+# Defaults for OpenAI full-resolution ("original") detail: cap the longest side
+# and the total pixel budget so an unresized folio scan cannot exceed the API's
+# input limits (mirrors ChronoMiner/ChronoTranscriber).
+DEFAULT_ORIGINAL_MAX_SIDE_PX = 6000
+DEFAULT_ORIGINAL_MAX_PIXELS = 10_240_000
+
 # Resampling algorithm mapping
 _RESAMPLING_ALGORITHMS = {
     "bilinear": Image.Resampling.BILINEAR,
@@ -85,22 +91,35 @@ class ImageProcessor:
         Args:
             image: The input image.
             detail: The desired level of detail ('low', 'high', 'auto', 'medium',
-                'ultra_high').
+                'ultra_high', 'original').
             img_cfg: The image configuration dictionary.
             model_type: The model type ('openai', 'google', 'anthropic').
 
         Returns:
             The resized image.
         """
+        # Normalize detail level
+        detail_norm = (detail or "high").lower()
+        if detail_norm not in (
+            "low",
+            "high",
+            "auto",
+            "medium",
+            "ultra_high",
+            "original",
+        ):
+            detail_norm = "high"
+
+        # Original detail (GPT-5.6 family): cap to max side / max pixels, no
+        # padding. Checked before the resize_profile early-return so an explicit
+        # 'none' cannot leave the full-resolution payload unbounded.
+        if detail_norm == "original":
+            return ImageProcessor._resize_original(image, img_cfg)
+
         # Check if resizing is disabled
         resize_profile = (img_cfg.get("resize_profile", "auto") or "auto").lower()
         if resize_profile == "none":
             return image
-
-        # Normalize detail level
-        detail_norm = (detail or "high").lower()
-        if detail_norm not in ("low", "high", "auto", "medium", "ultra_high"):
-            detail_norm = "high"
 
         # Low detail: cap longest side (same strategy for all providers)
         if detail_norm == "low":
@@ -173,6 +192,30 @@ class ImageProcessor:
         """Cap longest side for Anthropic (no padding, preserves aspect ratio)."""
         max_side = int(img_cfg.get("high_max_side_px", DEFAULT_ANTHROPIC_HIGH_MAX_SIDE))
         return ImageProcessor._resize_max_side(image, max_side)
+
+    @staticmethod
+    def _resize_original(image: Image.Image, img_cfg: dict[str, Any]) -> Image.Image:
+        """Cap 'original' (full-resolution) detail to bound API input size.
+
+        Applies two aspect-preserving caps with no padding and no upscaling:
+        the longest side to ``original_max_side_px`` and the total pixel budget
+        to ``original_max_pixels``. Mirrors ChronoMiner/ChronoTranscriber.
+        """
+        max_side = int(
+            img_cfg.get("original_max_side_px", DEFAULT_ORIGINAL_MAX_SIDE_PX)
+        )
+        max_pixels = int(
+            img_cfg.get("original_max_pixels", DEFAULT_ORIGINAL_MAX_PIXELS)
+        )
+        # Cap longest side first (reuses the shared max-side helper).
+        image = ImageProcessor._resize_max_side(image, max_side)
+        # Then cap the total pixel budget if still exceeded.
+        w, h = image.size
+        if w * h > max_pixels:
+            scale = (max_pixels / float(w * h)) ** 0.5
+            new_size = (max(1, int(w * scale)), max(1, int(h * scale)))
+            image = image.resize(new_size, _get_resampling_filter())
+        return image
 
     @staticmethod
     def preprocess_pil_image(

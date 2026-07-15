@@ -56,6 +56,8 @@ class ProviderCapabilities:
         family: Model family identifier (e.g., "gpt-5", "claude-opus-4.5")
         supports_vision: Whether the model can process image inputs
         supports_image_detail: Whether OpenAI-style "detail" parameter is supported
+        supports_original_image_detail: Whether "detail": "original" (full input
+            resolution, no patch cap) is accepted (GPT-5.6 family only)
         default_image_detail: Default detail level for images
         supports_media_resolution: Whether Google-style media_resolution is supported
         default_media_resolution: Default resolution for Google
@@ -80,6 +82,7 @@ class ProviderCapabilities:
     # Vision/multimodal
     supports_vision: bool = False
     supports_image_detail: bool = True  # OpenAI-style "detail" parameter
+    supports_original_image_detail: bool = False  # "detail": "original" (GPT-5.6)
     default_image_detail: ImageDetail = "high"
     supports_media_resolution: bool = False  # Google-style media_resolution
     default_media_resolution: MediaResolution = "high"
@@ -289,6 +292,7 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
         _OPENAI_REASONING_BASE,
         dict(
             supports_text_verbosity=True,
+            supports_original_image_detail=True,
             max_context_tokens=1050000,
             max_output_tokens=128000,
         ),
@@ -299,6 +303,7 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
         _OPENAI_REASONING_BASE,
         dict(
             supports_text_verbosity=True,
+            supports_original_image_detail=True,
             max_context_tokens=1050000,
             max_output_tokens=128000,
         ),
@@ -309,6 +314,7 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
         _OPENAI_REASONING_BASE,
         dict(
             supports_text_verbosity=True,
+            supports_original_image_detail=True,
             max_context_tokens=1050000,
             max_output_tokens=128000,
         ),
@@ -320,6 +326,7 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
         _OPENAI_REASONING_BASE,
         dict(
             supports_text_verbosity=True,
+            supports_original_image_detail=True,
             max_context_tokens=1050000,
             max_output_tokens=128000,
         ),

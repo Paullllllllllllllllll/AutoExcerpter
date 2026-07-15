@@ -6,18 +6,39 @@ from unittest.mock import MagicMock, patch
 
 from pipeline.text_cleaner import (
     balance_dollar_signs,
+    balance_left_right,
     clean_transcription,
     close_unclosed_braces,
     compute_auto_wrap_width,
+    convert_html_subsup,
     fix_common_latex_commands,
     fix_latex_formulas,
     get_text_cleaning_config,
     merge_hyphenation,
+    normalize_math_delimiters,
     normalize_unicode,
     normalize_whitespace,
     should_keep_hyphen,
     wrap_long_lines,
 )
+
+# Full latex_fixing config with all sub-toggles enabled, for pipeline tests.
+_LATEX_ALL_ON = {
+    "enabled": True,
+    "fix_common_commands": True,
+    "normalize_math_delimiters": True,
+    "convert_html_subsup": True,
+    "balance_left_right": True,
+    "balance_dollar_signs": True,
+    "close_unclosed_braces": True,
+}
+
+
+def _left_right_balanced(text: str) -> bool:
+    """Return True if \\left and \\right delimiter-command counts match."""
+    from pipeline.text_cleaner import _LEFT_CMD, _RIGHT_CMD
+
+    return len(_LEFT_CMD.findall(text)) == len(_RIGHT_CMD.findall(text))
 
 
 class TestNormalizeUnicode:
@@ -522,3 +543,170 @@ class TestGetTextCleaningConfig:
             result = get_text_cleaning_config()
             assert result["merge_hyphenation"] is True
             assert result["line_wrapping"]["enabled"] is False
+
+    def test_latex_fixing_has_new_subtoggles(self) -> None:
+        """Default latex_fixing exposes the new post-processing toggles."""
+        with patch("pipeline.text_cleaner.get_config_loader") as mock:
+            mock_loader = MagicMock()
+            mock_loader.get_image_processing_config.return_value = {}
+            mock.return_value = mock_loader
+
+            latex = get_text_cleaning_config()["latex_fixing"]
+            assert latex["normalize_math_delimiters"] is True
+            assert latex["balance_left_right"] is True
+            assert latex["convert_html_subsup"] is True
+
+
+class TestNormalizeMathDelimiters:
+    """Tests for \\(..\\)/\\[..\\] -> $..$/$$..$$ normalization."""
+
+    def test_no_delimiters_unchanged(self) -> None:
+        """Text without alternate delimiters is byte-identical."""
+        text = "Plain $x$ and $$y$$ already."
+        assert normalize_math_delimiters(text) == text
+
+    def test_inline_paren_delimiters(self) -> None:
+        r"""\(x\) becomes $x$."""
+        assert normalize_math_delimiters(r"see \(x\) here") == "see $x$ here"
+
+    def test_display_bracket_delimiters(self) -> None:
+        r"""\[..\] becomes $$..$$."""
+        assert normalize_math_delimiters(r"\[E = mc^2\]") == "$$E = mc^2$$"
+
+    def test_mixed_delimiters(self) -> None:
+        r"""Inline and display forms convert together."""
+        text = r"\(a\) and \[b\]"
+        assert normalize_math_delimiters(text) == "$a$ and $$b$$"
+
+
+class TestConvertHtmlSubsup:
+    """Tests for HTML sub/superscript -> inline math conversion."""
+
+    def test_subscript_conversion(self) -> None:
+        """X<sub>y</sub> becomes $X_y$."""
+        assert convert_html_subsup("value X<sub>y</sub>.") == "value $X_y$."
+
+    def test_superscript_conversion(self) -> None:
+        """X<sup>y</sup> becomes $X^y$."""
+        assert convert_html_subsup("area x<sup>2</sup>.") == "area $x^2$."
+
+    def test_emphasis_wrapped_base(self) -> None:
+        """*A*<sub>m</sub> (markdown emphasis) becomes $A_m$."""
+        assert convert_html_subsup("ratio *A*<sub>m</sub> rises") == "ratio $A_m$ rises"
+
+    def test_untouched_inside_inline_math(self) -> None:
+        """Sub/sup inside existing $...$ is left untouched."""
+        text = "already $x<sub>i</sub>$ done"
+        assert convert_html_subsup(text) == text
+
+    def test_untouched_inside_display_math(self) -> None:
+        """Sub/sup inside existing $$...$$ is left untouched."""
+        text = "$$A<sub>m</sub>$$"
+        assert convert_html_subsup(text) == text
+
+    def test_no_tags_unchanged(self) -> None:
+        """Text without sub/sup tags is byte-identical."""
+        text = "no markup here"
+        assert convert_html_subsup(text) == text
+
+    def test_long_token_not_converted(self) -> None:
+        """A multi-word emphasis span is not misread as a base token."""
+        text = "*emphasis*<sub>note</sub>"
+        # Base/script exceed the 1-3 char scope; left unchanged.
+        assert convert_html_subsup(text) == text
+
+
+class TestBalanceLeftRight:
+    r"""Tests for \left/\right balancing within display math blocks."""
+
+    def test_unmatched_right_gets_left_dot(self) -> None:
+        r"""\right\} with no \left gets a \left. and renders balanced."""
+        text = "$$\\begin{aligned} x &= 1 \\quad\\right\\} \\quad < 0 \\end{aligned}$$"
+        result = balance_left_right(text)
+        assert "\\left." in result
+        assert _left_right_balanced(result)
+
+    def test_unmatched_right_no_environment(self) -> None:
+        r"""\right without an environment prepends \left. at block start."""
+        text = "$$a \\right) b$$"
+        result = balance_left_right(text)
+        assert result == "$$\\left.a \\right) b$$"
+        assert _left_right_balanced(result)
+
+    def test_unmatched_left_appends_right_dot(self) -> None:
+        r"""Unmatched \left gets a trailing \right.."""
+        text = "$$\\left( a + b$$"
+        result = balance_left_right(text)
+        assert result == "$$\\left( a + b\\right.$$"
+        assert _left_right_balanced(result)
+
+    def test_balanced_block_unchanged(self) -> None:
+        r"""A balanced \left..\right block is byte-identical."""
+        text = "$$\\left( a + b \\right)$$"
+        assert balance_left_right(text) == text
+
+    def test_arrow_commands_not_miscounted(self) -> None:
+        r"""\leftarrow/\rightarrow are not treated as delimiters."""
+        text = "$$a \\rightarrow b \\leftarrow c$$"
+        assert balance_left_right(text) == text
+
+    def test_inline_math_not_touched(self) -> None:
+        r"""Unbalanced \left/\right in inline $...$ is left unchanged."""
+        text = "inline $\\left( x$ stays"
+        assert balance_left_right(text) == text
+
+    def test_misordered_but_equal_counts_unchanged(self) -> None:
+        r"""Equal-but-misordered counts are ambiguous -> left unchanged."""
+        text = "$$\\right) a \\left($$"
+        assert balance_left_right(text) == text
+
+    def test_no_left_right_unchanged(self) -> None:
+        """Text without \\left/\\right is byte-identical."""
+        text = "$$x + y = z$$"
+        assert balance_left_right(text) == text
+
+
+class TestLatexPostprocessingPipeline:
+    """Integration of the new fixes through fix_latex_formulas."""
+
+    def test_paren_delimiters_normalized(self) -> None:
+        r"""\(x\) is normalized to $x$ end to end."""
+        result = fix_latex_formulas(r"here \(x\) there", _LATEX_ALL_ON)
+        assert result == "here $x$ there"
+
+    def test_bracket_delimiters_normalized(self) -> None:
+        r"""\[..\] is normalized to $$..$$ end to end."""
+        result = fix_latex_formulas(r"\[a = b\]", _LATEX_ALL_ON)
+        assert result == "$$a = b$$"
+
+    def test_html_subsup_normalized(self) -> None:
+        """*A*<sub>m</sub> outside math becomes $A_m$ end to end."""
+        result = fix_latex_formulas("ratio *A*<sub>m</sub>", _LATEX_ALL_ON)
+        assert result == "ratio $A_m$"
+
+    def test_html_subsup_inside_math_untouched(self) -> None:
+        """Sub tags inside $...$ survive the pipeline."""
+        text = "keep $x<sub>i</sub>$"
+        assert fix_latex_formulas(text, _LATEX_ALL_ON) == text
+
+    def test_unbalanced_left_right_repaired(self) -> None:
+        r"""\right\} with no \left is repaired to a balanced block."""
+        text = "$$a \\quad\\right\\} \\quad < 0$$"
+        result = fix_latex_formulas(text, _LATEX_ALL_ON)
+        assert _left_right_balanced(result)
+
+    def test_balanced_input_byte_identical(self) -> None:
+        """Clean, balanced input passes through unchanged."""
+        text = (
+            "Prose with inline $a > b$ and a display block:\n"
+            "$$\\left( \\frac{x}{y} \\right) = z$$\n"
+            "and $c \\leq d$ afterwards."
+        )
+        assert fix_latex_formulas(text, _LATEX_ALL_ON) == text
+
+    def test_subtoggles_can_be_disabled(self) -> None:
+        """Disabling a sub-toggle skips that specific fix."""
+        config = dict(_LATEX_ALL_ON)
+        config["convert_html_subsup"] = False
+        text = "ratio X<sub>y</sub>"
+        assert fix_latex_formulas(text, config) == text

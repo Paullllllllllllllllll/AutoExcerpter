@@ -37,6 +37,11 @@ transcription_model:
   text:
     verbosity: medium  # low | medium | high
   temperature: 1.0  # 0.0-2.0 (null = provider default; only with reasoning: none)
+  # OpenAI per-image detail sent to the Vision API (OpenAI provider only):
+  # low | high | auto | original. "original" (GPT-5.6 family) sends full input
+  # resolution with no patch cap and skips local downscaling; other models fall
+  # back to "high". Omit to send no detail (byte-identical to prior behavior).
+  # image_size: high
 
 # =============================================================================
 # Summary Model
