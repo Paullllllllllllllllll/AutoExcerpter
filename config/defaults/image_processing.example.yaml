@@ -40,7 +40,9 @@ api_image_processing:
   # - high: uses tiling (170 tokens per 512×512 tile), better for fine details
   # - low: 512×512 resize, 85 tokens per image, faster/cheaper
   # - auto: omit parameter, let model decide
-  llm_detail: high
+  # Recommended: original (full-resolution input, GPT-5.6 family) for best
+  # results.
+  llm_detail: original
 
   jpeg_quality: 100  # JPEG compression (1-100)
 

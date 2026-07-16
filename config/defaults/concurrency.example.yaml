@@ -37,11 +37,12 @@ api_requests:
   # Transcription Phase
   # ---------------------------------------------------------------------------
   transcription:
-    concurrency_limit: 5  # Parallel API requests; raise once you know your tier
+    concurrency_limit: 80  # Parallel API requests (recommended for OpenAI tier 3)
 
     # OpenAI service tier: 'default' | 'flex' | 'priority'
     # flex = cheaper but may queue; priority = fastest but expensive
-    service_tier: default
+    # Recommended: flex (pair with api_timeout 900 above).
+    service_tier: flex
 
   # NOTE: Summaries run inline within the transcription workers and share the
   # transcription phase's concurrency and one rate limiter per provider, so a

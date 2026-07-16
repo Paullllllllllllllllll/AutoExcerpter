@@ -28,12 +28,15 @@
 # Transcription Model
 # =============================================================================
 # Used for OCR/image-to-text conversion
+# Recommended configuration for best processing results: gpt-5.6-luna at
+# reasoning effort high with image_size: original (plus flex service tier and
+# the 900 s timeout in concurrency.yaml).
 transcription_model:
-  name: "gpt-5.4-mini"
+  name: "gpt-5.6-luna"
   provider: "openai"
   max_output_tokens: 128000
   reasoning:
-    effort: medium  # none | low | medium | high | xhigh (GPT-5.2+: default is none)
+    effort: high  # none | low | medium | high | xhigh (GPT-5.2+: default is none)
   text:
     verbosity: medium  # low | medium | high
   temperature: 1.0  # 0.0-2.0 (null = provider default; only with reasoning: none)
@@ -41,18 +44,18 @@ transcription_model:
   # low | high | auto | original. "original" (GPT-5.6 family) sends full input
   # resolution with no patch cap and skips local downscaling; other models fall
   # back to "high". Omit to send no detail (byte-identical to prior behavior).
-  # image_size: high
+  image_size: original
 
 # =============================================================================
 # Summary Model
 # =============================================================================
 # Used for generating structured summaries from transcriptions
 summary_model:
-  name: "gpt-5.4-mini"
+  name: "gpt-5.6-luna"
   provider: "openai"
   max_output_tokens: 128000
   reasoning:
-    effort: medium  # none | low | medium | high | xhigh (GPT-5.2+: default is none)
+    effort: high  # none | low | medium | high | xhigh (GPT-5.2+: default is none)
   text:
     verbosity: low  # Lower verbosity for concise summaries
   temperature: 1.0

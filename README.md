@@ -1,4 +1,4 @@
-# AutoExcerpter v1.27.0
+# AutoExcerpter v2.0.0
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -784,6 +784,14 @@ v1.0.0 do not exist.
 
 ## Changelog
 
+- **v2.0.0** (16 July 2026) -- New recommended standard configuration for
+    best processing results, shipped as the bundled example defaults: OpenAI
+    gpt-5.6-luna at reasoning effort high for both the transcription and the
+    summary model, original (full-resolution) image detail via `image_size:
+    original` and `llm_detail: original`, flex service tier with the 900 s
+    request timeout, and transcription concurrency of 80 tuned for OpenAI API
+    tier 3. Major bump because the public defaults change processing behavior
+    for fresh clones.
 - **v1.27.0** (16 July 2026) -- Send OpenAI's per-image `detail` parameter
     via a new `transcription_model.image_size` knob (low/high/auto/original;
     `original` is capability-gated to the GPT-5.6 family and capped locally at
