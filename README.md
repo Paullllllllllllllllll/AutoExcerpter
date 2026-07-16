@@ -1,4 +1,4 @@
-# AutoExcerpter v2.0.3
+# AutoExcerpter v2.0.4
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -784,6 +784,13 @@ v1.0.0 do not exist.
 
 ## Changelog
 
+- **v2.0.4** (16 July 2026) -- Type-hygiene release: the vendored
+    shared-ledger test is now fully typed (Any-typed dynamic module handle,
+    `pytest.MonkeyPatch` annotations, covariant frozen-datetime override) and
+    the long-standing `attr-defined` mypy override for it is removed from
+    pyproject; the llm-close test reaches the shared httpx client through a
+    typed cast helper. mypy is now clean across the entire repo, tests
+    included.
 - **v2.0.3** (16 July 2026) -- Shared token-ledger module updated to
     v2.1.1 (vendored byte-identically from ChronoMiner): the lock-free
     reads `read_combined` and `read_breakdown` now degrade gracefully
