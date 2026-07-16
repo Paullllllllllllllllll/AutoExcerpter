@@ -1,4 +1,4 @@
-# AutoExcerpter v2.0.2
+# AutoExcerpter v2.0.3
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -783,6 +783,15 @@ a single baseline commit at v1.0.0 on 25 April 2026; version numbers before
 v1.0.0 do not exist.
 
 ## Changelog
+
+- **v2.0.3** (16 July 2026) -- Shared token-ledger module updated to
+    v2.1.1 (vendored byte-identically from ChronoMiner): the lock-free
+    reads `read_combined` and `read_breakdown` now degrade gracefully
+    (return None) when the ledger file contains valid-but-non-dict JSON
+    such as `null` or `[]`, instead of raising `AttributeError` in
+    violation of the module's never-crash contract; the vendored test
+    suite gains the matching regression test and pins the new module
+    hash.
 
 - **v2.0.2** (16 July 2026) -- Clean up four small defects flagged in the
     v2.0.1 bug-hunt pass. Strip the UTF-8 BOM from `.gitattributes` that made
