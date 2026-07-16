@@ -241,6 +241,27 @@ class TestItemFailurePropagation:
         transcriber = _make_transcriber(make_pdf("RenderFail.pdf", 1), tmp_path / "out")
         assert transcriber.process_item() is False
 
+    def test_failed_txt_write_returns_false_and_withholds_output(
+        self,
+        make_pdf: Callable[..., Path],
+        tmp_path: Path,
+        pipeline_env: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A failed final .txt write (OSError swallowed inside the writer,
+        which returns False) must fail the item and must NOT register the
+        nonexistent file in written_outputs. Previously the return value was
+        ignored: the run reported success (exit 0) and the --json summary
+        advertised a .txt that was never written."""
+        monkeypatch.setattr(
+            transcriber_module,
+            "write_transcription_to_text",
+            lambda *a, **k: False,
+        )
+        transcriber = _make_transcriber(make_pdf("TxtFail.pdf", 1), tmp_path / "out")
+        assert transcriber.process_item() is False
+        assert transcriber.written_outputs == []
+
     def test_process_single_item_propagates_failure(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

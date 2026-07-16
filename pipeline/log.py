@@ -113,6 +113,12 @@ def append_to_log(log_path: Path, entry: dict[str, Any]) -> bool:
         with lock:
             log_file.write(json.dumps(entry, ensure_ascii=False))
             log_file.write("\n")
+            # Flush per line: the cached handle is block-buffered, so without
+            # this a hard crash (power loss, kill) could drop kilobytes of
+            # completed page records — not just the final line the resume
+            # parser is designed to tolerate — and resume would re-buy those
+            # pages. One flush per page is negligible next to the API call.
+            log_file.flush()
         return True
     except (OSError, TypeError, ValueError) as exc:
         logger.warning("Failed to write to log file %s: %s", log_path, exc)

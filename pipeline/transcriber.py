@@ -971,6 +971,7 @@ class ItemTranscriber:
                 1 for s in summary_results if isinstance(s, dict) and "error" in s
             )
             summary_render_ok = True
+            txt_write_ok = True
 
             # A page-budget stall (or a cancelled budget wait) can leave pages
             # deferred: they appended nothing to transcription_results and are
@@ -1000,7 +1001,7 @@ class ItemTranscriber:
                 logger.info(
                     f"Writing final transcription output to: {self.output_txt_path}"
                 )
-                write_transcription_to_text(
+                txt_write_ok = write_transcription_to_text(
                     transcription_results,
                     self.output_txt_path,
                     self.name,
@@ -1009,7 +1010,19 @@ class ItemTranscriber:
                     self.input_path,
                     metadata_notes=self._output_metadata_notes or None,
                 )
-                self.written_outputs.append(self.output_txt_path.resolve())
+                if txt_write_ok:
+                    self.written_outputs.append(self.output_txt_path.resolve())
+                else:
+                    # The write failed (e.g. disk full, file locked): the .txt
+                    # does not exist, so it must neither be advertised in
+                    # written_outputs nor let the item count as complete. The
+                    # working log is retained, so a re-run rewrites it.
+                    logger.error(
+                        "Item %s: transcription .txt could not be written; "
+                        "marking the item failed (working log retained for "
+                        "a re-run).",
+                        self.name,
+                    )
 
                 # Save summaries to output files if summarization is enabled
                 if config.SUMMARIZE and summary_results:
@@ -1107,17 +1120,19 @@ class ItemTranscriber:
                 and final_failure_count == 0
                 and summary_failure_count == 0
                 and summary_render_ok
+                and txt_write_ok
             )
             if not item_success:
                 logger.error(
                     "Item %s finished incomplete: %d deferred page(s), %d failed "
                     "transcription page(s), %d failed summary page(s), summary "
-                    "files rendered ok: %s",
+                    "files rendered ok: %s, transcription .txt written ok: %s",
                     self.name,
                     pages_deferred,
                     final_failure_count,
                     summary_failure_count,
                     summary_render_ok,
+                    txt_write_ok,
                 )
             return item_success
 

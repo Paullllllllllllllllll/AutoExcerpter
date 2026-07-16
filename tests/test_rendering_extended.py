@@ -185,6 +185,32 @@ class TestAppendToLog:
         content = log_path.read_text(encoding="utf-8")
         assert '"page": 1' in content
 
+    @patch("pipeline.log.get_api_concurrency", return_value=(4, 0.05))
+    @patch("pipeline.log.get_api_timeout", return_value=900)
+    @patch("pipeline.log.get_service_tier", return_value="flex")
+    def test_entry_is_on_disk_before_finalize(
+        self, mock_tier, mock_timeout, mock_conc, tmp_path: Path
+    ) -> None:
+        """Each appended line must be flushed to disk immediately (crash
+        durability): the resume contract tolerates only a truncated FINAL
+        line, so a block-buffered handle must not hold completed page
+        records in memory until finalize."""
+        log_path = tmp_path / "test.log.json"
+
+        initialize_log_file(
+            log_path=log_path,
+            item_name="doc.pdf",
+            input_path="/path",
+            input_type="pdf",
+            total_images=1,
+            model_name="gpt-5-mini",
+        )
+        append_to_log(log_path, {"page": 1, "status": "ok"})
+
+        # Read from disk WITHOUT finalizing (handle still open and cached).
+        content = log_path.read_text(encoding="utf-8")
+        assert json.loads(content.splitlines()[-1]) == {"page": 1, "status": "ok"}
+
     def test_returns_false_on_error(self, tmp_path: Path) -> None:
         """Returns False when writing fails."""
         # Create a log handle pointing to an invalid path

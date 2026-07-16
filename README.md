@@ -1,4 +1,4 @@
-# AutoExcerpter v2.0.0
+# AutoExcerpter v2.0.1
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -784,6 +784,18 @@ v1.0.0 do not exist.
 
 ## Changelog
 
+- **v2.0.1** (16 July 2026) -- Two robustness fixes from a bug-hunt pass.
+    First, a failed final `.txt` write (disk full, file locked, permission
+    denied) was silently swallowed: the item still counted as complete, the
+    run exited 0, and the `--json` summary advertised a transcription file
+    that was never written. The writer's failure signal now fails the item,
+    keeps the phantom path out of `outputs`, and logs that the working log is
+    retained for a re-run. Second, working-log JSONL lines are now flushed to
+    disk per page: the cached append handle was block-buffered, so a hard
+    crash (power loss, process kill) could drop kilobytes of completed page
+    records rather than only the truncated final line the resume parser is
+    designed to tolerate, forcing those pages to be re-transcribed at full
+    API cost on resume. Regression tests cover both paths.
 - **v2.0.0** (16 July 2026) -- New recommended standard configuration for
     best processing results, shipped as the bundled example defaults: OpenAI
     gpt-5.6-luna at reasoning effort high for both the transcription and the
