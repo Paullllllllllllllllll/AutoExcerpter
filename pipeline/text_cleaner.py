@@ -864,7 +864,10 @@ def clean_transcription(text: str, config: dict[str, Any] | None = None) -> str:
     if latex_config.get("enabled", True):
         text = fix_latex_formulas(text, latex_config)
 
-    # 3. Hyphenation merging (off by default - can damage compound words)
+    # 3. Hyphenation merging (on by default in the shipped config; the
+    # conservative should_keep_hyphen guard protects genuine compounds).
+    # The False fallback below applies only to caller-supplied partial
+    # configs that omit the key; get_text_cleaning_config always sets it.
     if config.get("merge_hyphenation", False):
         text = merge_hyphenation(text)
 

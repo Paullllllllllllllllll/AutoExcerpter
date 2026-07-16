@@ -1,4 +1,4 @@
-# AutoExcerpter v2.0.1
+# AutoExcerpter v2.0.2
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -784,6 +784,19 @@ v1.0.0 do not exist.
 
 ## Changelog
 
+- **v2.0.2** (16 July 2026) -- Clean up four small defects flagged in the
+    v2.0.1 bug-hunt pass. Strip the UTF-8 BOM from `.gitattributes` that made
+    git misparse the leading comment and warn `policy: is not a valid
+    attribute name` on every checkout; record per-attempt durations in the
+    transcription and summary API statistics so schema retries no longer
+    inflate the reported average processing time (the per-page result still
+    carries the cumulative time the ETA uses); correct the stale
+    `text_cleaner` comment claiming hyphenation merging is off by default
+    (the shipped config enables it, guarded by `should_keep_hyphen`); and
+    make the `--resume` flag truthful — it is kept as the explicit form of
+    the default skip/resume behavior, now genuinely consumed by the mode
+    resolution, with help text no longer claiming a nonexistent config-file
+    `resume_mode` override.
 - **v2.0.1** (16 July 2026) -- Two robustness fixes from a bug-hunt pass.
     First, a failed final `.txt` write (disk full, file locked, permission
     denied) was silently swallowed: the item still counted as complete, the

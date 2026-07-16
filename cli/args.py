@@ -110,8 +110,9 @@ def setup_argparse() -> argparse.Namespace:
         "--resume",
         action="store_true",
         default=None,
-        help="Skip files whose output already exists (default behavior)."
-        " Overrides resume_mode in config.",
+        help="Explicitly select the default behavior: skip items whose outputs"
+        " already exist and resume partial ones. Kept so scripts can pin the"
+        " default; mutually exclusive with --force.",
     )
     resume_group.add_argument(
         "--force",
@@ -324,8 +325,16 @@ def _parse_execution_mode(
 ) -> tuple[Path, Path, bool, str | None, str | None, str]:
     """Parse execution mode and return input path, output path, process_all flag,
     select pattern, context, and resume mode."""
-    # Resolve resume mode from CLI flags (default: "skip")
-    resume_mode = "overwrite" if getattr(args, "force", None) else "skip"
+    # Resolve resume mode from the mutually exclusive CLI flags: --force
+    # selects overwrite; --resume is the explicit form of the default, so it
+    # and the unstated default both resolve to "skip" (there is no
+    # config-file resume_mode setting).
+    if getattr(args, "force", None):
+        resume_mode = "overwrite"
+    elif getattr(args, "resume", None):
+        resume_mode = "skip"
+    else:
+        resume_mode = "skip"
 
     if config.CLI_MODE:
         # CLI mode: use command line arguments

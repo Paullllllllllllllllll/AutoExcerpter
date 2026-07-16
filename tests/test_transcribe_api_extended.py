@@ -623,6 +623,85 @@ class TestTranscribePayload:
         assert result["transcription"] == "Got it this time."
         assert result["schema_retries"]["no_transcribable_text"] == 1
 
+    def test_schema_retry_records_per_attempt_processing_time(self) -> None:
+        """Schema retries must not inflate the per-request stats.
+
+        Regression: each ``processing_times`` entry covers ONE attempt, while
+        the result keeps the cumulative page time. Previously every
+        post-retry append re-counted all earlier attempts plus their backoff
+        sleeps, inflating the "average API processing time" statistic.
+        """
+        payload = _make_payload("page_0001.jpg", sequence_number=1)
+
+        mgr = _make_manager(
+            provider="openai",
+            schema_retry_config={
+                "no_transcribable_text": {
+                    "enabled": True,
+                    "max_attempts": 1,
+                    "backoff_base": 0.01,
+                    "backoff_multiplier": 1.0,
+                },
+            },
+        )
+
+        response_retry = AIMessage(
+            content=json.dumps(
+                {
+                    "no_transcribable_text": True,
+                    "image_analysis": "Blank page.",
+                    "transcription_not_possible": False,
+                }
+            )
+        )
+        response_retry.usage_metadata = None
+        response_retry.response_metadata = {}
+
+        response_ok = AIMessage(
+            content=json.dumps(
+                {
+                    "transcription": "Got it this time.",
+                    "no_transcribable_text": False,
+                    "transcription_not_possible": False,
+                }
+            )
+        )
+        response_ok.usage_metadata = None
+        response_ok.response_metadata = {}
+
+        mock_structured = MagicMock()
+        mock_structured.invoke.side_effect = [response_retry, response_ok]
+
+        # Deterministic fake clock scoped to llm.transcription: time.time()
+        # reads it, time.sleep() advances it, so the retry backoff (0.01 * 1.0
+        # + jitter 1.0 = 1.01 s) is the only elapsed "time".
+        clock = {"t": 0.0}
+
+        def fake_time() -> float:
+            return clock["t"]
+
+        def fake_sleep(seconds: float) -> None:
+            clock["t"] += seconds
+
+        with (
+            patch.object(
+                mgr, "_get_structured_chat_model", return_value=mock_structured
+            ),
+            patch.object(mgr, "_build_model_inputs", return_value=([], {})),
+            patch("llm.transcription.time") as mock_time,
+            patch("llm.base.random.uniform", return_value=1.0),
+        ):
+            mock_time.time.side_effect = fake_time
+            mock_time.sleep.side_effect = fake_sleep
+            result = mgr.transcribe_payload(payload, max_schema_retries=3)
+
+        assert result["transcription"] == "Got it this time."
+        # Two attempts, each instantaneous under the fake clock: neither stats
+        # entry re-counts the 1.01 s backoff that preceded the second attempt.
+        assert [round(t, 2) for t in mgr.processing_times] == [0.0, 0.0]
+        # The result still carries the cumulative page time (incl. backoff).
+        assert result["processing_time"] == pytest.approx(1.01)
+
     def test_schema_flag_retry_on_markdown_fenced_response(self) -> None:
         """A markdown-fenced JSON flag still triggers the schema-flag retry.
 

@@ -288,6 +288,8 @@ class SummaryManager(LLMClientBase):
         # Schema retry loop (API retries handled by _invoke_with_retry)
         for _ in range(max_schema_retries + 1):
             try:
+                attempt_start = time.time()
+
                 # Build messages and invocation kwargs
                 messages, invoke_kwargs = self._build_model_inputs(transcription)
 
@@ -303,9 +305,12 @@ class SummaryManager(LLMClientBase):
                     f"Summary for page {page_num}",
                 )
 
-                # Success - extract and parse response
+                # Success - extract and parse response. As in
+                # TranscriptionManager: the result keeps the cumulative page
+                # time, the stats deque records only this attempt so schema
+                # retries do not inflate the per-request average.
                 processing_time = time.time() - start_time
-                self.processing_times.append(processing_time)
+                self.processing_times.append(time.time() - attempt_start)
                 self._report_success()
 
                 # Report token usage (built into LangChain's response metadata)

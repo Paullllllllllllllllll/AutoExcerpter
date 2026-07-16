@@ -463,6 +463,8 @@ class TranscriptionManager(LLMClientBase):
         # Schema retry loop (API retries handled by _invoke_with_retry)
         for _ in range(max_schema_retries + 1):
             try:
+                attempt_start = time.time()
+
                 # Build messages and invocation kwargs
                 messages, invoke_kwargs = self._build_model_inputs(base64_image)
 
@@ -478,9 +480,14 @@ class TranscriptionManager(LLMClientBase):
                     f"Transcription for {image_name}",
                 )
 
-                # Success - extract and parse response
+                # Success - extract and parse response. The result carries the
+                # cumulative page time (processing_time, what the ETA consumes),
+                # while the per-request stats deque records only THIS attempt:
+                # appending the cumulative value re-counted every earlier schema
+                # attempt and its backoff sleep on each retry, inflating the
+                # "average API processing time" statistic.
                 processing_time = time.time() - start_time
-                self.processing_times.append(processing_time)
+                self.processing_times.append(time.time() - attempt_start)
                 self._report_success()
 
                 # Report token usage (built into LangChain's response metadata)
