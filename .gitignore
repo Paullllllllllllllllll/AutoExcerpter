@@ -21,3 +21,4 @@ tests/output/
 
 # Local scratch area (ad-hoc tests, backups)
 scratch/
+backup/

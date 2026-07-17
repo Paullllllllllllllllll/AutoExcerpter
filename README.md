@@ -1,4 +1,4 @@
-# AutoExcerpter v2.0.4
+# AutoExcerpter v2.0.5
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -296,7 +296,7 @@ plan) and exits without side effects.
 **Model overrides** (global or per-phase with
 `--transcription-` / `--summary-` prefix):
 
-`--model`, `--reasoning-effort {minimal,low,medium,high}`,
+`--model`, `--reasoning-effort {none,minimal,low,medium,high,xhigh}`,
 `--verbosity {low,medium,high}` (GPT-5 only),
 `--max-output-tokens N`, `--temperature F`,
 `--provider {openai,anthropic,google,openrouter,custom}`
@@ -374,32 +374,33 @@ summary_output:
   docx: true
   markdown: true
 
-input_folder_path: 'C:\path\to\PDFs'
-output_folder_path: ''
+input_folder_path: ''     # your input directory
+output_folder_path: ''    # empty = write next to each input file
 input_paths_is_output_path: true
 delete_temp_working_dir: true
 
 citation:
-  openalex_email: 'you@example.com'
+  openalex_email: ''      # polite pool (optional)
   max_api_requests: 300
   enable_openalex_enrichment: true
 
+paths:
+  state_dir: ''           # empty = ~/.autoexcerpter
+
 daily_token_limit:
-  enabled: true
-  daily_tokens: 9000000   # combined cap across tools (secondary guard)
+  enabled: false          # off by default; enable to enforce the budget
+  daily_tokens: 10_000_000  # combined cap across keys (secondary guard)
   scope: pooled           # pooled = cap only calls in a defined pool; all = legacy
   per_key_pool_caps:      # per-(API key, pool) daily caps (primary gate)
     enabled: true
     openai:
-      small: 9750000      # bare int: cap; model list from built-in defaults
-      large:
-        cap: 975000       # mapping form: custom cap and/or model prefixes
-        # models: ["gpt-5", "o3"]
-    # any provider can define its own named pools:
-    # myhost:
+      small: 9_750_000    # bare int: cap; model list from built-in defaults
+      large: 975_000
+    # mapping form defines custom pools for any provider:
+    # myprovider:
     #   standard:
-    #     cap: 5000000
-    #     models: ["my-model"]
+    #     cap: 5_000_000
+    #     models: ["my-model", "my-model-lite"]
 ```
 
 ### Model Configuration (model.yaml)
@@ -409,14 +410,15 @@ each with:
 
 ```yaml
 transcription_model:
-  name: "gpt-5.2"
+  name: "gpt-5.6-luna"
   provider: "openai"        # auto-detected if unambiguous
-  max_output_tokens: 12000
+  max_output_tokens: 128000
   temperature: 1.0
   reasoning:
-    effort: medium           # maps to native reasoning param
+    effort: high             # none | low | medium | high | xhigh
   text:
     verbosity: medium        # GPT-5 family only
+  image_size: original       # OpenAI per-image detail: low | high | auto | original
 ```
 
 **Reasoning effort mapping:**
@@ -446,27 +448,24 @@ transcription_model:
 ### Concurrency Configuration (concurrency.yaml)
 
 ```yaml
-image_processing:
-  concurrency_limit: 24
-
 api_requests:
-  api_timeout: 900
+  api_timeout: 900           # pairs with flex-tier queuing
   rate_limits:
-    - [120, 1]
-    - [15000, 60]
-    - [15000, 3600]
+    - [10, 1]
+    - [600, 60]
+    - [600, 3600]
   transcription:
-    concurrency_limit: 5
-    delay_between_tasks: 0.1
-    service_tier: default    # default | flex | priority
-  summary:
-    concurrency_limit: 5
-    delay_between_tasks: 0.1
-    service_tier: flex
+    concurrency_limit: 80    # tuned for OpenAI API tier 3
+    service_tier: flex       # default | flex | priority
+  # Summaries run inline within the transcription workers and share the
+  # transcription phase's concurrency and rate limiter; there is no
+  # separate summary concurrency block.
 
 retry:
-  max_attempts: 5
-  backoff_base: 1.0
+  max_attempts: 8
+  max_elapsed: 900           # time-based retry horizon (s); 0 = attempts-only
+  backoff_base: 0.5
+  backoff_cap: 120           # ceiling (s) on any single wait
   backoff_multipliers:
     rate_limit: 2.0
     timeout: 1.5
@@ -477,7 +476,7 @@ retry:
   schema_retries:
     transcription:
       validation_failure: { enabled: true, max_attempts: 3 }
-      no_transcribable_text: { enabled: true, max_attempts: 0 }
+      no_transcribable_text: { enabled: false, max_attempts: 0 }
       transcription_not_possible: { enabled: true, max_attempts: 3 }
     summary:
       validation_failure: { enabled: true, max_attempts: 3 }
@@ -506,9 +505,11 @@ api_image_processing:
   handle_transparency: true
   jpeg_quality: 100
   resize_profile: high       # high | low | auto | none
-  llm_detail: high           # high | low | auto
+  llm_detail: original       # high | low | auto | original (GPT-5.6 family)
   high_target_box: [768, 1536]
   low_max_side_px: 512
+  original_max_side_px: 6000     # caps for 'original' detail
+  original_max_pixels: 10240000
 ```
 
 Post-transcription text cleaning:
@@ -522,13 +523,17 @@ text_cleaning:
     balance_dollar_signs: true
     close_unclosed_braces: true
     fix_common_commands: true
-  merge_hyphenation: false
+    normalize_math_delimiters: true
+    balance_left_right: true
+    convert_html_subsup: true
+  merge_hyphenation: true     # compound-preserving guard keeps "Jean-Baptiste"
   whitespace_normalization:
     enabled: true
     collapse_internal_spaces: true
     max_blank_lines: 2
+    tab_size: 4
   line_wrapping:
-    enabled: true
+    enabled: false            # keep disabled; LLM output is already laid out
     auto_width: true
     fixed_width: 80
 ```
@@ -680,11 +685,16 @@ AutoExcerpter/
 │   ├── loader.py                    # YAML loader singleton
 │   ├── accessors.py                 # Typed config accessors
 │   ├── constants.py                 # Hardcoded defaults
-│   └── defaults/                    # User-editable YAML configs
-│       ├── app.yaml
-│       ├── model.yaml
-│       ├── concurrency.yaml
-│       └── image_processing.yaml
+│   ├── logger.py                    # Logging setup
+│   ├── state.py                     # State-directory resolution
+│   ├── types.py                     # Config type definitions
+│   └── defaults/                    # YAML configs (tracked *.example.yaml
+│       │                            #   templates; real *.yaml are gitignored)
+│       ├── app.example.yaml
+│       ├── model.example.yaml
+│       ├── concurrency.example.yaml
+│       ├── image_processing.example.yaml
+│       └── api_keys.example.yaml
 ├── llm/                             # LLM client layer
 │   ├── client.py                    # Model factory (LLMConfig, get_chat_model)
 │   ├── base.py                      # Shared retry, token tracking, capability guard
@@ -692,6 +702,8 @@ AutoExcerpter/
 │   ├── rate_limit.py                # Sliding-window rate limiter
 │   ├── transcription.py             # TranscriptionManager
 │   ├── summary.py                   # SummaryManager
+│   ├── token_tracker.py             # Daily token budget (private tracker)
+│   ├── shared_ledger.py             # Vendored cross-tool token ledger
 │   ├── prompts.py                   # Prompt rendering + response parsing
 │   └── resources/                   # Prompt templates and JSON schemas
 ├── imaging/                         # PDF rendering + image preprocessing
@@ -712,6 +724,7 @@ AutoExcerpter/
 │   ├── page_numbering.py            # Page-number correction
 │   ├── text_cleaner.py              # Post-transcription cleanup
 │   ├── paths.py                     # Windows-safe path helpers
+│   ├── types.py                     # Pipeline type definitions
 │   └── log.py                       # JSONL log lifecycle
 ├── cli/                             # Command-line interface
 │   ├── args.py                      # Argparse + execution-mode resolution
@@ -719,10 +732,12 @@ AutoExcerpter/
 │   ├── interaction.py               # Terminal I/O primitives
 │   ├── loop.py                      # Per-item processing loop
 │   └── errors.py                    # Domain exceptions
-├── context/summary/general.txt      # Default summarization topics
-├── tests/                           # Test suite (1,232 tests)
+├── scripts/repair_layout/           # Deterministic line-break repair utility
+├── context/summary/general.txt      # Default summarization topics (gitignored)
+├── tests/                           # Test suite (1,518 tests)
+├── LICENSE                          # MIT license
 ├── pyproject.toml                   # Project metadata and dependencies
-└── uv.lock                         # Pinned dependency lockfile
+└── uv.lock                          # Pinned dependency lockfile
 ```
 
 ## Advanced Topics
@@ -730,8 +745,7 @@ AutoExcerpter/
 **Maximizing throughput:**
 increase `concurrency_limit` based on provider tier (OpenAI:
 50-150, Anthropic: 5-10); use `service_tier: flex` for batch
-work; raise `image_processing.concurrency_limit` to 24-48 on
-SSDs; use `llm_detail: auto` or `low` for clean documents.
+work; use `llm_detail: auto` or `low` for clean documents.
 
 **Reducing cost:**
 use Flex tier (~50% savings); lower `target_dpi` to 200-250 for
@@ -784,6 +798,23 @@ v1.0.0 do not exist.
 
 ## Changelog
 
+- **v2.0.5** (17 July 2026) -- Documentation reconciliation release; no code
+    changes. Every Configuration-section YAML snippet in the README is
+    brought back in line with the shipped `*.example.yaml` templates
+    (gpt-5.6-luna at reasoning effort high with `image_size: original`,
+    transcription concurrency 80 on the flex tier, the actual rate-limit and
+    retry defaults including `max_elapsed` and `backoff_cap`, the daily token
+    limit shown disabled at its scrubbed `10_000_000` default with bare-int
+    pool caps, and the current text-cleaning defaults); the stale
+    `delay_between_tasks` key, the separate `summary:` concurrency block,
+    and the nonexistent `image_processing.concurrency_limit` lever are
+    removed from the examples. The CLI table's `--reasoning-effort` choices
+    now list the full supported set (none through xhigh), the Project
+    Structure tree gains the previously missing files (`config/state.py`,
+    `config/logger.py`, `config/types.py`, `llm/token_tracker.py`,
+    `llm/shared_ledger.py`, `pipeline/types.py`, `scripts/repair_layout/`,
+    the `*.example.yaml` split, LICENSE), and the stated test count is
+    corrected to the actual 1,518 collected tests.
 - **v2.0.4** (16 July 2026) -- Type-hygiene release: the vendored
     shared-ledger test is now fully typed (Any-typed dynamic module handle,
     `pytest.MonkeyPatch` annotations, covariant frozen-datetime override) and
