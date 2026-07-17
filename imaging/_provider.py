@@ -28,7 +28,7 @@ def detect_model_type(provider: str, model_name: str | None = None) -> ModelType
         model_name: The model name (e.g., 'gpt-4o', 'claude-3-opus', 'gemini-2.5-flash')
 
     Returns:
-        Model type: 'google', 'anthropic', or 'openai'
+        Model type: 'google', 'anthropic', 'openai', or 'custom'
     """
     provider = provider.lower()
     model_name = model_name.lower() if model_name else ""

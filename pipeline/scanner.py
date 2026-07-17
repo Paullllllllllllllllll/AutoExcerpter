@@ -82,10 +82,12 @@ def _collect_items_from_directory(path_to_scan: Path) -> Iterable[ItemSpec]:
     # pruning the os.walk at the first image-bearing directory silently dropped
     # everything below it (e.g. a stray cover.jpg at the root hid all PDFs
     # underneath). Instead, only suppress image folders nested under another
-    # image folder (e.g. Book1/thumbnails under an image-book Book1): those are
-    # parts of the parent scan set, not separate items. PDFs anywhere below are
-    # always kept, and every suppressed folder is logged so nothing processable
-    # is silently discarded.
+    # image folder (e.g. Book1/thumbnails under an image-book Book1). Because
+    # the parent's image glob is non-recursive, a suppressed subfolder's images
+    # are excluded rather than merged into the parent item, so every suppressed
+    # folder is logged (with a hint to point the input at it directly) so
+    # nothing processable is silently discarded. PDFs anywhere below are always
+    # kept.
     folder_paths = set(image_folders)
     kept: dict[Path, list[Path]] = {}
     for folder, images in image_folders.items():

@@ -565,7 +565,7 @@ def add_formatted_text_to_paragraph(paragraph: Any, text: str) -> None:
     segments = parse_latex_in_text(text)
 
     for content, segment_type in segments:
-        if segment_type in ("latex", "latex_display", "latex_inline"):
+        if segment_type in ("latex_display", "latex_inline"):
             add_math_to_paragraph(paragraph, content)
         else:
             paragraph.add_run(sanitize_for_xml(content))

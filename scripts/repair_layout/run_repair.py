@@ -124,11 +124,13 @@ def process_file(path: Path, root: Path, dry_run: bool) -> FileResult:
         write_text_preserve(path, repaired, had_crlf)
         written = True
 
-    repaired_set = set(text.split("\n"))
+    # Flag long lines in the repaired output that are newly formed (i.e. not
+    # present verbatim in the original text), which merit a manual look.
+    original_lines = set(text.split("\n"))
     long_lines = [
         line
         for line in repaired.split("\n")
-        if len(line) > _LONG_LINE_AUDIT_THRESHOLD and line not in repaired_set
+        if len(line) > _LONG_LINE_AUDIT_THRESHOLD and line not in original_lines
     ]
     kept = [f"{d.left}-{d.right}" for d in audit.hyphen_decisions if d.kept]
     merged = sum(1 for d in audit.hyphen_decisions if not d.kept)
@@ -214,7 +216,7 @@ def main() -> None:
     date = _dt.date.today().strftime("%d_%m_%Y")
 
     targets = find_targets(root)
-    if args.limit:
+    if args.limit is not None:
         targets = targets[: args.limit]
     print(f"Found {len(targets)} transcription .txt files under {root}")
 
