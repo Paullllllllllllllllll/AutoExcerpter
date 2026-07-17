@@ -310,7 +310,7 @@ class SummaryManager(LLMClientBase):
                 # time, the stats deque records only this attempt so schema
                 # retries do not inflate the per-request average.
                 processing_time = time.time() - start_time
-                self.processing_times.append(time.time() - attempt_start)
+                self._record_processing_time(time.time() - attempt_start)
                 self._report_success()
 
                 # Report token usage (built into LangChain's response metadata)

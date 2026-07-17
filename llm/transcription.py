@@ -487,7 +487,7 @@ class TranscriptionManager(LLMClientBase):
                 # attempt and its backoff sleep on each retry, inflating the
                 # "average API processing time" statistic.
                 processing_time = time.time() - start_time
-                self.processing_times.append(time.time() - attempt_start)
+                self._record_processing_time(time.time() - attempt_start)
                 self._report_success()
 
                 # Report token usage (built into LangChain's response metadata)

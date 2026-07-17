@@ -456,6 +456,15 @@ class LLMClientBase:
         with self._stats_lock:
             self.failed_requests += 1
 
+    def _record_processing_time(self, elapsed: float) -> None:
+        """Append a per-attempt duration to the stats deque (thread-safe).
+
+        Guarded by the same lock get_stats() snapshots under, so concurrent
+        worker appends never race a reader iterating the deque.
+        """
+        with self._stats_lock:
+            self.processing_times.append(elapsed)
+
     def _report_error(self, is_rate_limit_or_server: bool) -> None:
         """
         Report error to rate limiter.
@@ -1054,12 +1063,15 @@ class LLMClientBase:
 
     def get_stats(self) -> dict[str, Any]:
         """Get statistics about API usage."""
-        avg_time = (
-            statistics.mean(self.processing_times) if self.processing_times else 0
-        )
+        # Snapshot the deque under the lock: worker threads append to (and evict
+        # from) processing_times concurrently, so iterating it lazily via
+        # statistics.mean() outside the lock can raise "deque mutated during
+        # iteration".
         with self._stats_lock:
+            times = list(self.processing_times)
             successful = self.successful_requests
             failed = self.failed_requests
+        avg_time = statistics.mean(times) if times else 0
         total_requests = successful + failed
         success_rate = (successful / max(1, total_requests)) * 100
 

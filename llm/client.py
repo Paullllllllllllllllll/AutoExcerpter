@@ -160,6 +160,11 @@ def _infer_provider(model: str) -> ProviderType:
         if provider in SUPPORTED_PROVIDERS:
             return provider  # type: ignore
 
+    # OpenRouter model ids carry a "vendor/model" separator. Mirror
+    # capabilities.detect_provider so both provider-detection paths agree.
+    if "/" in model:
+        return "openrouter"
+
     # Check model name patterns
     model_lower = model.lower()
 
