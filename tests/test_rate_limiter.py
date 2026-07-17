@@ -5,7 +5,37 @@ from __future__ import annotations
 import threading
 import time
 
+import pytest
+
+from config.constants import MAX_SLEEP_TIME
 from llm.rate_limit import RateLimiter
+
+
+class _SleepInterrupt(Exception):
+    """Raised by the fake sleep to abort wait_for_capacity's blocking loop.
+
+    Recording the requested sleep duration and then unwinding lets the tests
+    assert that a real wait was demanded, without ever sleeping in real time.
+    """
+
+
+def _record_first_sleep(monkeypatch: pytest.MonkeyPatch, store: list[float]) -> None:
+    """Patch the rate limiter's ``time.sleep`` to capture the first requested
+    sleep duration and abort the wait loop via ``_SleepInterrupt``.
+
+    A limiter that never blocks never calls sleep, so ``store`` stays empty and
+    the caller's enforcement assertions fail — exactly what should happen for a
+    broken (no-op) limiter.
+
+    The limiter calls ``time.sleep`` via ``import time``, so patching the
+    stdlib ``time`` module's ``sleep`` intercepts its blocking wait.
+    """
+
+    def fake_sleep(seconds: float) -> None:
+        store.append(seconds)
+        raise _SleepInterrupt
+
+    monkeypatch.setattr(time, "sleep", fake_sleep)
 
 
 class TestRateLimiterInit:
@@ -83,32 +113,56 @@ class TestWaitForCapacity:
         assert waited >= 0.0
         assert limiter.total_requests == 1
 
-    def test_rate_limit_enforced(self) -> None:
-        """Rate limit is enforced when exceeded."""
-        # Very low limit to test enforcement
+    def test_rate_limit_enforced(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A saturated window forces the third request to sleep.
+
+        The fake sleep records the requested duration and aborts the wait loop,
+        so we assert that a real wait was demanded without sleeping in real
+        time. A no-op limiter that admitted the third request immediately would
+        never call sleep, leaving ``sleeps`` empty and failing the test.
+        """
         limiter = RateLimiter([(2, 1)])  # 2 requests per second
 
-        # Make 2 requests (should be instant)
+        # Fill the window; these two admit instantly.
         limiter.wait_for_capacity()
         limiter.wait_for_capacity()
 
-        # Third request should wait
-        start = time.time()
-        limiter.wait_for_capacity()
-        elapsed = time.time() - start
+        sleeps: list[float] = []
+        _record_first_sleep(monkeypatch, sleeps)
 
-        # Should have waited some time (rate limited)
-        assert elapsed > 0.3 or limiter.total_requests == 3
+        # Third request is over the limit: it must wait rather than admit.
+        with pytest.raises(_SleepInterrupt):
+            limiter.wait_for_capacity()
 
-    def test_multiple_limits_checked(self) -> None:
-        """All limits are checked simultaneously."""
-        # Tight second limit, loose first limit
+        # A wait was actually requested (empty list => no enforcement).
+        assert sleeps
+        # The window wants a ~1 s wait; the request is capped at MAX_SLEEP_TIME.
+        assert sleeps[0] == pytest.approx(MAX_SLEEP_TIME)
+        # The blocked request was NOT admitted.
+        assert limiter.total_requests == 2
+
+    def test_multiple_limits_checked(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The tighter of several windows triggers the block.
+
+        The per-minute window (2/60) saturates after two requests while the
+        per-second window (100/1) stays wide open; the third request must still
+        wait, proving every window is checked, not merely the first.
+        """
         limiter = RateLimiter([(100, 1), (2, 60)])  # 100/sec, 2/min
 
         limiter.wait_for_capacity()
         limiter.wait_for_capacity()
-        # Third request should wait due to per-minute limit
 
+        sleeps: list[float] = []
+        _record_first_sleep(monkeypatch, sleeps)
+
+        # Third request is under the per-second cap but over the per-minute cap.
+        with pytest.raises(_SleepInterrupt):
+            limiter.wait_for_capacity()
+
+        assert sleeps
+        # The per-minute window wants ~60 s; the request is capped at the max.
+        assert sleeps[0] == pytest.approx(MAX_SLEEP_TIME)
         assert limiter.total_requests == 2
 
 
@@ -278,23 +332,40 @@ class TestThreadSafety:
 class TestAdaptiveBackoff:
     """Tests for adaptive backoff behavior."""
 
-    def test_error_multiplier_affects_wait(self) -> None:
-        """Higher error multiplier increases wait times."""
-        limiter = RateLimiter([(2, 1)])  # 2 per second
+    def test_error_multiplier_affects_wait(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A higher error multiplier lengthens the enforced wait.
 
-        # Fill capacity
-        limiter.wait_for_capacity()
-        limiter.wait_for_capacity()
+        With the sleep cap lifted, the recorded sleep for a saturated window
+        grows in proportion to ``error_multiplier``. An unchanged wait would
+        prove the multiplier was ignored, so the growth assertion catches a
+        limiter that fails to scale its backoff.
+        """
+        import llm.rate_limit as rl
 
-        # Set high error multiplier
-        limiter.error_multiplier = 3.0
+        # Lift the MAX_SLEEP_TIME cap so the multiplier's effect stays visible
+        # in the requested sleep (a saturated window otherwise saturates it).
+        monkeypatch.setattr(rl, "MAX_SLEEP_TIME", 100.0)
 
-        # Next request should wait longer due to multiplier
-        # (The actual wait is multiplied by error_multiplier)
-        limiter.wait_for_capacity()
+        def saturated_wait(multiplier: float) -> float:
+            limiter = RateLimiter([(2, 1)])
+            limiter.wait_for_capacity()
+            limiter.wait_for_capacity()
+            limiter.error_multiplier = multiplier
+            sleeps: list[float] = []
+            _record_first_sleep(monkeypatch, sleeps)
+            with pytest.raises(_SleepInterrupt):
+                limiter.wait_for_capacity()
+            assert sleeps
+            return sleeps[0]
 
-        # Should have some wait (rate limited)
-        assert limiter.total_requests == 3
+        baseline = saturated_wait(1.0)
+        boosted = saturated_wait(3.0)
+
+        # The elevated multiplier must lengthen the wait (roughly 3x here).
+        assert boosted > baseline
+        assert boosted >= 2 * baseline
 
     def test_recovery_after_success_streak(self) -> None:
         """Error multiplier recovers after streak of successes."""
