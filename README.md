@@ -1,4 +1,4 @@
-# AutoExcerpter v2.1.0
+# AutoExcerpter v2.1.1
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -102,31 +102,34 @@ patterns (full structured, plain text, prompt-guided JSON).
 
 | Family | Models | Notes |
 |---|---|---|
-| GPT-5.4 Pro/5.4 | gpt-5.4-pro, gpt-5.4 | Reasoning, verbosity, 1.05M ctx |
-| GPT-5.3/5.2 | gpt-5.3, gpt-5.2, gpt-5.2-pro | Reasoning, verbosity, 400k ctx |
-| GPT-5.1 | gpt-5.1, gpt-5.1-instant, gpt-5.1-thinking | Reasoning, verbosity |
-| GPT-5 | gpt-5, gpt-5-mini, gpt-5-nano | Reasoning, verbosity |
-| O-series | o4, o4-mini, o3, o3-mini, o1, o1-mini | Reasoning (no temperature) |
+| GPT-5.6 | gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna (default) | Reasoning, verbosity, original image detail, 1.05M ctx |
+| GPT-5.5 | gpt-5.5, gpt-5.5-pro | Reasoning, verbosity, 1.05M ctx |
+| GPT-5.4 | gpt-5.4, gpt-5.4-pro, gpt-5.4-mini, gpt-5.4-nano | Reasoning, verbosity |
+| GPT-5.3 | gpt-5.3, gpt-5.3-codex | Reasoning, verbosity, 400k ctx |
+| GPT-5.2 | gpt-5.2, gpt-5.2-pro | Reasoning, verbosity, 400k ctx |
+| GPT-5.1/5 | gpt-5.1, gpt-5 | Reasoning, verbosity |
+| O-series | o4, o4-mini, o4-mini-deep-research, o3, o3-pro, o3-mini, o3-deep-research, o1, o1-pro, o1-mini | Reasoning (no temperature) |
 | GPT-4.1 | gpt-4.1, gpt-4.1-mini, gpt-4.1-nano | Multimodal |
-| GPT-4o | gpt-4o, gpt-4o-mini | Multimodal |
+| GPT-4o/4 | gpt-4o, gpt-4-turbo, gpt-4 | Multimodal (gpt-4 text-only) |
 
 **Anthropic:**
 
 | Family | Models | Notes |
 |---|---|---|
-| Claude 4.6 | claude-opus-4-6, claude-sonnet-4-6 | Extended thinking, 200k ctx |
-| Claude 4.5 | claude-opus-4-5, claude-sonnet-4-5, claude-haiku-4-5 | Extended thinking (opus/sonnet) |
-| Claude 4 | claude-opus-4, claude-sonnet-4 | Extended thinking |
-| Claude 3.x | claude-3-7-sonnet, claude-3-5-sonnet, claude-3-5-haiku | Multimodal |
+| Claude 5 | claude-fable-5, claude-sonnet-5 | Adaptive thinking, 1M ctx |
+| Claude 4.6-4.8 | claude-opus-4-8, claude-opus-4-7, claude-opus-4-6, claude-sonnet-4-6 | Extended thinking, 1M ctx |
+| Claude 4.5 | claude-opus-4-5, claude-sonnet-4-5, claude-haiku-4-5 | Extended thinking |
+| Claude 4 | claude-opus-4-1, claude-opus-4, claude-sonnet-4 | Extended thinking (opus) |
+| Claude 3.x | claude-3-7-sonnet, claude-3-5-sonnet, claude-3-5-haiku, claude-3-opus, claude-3-sonnet, claude-3-haiku | Multimodal |
 
 **Google:**
 
 | Family | Models | Notes |
 |---|---|---|
-| Gemini 3 Preview | gemini-3-pro-preview, gemini-3-flash-preview | Thinking, 1M ctx |
-| Gemini 3 | gemini-3-pro, gemini-3-flash | Thinking |
-| Gemini 2.5 | gemini-2.5-pro, gemini-2.5-flash, gemini-2.5-flash-lite | Thinking |
-| Gemini 2.0 | gemini-2.0-flash, gemini-2.0-flash-lite | Multimodal |
+| Gemini 3.x | gemini-3.5-flash, gemini-3.1-pro, gemini-3.1-flash-lite | Thinking, 1M ctx |
+| Gemini 3 | gemini-3-pro, gemini-3-flash, gemini-3 | Thinking (gemini-3-pro 2M ctx) |
+| Gemini 2.5 | gemini-2.5-pro, gemini-2.5-flash, gemini-2.5-flash-lite | Thinking (pro/flash) |
+| Gemini 2.0 | gemini-2.0 | Multimodal |
 | Gemini 1.5 | gemini-1.5-pro, gemini-1.5-flash | Multimodal |
 
 **OpenRouter:** any supported model via unified API.
@@ -739,7 +742,7 @@ AutoExcerpter/
 │   └── errors.py                    # Domain exceptions
 ├── scripts/repair_layout/           # Deterministic line-break repair utility
 ├── context/summary/general.txt      # Default summarization topics (gitignored)
-├── tests/                           # Test suite (1,518 tests)
+├── tests/                           # Test suite (1,541 tests)
 ├── LICENSE                          # MIT license
 ├── pyproject.toml                   # Project metadata and dependencies
 └── uv.lock                          # Pinned dependency lockfile
@@ -803,6 +806,25 @@ v1.0.0 do not exist.
 
 ## Changelog
 
+- **v2.1.1** (18 July 2026) -- Correctness and robustness release from a
+    codebase-wide bug hunt. `_get_bool` now falls back to the configured
+    default on an explicit YAML null instead of silently reading it as
+    `False`, so a blank key no longer disables a feature whose default is
+    `True`; the `ConfigLoader` singleton builds fully before it is published
+    under a lock, closing a race in which a worker thread could observe an
+    empty, unloaded loader. `LLMClientBase.get_stats` snapshots the
+    processing-times deque under the stats lock, preventing a "deque mutated
+    during iteration" crash when stats are polled during concurrent page
+    work. Citation year extraction strips URLs and DOIs first, so DOI
+    registrant prefixes such as `10.1016/` are no longer mistaken for a
+    publication year and no longer mis-block deduplication. Provider
+    inference now routes `vendor/model` identifiers to OpenRouter, matching
+    the capability layer. The item transcriber closes its payload source on
+    any setup-phase failure, eliminating a PDF handle leak. Documentation,
+    the Supported Models tables, several docstrings and comments, and a dead
+    rendering branch were corrected, and new tests cover the config
+    example-fallback, citation dedup (DOI-year, volume, shared-identifier,
+    Jaccard), and real rate-limit blocking.
 - **v2.1.0** (17 July 2026) -- Performance release focused on file I/O, image
     processing, and hot-path Python, with all outputs verified byte-identical
     or semantically equivalent. The resume check now parses each working log
