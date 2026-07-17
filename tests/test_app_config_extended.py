@@ -65,6 +65,41 @@ class TestLoadYamlAppConfig:
         result = _load_yaml_app_config()
         assert result == {}
 
+    def test_falls_back_to_example(self, tmp_path: Path, monkeypatch) -> None:
+        """Loads app.example.yaml when the real app.yaml is absent."""
+        yaml_content = {"cli_mode": False, "summarize": True}
+        # Only the bundled example exists next to the expected real file.
+        (tmp_path / "app.example.yaml").write_text(
+            yaml.dump(yaml_content), encoding="utf-8"
+        )
+        real_path = tmp_path / "app.yaml"
+
+        import config.app as ac
+
+        monkeypatch.setattr(ac, "_APP_CONFIG_PATH", real_path)
+
+        result = _load_yaml_app_config()
+        assert isinstance(result, dict)
+        assert result["cli_mode"] is False
+        assert result["summarize"] is True
+
+    def test_real_takes_precedence_over_example(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """The real app.yaml wins when both it and the example are present."""
+        real_path = tmp_path / "app.yaml"
+        real_path.write_text(yaml.dump({"cli_mode": True}), encoding="utf-8")
+        (tmp_path / "app.example.yaml").write_text(
+            yaml.dump({"cli_mode": False}), encoding="utf-8"
+        )
+
+        import config.app as ac
+
+        monkeypatch.setattr(ac, "_APP_CONFIG_PATH", real_path)
+
+        result = _load_yaml_app_config()
+        assert result["cli_mode"] is True
+
     def test_invalid_yaml_returns_empty_dict(self, tmp_path: Path, monkeypatch) -> None:
         """Returns empty dict when the YAML is malformed."""
         bad_yaml = tmp_path / "bad.yaml"
@@ -197,10 +232,16 @@ class TestGetBool:
         data = {"key": 0}
         assert _get_bool(data, "key", True) is False
 
-    def test_none_value_is_falsy(self) -> None:
-        """None is falsy."""
+    def test_none_value_returns_default(self) -> None:
+        """An explicit null (e.g. a blank YAML key) falls back to the default.
+
+        A key written with no value parses to None; treating it as False would
+        silently disable features whose default is True. Mirrors _get_str /
+        _get_int, which also fall back to the default on None.
+        """
         data = {"key": None}
-        assert _get_bool(data, "key", True) is False
+        assert _get_bool(data, "key", True) is True
+        assert _get_bool(data, "key", False) is False
 
     def test_missing_key_returns_default_true(self) -> None:
         """Missing key returns the default value (True)."""

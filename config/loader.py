@@ -31,6 +31,7 @@ warnings when configuration files are not found or contain invalid YAML.
 
 from __future__ import annotations
 
+import threading
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -189,6 +190,7 @@ class ConfigLoader:
 # Singleton Pattern for Config Loader
 # ============================================================================
 _config_loader_instance: ConfigLoader | None = None
+_config_loader_lock = threading.Lock()
 
 
 def get_config_loader() -> ConfigLoader:
@@ -196,9 +198,16 @@ def get_config_loader() -> ConfigLoader:
     global _config_loader_instance
 
     if _config_loader_instance is None:
-        _config_loader_instance = ConfigLoader()
-        _config_loader_instance.load_configs()
-        logger.debug("Initialized singleton ConfigLoader")
+        with _config_loader_lock:
+            # Re-check under the lock: another thread may have finished
+            # building and publishing the instance while we waited.
+            if _config_loader_instance is None:
+                loader = ConfigLoader()
+                loader.load_configs()
+                # Publish only after the configs are fully loaded, so a
+                # racing worker never observes an empty, unloaded loader.
+                _config_loader_instance = loader
+                logger.debug("Initialized singleton ConfigLoader")
 
     return _config_loader_instance
 

@@ -115,6 +115,45 @@ class TestConfigLoaderLoadConfigs:
 
         assert result == {}
 
+    def test_load_yaml_config_falls_back_to_example(self, temp_dir: Path) -> None:
+        """_load_yaml_config loads <stem>.example.yaml when the real file absent."""
+        # Only the bundled example exists; the real file is missing.
+        example_path = temp_dir / "image_processing.example.yaml"
+        example_path.write_text("key: example_value\nnested:\n  subkey: 1")
+
+        loader = ConfigLoader()
+
+        with patch("config.loader.CONFIG_DIR", temp_dir):
+            result = loader._load_yaml_config("image_processing.yaml")
+
+        assert result == {"key": "example_value", "nested": {"subkey": 1}}
+
+    def test_load_yaml_config_real_takes_precedence_over_example(
+        self, temp_dir: Path
+    ) -> None:
+        """The real file wins when both it and the example are present."""
+        (temp_dir / "image_processing.yaml").write_text("key: real_value")
+        (temp_dir / "image_processing.example.yaml").write_text("key: example_value")
+
+        loader = ConfigLoader()
+
+        with patch("config.loader.CONFIG_DIR", temp_dir):
+            result = loader._load_yaml_config("image_processing.yaml")
+
+        assert result == {"key": "real_value"}
+
+    def test_load_yaml_config_neither_present_returns_empty(
+        self, temp_dir: Path
+    ) -> None:
+        """Returns {} without raising when neither real nor example exists."""
+        loader = ConfigLoader()
+
+        # temp_dir is empty: no image_processing.yaml and no example beside it.
+        with patch("config.loader.CONFIG_DIR", temp_dir):
+            result = loader._load_yaml_config("image_processing.yaml")
+
+        assert result == {}
+
 
 class TestApiKeysConfig:
     """Tests for the optional api_keys.yaml mapping."""

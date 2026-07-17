@@ -119,6 +119,8 @@ def _get_int(data: dict[str, Any], key: str, default: int) -> int:
 def _get_bool(data: dict[str, Any], key: str, default: bool) -> bool:
     """Safely get a boolean value from config dictionary."""
     value = data.get(key, default)
+    if value is None:
+        return default
     return bool(value)
 
 
