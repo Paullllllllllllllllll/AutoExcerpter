@@ -311,6 +311,11 @@ class CitationManager:
         self.citations: dict[str, Citation] = {}
         self.polite_pool_email = polite_pool_email or OPENALEX_POLITE_POOL_EMAIL
         self._api_cache: dict[str, dict[str, Any] | None] = {}
+        # Memoize the deterministic raw_text -> normalized_key derivation so a
+        # repeated mention of the same citation skips the regex/NFKD/MD5
+        # pipeline in Citation.__post_init__ (add_citations is O(mentions) of
+        # this work otherwise; with the cache it is O(unique raw texts)).
+        self._normalized_key_cache: dict[str, str] = {}
         self._openalex_budget_exhausted: bool = False
 
         # Merge/linking thresholds (config-exposed under `citation:`).
@@ -356,9 +361,23 @@ class CitationManager:
             if not citation_text or not citation_text.strip():
                 continue
 
+            stripped = citation_text.strip()
+
+            # Fast path: an identical raw text was already derived and its
+            # citation is still present. Skip rebuilding the Citation (regex +
+            # NFKD fold + MD5 key) and only merge this mention's page/partial
+            # state, exactly as the "already exists" branch below would.
+            cached_key = self._normalized_key_cache.get(stripped)
+            if cached_key is not None and cached_key in self.citations:
+                existing = self.citations[cached_key]
+                existing.add_page(page_number)
+                existing.partial = existing.partial and is_partial
+                continue
+
             # Create or retrieve citation
-            citation = Citation(raw_text=citation_text.strip(), partial=is_partial)
+            citation = Citation(raw_text=stripped, partial=is_partial)
             normalized_key = citation.normalized_key
+            self._normalized_key_cache[stripped] = normalized_key
 
             if normalized_key in self.citations:
                 # Citation already exists, just add the page. Full wins over

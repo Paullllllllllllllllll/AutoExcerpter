@@ -36,6 +36,9 @@ def _process_single_item(
     summary_context: str | None = None,
     resume_mode: str = "skip",
     completed_page_indices: set[int] | None = None,
+    prior_transcription_results: list[dict[str, Any]] | None = None,
+    prior_summary_results: list[dict[str, Any]] | None = None,
+    logged_log_header: dict[str, Any] | None = None,
 ) -> tuple[bool, list[str]]:
     """Process a single PDF or image folder item.
 
@@ -48,6 +51,13 @@ def _process_single_item(
         resume_mode: Resume mode ("skip" or "overwrite").
         completed_page_indices: Set of page indices already completed
             (for page-level resume).
+        prior_transcription_results: Transcription working-log entries already
+            parsed by the resume check, reused to avoid re-reading the log.
+            None falls back to a disk read inside ItemTranscriber.
+        prior_summary_results: Summary working-log entries already parsed by the
+            resume check. None falls back to a disk read.
+        logged_log_header: Transcription-log header already parsed by the resume
+            check. None falls back to a disk read.
 
     Returns:
         ``(success, outputs)`` where *success* is True only when every page
@@ -89,6 +99,9 @@ def _process_single_item(
             summary_context=summary_context,
             resume_mode=resume_mode,
             completed_page_indices=completed_page_indices,
+            prior_transcription_results=prior_transcription_results,
+            prior_summary_results=prior_summary_results,
+            logged_log_header=logged_log_header,
         )
         success = transcriber_instance.process_item()
         outputs = [str(p) for p in transcriber_instance.written_outputs]

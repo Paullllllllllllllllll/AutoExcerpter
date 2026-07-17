@@ -36,6 +36,29 @@ def _isolate_state_dir(
     monkeypatch.setattr(app_config, "STATE_DIR", str(state_dir), raising=False)
 
 
+@pytest.fixture(autouse=True)
+def _isolate_token_budget(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the singleton token tracker off the real daily/shared budgets.
+
+    ItemTranscriber and the LLM clients pull the module-level tracker
+    singleton, which is built from the user's real app.yaml budget settings
+    and the cross-tool shared token ledger. With the real daily budget
+    exhausted (e.g., after large production runs), end-to-end tests would
+    block in wait_for_token_reset until the UTC reset. Force the singleton
+    path to a disabled tracker; tests that exercise budget behavior construct
+    their own DailyTokenTracker instances or patch these values themselves.
+    """
+    import llm.token_tracker as token_tracker
+
+    monkeypatch.setattr(token_tracker, "_tracker_instance", None)
+    monkeypatch.setattr(
+        token_tracker.config, "DAILY_TOKEN_LIMIT_ENABLED", False, raising=False
+    )
+    monkeypatch.setattr(
+        token_tracker.config, "SHARED_TOKEN_BUDGET_ENABLED", False, raising=False
+    )
+
+
 # ============================================================================
 # Path Fixtures
 # ============================================================================

@@ -339,6 +339,15 @@ def _run_processing_loop(
             summary_context=summary_context,
             resume_mode=resume_mode,
             completed_page_indices=completed_pages,
+            # Reuse working-log data already parsed by the resume check so the
+            # transcriber need not re-read the same JSONL files.
+            prior_transcription_results=(
+                item_resume.transcription_results if item_resume else None
+            ),
+            prior_summary_results=(
+                item_resume.summary_results if item_resume else None
+            ),
+            logged_log_header=item_resume.log_header if item_resume else None,
         )
         run_outputs.extend(item_outputs)
         if success:

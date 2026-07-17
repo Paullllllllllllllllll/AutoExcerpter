@@ -145,6 +145,24 @@ class _PayloadSourceBase:
         if self.model_type == "openai" and _openai_detail_is_original(model_name):
             self.img_cfg = {**self.img_cfg, "llm_detail": "original"}
         self.jpeg_quality = int(self.img_cfg.get("jpeg_quality", DEFAULT_JPEG_QUALITY))
+        # Render strategy: 'direct' (default) derives the PDF render DPI from the
+        # active resize profile so pages rasterize straight to their final size;
+        # 'supersample' restores the legacy render-at-target_dpi-then-downscale.
+        # Honored per provider section, then top-level, then the 'direct' default.
+        render_strategy = (
+            str(
+                self.img_cfg.get("render_strategy")
+                or full_img_cfg.get("render_strategy")
+                or "direct"
+            )
+            .strip()
+            .lower()
+        )
+        self.render_strategy = (
+            render_strategy
+            if render_strategy in ("direct", "supersample")
+            else "direct"
+        )
         self._config_section_name = section_name
 
     def _base_file_provenance(self) -> dict[str, Any]:
@@ -199,6 +217,29 @@ class PdfPayloadSource(_PayloadSourceBase):
         """Virtual page name; matches the legacy on-disk naming contract."""
         return f"page_{index + 1:04d}.jpg"
 
+    def _render_zoom(self, page: fitz.Page) -> float:
+        """Zoom factor for rasterizing *page*, honoring the render strategy.
+
+        Under ``supersample`` this is always ``target_dpi/72`` (render large,
+        downscale later). Under ``direct`` the zoom is derived from the active
+        resize profile so the page rasterizes straight to (approximately) its
+        final content size; it is clamped at ``target_dpi/72`` so a page is
+        never render-upscaled beyond the quality ceiling (box-fit padding and
+        any upscale still happen in the post-render pipeline).
+        """
+        base_zoom = self.target_dpi / PDF_DPI_CONVERSION_FACTOR
+        if self.render_strategy != "direct":
+            return base_zoom
+        rect = page.rect
+        pt_w = float(rect.width)
+        pt_h = float(rect.height)
+        if pt_w <= 0.0 or pt_h <= 0.0:
+            return base_zoom
+        scale = ImageProcessor.content_scale_factor(
+            (pt_w * base_zoom, pt_h * base_zoom), self.img_cfg, self.model_type
+        )
+        return base_zoom * min(scale, 1.0)
+
     def build_payload(self, index: int) -> PagePayload:
         """Render, preprocess, and encode page *index* (0-based).
 
@@ -208,22 +249,24 @@ class PdfPayloadSource(_PayloadSourceBase):
         if self._doc is None:
             raise RuntimeError("PdfPayloadSource is closed")
 
-        zoom = self.target_dpi / PDF_DPI_CONVERSION_FACTOR
-        matrix = fitz.Matrix(zoom, zoom)
         grayscale_enabled = bool(self.img_cfg.get("grayscale_conversion", True))
 
         with self._render_lock:
             if self._doc is None:
                 raise RuntimeError("PdfPayloadSource is closed")
             page = self._doc[index]
+            zoom = self._render_zoom(page)
+            matrix = fitz.Matrix(zoom, zoom)
             if grayscale_enabled:
                 pix = page.get_pixmap(
                     matrix=matrix, alpha=False, colorspace=fitz.csGRAY
                 )
-                pil_img = Image.frombytes("L", (pix.width, pix.height), pix.samples)
+                pil_img = Image.frombytes("L", (pix.width, pix.height), pix.samples_mv)
             else:
                 pix = page.get_pixmap(matrix=matrix, alpha=False)
-                pil_img = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
+                pil_img = Image.frombytes(
+                    "RGB", (pix.width, pix.height), pix.samples_mv
+                )
             del pix, page
 
         pil_img = ImageProcessor.preprocess_pil_image(
@@ -241,7 +284,7 @@ class PdfPayloadSource(_PayloadSourceBase):
                 "width": width,
                 "height": height,
                 "byte_size": len(jpeg_bytes),
-                "effective_dpi": self.target_dpi,
+                "effective_dpi": round(zoom * PDF_DPI_CONVERSION_FACTOR, 2),
             },
             source_file=str(self.source_path),
             page_index=index,

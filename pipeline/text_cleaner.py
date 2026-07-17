@@ -54,6 +54,19 @@ DROP_CHARS = {
     "\u2060",  # WORD JOINER
 }
 
+# Lazily-populated translation table for normalize_unicode. Maps a codepoint to
+# its replacement: None deletes the character, a string substitutes it;
+# codepoints absent from the table pass through unchanged. Seeded with the
+# high-plane icon glyphs (mapped to bullet) and the known layout artifacts
+# (deleted). The companion set records every codepoint already evaluated so each
+# distinct codepoint is categorized at most once across all calls (typical prose
+# touches only a few hundred distinct codepoints).
+_UNICODE_TABLE: dict[int, str | None] = {
+    **{cp: "\u2022" for cp in AEGEAN_ICON_CODEPOINTS},
+    **{ord(ch): None for ch in DROP_CHARS},
+}
+_UNICODE_SEEN: set[int] = set(_UNICODE_TABLE)
+
 # Common LaTeX command typos from OCR
 LATEX_COMMAND_FIXES = [
     (r"\\frac\s*\{", r"\\frac{"),  # Remove space after \frac
@@ -70,6 +83,9 @@ LATEX_COMMAND_FIXES = [
 
 # Regex pattern for hyphenated line breaks
 _HYPHEN_PATTERN = re.compile(r"(\w{3,})-\n(\w{2,})")
+
+# Collapse runs of 3+ internal spaces (between non-space chars) to two spaces.
+_COLLAPSE_SPACES_PATTERN = re.compile(r"(?<=\S) {3,}(?=\S)")
 
 # `\left`/`\right` as delimiter commands (not \leftarrow, \rightarrow, etc.):
 # the trailing negative lookahead excludes command names that merely start
@@ -195,27 +211,28 @@ def normalize_unicode(text: str) -> str:
     # NFC normalization for composed accents
     text = unicodedata.normalize("NFC", text)
 
-    # Map rare icon glyphs to bullet
-    translation = {cp: "•" for cp in AEGEAN_ICON_CODEPOINTS}
-    text = text.translate(translation)
-
-    # Drop known layout artifacts
-    for ch in DROP_CHARS:
-        text = text.replace(ch, "")
-
-    # Remove remaining control/format/unassigned chars (keep newline and tab)
-    out_chars: list[str] = []
-    for ch in text:
-        if ch in ("\n", "\t"):
-            out_chars.append(ch)
+    # Categorize any not-yet-seen codepoints and fold the decision into the
+    # shared translation table: high-plane icons -> bullet, layout artifacts and
+    # control/format/surrogate/unassigned chars -> deleted, newline/tab kept.
+    seen = _UNICODE_SEEN
+    table = _UNICODE_TABLE
+    distinct = set(text)
+    for ch in distinct:
+        cp = ord(ch)
+        if cp in seen:
             continue
-        cat = unicodedata.category(ch)
-        if cat.startswith("C"):
-            # Skip control/format/surrogate/unassigned characters
+        seen.add(cp)
+        if cp in (9, 10):  # keep tab and newline (control chars we preserve)
             continue
-        out_chars.append(ch)
+        if unicodedata.category(ch).startswith("C"):
+            # Drop control/format/surrogate/unassigned characters
+            table[cp] = None
 
-    return "".join(out_chars)
+    # Skip the full-string translate when no present codepoint is remapped
+    # (byte-identical: translate would be a no-op). Most prose pages hit this.
+    if any(ord(ch) in table for ch in distinct):
+        return text.translate(table)
+    return text
 
 
 # ============================================================================
@@ -358,6 +375,11 @@ def close_unclosed_braces(text: str) -> str:
     result_lines = []
 
     for line in lines:
+        # Fast path: lines with no braces at all cannot need repair.
+        if "{" not in line and "}" not in line:
+            result_lines.append(line)
+            continue
+
         unmatched_open, unmatched_close = _find_unmatched_braces(line)
 
         if unmatched_open > 0:
@@ -395,6 +417,11 @@ def fix_common_latex_commands(text: str) -> str:
     Returns:
         Text with common command syntax errors fixed.
     """
+    # Every pattern in LATEX_COMMAND_FIXES begins with a literal backslash, so
+    # text without one cannot match any of them.
+    if "\\" not in text:
+        return text
+
     for pattern, replacement in LATEX_COMMAND_FIXES:
         text = re.sub(pattern, replacement, text)
 
@@ -666,7 +693,7 @@ def normalize_whitespace(
 
         # Collapse internal space runs
         if collapse_internal:
-            line = re.sub(r"(?<=\S) {3,}(?=\S)", "  ", line)
+            line = _COLLAPSE_SPACES_PATTERN.sub("  ", line)
 
         if line.strip() == "":
             blank_run += 1

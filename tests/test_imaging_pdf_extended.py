@@ -18,13 +18,14 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import fitz  # PyMuPDF
 import pytest
 from PIL import Image
 
 from imaging.payload import PdfPayloadSource
 
 
-def _loader_with(sections: dict[str, dict[str, Any]]) -> MagicMock:
+def _loader_with(sections: dict[str, Any]) -> MagicMock:
     """Build a mock ConfigLoader returning the given image-processing sections."""
     loader = MagicMock()
     loader.get_image_processing_config.return_value = sections
@@ -153,7 +154,9 @@ class TestConfigPaths:
             assert source.target_dpi == 200
             payload = source.build_payload(0)
 
-        assert payload.provenance["effective_dpi"] == 200
+        # Direct strategy derives the render DPI from the google box-fit profile
+        # ([768, 768]), which downscales the 200x300 pt page below target_dpi.
+        assert 0 < payload.provenance["effective_dpi"] <= 200
         provenance = source.file_provenance()
         assert provenance["image_config_section"] == "google_image_processing"
 
@@ -225,3 +228,136 @@ class TestFileProvenance:
         assert isinstance(provenance["image_config"], dict)
         assert provenance["pymupdf_version"]
         assert provenance["pillow_version"]
+
+
+def _sized_pdf(path: Path, w_pt: float, h_pt: float) -> Path:
+    """Write a single-page PDF with the given point dimensions."""
+    doc = fitz.open()
+    doc.new_page(width=w_pt, height=h_pt)
+    doc.save(path)
+    doc.close()
+    return path
+
+
+class TestRenderStrategy:
+    """Target-derived render DPI ('direct') vs legacy ('supersample')."""
+
+    def test_anthropic_a4_direct_derives_dpi(self, tmp_path: Path) -> None:
+        """A4 page + Anthropic high profile renders at 300 * 2576 / long-edge-px."""
+        pdf_path = _sized_pdf(tmp_path / "a4.pdf", 595.0, 842.0)
+        loader = _loader_with(
+            {
+                "anthropic_image_processing": {
+                    "target_dpi": 300,
+                    "jpeg_quality": 95,
+                    "grayscale_conversion": True,
+                    "handle_transparency": True,
+                    "resize_profile": "auto",
+                    "low_max_side_px": 512,
+                    "high_max_side_px": 2576,
+                }
+            }
+        )
+        with patch("imaging.payload.get_config_loader", return_value=loader):
+            source = PdfPayloadSource(
+                pdf_path, provider="anthropic", model_name="claude-opus-4-8"
+            )
+        with source:
+            payload = source.build_payload(0)
+
+        long_edge_px_at_300 = 842.0 * 300.0 / 72.0  # 3508.33
+        expected = 300.0 * 2576.0 / long_edge_px_at_300  # ~220.28
+        assert payload.provenance["effective_dpi"] == pytest.approx(expected, abs=1.0)
+        assert payload.provenance["effective_dpi"] < 300
+        # After render + the (near-no-op) resize, the long edge sits at the cap.
+        assert max(payload.provenance["width"], payload.provenance["height"]) <= 2576
+
+    def test_original_within_caps_renders_at_target_dpi(self, tmp_path: Path) -> None:
+        """'original' profile whose target_dpi render fits the caps stays at DPI."""
+        pdf_path = _sized_pdf(tmp_path / "orig.pdf", 200.0, 300.0)
+        loader = _loader_with(
+            {
+                "api_image_processing": {
+                    "target_dpi": 300,
+                    "jpeg_quality": 95,
+                    "grayscale_conversion": True,
+                    "handle_transparency": True,
+                    "llm_detail": "original",
+                    "resize_profile": "high",
+                    "low_max_side_px": 512,
+                    "high_target_box": [768, 1536],
+                    "original_max_side_px": 6000,
+                    "original_max_pixels": 10_240_000,
+                }
+            }
+        )
+        with patch("imaging.payload.get_config_loader", return_value=loader):
+            source = PdfPayloadSource(pdf_path)
+        with source:
+            payload = source.build_payload(0)
+
+        assert payload.provenance["effective_dpi"] == 300
+
+    def test_supersample_matches_legacy_target_dpi(self, tmp_path: Path) -> None:
+        """'supersample' always renders at target_dpi (legacy behavior)."""
+        pdf_path = _sized_pdf(tmp_path / "ss.pdf", 200.0, 300.0)
+        loader = _loader_with(
+            {
+                "render_strategy": "supersample",
+                "api_image_processing": {
+                    "target_dpi": 300,
+                    "jpeg_quality": 95,
+                    "grayscale_conversion": True,
+                    "handle_transparency": True,
+                    "llm_detail": "high",
+                    "resize_profile": "high",
+                    "low_max_side_px": 512,
+                    "high_target_box": [768, 1536],
+                },
+            }
+        )
+        with patch("imaging.payload.get_config_loader", return_value=loader):
+            source = PdfPayloadSource(pdf_path)
+        assert source.render_strategy == "supersample"
+        with source:
+            payload = source.build_payload(0)
+
+        assert payload.provenance["effective_dpi"] == 300
+
+    def test_direct_and_supersample_share_final_dimensions(
+        self, tmp_path: Path
+    ) -> None:
+        """Box-fit final dimensions match across strategies; bytes differ."""
+        pdf_path = _sized_pdf(tmp_path / "cmp.pdf", 200.0, 300.0)
+        base_section = {
+            "target_dpi": 300,
+            "jpeg_quality": 95,
+            "grayscale_conversion": True,
+            "handle_transparency": True,
+            "llm_detail": "high",
+            "resize_profile": "high",
+            "low_max_side_px": 512,
+            "high_target_box": [768, 1536],
+        }
+        direct_loader = _loader_with({"api_image_processing": dict(base_section)})
+        ss_loader = _loader_with(
+            {
+                "render_strategy": "supersample",
+                "api_image_processing": dict(base_section),
+            }
+        )
+
+        with patch("imaging.payload.get_config_loader", return_value=direct_loader):
+            direct = PdfPayloadSource(pdf_path)
+        with direct:
+            direct_payload = direct.build_payload(0)
+        with patch("imaging.payload.get_config_loader", return_value=ss_loader):
+            supersample = PdfPayloadSource(pdf_path)
+        with supersample:
+            ss_payload = supersample.build_payload(0)
+
+        # Same padded box, different render path => different bytes.
+        assert direct_payload.provenance["width"] == ss_payload.provenance["width"]
+        assert direct_payload.provenance["height"] == ss_payload.provenance["height"]
+        assert direct_payload.provenance["effective_dpi"] < 300
+        assert ss_payload.provenance["effective_dpi"] == 300

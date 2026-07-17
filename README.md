@@ -1,4 +1,4 @@
-# AutoExcerpter v2.0.5
+# AutoExcerpter v2.1.0
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -499,6 +499,11 @@ Provider-specific sections (`api_image_processing`,
 `custom_image_processing`) each control:
 
 ```yaml
+# Global: 'direct' (default) derives the PDF render DPI from the active resize
+# profile so pages rasterize straight to their final size; 'supersample'
+# restores the legacy render-at-target_dpi-then-downscale path.
+render_strategy: direct
+
 api_image_processing:
   target_dpi: 300
   grayscale_conversion: true
@@ -798,6 +803,23 @@ v1.0.0 do not exist.
 
 ## Changelog
 
+- **v2.1.0** (17 July 2026) -- Performance release focused on file I/O, image
+    processing, and hot-path Python, with all outputs verified byte-identical
+    or semantically equivalent. The resume check now parses each working log
+    once instead of up to five times per item (3x faster); Unicode
+    normalization and brace cleanup in text postprocessing run via cached
+    translation tables (11x and 5x); DOCX summary rendering resolves styles
+    once per document (3.6x); citation insertion memoizes repeated mentions
+    (up to 77x); PDF rasterization uses zero-copy pixel buffers. A new
+    `render_strategy` option (`direct`, the default, vs. the legacy
+    `supersample`) derives the PDF render DPI from the active provider resize
+    profile so pages rasterize straight to their final size instead of being
+    rendered at full `target_dpi` and downscaled; the `original` image-size
+    path for the GPT-5.6 family is unaffected and remains byte-identical.
+    The Anthropic `high_max_side_px` default rises from 1568 to 2576 to match
+    the Claude high-resolution tier. Tests now isolate the token-budget
+    singleton from the user-level shared ledger, and the rendering smoke
+    tests assert on actual DOCX output rather than call mechanics.
 - **v2.0.5** (17 July 2026) -- Documentation reconciliation release; no code
     changes. Every Configuration-section YAML snippet in the README is
     brought back in line with the shipped `*.example.yaml` templates

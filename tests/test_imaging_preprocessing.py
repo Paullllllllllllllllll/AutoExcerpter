@@ -217,6 +217,65 @@ class TestResizeHelpers:
         )
 
 
+class TestContentScaleFactor:
+    """Tests for content_scale_factor used to derive direct render DPI."""
+
+    def test_box_fit_downscale_factor(self, openai_config: dict[str, Any]) -> None:
+        """OpenAI box-fit returns the min-dimension downscale factor."""
+        # 833x1250 source, box [768, 1536] -> width-bound: 768/833.
+        factor = ImageProcessor.content_scale_factor(
+            (833.0, 1250.0), openai_config, "openai"
+        )
+        assert factor == pytest.approx(768.0 / 833.0, rel=1e-6)
+
+    def test_box_fit_can_exceed_one(self, openai_config: dict[str, Any]) -> None:
+        """Box-fit upscales small pages, so the factor can exceed 1.0."""
+        factor = ImageProcessor.content_scale_factor(
+            (200.0, 300.0), openai_config, "openai"
+        )
+        assert factor > 1.0
+
+    def test_anthropic_max_side_factor(self, anthropic_config: dict[str, Any]) -> None:
+        """Anthropic caps the longest side to high_max_side_px."""
+        factor = ImageProcessor.content_scale_factor(
+            (2000.0, 3000.0), anthropic_config, "anthropic"
+        )
+        assert factor == pytest.approx(1568.0 / 3000.0, rel=1e-6)
+
+    def test_within_cap_returns_one(self, anthropic_config: dict[str, Any]) -> None:
+        """A source already within the cap yields a factor of 1.0."""
+        factor = ImageProcessor.content_scale_factor(
+            (1000.0, 1200.0), anthropic_config, "anthropic"
+        )
+        assert factor == 1.0
+
+    def test_resize_profile_none_returns_one(self) -> None:
+        """resize_profile='none' disables derivation (factor 1.0)."""
+        cfg = {"resize_profile": "none", "llm_detail": "high"}
+        factor = ImageProcessor.content_scale_factor((5000.0, 4000.0), cfg, "openai")
+        assert factor == 1.0
+
+    def test_original_within_caps_returns_one(self) -> None:
+        """'original' whose source fits both caps yields 1.0."""
+        cfg = {
+            "llm_detail": "original",
+            "original_max_side_px": 6000,
+            "original_max_pixels": 10_240_000,
+        }
+        factor = ImageProcessor.content_scale_factor((833.0, 1250.0), cfg, "openai")
+        assert factor == 1.0
+
+    def test_original_oversized_downscales(self) -> None:
+        """'original' whose source exceeds the caps yields a factor < 1."""
+        cfg = {
+            "llm_detail": "original",
+            "original_max_side_px": 6000,
+            "original_max_pixels": 10_240_000,
+        }
+        factor = ImageProcessor.content_scale_factor((7000.0, 9000.0), cfg, "openai")
+        assert 0 < factor < 1
+
+
 class TestPreprocessPilImage:
     """Tests for the shared preprocess_pil_image() core."""
 

@@ -18,6 +18,7 @@ from xml.etree import ElementTree as ET
 
 import mathml2omml
 from docx import Document
+from docx.enum.style import WD_STYLE_TYPE
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 from docx.oxml import OxmlElement, parse_xml
 from docx.oxml.ns import qn
@@ -45,7 +46,6 @@ from config.constants import (
     PAGE_HEADING_SPACE_AFTER_PT,
     PAGE_HEADING_SPACE_BEFORE_PT,
     PAGE_HEIGHT_CM,
-    PAGE_ITEM_HEADING_LEVEL,
     PAGE_MARGIN_CM,
     PAGE_WIDTH_CM,
     REF_FONT_PT,
@@ -53,11 +53,9 @@ from config.constants import (
     REF_META_FONT_PT,
     REF_SPACE_AFTER_PT,
     SECTION_HEADING_FONT_PT,
-    SECTION_HEADING_LEVEL,
     SECTION_HEADING_SPACE_AFTER_PT,
     SECTION_HEADING_SPACE_BEFORE_PT,
     TITLE_FONT_PT,
-    TITLE_HEADING_LEVEL,
     TITLE_SPACE_AFTER_PT,
 )
 from config.logger import setup_logger
@@ -833,10 +831,23 @@ def create_docx_summary(
     _apply_document_styles(document)
     _configure_page(document)
 
+    # Resolve the used paragraph styles' ids once. python-docx's name-based
+    # style assignment (add_heading / add_paragraph(style=...)) rescans the
+    # entire built-in style catalog on every paragraph via
+    # Styles.get_style_id -> default_for(); resolving each id up front and
+    # setting ``paragraph._p.style = id`` directly avoids that O(paragraphs x
+    # catalog) cost while producing byte-identical document.xml.
+    styles = document.styles
+    title_style_id = styles.get_style_id("Title", WD_STYLE_TYPE.PARAGRAPH)
+    heading1_style_id = styles.get_style_id("Heading 1", WD_STYLE_TYPE.PARAGRAPH)
+    heading2_style_id = styles.get_style_id("Heading 2", WD_STYLE_TYPE.PARAGRAPH)
+    bullet_style_id = styles.get_style_id("List Bullet", WD_STYLE_TYPE.PARAGRAPH)
+
     # === SECTION 1: Title + metadata ===
     # The document name is the title (prominent); the metadata line records that
     # this is a generated summary.
-    title = document.add_heading(sanitize_for_xml(document_name), TITLE_HEADING_LEVEL)
+    title = document.add_paragraph(sanitize_for_xml(document_name))
+    title._p.style = title_style_id
     title.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
 
     metadata = (
@@ -855,7 +866,8 @@ def create_docx_summary(
     # === SECTION 2: Document Structure ===
     has_structure_info = any(pages for pages in page_type_pages.values())
     if has_structure_info:
-        document.add_heading("Document Structure", SECTION_HEADING_LEVEL)
+        structure_heading = document.add_paragraph("Document Structure")
+        structure_heading._p.style = heading1_style_id
 
         for pt in STRUCTURE_PAGE_TYPE_ORDER:
             pages = page_type_pages.get(pt, [])
@@ -869,10 +881,12 @@ def create_docx_summary(
 
     # === SECTION 3: Content Summaries ===
     for page_item in data.page_render_items:
-        document.add_heading(page_item.heading_text, PAGE_ITEM_HEADING_LEVEL)
+        page_heading = document.add_paragraph(page_item.heading_text)
+        page_heading._p.style = heading2_style_id
 
         for point in page_item.bullet_points:
-            paragraph = document.add_paragraph(style="List Bullet")
+            paragraph = document.add_paragraph()
+            paragraph._p.style = bullet_style_id
             add_formatted_text_to_paragraph(paragraph, point)
 
     # === SECTION 4: Consolidated References ===
@@ -883,7 +897,8 @@ def create_docx_summary(
         )
 
         document.add_page_break()  # type: ignore[no-untyped-call]
-        document.add_heading("Consolidated References", SECTION_HEADING_LEVEL)
+        references_heading = document.add_paragraph("Consolidated References")
+        references_heading._p.style = heading1_style_id
 
         note_text = (
             "The following references were extracted from the document and "

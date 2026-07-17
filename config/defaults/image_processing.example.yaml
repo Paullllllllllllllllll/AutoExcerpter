@@ -25,6 +25,15 @@
 # BILINEAR is ~2x faster with negligible quality difference for document scans.
 resampling_algorithm: bilinear
 
+# PDF render strategy: 'direct' (default) or 'supersample'.
+# - direct: derive the render DPI from the active resize profile so each page
+#   rasterizes straight to (about) its final pixel size. Faster; never renders
+#   above target_dpi. Providers downscale server-side above their caps anyway,
+#   so pixels beyond the cap are wasted.
+# - supersample: legacy behavior -- always render at target_dpi, then downscale.
+# Can be overridden per provider section with a section-level render_strategy.
+render_strategy: direct
+
 # =============================================================================
 # OpenAI API Image Processing
 # =============================================================================
@@ -112,7 +121,10 @@ anthropic_image_processing:
 
   # Resize parameters (Anthropic uses max-side capping, no box fitting)
   low_max_side_px: 512   # Max dimension for 'low' profile
-  high_max_side_px: 1568 # Max dimension for 'high' profile (Anthropic's optimal)
+  # High-res tier models only (Claude Opus 4.7+/Sonnet 5) ingest up to 2576 px
+  # long edge / 4784 visual tokens; costs ~3x the image tokens of 1568. Older
+  # Claude models are server-side downscaled to 1568 anyway.
+  high_max_side_px: 2576 # Max dimension for 'high' profile (high-res tier)
 
 
 # =============================================================================

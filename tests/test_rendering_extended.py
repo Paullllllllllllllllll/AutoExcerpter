@@ -617,43 +617,6 @@ class TestCreateDocxSummary:
         # Hyperlink should have been added for the citation
         mock_add_hyperlink.assert_called_once()
 
-    @patch("rendering.docx.CitationManager")
-    @patch("rendering.docx.Document")
-    def test_structure_section_for_bibliography_pages(
-        self, mock_doc_class, mock_cm_class, tmp_path: Path
-    ) -> None:
-        """Bibliography pages contribute to the Document Structure section."""
-        output_path = tmp_path / "summary.docx"
-        mock_doc = MagicMock()
-        mock_doc.styles = MagicMock()
-        mock_doc_class.return_value = mock_doc
-
-        mock_cm = MagicMock()
-        mock_cm.citations = {}
-        mock_cm_class.return_value = mock_cm
-
-        summary_results = [
-            {
-                "page_information": {
-                    "page_number_integer": 50,
-                    "page_number_type": "arabic",
-                    "page_types": ["bibliography"],
-                },
-                "bullet_points": [],
-                "references": [],
-            }
-        ]
-
-        create_docx_summary(summary_results, output_path, "Test")
-
-        # Should have been called with "Document Structure" heading
-        heading_calls = [
-            c
-            for c in mock_doc.add_heading.call_args_list
-            if "Document Structure" in str(c)
-        ]
-        assert len(heading_calls) > 0
-
 
 # ============================================================================
 # create_markdown_summary (extended edge cases)
@@ -1127,6 +1090,65 @@ class TestCreateDocxSummarySmoke:
         assert "*" not in ref_paragraph.text
         italic_text = "".join(run.text for run in ref_paragraph.runs if run.italic)
         assert "The American Economic Review, 87" in italic_text
+
+    def test_heading_and_bullet_style_ids(self, tmp_path: Path) -> None:
+        """Title, Document Structure, page headings, and bullet points each
+        carry the correct real Word style (Title / Heading 1 / Heading 2 /
+        List Bullet) with the expected text. The writer resolves style ids
+        once and assigns them via ``paragraph._p.style`` rather than calling
+        ``add_heading``/``add_paragraph(style=...)`` per paragraph; this
+        checks the resulting document.xml output rather than that mechanism."""
+        from docx import Document
+
+        output_path = tmp_path / "summary.docx"
+        summary_results = [
+            {
+                "page_information": {
+                    "page_number_integer": 1,
+                    "page_number_type": "arabic",
+                    "page_types": ["content"],
+                },
+                "bullet_points": ["Point A", "Point B"],
+                "references": [],
+            },
+            {
+                "page_information": {
+                    "page_number_integer": 50,
+                    "page_number_type": "arabic",
+                    "page_types": ["bibliography"],
+                },
+                "bullet_points": [],
+                "references": [],
+            },
+        ]
+
+        create_docx_summary(summary_results, output_path, "Test")
+
+        doc = Document(str(output_path))
+        style_by_text = {
+            p.text: p.style.name for p in doc.paragraphs if p.style is not None
+        }
+
+        assert style_by_text["Test"] == "Title"
+        assert style_by_text["Document Structure"] == "Heading 1"
+        assert style_by_text["Page 1"] == "Heading 2"
+
+        # Bibliography pages contribute a compact page-range line to the
+        # Document Structure section (default "Normal" style, unaffected by
+        # the heading-style resolution change).
+        structure_line = next(
+            p for p in doc.paragraphs if p.text.startswith("Bibliography:")
+        )
+        assert structure_line.text == "Bibliography: p. 50"
+        assert structure_line.style is not None
+        assert structure_line.style.name == "Normal"
+
+        bullets = [
+            p
+            for p in doc.paragraphs
+            if p.style is not None and p.style.name == "List Bullet"
+        ]
+        assert [p.text for p in bullets] == ["Point A", "Point B"]
 
 
 class TestMarkdownEmphasisHelpers:

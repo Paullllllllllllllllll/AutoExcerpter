@@ -65,7 +65,12 @@ class TestPdfPayloadSourceBasics:
     def test_build_payload_provenance_populated(
         self, make_pdf: Callable[..., Path], patched_payload_config: MagicMock
     ) -> None:
-        """Provenance records hash, dimensions, byte size, and effective DPI."""
+        """Provenance records hash, dimensions, byte size, and effective DPI.
+
+        The default (direct) strategy with an OpenAI box-fit profile derives a
+        render DPI below the 300 ceiling for a 200x300 pt page (the box-fit
+        downscales), so effective_dpi is the derived value, not target_dpi.
+        """
         pdf_path = make_pdf("one.pdf", num_pages=1)
         source = PdfPayloadSource(pdf_path)
         with source:
@@ -77,7 +82,9 @@ class TestPdfPayloadSourceBasics:
         assert provenance["byte_size"] == len(decoded)
         assert provenance["width"] > 0
         assert provenance["height"] > 0
-        assert provenance["effective_dpi"] == 300
+        # 200 pt wide page, box width 768: 300 * 768 / (200 * 300 / 72) = 276.48.
+        assert provenance["effective_dpi"] == pytest.approx(276.48, abs=0.5)
+        assert 0 < provenance["effective_dpi"] <= 300
 
     def test_close_then_build_raises(
         self, make_pdf: Callable[..., Path], patched_payload_config: MagicMock

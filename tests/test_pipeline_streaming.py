@@ -145,7 +145,9 @@ class TestProcessItemEndToEnd:
             provenance = entry["image_provenance"]
             assert provenance["sha256"]
             assert provenance["byte_size"] > 0
-            assert provenance["effective_dpi"] == 300
+            # Direct render strategy: the render DPI is derived from the
+            # active resize profile and never exceeds the target_dpi ceiling.
+            assert 0 < provenance["effective_dpi"] <= 300
 
 
 class TestPreRenderResume:

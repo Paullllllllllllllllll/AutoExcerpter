@@ -218,6 +218,106 @@ class ImageProcessor:
         return image
 
     @staticmethod
+    def _resolve_detail(img_cfg: dict[str, Any], model_type: ModelType) -> str:
+        """Resolve the effective detail level for a model type from its config.
+
+        Mirrors the per-provider key lookup used by ``preprocess_pil_image``:
+        Google reads ``media_resolution``, Anthropic reads ``resize_profile``,
+        everything else reads ``llm_detail``.
+        """
+        if model_type == "google":
+            return str(img_cfg.get("media_resolution", "high") or "high")
+        if model_type == "anthropic":
+            return str(img_cfg.get("resize_profile", "auto") or "auto")
+        return str(img_cfg.get("llm_detail", "high") or "high")
+
+    @staticmethod
+    def _max_side_scale(w: float, h: float, max_side: int) -> float:
+        """Aspect-preserving downscale factor that caps the longest side."""
+        longest = max(w, h)
+        if longest <= 0 or longest <= max_side:
+            return 1.0
+        return max_side / float(longest)
+
+    @staticmethod
+    def _original_scale(w: float, h: float, img_cfg: dict[str, Any]) -> float:
+        """Combined downscale factor applied by the 'original' resize path."""
+        max_side = int(
+            img_cfg.get("original_max_side_px", DEFAULT_ORIGINAL_MAX_SIDE_PX)
+        )
+        max_pixels = int(
+            img_cfg.get("original_max_pixels", DEFAULT_ORIGINAL_MAX_PIXELS)
+        )
+        s1 = ImageProcessor._max_side_scale(w, h, max_side)
+        w1, h1 = w * s1, h * s1
+        s2 = (max_pixels / float(w1 * h1)) ** 0.5 if w1 * h1 > max_pixels else 1.0
+        return float(s1 * s2)
+
+    @staticmethod
+    def content_scale_factor(
+        src_size: tuple[float, float],
+        img_cfg: dict[str, Any],
+        model_type: ModelType = "openai",
+    ) -> float:
+        """Aspect-preserving factor the resize step would apply to *src_size*.
+
+        Returns the scale the active resize profile would multiply a source
+        image of ``src_size`` (px) by, ignoring box-fit padding (padding does
+        not change the content scale). Used to derive a direct PDF render DPI so
+        a page can be rasterized straight to (approximately) its final content
+        size instead of rendered large and downscaled.
+
+        The box-fit profiles can return a factor > 1 (they upscale small pages);
+        callers that must not render-upscale should clamp with ``min(scale, 1)``.
+        Returns 1.0 whenever the profile would leave the image at source size.
+        """
+        w, h = src_size
+        if w <= 0 or h <= 0:
+            return 1.0
+
+        detail_norm = ImageProcessor._resolve_detail(img_cfg, model_type).lower()
+        if detail_norm not in (
+            "low",
+            "high",
+            "auto",
+            "medium",
+            "ultra_high",
+            "original",
+        ):
+            detail_norm = "high"
+
+        if detail_norm == "original":
+            return ImageProcessor._original_scale(w, h, img_cfg)
+
+        resize_profile = (img_cfg.get("resize_profile", "auto") or "auto").lower()
+        if resize_profile == "none":
+            return 1.0
+
+        if detail_norm == "low":
+            max_side = int(img_cfg.get("low_max_side_px", DEFAULT_LOW_MAX_SIDE_PX))
+            return ImageProcessor._max_side_scale(w, h, max_side)
+
+        if model_type == "anthropic":
+            max_side = int(
+                img_cfg.get("high_max_side_px", DEFAULT_ANTHROPIC_HIGH_MAX_SIDE)
+            )
+            return ImageProcessor._max_side_scale(w, h, max_side)
+
+        # OpenAI/Google box-fit: scale to fit the target box (may upscale).
+        box = img_cfg.get(
+            "high_target_box", [DEFAULT_HIGH_TARGET_WIDTH, DEFAULT_HIGH_TARGET_HEIGHT]
+        )
+        try:
+            target_width = int(box[0])
+            target_height = int(box[1])
+        except Exception:
+            target_width, target_height = (
+                DEFAULT_HIGH_TARGET_WIDTH,
+                DEFAULT_HIGH_TARGET_HEIGHT,
+            )
+        return min(target_width / w, target_height / h)
+
+    @staticmethod
     def preprocess_pil_image(
         pil_img: Image.Image,
         img_cfg: dict[str, Any],
@@ -256,12 +356,7 @@ class ImageProcessor:
             pil_img = ImageOps.grayscale(pil_img)
 
         # Get detail parameter based on model type
-        if model_type == "google":
-            detail = img_cfg.get("media_resolution", "high") or "high"
-        elif model_type == "anthropic":
-            detail = img_cfg.get("resize_profile", "auto") or "auto"
-        else:
-            detail = img_cfg.get("llm_detail", "high") or "high"
+        detail = ImageProcessor._resolve_detail(img_cfg, model_type)
 
         # Resize with provider-specific strategy
         pil_img = ImageProcessor.resize_for_detail(pil_img, detail, img_cfg, model_type)

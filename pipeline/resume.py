@@ -53,6 +53,12 @@ class ResumeResult:
     reason: str = ""
     completed_page_indices: set[int] | None = None
     logged_model_name: str | None = None
+    # Working-log data parsed once during the resume check, threaded through so
+    # ItemTranscriber can reuse it instead of re-reading the same files. All
+    # default to None; consumers fall back to a disk read when a field is None.
+    transcription_results: list[dict[str, Any]] | None = None
+    summary_results: list[dict[str, Any]] | None = None
+    log_header: dict[str, Any] | None = None
 
 
 class ResumeChecker:
@@ -178,8 +184,9 @@ class ResumeChecker:
         # the completeness contract (never mark COMPLETE with pages missing) and
         # for summary-only reuse.
         log_path = self._transcription_log_path(item_name, output_dir)
-        completed_pages = load_completed_pages(log_path) if log_path else None
-        header = load_log_header(log_path) if log_path else None
+        log_entries = _read_and_parse_log(log_path) if log_path else None
+        completed_pages = _completed_pages_from_entries(log_entries)
+        header = _header_from_entries(log_entries)
         logged_model = header.get("model_name") if isinstance(header, dict) else None
         expected_total = (
             header.get("total_images") if isinstance(header, dict) else None
@@ -188,9 +195,7 @@ class ResumeChecker:
         # was attempted and logged, so it counts as accounted-for; only pages
         # that never reached the log at all (e.g. deferred by a token-budget
         # stall) constitute a shortfall.
-        logged_results = (
-            load_transcription_results_from_log(log_path) if log_path else None
-        )
+        logged_results = _results_from_entries(log_entries)
         logged_count = len(logged_results) if logged_results else 0
 
         # Completeness gate: outputs may exist yet be missing pages (a stalled
@@ -219,7 +224,12 @@ class ResumeChecker:
             if logged_results
             else 0
         )
-        summary_error_count = self._count_summary_errors(item_name, output_dir)
+        summary_results = self._load_summary_results(item_name, output_dir)
+        summary_error_count = (
+            sum(1 for e in summary_results if isinstance(e, dict) and "error" in e)
+            if summary_results
+            else 0
+        )
         log_has_failures = transcription_error_count > 0 or summary_error_count > 0
         log_incomplete = log_shortfall or log_has_failures
 
@@ -266,6 +276,9 @@ class ResumeChecker:
                 reason=reason,
                 completed_page_indices=reuse_pages,
                 logged_model_name=logged_model,
+                transcription_results=logged_results,
+                summary_results=summary_results,
+                log_header=header,
             )
 
         # Check for partial processing (JSONL log exists in working directory)
@@ -279,6 +292,9 @@ class ResumeChecker:
                 reason=f"partial log with {len(completed_pages)} completed page(s)",
                 completed_page_indices=reuse_pages,
                 logged_model_name=logged_model,
+                transcription_results=logged_results,
+                summary_results=summary_results,
+                log_header=header,
             )
 
         return ResumeResult(
@@ -306,29 +322,111 @@ class ResumeChecker:
 
         return log_path
 
-    def _count_summary_errors(self, item_name: str, output_dir: Path) -> int:
-        """Count summary-log entries that carry an error, 0 if none/absent.
+    def _load_summary_results(
+        self, item_name: str, output_dir: Path
+    ) -> list[dict[str, Any]] | None:
+        """Parse the summary working log once and return its per-page entries.
 
-        A summary page that errored on a prior run must not let the item be
-        classified COMPLETE (AE-2); the summary-only resume path regenerates it.
+        Returns None when summarization is disabled or the summary log is
+        absent/empty. The caller derives the summary-error count from the
+        returned entries and threads them through :class:`ResumeResult` so
+        ItemTranscriber need not re-read the file. A summary page that errored
+        on a prior run must not let the item be classified COMPLETE (AE-2); the
+        summary-only resume path regenerates it.
         """
         if not self.summarize:
-            return 0
+            return None
 
         safe_working_dir_name = create_safe_directory_name(item_name, "_working_files")
         working_dir = output_dir / safe_working_dir_name
         if not working_dir.exists():
-            return 0
+            return None
 
         safe_log_name = create_safe_log_filename(item_name, "summary")
         log_path = working_dir / safe_log_name
         if not log_path.exists() or log_path.stat().st_size == 0:
-            return 0
+            return None
 
-        entries = load_transcription_results_from_log(log_path)
-        if not entries:
-            return 0
-        return sum(1 for e in entries if isinstance(e, dict) and "error" in e)
+        return _results_from_entries(_read_and_parse_log(log_path))
+
+
+def _read_and_parse_log(log_path: Path) -> list[dict[str, Any]] | None:
+    """Read a JSONL working log from disk and parse it exactly once.
+
+    Centralizes the read + version-checked parse so a single item can derive
+    the header, completed-page set, and per-page results from one file read
+    (see :meth:`ResumeChecker._check_item`) instead of re-reading the file for
+    each derivation.
+
+    Args:
+        log_path: Path to the working log file.
+
+    Returns:
+        Parsed objects (header first) as returned by :func:`_parse_log_entries`,
+        or None when the file is empty, unreadable, or refused.
+    """
+    try:
+        raw = log_path.read_text(encoding="utf-8").strip()
+        if not raw:
+            return None
+        return _parse_log_entries(raw)
+    except Exception as exc:
+        logger.warning("Could not read working log %s: %s", log_path, exc)
+        return None
+
+
+def _completed_pages_from_entries(
+    entries: list[dict[str, Any]] | None,
+) -> set[int] | None:
+    """Derive the set of successfully completed page indices from parsed entries."""
+    if entries is None:
+        return None
+
+    completed: set[int] = set()
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        # Skip the header entry (no per-page order index).
+        if "original_input_order_index" not in entry:
+            continue
+        # Only count entries without errors
+        if "error" not in entry:
+            idx = entry.get("original_input_order_index")
+            if isinstance(idx, int):
+                completed.add(idx)
+
+    return completed if completed else None
+
+
+def _header_from_entries(
+    entries: list[dict[str, Any]] | None,
+) -> dict[str, Any] | None:
+    """Return the versioned header object from parsed entries, or None."""
+    if not entries:
+        return None
+    header = entries[0]
+    if isinstance(header, dict) and "_format_version" in header:
+        return header
+    return None
+
+
+def _results_from_entries(
+    entries: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]] | None:
+    """Derive per-page result entries (header excluded) from parsed entries."""
+    if entries is None:
+        return None
+
+    results: list[dict[str, Any]] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        # Skip header entries
+        if "original_input_order_index" not in entry:
+            continue
+        results.append(entry)
+
+    return results if results else None
 
 
 def load_completed_pages(log_path: Path) -> set[int] | None:
@@ -344,33 +442,7 @@ def load_completed_pages(log_path: Path) -> set[int] | None:
         Set of ``original_input_order_index`` values for successful pages,
         or None if the log cannot be parsed or is unversioned.
     """
-    try:
-        raw = log_path.read_text(encoding="utf-8").strip()
-        if not raw:
-            return None
-
-        entries = _parse_log_entries(raw)
-        if entries is None:
-            return None
-
-        completed: set[int] = set()
-        for entry in entries:
-            if not isinstance(entry, dict):
-                continue
-            # Skip the header entry (no per-page order index).
-            if "original_input_order_index" not in entry:
-                continue
-            # Only count entries without errors
-            if "error" not in entry:
-                idx = entry.get("original_input_order_index")
-                if isinstance(idx, int):
-                    completed.add(idx)
-
-        return completed if completed else None
-
-    except Exception as exc:
-        logger.warning("Could not parse transcription log %s: %s", log_path, exc)
-        return None
+    return _completed_pages_from_entries(_read_and_parse_log(log_path))
 
 
 def _parse_log_entries(raw: str) -> list[dict[str, Any]] | None:
@@ -427,20 +499,7 @@ def _parse_log_entries(raw: str) -> list[dict[str, Any]] | None:
 
 def load_log_header(log_path: Path) -> dict[str, Any] | None:
     """Return the versioned header object of a JSONL working log, or None."""
-    try:
-        raw = log_path.read_text(encoding="utf-8").strip()
-        if not raw:
-            return None
-        entries = _parse_log_entries(raw)
-        if not entries:
-            return None
-        header = entries[0]
-        if isinstance(header, dict) and "_format_version" in header:
-            return header
-        return None
-    except Exception as exc:
-        logger.warning("Could not read log header %s: %s", log_path, exc)
-        return None
+    return _header_from_entries(_read_and_parse_log(log_path))
 
 
 def load_transcription_results_from_log(log_path: Path) -> list[dict[str, Any]] | None:
@@ -453,31 +512,7 @@ def load_transcription_results_from_log(log_path: Path) -> list[dict[str, Any]] 
         List of transcription result dictionaries (excluding the header),
         or None if the log cannot be parsed.
     """
-    try:
-        raw = log_path.read_text(encoding="utf-8").strip()
-        if not raw:
-            return None
-
-        entries = _parse_log_entries(raw)
-        if entries is None:
-            return None
-
-        results: list[dict[str, Any]] = []
-        for entry in entries:
-            if not isinstance(entry, dict):
-                continue
-            # Skip header entries
-            if "original_input_order_index" not in entry:
-                continue
-            results.append(entry)
-
-        return results if results else None
-
-    except Exception as exc:
-        logger.warning(
-            "Could not load transcription results from %s: %s", log_path, exc
-        )
-        return None
+    return _results_from_entries(_read_and_parse_log(log_path))
 
 
 # ============================================================================

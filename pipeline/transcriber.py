@@ -33,6 +33,9 @@ from pipeline.log import append_to_log, finalize_log_file, initialize_log_file
 from pipeline.page_numbering import PageNumberProcessor
 from pipeline.paths import create_safe_directory_name, create_safe_log_filename
 from pipeline.resume import (
+    _header_from_entries,
+    _read_and_parse_log,
+    _results_from_entries,
     load_log_header,
     load_transcription_results_from_log,
 )
@@ -69,12 +72,21 @@ class ItemTranscriber:
         summary_context: str | None = None,
         resume_mode: str = "skip",
         completed_page_indices: set[int] | None = None,
+        prior_transcription_results: list[dict[str, Any]] | None = None,
+        prior_summary_results: list[dict[str, Any]] | None = None,
+        logged_log_header: dict[str, Any] | None = None,
     ) -> None:
         self.input_path = input_path
         self.input_type = input_type  # "pdf" or "image_folder"
         self.name = self.input_path.stem
         self.resume_mode = resume_mode
         self.completed_page_indices = completed_page_indices or set()
+        # Working-log data already parsed by ResumeChecker during the resume
+        # check, threaded in so process_item need not re-read the same files.
+        # Any left as None falls back to a disk read (see process_item).
+        self._resume_transcription_results = prior_transcription_results
+        self._resume_summary_results = prior_summary_results
+        self._resume_log_header = logged_log_header
 
         # Page-level token-budget gate state, consulted by _process_single_page
         # and driven by the re-pass loop in _transcribe_and_summarize.
@@ -562,7 +574,9 @@ class ItemTranscriber:
         summaries were produced by different models; surface that so the mixed
         provenance is visible in both the log and the .txt metadata.
         """
-        header = load_log_header(self.log_path)
+        header = self._resume_log_header
+        if header is None:
+            header = load_log_header(self.log_path)
         logged_model = header.get("model_name") if isinstance(header, dict) else None
         if logged_model and logged_model != self.transcription_model:
             note = (
@@ -914,11 +928,23 @@ class ItemTranscriber:
         # below (initialize_log_file truncates them). Also detect a model
         # mismatch so summary-only resume can warn and record both models.
         if self.completed_page_indices:
-            self._prior_transcription_results = (
-                load_transcription_results_from_log(self.log_path) or []
-            )
+            # Prefer data parsed once by ResumeChecker; otherwise read the
+            # transcription log a single time and derive both the per-page
+            # results and the header from it (the header feeds the resume
+            # model-mismatch check, avoiding a second read of the same file).
+            if self._resume_transcription_results is not None:
+                self._prior_transcription_results = self._resume_transcription_results
+            else:
+                log_entries = _read_and_parse_log(self.log_path)
+                self._prior_transcription_results = (
+                    _results_from_entries(log_entries) or []
+                )
+                if self._resume_log_header is None:
+                    self._resume_log_header = _header_from_entries(log_entries)
             self._prior_summary_results = (
-                load_transcription_results_from_log(self.summary_log_path) or []
+                self._resume_summary_results
+                if self._resume_summary_results is not None
+                else load_transcription_results_from_log(self.summary_log_path) or []
             )
             self._detect_resume_model_mismatch()
 
