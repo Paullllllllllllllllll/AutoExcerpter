@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Generator
+from difflib import SequenceMatcher
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -13,6 +14,7 @@ from rendering.citations import (
     Citation,
     CitationManager,
     _is_budget_exhausted,
+    _jaccard,
     _mark_budget_exhausted,
     _reset_budget_state_for_tests,
 )
@@ -725,3 +727,153 @@ class TestPartialCitations:
 
         citation = next(iter(manager.citations.values()))
         assert citation.partial is False
+
+
+class TestDOIYearExtraction:
+    """Regression tests: DOI/URL registrant prefixes must not be read as years.
+
+    A DOI registrant prefix such as ``10.1016/`` or ``10.1111/`` contains a
+    ``1[0-9]{3}`` substring that matches the publication-year pattern. Before
+    ``_extract_year`` stripped URLs/DOIs, such a citation received a bogus year
+    (1016, 1111, ...) that mis-blocked deduplication.
+    """
+
+    def test_bare_doi_prefix_not_read_as_year(self) -> None:
+        """A citation with a DOI prefix but no real year extracts year None."""
+        citation = Citation(raw_text="Muller. A Study of Something. 10.1016/foobar")
+
+        # 1016 (the DOI registrant) must NOT be captured as the year.
+        assert citation.year is None
+
+    def test_doi_colon_form_not_read_as_year(self) -> None:
+        """The ``doi:10.1111/...`` form is stripped before year matching."""
+        citation = Citation(raw_text="Jones. Some Work on Genetics. doi:10.1111/abcd")
+
+        assert citation.year is None
+
+    def test_real_year_survives_alongside_doi(self) -> None:
+        """A genuine 4-digit year is still extracted when a DOI is also present."""
+        citation = Citation(
+            raw_text=(
+                "Smith. A Title (2019). https://doi.org/10.1016/j.example.2018.05.001"
+            )
+        )
+
+        # The real year wins; neither the DOI prefix (1016) nor the DOI suffix
+        # fragment (2018) may override the parenthetical 2019.
+        assert citation.year == 2019
+
+
+class TestVolumeDiscriminator:
+    """Two editions differing only by volume must never collapse into one."""
+
+    _VOL1 = "Smith, J. (2020). *Collected Works*, vol. 1. Cambridge University Press."
+    _VOL2 = "Smith, J. (2020). *Collected Works*, vol. 2. Cambridge University Press."
+
+    def test_distinct_volumes_have_distinct_keys(self) -> None:
+        """The normalized key carries the volume, so vol. 1 != vol. 2."""
+        c1 = Citation(raw_text=self._VOL1)
+        c2 = Citation(raw_text=self._VOL2)
+
+        assert c1.volume == 1
+        assert c2.volume == 2
+        assert c1.normalized_key != c2.normalized_key
+
+    def test_volumes_kept_apart_through_consolidate(self) -> None:
+        """The volume-mismatch merge guard keeps near-identical volumes apart."""
+        manager = CitationManager()
+        manager.add_citations([self._VOL1], 1)
+        manager.add_citations([self._VOL2], 2)
+        assert len(manager.citations) == 2
+
+        manager.consolidate()
+
+        # Same author/year block and near-identical text, yet the differing
+        # volumes prevent the fuzzy merge.
+        assert len(manager.citations) == 2
+        volumes = sorted(c.volume for c in manager.citations.values() if c.volume)
+        assert volumes == [1, 2]
+
+
+class TestSharedIdentifierMerge:
+    """Citations resolving to the same OpenAlex DOI collapse into one."""
+
+    _SHORT = "Alpha, A. (2001). Short Variant. Journal A."
+    _LONG = (
+        "Beta, B. (2002). A Much Longer Differently Worded Variant Of The Same "
+        "Underlying Work. Journal B."
+    )
+
+    def test_same_doi_collapses_pages_union_longest_canonical(self) -> None:
+        """Two differently worded citations sharing a DOI merge into one.
+
+        The OpenAlex fetch is stubbed to return the identical DOI for both, so
+        no network is hit. After ``_merge_by_shared_identifier`` (run at the end
+        of ``enrich_with_metadata``) the two collapse to a single citation with
+        pages unioned and the longer raw text kept canonical.
+        """
+        manager = CitationManager()
+        manager.add_citations([self._SHORT], 1)
+        manager.add_citations([self._LONG], 2)
+        assert len(manager.citations) == 2
+
+        shared_metadata = {
+            "doi": "10.5555/shared.work",
+            "url": "https://doi.org/10.5555/shared.work",
+            "title": "The Same Underlying Work",
+            "publication_year": 2001,
+            "authors": [],
+            "venue": None,
+        }
+
+        # Return a fresh copy per call so both citations receive the same DOI.
+        def fake_fetch(_text: str) -> dict[str, Any]:
+            return dict(shared_metadata)
+
+        with patch.object(
+            manager, "_fetch_metadata_from_openalex", side_effect=fake_fetch
+        ):
+            manager.enrich_with_metadata(max_requests=None)
+
+        assert len(manager.citations) == 1
+        survivor = next(iter(manager.citations.values()))
+        assert survivor.doi == "10.5555/shared.work"
+        assert survivor.pages == {1, 2}  # pages unioned
+        assert survivor.raw_text == self._LONG  # longer raw text stays canonical
+
+
+class TestJaccardOnlyMerge:
+    """Consolidate must merge on token-set Jaccard when SequenceMatcher fails.
+
+    Two same-author, same-year variants with heavily reordered word order share
+    an identical token set (Jaccard 1.0) yet score a low SequenceMatcher ratio,
+    isolating the Jaccard branch of ``_find_merge_target``.
+    """
+
+    _A = "Smith, John. (2020). Alpha Beta Gamma Delta Epsilon Zeta Eta Theta Iota."
+    _B = "Smith, John. (2020). Iota Theta Eta Zeta Epsilon Delta Gamma Beta Alpha."
+
+    def test_reordered_variant_merges_via_jaccard(self) -> None:
+        """Low ratio but high Jaccard still merges the two variants into one."""
+        manager = CitationManager()
+
+        c_a = Citation(raw_text=self._A)
+        c_b = Citation(raw_text=self._B)
+        # Precondition: same block, and the ratio path is genuinely defeated
+        # while the Jaccard path is genuinely satisfied.
+        assert c_a.author == c_b.author
+        assert c_a.year == c_b.year
+        ratio = SequenceMatcher(None, c_a.comparison_text, c_b.comparison_text).ratio()
+        jaccard = _jaccard(c_a.comparison_text, c_b.comparison_text)
+        assert ratio < manager._merge_ratio
+        assert jaccard >= manager._merge_jaccard
+
+        manager.add_citations([self._A], 1)
+        manager.add_citations([self._B], 2)
+        assert len(manager.citations) == 2
+
+        manager.consolidate()
+
+        assert len(manager.citations) == 1
+        survivor = next(iter(manager.citations.values()))
+        assert survivor.pages == {1, 2}

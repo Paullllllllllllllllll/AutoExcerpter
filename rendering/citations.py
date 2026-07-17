@@ -64,7 +64,15 @@ def _fold(text: str) -> str:
 
 
 def _extract_year(text: str) -> int | None:
-    """Return the first 4-digit publication year in *text*, or None."""
+    """Return the first 4-digit publication year in *text*, or None.
+
+    URLs and DOIs are stripped first: common DOI registrant prefixes such as
+    ``10.1016/`` or ``10.1111/`` otherwise match the ``1[0-9]{3}`` year pattern
+    and yield a bogus year that then mis-blocks deduplication.
+    """
+    text = re.sub(r"https?://\S+", " ", text)
+    text = re.sub(r"doi:\s*10\.\S+", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"\b10\.\d{4,}/\S+", " ", text)
     match = _YEAR_RE.search(text)
     return int(match.group(1)) if match else None
 
