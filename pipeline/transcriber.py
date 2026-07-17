@@ -917,6 +917,24 @@ class ItemTranscriber:
                 )
             return False
 
+        # From here the payload source holds an open PDF handle. Guard the
+        # setup phase (resume snapshotting, provenance read, log init) so any
+        # failure closes the source rather than leaking the handle; the main
+        # processing loop below has its own try/finally that also closes it.
+        try:
+            return self._run_processing(source, item_type_str)
+        except Exception:
+            source.close()
+            raise
+
+    def _run_processing(
+        self, source: PdfPayloadSource | FolderPayloadSource, item_type_str: str
+    ) -> bool:
+        """Run resume setup, transcription/summary, and output rendering.
+
+        Assumes *source* is open; the caller closes it on setup failure and the
+        finally block below closes it on the normal/processing path.
+        """
         self.total_items_to_transcribe = len(source)
         suffix = " and summarization" if config.SUMMARIZE else ""
         logger.info(
