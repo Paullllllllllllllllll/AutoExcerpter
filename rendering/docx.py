@@ -605,8 +605,15 @@ def strip_markdown_emphasis(text: str) -> str:
     )
 
 
-def add_hyperlink(paragraph: Any, url: str, text: str) -> None:
-    """Add a hyperlink to a paragraph in a DOCX document."""
+def add_hyperlink(
+    paragraph: Any, url: str, text: str, size_pt: float | None = None
+) -> None:
+    """Add a hyperlink to a paragraph in a DOCX document.
+
+    When *size_pt* is set, the run is pinned to that point size (via ``w:sz``
+    /``w:szCs`` half-points) so it matches sibling runs instead of inheriting
+    the Normal style's default size.
+    """
     part = paragraph.part
     r_id = part.relate_to(
         url,
@@ -622,6 +629,14 @@ def add_hyperlink(paragraph: Any, url: str, text: str) -> None:
     rStyle = OxmlElement("w:rStyle")
     rStyle.set(qn("w:val"), "Hyperlink")
     rPr.append(rStyle)
+    if size_pt is not None:
+        half_points = str(int(size_pt * 2))
+        sz = OxmlElement("w:sz")
+        sz.set(qn("w:val"), half_points)
+        rPr.append(sz)
+        szCs = OxmlElement("w:szCs")
+        szCs.set(qn("w:val"), half_points)
+        rPr.append(szCs)
     new_run.append(rPr)
     new_run.text = text
     hyperlink.append(new_run)
@@ -930,7 +945,10 @@ def create_docx_summary(
             if citation.url:
                 # A hyperlink is a single styled run; drop emphasis markers.
                 add_hyperlink(
-                    ref_paragraph, citation.url, strip_markdown_emphasis(citation_text)
+                    ref_paragraph,
+                    citation.url,
+                    strip_markdown_emphasis(citation_text),
+                    size_pt=REF_FONT_PT,
                 )
             else:
                 for kind, content in parse_markdown_emphasis(citation_text):

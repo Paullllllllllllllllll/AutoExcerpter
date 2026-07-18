@@ -334,6 +334,11 @@ def balance_dollar_signs(text: str) -> str:
             # Single $ - likely unclosed inline math
             # Check if there's content after it that looks like math
             pos = positions[0]
+            # Currency guard: a lone "$" immediately before a digit is a price
+            # (e.g. "$3 in 1850"), not unclosed math; leave the line untouched.
+            if pos + 1 < len(line) and line[pos + 1].isdigit():
+                result_lines.append(line)
+                continue
             after = line[pos + 1 :].strip()
 
             if after and not after.endswith("$"):

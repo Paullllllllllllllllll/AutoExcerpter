@@ -531,6 +531,16 @@ class CitationManager:
         if len(other.raw_text) > len(survivor.raw_text):
             survivor.variants.append(survivor.raw_text)
             survivor.raw_text = other.raw_text
+            # Promoting a new canonical raw_text invalidates the survivor's
+            # derived fields; re-derive them so later merge/partial-resolution
+            # and sorting decisions use the promoted text. Call
+            # _generate_normalized_key only for its side effect of refreshing
+            # comparison_text — discard the returned key, since it is the dict
+            # key and must stay stable.
+            survivor.year = _extract_year(survivor.raw_text)
+            survivor.volume = _extract_volume(survivor.raw_text)
+            survivor.author = _first_author_surname(survivor.raw_text)
+            survivor._generate_normalized_key()
 
         survivor.pages |= other.pages
         survivor.unnumbered = survivor.unnumbered or other.unnumbered

@@ -34,7 +34,7 @@ from typing import Any, Self
 
 import fitz  # PyMuPDF
 import PIL
-from PIL import Image
+from PIL import Image, ImageOps
 
 from config.constants import (
     DEFAULT_JPEG_QUALITY,
@@ -201,7 +201,11 @@ class PdfPayloadSource(_PayloadSourceBase):
         model_name: str = "",
     ) -> None:
         super().__init__(pdf_path, provider, model_name)
-        self.target_dpi = int(self.img_cfg.get("target_dpi", DEFAULT_TARGET_DPI))
+        # Clamp to >= 1 so a 0/negative config cannot produce a degenerate
+        # render matrix.
+        self.target_dpi = max(
+            1, int(self.img_cfg.get("target_dpi", DEFAULT_TARGET_DPI))
+        )
         self._render_lock = threading.Lock()
         self._doc: fitz.Document | None = fitz.open(pdf_path)
         logger.debug(
@@ -335,8 +339,12 @@ class FolderPayloadSource(_PayloadSourceBase):
 
         with Image.open(io.BytesIO(source_bytes)) as img_file:
             img_file.load()
+            # Honor EXIF orientation so phone-photographed pages are not sent
+            # sideways. exif_transpose returns an independent copy (or None).
+            transposed = ImageOps.exif_transpose(img_file)
+            oriented = transposed if transposed is not None else img_file
             pil_img = ImageProcessor.preprocess_pil_image(
-                img_file, self.img_cfg, self.model_type
+                oriented, self.img_cfg, self.model_type
             )
             # Encode inside the with-block: preprocessing may return the same
             # (unmodified) image object, which is closed when the block exits.

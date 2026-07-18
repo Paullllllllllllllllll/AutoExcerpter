@@ -21,6 +21,7 @@ from cli.interaction import (
     prompt_yes_no,
 )
 from config import app as config
+from config.constants import DEFAULT_CONCURRENT_REQUESTS
 from config.logger import setup_logger
 from llm.token_tracker import _describe_reset_time, get_token_tracker
 from pipeline.resume import ResumeResult
@@ -141,7 +142,7 @@ def _display_processing_summary(
     trans_provider = trans_model.get("provider", "openai").upper()
     trans_model_name = trans_model.get("name", "gpt-5-mini")
     trans_temp = trans_model.get("temperature")
-    trans_max_tokens = trans_model.get("max_output_tokens", 16000)
+    trans_max_tokens = trans_model.get("max_output_tokens", 16384)
 
     print_info(f"    • Transcription Provider: {trans_provider}")
     print_info(f"    • Transcription Model: {trans_model_name}")
@@ -199,8 +200,8 @@ def _display_processing_summary(
     # share their concurrency, so only the transcription phase is reported here.
     api_requests = concurrency_config.get("api_requests", {})
     trans_api = api_requests.get("transcription", {})
-    trans_concurrency = trans_api.get("concurrency_limit", 5)
-    trans_service_tier = trans_api.get("service_tier", "default")
+    trans_concurrency = trans_api.get("concurrency_limit", DEFAULT_CONCURRENT_REQUESTS)
+    trans_service_tier = trans_api.get("service_tier", "flex")
     print_info(f"    • Transcription API: {trans_concurrency} concurrent requests")
     print_dim(f"      - Service tier: {trans_service_tier}")
 

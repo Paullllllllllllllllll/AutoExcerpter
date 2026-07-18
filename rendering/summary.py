@@ -70,7 +70,13 @@ def sanitize_for_xml(text: str | None) -> str:
     """Return XML-safe text for DOCX output by removing control characters."""
     if not text:
         return ""
-    sanitized = re.sub(r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]", "", text)
+    # Strip all XML-1.0-illegal codepoints: C0 controls/DEL plus surrogates
+    # and the noncharacters python-docx rejects on save.
+    sanitized = re.sub(
+        r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F\uD800-\uDFFF﷐-﷯￾￿]",
+        "",
+        text,
+    )
     return sanitized
 
 

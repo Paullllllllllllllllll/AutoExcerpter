@@ -604,7 +604,9 @@ class ItemTranscriber:
 
         Regenerating a summary calls the LLM, so it is gated by the same daily
         token budget as ``_process_single_page`` (AE-6): if the remaining budget
-        cannot cover a page, the WHOLE page is deferred (nothing appended), so
+        cannot cover a page, the WHOLE page is deferred — its completed
+        transcription is still re-logged so a later run can resume it without
+        re-transcribing, but nothing is appended to the in-memory results, so
         ``pages_deferred`` withholds the truncated outputs and a later run
         finishes it — rather than blowing past the daily cap on a large resume.
         """
@@ -621,7 +623,11 @@ class ItemTranscriber:
 
         for entry in prior_results:
             idx = entry.get("original_input_order_index")
-            if not isinstance(idx, int) or idx not in self.completed_page_indices:
+            if (
+                not isinstance(idx, int)
+                or idx not in self.completed_page_indices
+                or idx >= self.total_items_to_transcribe
+            ):
                 continue
 
             if not summarizing:
@@ -641,6 +647,9 @@ class ItemTranscriber:
                 # whole page (append nothing) when the daily budget cannot cover
                 # it, so it is treated as deferred and its outputs withheld.
                 if self._budget_exhausted.is_set():
+                    # Re-log the completed transcription so a later run resumes
+                    # it without re-transcribing, but withhold it from results.
+                    append_to_log(self.log_path, entry)
                     continue
                 # Summary-only regeneration: stamp the SUMMARY key-pool bucket
                 # (no transcription call happens on this path).
@@ -648,6 +657,9 @@ class ItemTranscriber:
                 reserved = self._token_tracker.try_reserve(**summ_stamp)
                 if reserved is None:
                     self._budget_exhausted.set()
+                    # Re-log the completed transcription so a later run resumes
+                    # it without re-transcribing, but withhold it from results.
+                    append_to_log(self.log_path, entry)
                     continue
                 try:
                     image_name = entry.get("image") or f"page index {idx}"
@@ -670,6 +682,10 @@ class ItemTranscriber:
         transcription_results: list[dict[str, Any]] = []
         summary_results: list[dict[str, Any]] = []
         total_images = len(source)
+        # Keep the current page count on the instance so the phantom-index
+        # guard in _reload_completed_pages is correct even when this method is
+        # entered without _run_processing having set it first.
+        self.total_items_to_transcribe = total_images
 
         # Initialize the summary log ONCE up front (if summarizing) so that both
         # reused and freshly generated summaries are appended to the same file.
