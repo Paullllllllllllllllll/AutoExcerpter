@@ -21,12 +21,15 @@ class TranscriptionResult(TypedDict, total=False):
 
     page: int
     image: str
+    sequence_number: int
     transcription: str
     processing_time: float
     retries: int
     api_retries: int
     schema_retries: dict[str, int]
     error: str | None
+    error_type: str
+    provider: str | None
     original_input_order_index: int
 
 
@@ -34,7 +37,9 @@ class PageInformation(TypedDict, total=False):
     """Type definition for page information metadata."""
 
     page_number_integer: int | None
+    page_number_integer_end: int | None  # end page of a two-page spread, else None
     page_number_type: str  # "roman", "arabic", "none"
+    is_two_page_spread: bool  # True when the image shows a two-page spread
     page_types: list[str]  # 1-3 classifications: content, bibliography, abstract, etc.
 
 

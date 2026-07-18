@@ -892,7 +892,9 @@ class LLMClientBase:
 
         Uses retry config from ``concurrency.yaml`` (``_RETRY_CONFIG``). The
         result is capped at ``BACKOFF_CAP_S`` so a high attempt count cannot
-        produce an unbounded wait.
+        produce an unbounded wait. The exponent is additionally clamped so a
+        very large ``attempt`` (possible under time-based retry windows) cannot
+        raise ``OverflowError`` before the cap is applied.
 
         Args:
             attempt: Zero-based attempt number.
@@ -907,7 +909,10 @@ class LLMClientBase:
         multiplier = multipliers.get(error_type, 2.0)
 
         jitter = random.uniform(JITTER_MIN, JITTER_MAX)
-        return min(BACKOFF_CAP_S, float(backoff_base * (multiplier**attempt) + jitter))
+        return min(
+            BACKOFF_CAP_S,
+            float(backoff_base * (multiplier ** min(attempt, 64)) + jitter),
+        )
 
     @staticmethod
     def _parse_retry_after(exc: BaseException | None) -> float | None:

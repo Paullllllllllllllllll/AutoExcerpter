@@ -110,9 +110,14 @@ def get_rate_limits() -> list[tuple[int, int]]:
         for item in raw_limits:
             if isinstance(item, (list, tuple)) and len(item) == 2:
                 try:
-                    limits.append((int(item[0]), int(item[1])))
+                    max_requests = int(item[0])
+                    time_window = int(item[1])
                 except (ValueError, TypeError):
                     continue
+                if max_requests <= 0 or time_window <= 0:
+                    logger.debug(f"Skipping non-positive rate limit entry: {item}")
+                    continue
+                limits.append((max_requests, time_window))
 
         return limits if limits else default_limits
     except Exception as e:

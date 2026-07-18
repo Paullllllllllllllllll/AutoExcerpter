@@ -548,12 +548,16 @@ class DailyTokenTracker:
 
         When the shared budget is enabled this instead forces a final ledger
         sync so the last accumulated delta lands before exit; if a sync is in
-        flight, wait briefly (bounded) for it to clear so the final push is not
-        skipped by the in-flight guard. The private state file is not written
-        while the ledger is the active persistence.
+        flight, wait (bounded) for it to clear so the final push is not
+        skipped by the in-flight guard. The bound (300 * 0.02 s = 6.0 s)
+        comfortably exceeds the ledger's OS file-lock timeout
+        (``shared_ledger._LOCK_TIMEOUT_S`` = 5.0 s), so an in-flight merge
+        holding the lock does not cause the final delta to be dropped. The
+        private state file is not written while the ledger is the active
+        persistence.
         """
         if self._shared_enabled:
-            for _ in range(50):
+            for _ in range(300):
                 with self._lock:
                     busy = self._ledger_sync_in_flight
                 if not busy:

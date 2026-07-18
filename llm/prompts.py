@@ -61,7 +61,7 @@ def strip_markdown_code_block(text: str) -> str:
         Text with code block fencing removed.
     """
     stripped = text.strip()
-    if stripped.startswith("```json"):
+    if stripped[:7].lower() == "```json":
         stripped = stripped[7:]
     elif stripped.startswith("```"):
         stripped = stripped[3:]

@@ -389,7 +389,7 @@ def reload_daily_token_limit() -> int | None:
 
 # Chunk/page-level enforcement tuning (see llm/token_tracker.DailyTokenTracker).
 DAILY_TOKEN_CHUNK_ESTIMATE_SEED = _get_int(_TOKEN_LIMIT, "chunk_estimate_seed", 25000)
-DAILY_TOKEN_ESTIMATE_SMOOTHING = float(_TOKEN_LIMIT.get("estimate_smoothing", 0.3))
+DAILY_TOKEN_ESTIMATE_SMOOTHING = _get_float(_TOKEN_LIMIT, "estimate_smoothing", 0.3)
 
 # --- Shared Cross-Tool Token Budget (opt-in) ---
 # When enabled, the daily token limit is enforced against the COMBINED usage of

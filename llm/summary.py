@@ -311,14 +311,21 @@ class SummaryManager(LLMClientBase):
                 # retries do not inflate the per-request average.
                 processing_time = time.time() - start_time
                 self._record_processing_time(time.time() - attempt_start)
-                self._report_success()
 
                 # Report token usage (built into LangChain's response metadata)
+                # BEFORE the emptiness check so an HTTP-200 empty response still
+                # gets its consumed tokens accounted for.
                 self._report_token_usage(response, f"Summary for page {page_num}")
 
                 summary_json_str = self._extract_output_text(response)
                 if not summary_json_str:
+                    # Empty content is a failure, not a success: raise before
+                    # recording success so it is counted once (via the generic
+                    # except -> _report_failure), never as both.
                     raise ValueError("LLM API returned empty content for summary.")
+
+                # Content confirmed non-empty: count this attempt as a success.
+                self._report_success()
 
                 # Strip markdown code blocks if present
                 summary_json_str = strip_markdown_code_block(summary_json_str)

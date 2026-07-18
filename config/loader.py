@@ -112,42 +112,59 @@ class ConfigLoader:
            informational message prompting the user to copy and customize it.
         3. Neither present: return {} with a WARNING.
         """
+
+        def _read_yaml(path: Path) -> dict[str, Any] | None:
+            """Read and parse *path*; return a dict, or None on any failure."""
+            try:
+                with path.open("r", encoding="utf-8") as f:
+                    data = yaml.safe_load(f)
+                if not isinstance(data, dict):
+                    logger.warning(
+                        f"Config file {path.name} did not contain a dictionary."
+                        " Using empty config."
+                    )
+                    return None
+                return data
+            except yaml.YAMLError as e:
+                logger.error(f"YAML parsing error in {path.name}: {e}")
+                return None
+            except Exception as e:
+                logger.error(f"Error loading config {path.name}: {e}")
+                return None
+
         config_path = CONFIG_DIR / filename
+        stem = Path(filename).stem
+        example_filename = f"{stem}.example.yaml"
+        example_path = CONFIG_DIR / example_filename
 
         if not config_path.exists():
-            stem = Path(filename).stem
-            example_filename = f"{stem}.example.yaml"
-            example_path = CONFIG_DIR / example_filename
             if example_path.exists():
                 logger.info(
                     f"Config '{filename}' not found; using bundled defaults from "
                     f"'{example_filename}'. Copy it to '{filename}' and edit it "
                     "to set your own values."
                 )
-                config_path = example_path
-            else:
-                logger.warning(f"Config file not found: {filename}")
-                return {}
+                data = _read_yaml(example_path)
+                return data if data is not None else {}
+            logger.warning(f"Config file not found: {filename}")
+            return {}
 
-        try:
-            with config_path.open("r", encoding="utf-8") as f:
-                data = yaml.safe_load(f)
-
-            if not isinstance(data, dict):
-                logger.warning(
-                    f"Config file {filename} did not contain a dictionary."
-                    " Using empty config."
-                )
-                return {}
-
+        data = _read_yaml(config_path)
+        if data is not None:
             return data
 
-        except yaml.YAMLError as e:
-            logger.error(f"YAML parsing error in {filename}: {e}")
-            return {}
-        except Exception as e:
-            logger.error(f"Error loading config {filename}: {e}")
-            return {}
+        # Real file was present but failed to parse (or was not a dict); fall
+        # back to the bundled example so a corrupt user file does not wipe out
+        # all defaults.
+        if example_path.exists():
+            logger.info(
+                f"Config '{filename}' failed to load; using bundled defaults "
+                f"from '{example_filename}'."
+            )
+            fallback = _read_yaml(example_path)
+            if fallback is not None:
+                return fallback
+        return {}
 
     def get_image_processing_config(self) -> dict[str, Any]:
         """Get the image processing configuration."""
