@@ -1,4 +1,4 @@
-# AutoExcerpter v2.1.1
+# AutoExcerpter v2.1.2
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -742,7 +742,7 @@ AutoExcerpter/
 │   └── errors.py                    # Domain exceptions
 ├── scripts/repair_layout/           # Deterministic line-break repair utility
 ├── context/summary/general.txt      # Default summarization topics (gitignored)
-├── tests/                           # Test suite (1,541 tests)
+├── tests/                           # Test suite (1,598 tests)
 ├── LICENSE                          # MIT license
 ├── pyproject.toml                   # Project metadata and dependencies
 └── uv.lock                          # Pinned dependency lockfile
@@ -806,6 +806,24 @@ v1.0.0 do not exist.
 
 ## Changelog
 
+- **v2.1.2** (18 July 2026) -- Deep second-round hardening sweep. Resume
+    state is now crash-safe: completed transcriptions are re-logged before
+    any summary regeneration (closing a data-loss window on interrupt),
+    final .txt/.md outputs are written atomically, a size-based input
+    provenance guard refuses page-level reuse after the input file was
+    swapped, and failed log-header writes abort the item instead of
+    producing an unresumable log. Citation handling learned European
+    idioms: German/French volume designators (Bd., tome, t. with Roman
+    numerals), nobiliary particles and Unicode surnames, German page
+    markers, reprint year pairs, and parenthesized in-text partials;
+    OpenAlex match verification rejects gross year mismatches and
+    one-token title coincidences. Further fixes: currency dollars are no
+    longer mangled into math, empty LLM responses count once in request
+    stats, config parsing falls back to bundled defaults on corrupt YAML,
+    zero rate limits and overflowing backoff exponents cannot crash,
+    EXIF orientation is honored for folder images, hyperlinked references
+    render at the correct font size, and the overbrace regex no longer
+    devours formula content. 57 new regression tests (1,598 total).
 - **v2.1.1** (18 July 2026) -- Correctness and robustness release from a
     codebase-wide bug hunt. `_get_bool` now falls back to the configured
     default on an explicit YAML null instead of silently reading it as
