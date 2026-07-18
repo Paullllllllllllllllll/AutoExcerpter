@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+import os
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -30,8 +32,12 @@ def write_transcription_to_text(
     successes = sum(1 for result in transcription_results if "error" not in result)
     failures = len(transcription_results) - successes
 
+    # Write to a sibling temp file and atomically replace the target, so a crash
+    # mid-write never leaves a truncated .txt that resume trusts as COMPLETE
+    # (classification keys on exists() and st_size > 0).
+    tmp_path = output_path.with_name(output_path.name + ".tmp")
     try:
-        with output_path.open("w", encoding="utf-8") as file_handle:
+        with tmp_path.open("w", encoding="utf-8") as file_handle:
             file_handle.write(f"# Transcription of: {document_name}\n")
             file_handle.write(f"# Source Path: {source_path}\n")
             file_handle.write(f"# Type: {item_type}\n")
@@ -56,9 +62,12 @@ def write_transcription_to_text(
                 if index < len(transcription_results) - 1:
                     file_handle.write("\n")
 
+        os.replace(tmp_path, output_path)
         logger.info("Transcription text file saved: %s", output_path)
         return True
     except OSError as exc:
+        with contextlib.suppress(OSError):
+            tmp_path.unlink()
         logger.error(
             "Error writing transcription to text file %s: %s", output_path, exc
         )

@@ -302,6 +302,13 @@ class PdfPayloadSource(_PayloadSourceBase):
         except OSError as exc:
             logger.warning(f"Could not hash {self.source_path.name}: {exc}")
             provenance["source_sha256"] = None
+        # Cheap identity field consumed by the resume input-change guard
+        # (pipeline.resume._input_changed_since_log). Size only: mtime changes
+        # on copies of an identical file and would force needless reprocessing.
+        try:
+            provenance["size"] = self.source_path.stat().st_size
+        except OSError:
+            provenance["size"] = None
         provenance["target_dpi"] = self.target_dpi
         return provenance
 

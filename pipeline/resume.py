@@ -187,6 +187,20 @@ class ResumeChecker:
         log_entries = _read_and_parse_log(log_path) if log_path else None
         completed_pages = _completed_pages_from_entries(log_entries)
         header = _header_from_entries(log_entries)
+
+        # Input-identity guard: if the input file was replaced under the same
+        # name since this log was written, its logged pages describe a different
+        # document. Refuse page-level reuse (drop the completed set) so the item
+        # is reprocessed from scratch rather than emitting a chimeric mix.
+        if completed_pages is not None and _input_changed_since_log(header):
+            logger.warning(
+                "Input file changed since the working log was written "
+                "(cheap provenance mismatch); refusing page-level resume for "
+                "'%s' and reprocessing it from scratch.",
+                item_name,
+            )
+            completed_pages = None
+
         logged_model = header.get("model_name") if isinstance(header, dict) else None
         expected_total = (
             header.get("total_images") if isinstance(header, dict) else None
@@ -396,6 +410,41 @@ def _completed_pages_from_entries(
                 completed.add(idx)
 
     return completed if completed else None
+
+
+def _input_changed_since_log(header: dict[str, Any] | None) -> bool:
+    """Whether the input file changed since the working log's header was written.
+
+    Compares the header's ``file_provenance`` against the input file currently
+    on disk using only CHEAP ``os.stat`` fields (byte size, then mtime) — the
+    whole file is never re-hashed on resume. A changed input under the same name
+    would otherwise let page-level reuse splice two documents into one chimeric
+    output. Returns False (current behavior preserved) when the header predates
+    the ``file_provenance`` field, carries no cheap size/mtime field, or the
+    recorded source file cannot be stat'd (a mismatch cannot be proven).
+    """
+    if not isinstance(header, dict):
+        return False
+    provenance = header.get("file_provenance")
+    if not isinstance(provenance, dict):
+        return False
+    source_file = provenance.get("source_file")
+    if not isinstance(source_file, str):
+        return False
+
+    try:
+        stat = Path(source_file).stat()
+    except OSError:
+        return False
+
+    stored_size = provenance.get("size")
+    if stored_size is None:
+        stored_size = provenance.get("file_size")
+    if isinstance(stored_size, int) and stored_size != stat.st_size:
+        return True
+
+    stored_mtime = provenance.get("mtime")
+    return isinstance(stored_mtime, (int, float)) and stored_mtime != stat.st_mtime
 
 
 def _header_from_entries(

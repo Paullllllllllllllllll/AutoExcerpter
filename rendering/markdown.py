@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -155,5 +157,14 @@ def create_markdown_summary(
             lines.append(line)
 
     # === Write file ===
-    output_path.write_text("\n".join(lines), encoding="utf-8")
+    # Write to a sibling temp file and atomically replace the target, so a crash
+    # mid-write never leaves a truncated .md that resume trusts as COMPLETE.
+    tmp_path = output_path.with_name(output_path.name + ".tmp")
+    try:
+        tmp_path.write_text("\n".join(lines), encoding="utf-8")
+        os.replace(tmp_path, output_path)
+    except OSError:
+        with contextlib.suppress(OSError):
+            tmp_path.unlink()
+        raise
     logger.info("Markdown summary saved to %s", output_path)

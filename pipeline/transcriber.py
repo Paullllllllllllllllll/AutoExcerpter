@@ -587,6 +587,47 @@ class ItemTranscriber:
             logger.warning(note)
             self._output_metadata_notes.append(note)
 
+    def _initialize_log_or_raise(
+        self,
+        log_path: Path,
+        item_name: str,
+        input_path: str,
+        input_type: str,
+        total_images: int,
+        model_name: str,
+        extraction_dpi: int | None = None,
+        *,
+        concurrency_limit: int | None = None,
+        file_provenance: dict[str, Any] | None = None,
+        log_type: str = "transcription",
+    ) -> None:
+        """Write the log header, retrying once, and raise if it cannot be written.
+
+        A transient header-write failure would otherwise be swallowed, leaving a
+        headerless log that a later resume refuses wholesale (the item's
+        completed pages become unrecoverable). Raising instead lets the caller
+        (``_process_single_item``) convert it into a clean item-level failure so
+        the working log is preserved for a genuine retry.
+        """
+        for _attempt in range(2):
+            if initialize_log_file(
+                log_path,
+                item_name,
+                input_path,
+                input_type,
+                total_images,
+                model_name,
+                extraction_dpi,
+                concurrency_limit=concurrency_limit,
+                file_provenance=file_provenance,
+                log_type=log_type,
+            ):
+                return
+        raise RuntimeError(
+            f"Could not initialize {log_type} log header at {log_path} "
+            "after a retry; aborting this item to protect the working log."
+        )
+
     def _reload_completed_pages(
         self,
         transcription_results: list[dict[str, Any]],
@@ -594,21 +635,32 @@ class ItemTranscriber:
     ) -> None:
         """Reload completed pages' transcriptions and (re)attach their summaries.
 
-        For each already-completed page: append its logged transcription to the
-        results and re-append it to the freshly initialized transcription log
-        (so a later crash still sees it as complete). If summarizing, reuse the
-        logged summary when present AND error-free; otherwise regenerate it from
-        the logged transcription text (the summary-only resume path) — never
-        dropping a completed page's summary, and never reusing a summary that
-        previously errored (AE-2, so a re-run repairs it).
+        Runs in TWO passes over the same eligible-entry list so the resume path
+        never opens a data-loss window:
+
+        Pass 1 immediately re-appends EVERY eligible completed transcription to
+        the freshly initialized transcription log (``initialize_log_file`` just
+        truncated it, and the log was these pages' only on-disk copy). This is
+        pure file I/O with no LLM calls, so the truncate-then-reappend window is
+        closed in milliseconds — a crash or Ctrl+C during the (potentially slow)
+        summary work in pass 2 can no longer destroy a completed transcription.
+
+        Pass 2 admits each completed page to the in-memory results and handles
+        its summary. It does NOT touch the transcription log again (pass 1
+        already persisted every eligible entry). If summarizing, it reuses the
+        logged summary when present AND error-free; otherwise it regenerates it
+        from the logged transcription text (the summary-only resume path) —
+        never dropping a completed page's summary, and never reusing a summary
+        that previously errored (AE-2, so a re-run repairs it).
 
         Regenerating a summary calls the LLM, so it is gated by the same daily
         token budget as ``_process_single_page`` (AE-6): if the remaining budget
         cannot cover a page, the WHOLE page is deferred — its completed
-        transcription is still re-logged so a later run can resume it without
-        re-transcribing, but nothing is appended to the in-memory results, so
-        ``pages_deferred`` withholds the truncated outputs and a later run
-        finishes it — rather than blowing past the daily cap on a large resume.
+        transcription is already re-logged (pass 1) so a later run can resume it
+        without re-transcribing, but nothing is appended to the in-memory
+        results, so ``pages_deferred`` withholds the truncated outputs and a
+        later run finishes it — rather than blowing past the daily cap on a
+        large resume.
         """
         prior_results = self._prior_transcription_results or (
             load_transcription_results_from_log(self.log_path) or []
@@ -621,18 +673,29 @@ class ItemTranscriber:
 
         summarizing = bool(config.SUMMARIZE and self.summary_manager)
 
-        for entry in prior_results:
-            idx = entry.get("original_input_order_index")
-            if (
-                not isinstance(idx, int)
-                or idx not in self.completed_page_indices
-                or idx >= self.total_items_to_transcribe
-            ):
-                continue
+        # Eligibility filter computed once and shared by both passes: a real
+        # per-page index, marked completed, and within the current page count
+        # (a stale phantom index from a swapped, shorter input is dropped).
+        eligible = [
+            entry
+            for entry in prior_results
+            if isinstance(entry.get("original_input_order_index"), int)
+            and entry["original_input_order_index"] in self.completed_page_indices
+            and entry["original_input_order_index"] < self.total_items_to_transcribe
+        ]
+
+        # --- Pass 1: persist every completed transcription NOW (no LLM calls),
+        # closing the truncate-then-reappend loss window. ---
+        for entry in eligible:
+            append_to_log(self.log_path, entry)
+
+        # --- Pass 2: reuse/regenerate summaries and admit pages to results.
+        # The transcription log is intentionally NOT written here again. ---
+        for entry in eligible:
+            idx = entry["original_input_order_index"]
 
             if not summarizing:
                 transcription_results.append(entry)
-                append_to_log(self.log_path, entry)
                 continue
 
             # Reuse a logged summary only when present and error-free; anything
@@ -644,12 +707,10 @@ class ItemTranscriber:
 
             if needs_generation:
                 # Token-budget gate, mirroring _process_single_page: defer the
-                # whole page (append nothing) when the daily budget cannot cover
-                # it, so it is treated as deferred and its outputs withheld.
+                # whole page (append nothing to results) when the daily budget
+                # cannot cover it. The transcription is already re-logged by
+                # pass 1, so a later run resumes it without re-transcribing.
                 if self._budget_exhausted.is_set():
-                    # Re-log the completed transcription so a later run resumes
-                    # it without re-transcribing, but withhold it from results.
-                    append_to_log(self.log_path, entry)
                     continue
                 # Summary-only regeneration: stamp the SUMMARY key-pool bucket
                 # (no transcription call happens on this path).
@@ -657,9 +718,6 @@ class ItemTranscriber:
                 reserved = self._token_tracker.try_reserve(**summ_stamp)
                 if reserved is None:
                     self._budget_exhausted.set()
-                    # Re-log the completed transcription so a later run resumes
-                    # it without re-transcribing, but withhold it from results.
-                    append_to_log(self.log_path, entry)
                     continue
                 try:
                     image_name = entry.get("image") or f"page index {idx}"
@@ -671,7 +729,6 @@ class ItemTranscriber:
                     self._token_tracker.record_page_usage()
 
             transcription_results.append(entry)
-            append_to_log(self.log_path, entry)
             if summary_result is not None:
                 append_to_log(self.summary_log_path, summary_result)
                 summary_results.append(summary_result)
@@ -691,7 +748,7 @@ class ItemTranscriber:
         # reused and freshly generated summaries are appended to the same file.
         if config.SUMMARIZE and self.summary_manager:
             max_workers, _ = get_transcription_concurrency()
-            initialize_log_file(
+            self._initialize_log_or_raise(
                 self.summary_log_path,
                 self.name,
                 str(self.input_path),
@@ -985,7 +1042,7 @@ class ItemTranscriber:
         # Initialize log file with a header (incl. file-level provenance)
         target_dpi = source.target_dpi if isinstance(source, PdfPayloadSource) else None
         actual_concurrency, _ = get_transcription_concurrency()
-        initialize_log_file(
+        self._initialize_log_or_raise(
             self.log_path,
             self.name,
             str(self.input_path),
