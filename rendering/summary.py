@@ -241,6 +241,12 @@ def _get_structure_types(page_types: list[str]) -> list[str]:
 
 def _is_meaningful_summary(summary_data: dict[str, Any]) -> bool:
     """Check if a summary is meaningful based on page_types and content."""
+    # A page carrying references is meaningful even without bullet content:
+    # dropping it here would discard its citations before they reach the
+    # CitationManager (page-number attribution stays intact downstream).
+    if _normalize_references(summary_data.get("references")):
+        return True
+
     page_info = _page_information(summary_data)
     page_types = page_info.get("page_types", ["content"])
 

@@ -37,8 +37,48 @@ _CURLY_TRANSLATION = {
     ord("­"): "",  # soft hyphen
 }
 
-_YEAR_RE = re.compile(r"\b(1[0-9]{3}|20[0-9]{2})\b")
-_VOLUME_RE = re.compile(r"\b(?:vol|volume)\.?\s*([0-9]+)\b", re.IGNORECASE)
+_YEAR_CORE = r"(1[0-9]{3}|20[0-9]{2})"
+_YEAR_RE = re.compile(r"\b" + _YEAR_CORE + r"\b")
+# Reprint form: a plain/parenthesized year adjoining a bracketed year, in either
+# order ("1976 [1867]" or "[1867] 1976"). Both years are captured so the
+# original (earliest) can win over the reprint.
+_REPRINT_RE = re.compile(
+    _YEAR_CORE + r"\s*\[\s*" + _YEAR_CORE + r"\s*\]"
+    r"|\[\s*" + _YEAR_CORE + r"\s*\]\s*" + _YEAR_CORE
+)
+# Page-marker spans (English pp./p., German S./SS., folio fol.) stripped before
+# year scanning so a page range such as "S. 1066-1071" is never read as a year.
+_PAGE_MARKER_RE = re.compile(r"\b(?:pp?|ss?|fol)\.\s*\d+(?:\s*-\s*\d+)?", re.IGNORECASE)
+# Volume designators across English/German/French scholarship. The number may
+# be Arabic or a Roman numeral. The period is optional for the spelled-out
+# designators but required for the bare "t." so ordinary words never match;
+# the bare "t." number is further capped at three digits so an author initial
+# before a year ("Smith, T. 1990. Title") is never read as a volume.
+_VOLUME_RE = re.compile(
+    r"\b(?:vol|volume|bd|band|teil|tome)\.?\s*(\d+|[ivxlcdm]+)\b"
+    r"|\bt\.\s*(\d{1,3}|[ivxlcdm]+)\b",
+    re.IGNORECASE,
+)
+
+
+def _roman_to_int(text: str) -> int | None:
+    """Convert a Roman numeral to an int (case-insensitive), or None if invalid."""
+    values = {"i": 1, "v": 5, "x": 10, "l": 50, "c": 100, "d": 500, "m": 1000}
+    s = text.lower()
+    if not s or any(ch not in values for ch in s):
+        return None
+    total = 0
+    prev = 0
+    for ch in reversed(s):
+        val = values[ch]
+        if val < prev:
+            total -= val
+        else:
+            total += val
+            prev = val
+    return total or None
+
+
 _TITLE_SPAN_RE = re.compile(r'\*([^*\n]{3,})\*|"([^"\n]{3,})"')
 _STOPLIST_RE = re.compile(
     r"\b(?:london|cambridge|oxford|new york|berkeley|chicago"
@@ -73,14 +113,32 @@ def _extract_year(text: str) -> int | None:
     text = re.sub(r"https?://\S+", " ", text)
     text = re.sub(r"doi:\s*10\.\S+", " ", text, flags=re.IGNORECASE)
     text = re.sub(r"\b10\.\d{4,}/\S+", " ", text)
+    # A reprint ("1976 [1867]") splits the same work across two blocks unless we
+    # canonicalize on the earliest year; detect the adjoining pair and return the
+    # minimum before the positional "first year" scan below.
+    reprint = _REPRINT_RE.search(text)
+    if reprint:
+        years = [int(g) for g in reprint.groups() if g]
+        if years:
+            return min(years)
+    # Drop page-marker spans so their numbers cannot be misread as a year.
+    text = _PAGE_MARKER_RE.sub(" ", text)
     match = _YEAR_RE.search(text)
     return int(match.group(1)) if match else None
 
 
 def _extract_volume(text: str) -> int | None:
-    """Return the volume number in *text* (``Vol. 3``), or None."""
+    """Return the volume number in *text* (``Vol. 3``, ``Bd. 2``, ``t. II``), or
+    None. Handles English/German/French designators and Roman numerals."""
     match = _VOLUME_RE.search(text)
-    return int(match.group(1)) if match else None
+    if not match:
+        return None
+    captured = match.group(1) or match.group(2)
+    if captured is None:
+        return None
+    if captured.isdigit():
+        return int(captured)
+    return _roman_to_int(captured)
 
 
 def _title_spans(text: str) -> list[str]:
@@ -93,18 +151,55 @@ def _title_spans(text: str) -> list[str]:
     return spans
 
 
+# Non-name tokens that must never be taken as a surname.
+_SURNAME_STOPWORDS = {"the", "and", "of", "in", "on", "ed", "eds", "trans"}
+# Lowercase nobiliary/name particles that precede the actual surname. When a
+# name leads with one ("van der Berg"), the first non-particle token is the
+# surname, so "van der Berg" and "Berg, J. van der" fold to the same block.
+_NAME_PARTICLES = {
+    "van",
+    "von",
+    "der",
+    "de",
+    "den",
+    "du",
+    "la",
+    "le",
+    "ter",
+    "ten",
+    "da",
+    "di",
+    "dos",
+    "del",
+}
+# Unicode-aware word token: a letter (any script, incl. Latin Extended) followed
+# by at least one more letter/apostrophe/hyphen. The two-character minimum skips
+# single-letter initials ("J.").
+_NAME_TOKEN_RE = re.compile(r"[^\W\d_](?:[^\W\d_]|['’-])+", re.UNICODE)
+
+
 def _first_author_surname(text: str) -> str:
     """Return the folded first-author surname (best-effort), or ``""``.
 
-    Takes the first capitalized, alphabetic token before the first year or
-    opening parenthesis.
+    Takes the first alphabetic token before the first year or opening
+    parenthesis, skipping lowercase name particles so particle surnames fold
+    consistently regardless of ordering.
     """
-    head = re.split(r"\(|\d{4}", text, maxsplit=1)[0]
-    for tok in re.findall(r"[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ'’-]{1,}", head):
-        folded = _fold(tok)
-        if folded not in {"the", "and", "of", "in", "on", "ed", "eds", "trans"}:
-            return folded
-    return ""
+    # An in-text partial like "(Smith, 1990, S. 12)" leads with "(", which would
+    # otherwise split to an empty head; drop leading brackets/whitespace first.
+    stripped = text.lstrip("([ \t\r\n")
+    head = re.split(r"\(|\d{4}", stripped, maxsplit=1)[0]
+    tokens = [
+        folded
+        for tok in _NAME_TOKEN_RE.findall(head)
+        if (folded := _fold(tok)) not in _SURNAME_STOPWORDS
+    ]
+    if not tokens:
+        return ""
+    for tok in tokens:
+        if tok not in _NAME_PARTICLES:
+            return tok
+    return tokens[0]
 
 
 def _token_set(text: str) -> set[str]:
@@ -256,8 +351,12 @@ class Citation:
         text = re.sub(r"doi:\s*10\.\S+", " ", text)
         text = re.sub(r"\b10\.\d{4,}/\S+", " ", text)
 
-        # Remove page numbers (p. 123, pp. 123-145, (pp. 123)).
-        text = re.sub(r"\(?\s*pp?\.\s*\d+(?:\s*-\s*\d+)?\s*\)?", " ", text)
+        # Remove page numbers, including German (S., SS.) and folio (fol.) forms
+        # (p. 123, pp. 123-145, (pp. 123), S. 12-34); text is already folded to
+        # lowercase here, but \b keeps "words." from matching the bare "s.".
+        text = re.sub(
+            r"\(?\s*\b(?:pp?|ss?|fol)\.\s*\d+(?:\s*-\s*\d+)?\s*\)?", " ", text
+        )
 
         # Protect the folded title span so the stop-list only strips the
         # non-title parts (keeps "the cambridge world history of food" intact).
@@ -960,10 +1059,15 @@ class CitationManager:
         # Extract author surnames: first few Capitalized words (>=3 chars)
         # appearing before the first year or opening parenthesis.
         head = re.split(r"\(|\d{4}", citation_text, maxsplit=1)[0]
+        # Unicode-aware capitalized tokens (>=3 chars) so accented surnames
+        # ("Müller") and apostrophe forms ("O'Brien") are captured rather than
+        # skipped or truncated.
         surnames = [
             tok
-            for tok in re.findall(r"[A-Z][a-z]{2,}", head)
-            if tok.lower() not in {"ed", "eds", "the", "and", "of", "in", "on"}
+            for tok in re.findall(r"[^\W\d_](?:[^\W\d_]|['’-])*", head)
+            if len(tok) >= 3
+            and tok[:1].isupper()
+            and tok.lower() not in {"ed", "eds", "the", "and", "of", "in", "on"}
         ][:3]
 
         if title and surnames:
@@ -1004,18 +1108,37 @@ class CitationManager:
             return False
 
         citation_words = _token_set(citation_folded)
-        overlap = len(title_words & citation_words) / len(title_words)
-        if overlap < self._match_title_overlap:
-            return False
 
-        # Corroborating signal 1: publication year within +/-1 of a cited year.
+        # A grossly mismatched known year disqualifies outright: a coincidental
+        # author surname must not link a 1950 citation to a 2001 candidate.
         cand_year = work_data.get("publication_year")
         cited_year = _extract_year(citation_text)
-        if (
-            isinstance(cand_year, int)
-            and cited_year is not None
-            and abs(cand_year - cited_year) <= 1
-        ):
+        year_diff: int | None = None
+        if isinstance(cand_year, int) and cited_year is not None:
+            year_diff = abs(cand_year - cited_year)
+        if year_diff is not None and year_diff > 2:
+            return False
+
+        # Title check. A single substantive title token ("Nations") scores 1.0
+        # against any citation containing that word, so demand it appear as an
+        # explicit quoted/italic title span; otherwise require at least two
+        # substantive title tokens in the overlap plus the ratio threshold.
+        if len(title_words) < 2:
+            folded_title = _fold(raw_title).strip()
+            citation_title_spans = {
+                _fold(span).strip() for span in _title_spans(citation_text)
+            }
+            if folded_title not in citation_title_spans:
+                return False
+        else:
+            overlap_tokens = title_words & citation_words
+            if len(overlap_tokens) < 2:
+                return False
+            if len(overlap_tokens) / len(title_words) < self._match_title_overlap:
+                return False
+
+        # Corroborating signal 1: publication year within +/-1 of a cited year.
+        if year_diff is not None and year_diff <= 1:
             return True
 
         # Corroborating signal 2: candidate author surname present in citation.

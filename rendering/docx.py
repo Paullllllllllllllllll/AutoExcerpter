@@ -303,10 +303,18 @@ _LATEX_SIMPLIFICATIONS: list[_LaTeXRule] = [
         _simplify_auto_sizing,
         "auto-sizing delimiters (left/right) removed",
     ),
-    # Overbrace/underbrace
-    _regex_rule(r"\\overbrace\{([^}]+)\}\^?\{?[^}]*\}?", r"\1", "overbrace simplified"),
+    # Overbrace/underbrace. The optional script group is explicit and anchored
+    # to the brace so it never devours following formula content ("a+b} + \frac
+    # {c}{d}" must not collapse into "a+b{d}").
     _regex_rule(
-        r"\\underbrace\{([^}]+)\}_?\{?[^}]*\}?", r"\1", "underbrace simplified"
+        r"\\overbrace\{([^}]+)\}(?:\^(?:\{[^}]*\}|\S))?",
+        r"\1",
+        "overbrace simplified",
+    ),
+    _regex_rule(
+        r"\\underbrace\{([^}]+)\}(?:_(?:\{[^}]*\}|\S))?",
+        r"\1",
+        "underbrace simplified",
     ),
     _regex_rule(r"\\overleftarrow\{([^}]+)\}", r"\1", "overleftarrow simplified"),
     _regex_rule(
@@ -568,7 +576,14 @@ def add_formatted_text_to_paragraph(paragraph: Any, text: str) -> None:
         if segment_type in ("latex_display", "latex_inline"):
             add_math_to_paragraph(paragraph, content)
         else:
-            paragraph.add_run(sanitize_for_xml(content))
+            # Render Markdown **bold** / *italic* as run formatting (matching the
+            # Markdown writer) instead of leaking literal asterisks into the DOCX.
+            for kind, piece in parse_markdown_emphasis(content):
+                run = paragraph.add_run(sanitize_for_xml(piece))
+                if kind == "bold":
+                    run.bold = True
+                elif kind == "italic":
+                    run.italic = True
 
 
 _MARKDOWN_EMPHASIS_PATTERN = re.compile(
