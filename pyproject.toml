@@ -4,15 +4,15 @@ build-backend = "hatchling.build"
 
 [project]
 name = "autoexcerpter"
-version = "2.2.1"
+version = "2.3.0"
 description = "Document processing pipeline that transcribes and summarizes PDFs and image collections using vision-enabled LLMs"
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.13"
 dependencies = [
-    "PyMuPDF>=1.26",
-    "Pillow>=12.2",
-    "tqdm>=4.68",
+    "PyMuPDF>=1.28",
+    "Pillow>=12.3",
+    "tqdm>=4.69",
     "PyYAML>=6.0",
     "langchain-core>=1.4",
     "langchain-openai>=1.3",
@@ -26,7 +26,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "mypy>=2.1",
+    "mypy>=2.3",
     "ruff>=0.15",
     "types-PyYAML>=6.0",
     "types-requests>=2.32",

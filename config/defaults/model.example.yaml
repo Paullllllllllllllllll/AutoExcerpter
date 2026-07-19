@@ -36,7 +36,7 @@ transcription_model:
   provider: "openai"
   max_output_tokens: 128000
   reasoning:
-    effort: high  # none | low | medium | high | xhigh (GPT-5.2+: default is none)
+    effort: high  # none | minimal | low | medium | high | xhigh (GPT-5.2+: default is none)
   text:
     verbosity: medium  # low | medium | high
   temperature: 1.0  # 0.0-2.0 (null = provider default; only with reasoning: none)
@@ -55,7 +55,7 @@ summary_model:
   provider: "openai"
   max_output_tokens: 128000
   reasoning:
-    effort: high  # none | low | medium | high | xhigh (GPT-5.2+: default is none)
+    effort: high  # none | minimal | low | medium | high | xhigh (GPT-5.2+: default is none)
   text:
     verbosity: low  # Lower verbosity for concise summaries
   temperature: 1.0
@@ -78,7 +78,7 @@ summary_model:
 #     provider: "google"
 #     max_output_tokens: 32768
 #     reasoning:
-#       effort: high  # Maps to thinking_level: "high"
+#       effort: high  # Maps to thinking_config: {thinking_budget: 8192}
 #     temperature: 0.0
 #
 # Google Gemini 2.0 (no thinking mode):

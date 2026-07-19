@@ -1,4 +1,4 @@
-# AutoExcerpter v2.2.1
+# AutoExcerpter v2.3.0
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -31,6 +31,7 @@ citation-enriched bibliographies.
   - [Image Processing Configuration (image_processing.yaml)](#image-processing-configuration-image_processingyaml)
   - [Summary Context](#summary-context)
   - [Citation Management](#citation-management)
+  - [State Directory](#state-directory)
   - [Daily Token Limit](#daily-token-limit)
 - [Output Files](#output-files)
 - [Project Structure](#project-structure)
@@ -110,7 +111,7 @@ patterns (full structured, plain text, prompt-guided JSON).
 | GPT-5.1/5 | gpt-5.1, gpt-5 | Reasoning, verbosity |
 | O-series | o4, o4-mini, o4-mini-deep-research, o3, o3-pro, o3-mini, o3-deep-research, o1, o1-pro, o1-mini | Reasoning (no temperature) |
 | GPT-4.1 | gpt-4.1, gpt-4.1-mini, gpt-4.1-nano | Multimodal |
-| GPT-4o/4 | gpt-4o, gpt-4-turbo, gpt-4 | Multimodal (gpt-4 text-only) |
+| GPT-4.5/4o/4 | gpt-4.5, gpt-4o, gpt-4-turbo, gpt-4 | Multimodal (gpt-4 text-only) |
 
 **Anthropic:**
 
@@ -433,7 +434,7 @@ transcription_model:
   max_output_tokens: 128000
   temperature: 1.0
   reasoning:
-    effort: high             # none | low | medium | high | xhigh
+    effort: high             # none | minimal | low | medium | high | xhigh
   text:
     verbosity: medium        # GPT-5 family only
   image_size: original       # OpenAI per-image detail: low | high | auto | original
@@ -505,7 +506,9 @@ retry:
 (rate limits, timeouts, server errors) with exponential backoff
 and jitter; (2) validation retries for malformed JSON or missing
 schema keys; (3) per-flag retries for specific model-returned
-content conditions.
+content conditions. Independently of these layers, a transient
+empty (HTTP 200) response is retried a small, fixed number of
+times in-run before the page is failed.
 
 **Service tiers:** `default` (standard), `flex` (slower,
 ~50% cheaper), `priority` (faster, higher cost).
@@ -728,11 +731,13 @@ AutoExcerpter/
 │   ├── token_tracker.py             # Daily token budget (private tracker)
 │   ├── shared_ledger.py             # Vendored cross-tool token ledger
 │   ├── prompts.py                   # Prompt rendering + response parsing
+│   ├── types.py                     # LLM payload + capability type definitions
 │   └── resources/                   # Prompt templates and JSON schemas
 ├── imaging/                         # PDF rendering + image preprocessing
 │   ├── payload.py                   # Streaming page payload sources (PyMuPDF)
 │   ├── pdf.py                       # Image folder scanning
-│   └── preprocessing.py             # In-memory preprocessing core
+│   ├── preprocessing.py             # In-memory preprocessing core
+│   └── _provider.py                 # Model-type detection for image config
 ├── rendering/                       # Output writers
 │   ├── text.py                      # .txt transcription writer
 │   ├── docx.py                      # .docx summary writer
@@ -757,7 +762,7 @@ AutoExcerpter/
 │   └── errors.py                    # Domain exceptions
 ├── scripts/repair_layout/           # Deterministic line-break repair utility
 ├── context/summary/general.txt      # Default summarization topics (gitignored)
-├── tests/                           # Test suite (1,699 tests)
+├── tests/                           # Test suite (1,760 tests)
 ├── LICENSE                          # MIT license
 ├── pyproject.toml                   # Project metadata and dependencies
 └── uv.lock                          # Pinned dependency lockfile
@@ -820,6 +825,23 @@ a single baseline commit at v1.0.0 on 25 April 2026; version numbers before
 v1.0.0 do not exist.
 
 ## Changelog
+
+- **v2.3.0** (19 July 2026) -- Dependency and documentation sweep. All
+  dependencies upgraded to their latest compatible versions within current
+  majors (LangChain provider stack, OpenAI/Anthropic SDKs, PyMuPDF 1.28,
+  Pillow 12.3, tqdm 4.69, mypy 2.3) with floors raised to the tested
+  minors and the lockfile regenerated; tqdm's logging redirect and the
+  Google thinking-config pass-through were re-verified against the new
+  pins. Documentation refreshed: current test count, GPT-4.5 in the model
+  table, State Directory in the table of contents, missing modules in the
+  project tree, empty-response retry behavior documented, and stale
+  example-config comments corrected (Google efforts map to
+  thinking_budget, not thinking_level; "minimal" added to the effort
+  lists). Two small fixes: the page-marker year guard no longer applies to
+  multi-letter markers, so "pp. 1850" or "fol. 1200" strips cleanly
+  instead of reading as a publication year, and the transcription retry
+  loop's exhaustion fall-through now salvages recoverable responses,
+  mirroring the in-loop decision. 5 new regression tests (1,760 total).
 
 - **v2.2.1** (19 July 2026) -- Fourth-round deep bug-hunt sweep. Citation
   processing no longer strips author initials P./S. before a year as page
