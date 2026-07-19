@@ -1,4 +1,4 @@
-# AutoExcerpter v2.1.2
+# AutoExcerpter v2.2.0
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -259,7 +259,17 @@ Mennell             # filename search
 food history        # text search
 ```
 
-Exit at any prompt with `exit`, `quit`, or `q`.
+Exit at any prompt with `exit`, `quit`, or `q`. `Ctrl+C` aborts with
+exit code 130; a closed input stream exits cleanly with code 1.
+
+Interactive mode also accepts `--input` and `--output` path flags plus
+every behavior and model-override flag listed below (`--context`,
+`--summarize` / `--no-summarize`, `--cleanup`, `--model`,
+`--provider`, `--temperature`, ...), so a YAML edit is never required
+to steer a single run. Each item ends with a per-item result block
+(pages ok/failed/deferred, timing, outputs) and the run ends with a
+detailed overview: item and page totals, run time, tokens used this
+run, and the list of files written.
 
 ### CLI Mode
 
@@ -296,7 +306,7 @@ neither `--all` nor `--select`); `130` = user interrupt. `--cli` /
 YAML. `--dry-run` reports the planned actions (and, with `--json`, a JSON
 plan) and exits without side effects.
 
-**Model overrides** (global or per-phase with
+**Model overrides** (available in both modes; global or per-phase with
 `--transcription-` / `--summary-` prefix):
 
 `--model`, `--reasoning-effort {none,minimal,low,medium,high,xhigh}`,
@@ -742,7 +752,7 @@ AutoExcerpter/
 │   └── errors.py                    # Domain exceptions
 ├── scripts/repair_layout/           # Deterministic line-break repair utility
 ├── context/summary/general.txt      # Default summarization topics (gitignored)
-├── tests/                           # Test suite (1,598 tests)
+├── tests/                           # Test suite (1,699 tests)
 ├── LICENSE                          # MIT license
 ├── pyproject.toml                   # Project metadata and dependencies
 └── uv.lock                          # Pinned dependency lockfile
@@ -806,6 +816,27 @@ v1.0.0 do not exist.
 
 ## Changelog
 
+- **v2.2.0** (19 July 2026) -- Third-round sweep: interactive overhaul,
+    comprehensive summaries, and deeper edge-case fixes. Interactive mode
+    now accepts every behavior and model-override flag (plus `--output`),
+    survives EOF/Ctrl+C at every prompt with correct exit codes, shows the
+    select-all menu entry explicitly, and ends each run with a detailed
+    overview (per-item pages ok/failed/deferred, run time, tokens used
+    this run, files written); CLI mode prints the same overview on stderr.
+    Summaries are no longer capped at "2-5 concise" bullets: the schema
+    and prompts now demand 3-10 detailed bullets covering all substantive
+    content, failed pages stay visible as placeholder entries instead of
+    vanishing, and pages whose single bullet merely mentions "error" (or
+    whose prose mentions "empty page") are no longer dropped. Correctness
+    fixes: Google 429/500 errors retry instead of failing pages, empty
+    transcription responses are retried rather than logged as complete,
+    postfix currency ("100$") survives dollar balancing, inferred page
+    numbers are no longer discarded, "Education"/"Trans-Atlantic" titles
+    are no longer mangled or falsely merged in citations, DOCX saves are
+    atomic, encrypted PDFs abort cleanly, image-folder resume detects
+    changed inputs, resumed items report correct progress/ETA, duplicate
+    output targets are refused, and mid-wait config polling is throttled.
+    101 new regression tests (1,699 total).
 - **v2.1.2** (18 July 2026) -- Deep second-round hardening sweep. Resume
     state is now crash-safe: completed transcriptions are re-logged before
     any summary regeneration (closing a data-loss window on interrupt),
