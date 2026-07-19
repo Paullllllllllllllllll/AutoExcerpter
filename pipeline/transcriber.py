@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import concurrent.futures
+import logging
 import shutil
 import threading
 import time
@@ -8,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from tqdm import tqdm
+from tqdm.contrib.logging import logging_redirect_tqdm
 
 from config import app as config
 from config.accessors import (
@@ -185,8 +187,17 @@ class ItemTranscriber:
         from llm.client import get_provider_for_model
         from llm.rate_limit import get_shared_rate_limiter
 
-        transcription_rate_limiter = get_shared_rate_limiter(
+        # Key the shared limiter by the RESOLVED provider: with ``provider:
+        # null`` in model.yaml the raw config value is None, which would key
+        # this limiter as "default" while the summary side keys by its resolved
+        # provider -- two independent rate windows for the same actual provider,
+        # doubling the effective request rate (the exact bug the sharing fixed).
+        resolved_transcription_provider = (
             self.transcription_provider
+            or get_provider_for_model(self.transcription_model)
+        )
+        transcription_rate_limiter = get_shared_rate_limiter(
+            resolved_transcription_provider
         )
         self.transcribe_manager = TranscriptionManager(
             model_name=self.transcription_model,
@@ -223,7 +234,7 @@ class ItemTranscriber:
             )
             summary_rate_limiter = (
                 transcription_rate_limiter
-                if resolved_summary_provider == self.transcription_provider
+                if resolved_summary_provider == resolved_transcription_provider
                 else get_shared_rate_limiter(resolved_summary_provider)
             )
             self.summary_manager = SummaryManager(
@@ -659,10 +670,10 @@ class ItemTranscriber:
         self,
         transcription_results: list[dict[str, Any]],
         summary_results: list[dict[str, Any]],
-    ) -> None:
+    ) -> list[dict[str, Any]]:
         """Reload completed pages' transcriptions and (re)attach their summaries.
 
-        Runs in TWO passes over the same eligible-entry list so the resume path
+        Runs in passes over the same eligible-entry list so the resume path
         never opens a data-loss window:
 
         Pass 1 immediately re-appends EVERY eligible completed transcription to
@@ -672,22 +683,34 @@ class ItemTranscriber:
         closed in milliseconds — a crash or Ctrl+C during the (potentially slow)
         summary work in pass 2 can no longer destroy a completed transcription.
 
+        Pass 1b immediately re-appends every eligible entry's REUSABLE (present
+        AND error-free) prior summary to the freshly truncated summary log
+        (summarizing runs only). Like pass 1 this is pure file I/O with no LLM
+        calls: it closes the equivalent loss window that pass 2's lazy,
+        regeneration-interleaved re-append would otherwise leave open, where a
+        crash mid pass-2 destroys the on-disk copy of a reusable summary and the
+        next resume re-buys it.
+
         Pass 2 admits each completed page to the in-memory results and handles
         its summary. It does NOT touch the transcription log again (pass 1
         already persisted every eligible entry). If summarizing, it reuses the
         logged summary when present AND error-free; otherwise it regenerates it
         from the logged transcription text (the summary-only resume path) —
         never dropping a completed page's summary, and never reusing a summary
-        that previously errored (AE-2, so a re-run repairs it).
+        that previously errored (AE-2, so a re-run repairs it). Only newly
+        regenerated summaries are appended to the summary log here; reused ones
+        were already persisted by pass 1b, so nothing is double-appended.
 
         Regenerating a summary calls the LLM, so it is gated by the same daily
         token budget as ``_process_single_page`` (AE-6): if the remaining budget
         cannot cover a page, the WHOLE page is deferred — its completed
         transcription is already re-logged (pass 1) so a later run can resume it
-        without re-transcribing, but nothing is appended to the in-memory
-        results, so ``pages_deferred`` withholds the truncated outputs and a
-        later run finishes it — rather than blowing past the daily cap on a
-        large resume.
+        without re-transcribing. Deferred summary-only pages are collected and
+        RETURNED so the caller can wait for the daily reset and finish them
+        in-run (``_finish_deferred_summaries``) rather than only leaving them for
+        a later resume; if the in-run wait is cancelled they still fall back to a
+        later resume run. A blank page's placeholder summary costs no tokens, so
+        it skips the gate entirely and never stalls on an exhausted budget.
         """
         prior_results = self._prior_transcription_results or (
             load_transcription_results_from_log(self.log_path) or []
@@ -697,6 +720,9 @@ class ItemTranscriber:
             idx = summ.get("original_input_order_index")
             if isinstance(idx, int):
                 prior_summary_by_idx[idx] = summ
+        # Shared with _finish_deferred_summaries so an in-run retry re-evaluates
+        # reuse consistently.
+        self._prior_summary_by_idx = prior_summary_by_idx
 
         summarizing = bool(config.SUMMARIZE and self.summary_manager)
 
@@ -716,49 +742,157 @@ class ItemTranscriber:
         for entry in eligible:
             append_to_log(self.log_path, entry)
 
+        # --- Pass 1b: persist every REUSABLE prior summary NOW (no LLM calls),
+        # closing the summary-log loss window that pass 2's lazy re-append would
+        # otherwise leave open. ---
+        if summarizing:
+            for entry in eligible:
+                idx = entry["original_input_order_index"]
+                reusable = prior_summary_by_idx.get(idx)
+                if isinstance(reusable, dict) and "error" not in reusable:
+                    append_to_log(self.summary_log_path, reusable)
+
         # --- Pass 2: reuse/regenerate summaries and admit pages to results.
         # The transcription log is intentionally NOT written here again. ---
+        deferred: list[dict[str, Any]] = []
         for entry in eligible:
-            idx = entry["original_input_order_index"]
-
             if not summarizing:
                 transcription_results.append(entry)
                 continue
+            if not self._regenerate_one(
+                entry, transcription_results, summary_results, prior_summary_by_idx
+            ):
+                deferred.append(entry)
+        return deferred
 
-            # Reuse a logged summary only when present and error-free; anything
-            # missing or previously errored is regenerated.
-            summary_result = prior_summary_by_idx.get(idx)
-            needs_generation = summary_result is None or (
-                isinstance(summary_result, dict) and "error" in summary_result
-            )
+    def _regenerate_one(
+        self,
+        entry: dict[str, Any],
+        transcription_results: list[dict[str, Any]],
+        summary_results: list[dict[str, Any]],
+        prior_summary_by_idx: dict[int, dict[str, Any]],
+    ) -> bool:
+        """Admit one completed page to the results and (re)attach its summary.
 
-            if needs_generation:
-                # Token-budget gate, mirroring _process_single_page: defer the
-                # whole page (append nothing to results) when the daily budget
-                # cannot cover it. The transcription is already re-logged by
-                # pass 1, so a later run resumes it without re-transcribing.
-                if self._budget_exhausted.is_set():
-                    continue
-                # Summary-only regeneration: stamp the SUMMARY key-pool bucket
-                # (no transcription call happens on this path).
-                summ_stamp = getattr(self, "_summary_stamp", {})
-                reserved = self._token_tracker.try_reserve(**summ_stamp)
-                if reserved is None:
-                    self._budget_exhausted.set()
-                    continue
-                try:
-                    image_name = entry.get("image") or f"page index {idx}"
-                    summary_result = self._summarize_transcription(
-                        entry, idx, image_name
-                    )
-                finally:
-                    self._token_tracker.release(reserved, **summ_stamp)
-                    self._token_tracker.record_page_usage()
+        Returns False when the page is deferred by the token-budget gate
+        (nothing appended to the results), True otherwise. Mirrors the per-page
+        gate of ``_process_single_page``. A reusable prior summary was already
+        re-appended to the summary log in pass 1b of ``_reload_completed_pages``,
+        so only a freshly regenerated summary is appended here (no
+        double-append). A blank page yields a zero-cost placeholder summary (no
+        LLM call), so it skips the budget gate and never stalls on an exhausted
+        budget.
+        """
+        idx = entry["original_input_order_index"]
 
+        # Reuse a logged summary only when present and error-free; anything
+        # missing or previously errored is regenerated.
+        summary_result = prior_summary_by_idx.get(idx)
+        needs_generation = summary_result is None or (
+            isinstance(summary_result, dict) and "error" in summary_result
+        )
+
+        if not needs_generation and summary_result is not None:
             transcription_results.append(entry)
-            if summary_result is not None:
-                append_to_log(self.summary_log_path, summary_result)
-                summary_results.append(summary_result)
+            # Reused summary was already persisted by pass 1b; append to the
+            # in-memory results only so it is not double-written to the log.
+            summary_results.append(summary_result)
+            return True
+
+        image_name = entry.get("image") or f"page index {idx}"
+        transcription_text = entry.get("transcription", "")
+        # A blank page's placeholder summary spends no tokens (same detection as
+        # _summarize_transcription), so it must not be stalled by the budget:
+        # summarize directly, skipping the reservation gate.
+        if "error" not in entry and is_blank_transcription(transcription_text):
+            summary_result = self._summarize_transcription(entry, idx, image_name)
+        else:
+            # Token-budget gate, mirroring _process_single_page: defer the whole
+            # page (append nothing to results) when the daily budget cannot
+            # cover it. The transcription is already re-logged by pass 1, so a
+            # later run resumes it without re-transcribing.
+            if self._budget_exhausted.is_set():
+                return False
+            # Summary-only regeneration: stamp the SUMMARY key-pool bucket (no
+            # transcription call happens on this path).
+            summ_stamp = getattr(self, "_summary_stamp", {})
+            reserved = self._token_tracker.try_reserve(**summ_stamp)
+            if reserved is None:
+                self._budget_exhausted.set()
+                return False
+            try:
+                summary_result = self._summarize_transcription(entry, idx, image_name)
+            finally:
+                self._token_tracker.release(reserved, **summ_stamp)
+                self._token_tracker.record_page_usage()
+
+        transcription_results.append(entry)
+        if summary_result is not None:
+            append_to_log(self.summary_log_path, summary_result)
+            summary_results.append(summary_result)
+        return True
+
+    def _finish_deferred_summaries(
+        self,
+        deferred: list[dict[str, Any]],
+        transcription_results: list[dict[str, Any]],
+        summary_results: list[dict[str, Any]],
+    ) -> None:
+        """Wait for the daily reset and finish budget-deferred summary pages.
+
+        Mirrors the fresh-page wait loop in ``_transcribe_and_summarize``: after
+        each daily reset the deferred summary-only pages are retried; two
+        consecutive resets with no progress mean a page cannot fit the daily
+        budget, so it gives up with the same style of warning and leaves the
+        rest for a later run. Returns early (leaving the remaining pages for a
+        later run) when the user cancels the wait. ``wait_for_token_reset``
+        returns immediately when the budget already admits a page, so a run
+        whose budget recovered mid-run pays nothing here.
+        """
+        prior_summary_by_idx = getattr(self, "_prior_summary_by_idx", {})
+        stalled_resets = 0
+        while deferred:
+            # Stamp the wait with the SUMMARY bucket: regeneration commits only
+            # to that bucket, so wait until it can admit a page again.
+            resumed = wait_for_token_reset(**getattr(self, "_summary_stamp", {}))
+            if not resumed:
+                logger.info(
+                    "Token-limit wait cancelled; %d summary page(s) left for "
+                    "a later run.",
+                    len(deferred),
+                )
+                return
+            self._budget_exhausted.clear()
+
+            remaining: list[dict[str, Any]] = []
+            for entry in deferred:
+                if not self._regenerate_one(
+                    entry,
+                    transcription_results,
+                    summary_results,
+                    prior_summary_by_idx,
+                ):
+                    remaining.append(entry)
+            made_progress = len(remaining) < len(deferred)
+            deferred = remaining
+            if not deferred:
+                break
+
+            # Evaluated BEFORE the next wait: if a reset yields no progress twice
+            # running, a page cannot fit the available daily budget, so fail fast
+            # instead of waiting through another daily reset first.
+            if not made_progress:
+                stalled_resets += 1
+                if stalled_resets >= 2:
+                    logger.warning(
+                        "A summary page cannot fit the daily token budget; "
+                        "stopping. Raise daily_tokens to process the remaining "
+                        "%d page(s).",
+                        len(deferred),
+                    )
+                    break
+            else:
+                stalled_resets = 0
 
     def _transcribe_and_summarize(
         self, source: PdfPayloadSource | FolderPayloadSource
@@ -792,9 +926,14 @@ class ItemTranscriber:
         # This runs BEFORE any page is rendered so no completed page is lost. ---
         pending_indices = list(range(total_images))
         skipped_page_count = 0
+        # Completed pages whose summary regeneration was deferred by the budget
+        # gate; finished in-run after the daily reset (see below).
+        deferred_summaries: list[dict[str, Any]] = []
 
         if self.completed_page_indices:
-            self._reload_completed_pages(transcription_results, summary_results)
+            deferred_summaries = self._reload_completed_pages(
+                transcription_results, summary_results
+            )
             pending_indices = [
                 idx for idx in pending_indices if idx not in self.completed_page_indices
             ]
@@ -810,6 +949,12 @@ class ItemTranscriber:
             logger.info(
                 "All pages already transcribed (page-level resume). "
                 "Skipping transcription; summaries reused/regenerated from logs."
+            )
+            # A pure summary-only resume can still have budget-deferred summary
+            # pages: wait for the daily reset and finish them before returning,
+            # instead of exiting early with them unprocessed.
+            self._finish_deferred_summaries(
+                deferred_summaries, transcription_results, summary_results
             )
             transcription_results.sort(
                 key=lambda x: x.get("original_input_order_index", 0)
@@ -847,96 +992,122 @@ class ItemTranscriber:
         # pages are cancelled rather than draining for up to api_timeout each.
         pending = list(pending_indices)
         stalled_resets = 0
+        # True only when the fresh-page wait was cancelled by the user (Ctrl+C),
+        # so a cancelled run is not followed by a second forced deferred-summary
+        # wait below.
+        wait_cancelled = False
         executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
+        # Redirect module loggers around tqdm so concurrent log lines do not
+        # garble the progress bar. Each module logger has its own handler with
+        # propagate=False, so the default loggers=[logging.root] would be a
+        # no-op; redirect every named logger (plus root) explicitly.
+        redirect_loggers: list[logging.Logger] = [
+            logging.getLogger(name) for name in logging.root.manager.loggerDict
+        ]
+        redirect_loggers.append(logging.root)
         try:
-            while pending:
-                self._budget_exhausted.clear()
+            with logging_redirect_tqdm(loggers=redirect_loggers):
+                while pending:
+                    self._budget_exhausted.clear()
 
-                futures = [
-                    executor.submit(
-                        self._process_single_page,
-                        idx,
-                        source,
-                        transcription_results,
-                        summary_results,
-                        len(pending_indices),
-                        processed_count_ref,
-                        already_complete=skipped_page_count,
-                    )
-                    for idx in pending
-                ]
-                for future in tqdm(
-                    concurrent.futures.as_completed(futures),
-                    total=len(futures),
-                    desc="Processing images",
-                ):
-                    # _process_single_page handles its own errors; result()
-                    # only re-raises a truly unexpected failure, which we let
-                    # propagate to the finally (deterministic shutdown).
-                    future.result()
-
-                if not self._budget_exhausted.is_set():
-                    break
-
-                # Recompute the still-pending pages: those not yet recorded in
-                # the transcription results (deferred pages appended nothing).
-                done = {
-                    r.get("original_input_order_index")
-                    for r in transcription_results
-                    if isinstance(r, dict)
-                }
-                remaining = [idx for idx in pending if idx not in done]
-                made_progress = len(remaining) < len(pending)
-                pending = remaining
-                if not pending:
-                    break
-
-                # Safeguard evaluated BEFORE the wait: if a reset still yields no
-                # progress twice running, a page cannot fit the available daily
-                # budget. Deciding here (rather than after wait_for_token_reset)
-                # lets a hopeless page fail fast instead of waiting through up to
-                # two daily resets (~48 h) first. A page that CAN fit after a
-                # reset makes progress and resets the counter, so its semantics
-                # are unchanged.
-                if not made_progress:
-                    stalled_resets += 1
-                    if stalled_resets >= 2:
-                        logger.warning(
-                            "A page cannot fit the daily token budget; stopping. "
-                            "Raise daily_tokens to process the remaining %d page(s).",
-                            len(pending),
+                    futures = [
+                        executor.submit(
+                            self._process_single_page,
+                            idx,
+                            source,
+                            transcription_results,
+                            summary_results,
+                            len(pending_indices),
+                            processed_count_ref,
+                            already_complete=skipped_page_count,
                         )
-                        break
-                else:
-                    stalled_resets = 0
+                        for idx in pending
+                    ]
+                    for future in tqdm(
+                        concurrent.futures.as_completed(futures),
+                        total=len(futures),
+                        desc="Processing images",
+                    ):
+                        # _process_single_page handles its own errors; result()
+                        # only re-raises a truly unexpected failure, which we let
+                        # propagate to the finally (deterministic shutdown).
+                        future.result()
 
-                logger.warning(
-                    "Daily token budget reached; %d page(s) deferred. "
-                    "Waiting for daily reset...",
-                    len(pending),
-                )
-                # Stamp the wait with the transcription bucket so a per-key pool
-                # cap (not just the combined budget) is what the wait polls on;
-                # otherwise a still-open combined budget would spin the re-pass.
-                # A distinct summary bucket is gated in _process_single_page
-                # too, so wait until BOTH buckets can admit a page again.
-                resumed = wait_for_token_reset(
-                    **getattr(self, "_transcription_stamp", {})
-                )
-                summ_stamp = getattr(self, "_summary_stamp", {})
-                if resumed and summ_stamp:
-                    resumed = wait_for_token_reset(**summ_stamp)
-                if not resumed:
-                    logger.info(
-                        "Token-limit wait cancelled; %d page(s) left for a later run.",
+                    if not self._budget_exhausted.is_set():
+                        break
+
+                    # Recompute the still-pending pages: those not yet recorded
+                    # in the transcription results (deferred pages appended
+                    # nothing).
+                    done = {
+                        r.get("original_input_order_index")
+                        for r in transcription_results
+                        if isinstance(r, dict)
+                    }
+                    remaining = [idx for idx in pending if idx not in done]
+                    made_progress = len(remaining) < len(pending)
+                    pending = remaining
+                    if not pending:
+                        break
+
+                    # Safeguard evaluated BEFORE the wait: if a reset still
+                    # yields no progress twice running, a page cannot fit the
+                    # available daily budget. Deciding here (rather than after
+                    # wait_for_token_reset) lets a hopeless page fail fast
+                    # instead of waiting through up to two daily resets (~48 h)
+                    # first. A page that CAN fit after a reset makes progress and
+                    # resets the counter, so its semantics are unchanged.
+                    if not made_progress:
+                        stalled_resets += 1
+                        if stalled_resets >= 2:
+                            logger.warning(
+                                "A page cannot fit the daily token budget; "
+                                "stopping. Raise daily_tokens to process the "
+                                "remaining %d page(s).",
+                                len(pending),
+                            )
+                            break
+                    else:
+                        stalled_resets = 0
+
+                    logger.warning(
+                        "Daily token budget reached; %d page(s) deferred. "
+                        "Waiting for daily reset...",
                         len(pending),
                     )
-                    break
+                    # Stamp the wait with the transcription bucket so a per-key
+                    # pool cap (not just the combined budget) is what the wait
+                    # polls on; otherwise a still-open combined budget would spin
+                    # the re-pass. A distinct summary bucket is gated in
+                    # _process_single_page too, so wait until BOTH buckets can
+                    # admit a page again.
+                    resumed = wait_for_token_reset(
+                        **getattr(self, "_transcription_stamp", {})
+                    )
+                    summ_stamp = getattr(self, "_summary_stamp", {})
+                    if resumed and summ_stamp:
+                        resumed = wait_for_token_reset(**summ_stamp)
+                    if not resumed:
+                        logger.info(
+                            "Token-limit wait cancelled; %d page(s) left for a "
+                            "later run.",
+                            len(pending),
+                        )
+                        wait_cancelled = True
+                        break
         finally:
             # Deterministic teardown. cancel_futures cancels any pages still
             # queued (e.g. after a KeyboardInterrupt) instead of letting them
             # drain; wait=False returns without blocking on in-flight calls.
             executor.shutdown(wait=False, cancel_futures=True)
+
+        # Finish any budget-deferred summary-only pages (mixed resume), UNLESS
+        # the fresh-page loop was just cancelled by the user — a Ctrl+C must not
+        # be followed by a second forced wait.
+        if not wait_cancelled:
+            self._finish_deferred_summaries(
+                deferred_summaries, transcription_results, summary_results
+            )
 
         transcription_results.sort(key=lambda x: x.get("original_input_order_index", 0))
         return transcription_results, summary_results

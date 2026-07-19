@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import contextlib
 import json
+import os
 import threading
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -101,18 +103,25 @@ def initialize_log_file(
     if file_provenance is not None:
         payload["file_provenance"] = file_provenance
 
+    # Write the header to a sibling temp file and atomically replace the log:
+    # a failure while writing must not destroy the prior log's completed-page
+    # entries (the callers' retry-and-preserve contract relies on this).
+    tmp_path = log_path.with_name(f"{log_path.name}.{uuid.uuid4().hex}.tmp")
     try:
         _close_log_handle(log_path)
         # A reinitialized log is live again: drop any stale finalized marker so
         # subsequent appends use the cached handle rather than the one-shot path.
         with _LOG_HANDLES_GUARD:
             _FINALIZED_LOGS.discard(log_path)
-        with log_path.open("w", encoding="utf-8") as log_file:
+        with tmp_path.open("w", encoding="utf-8", newline="\n") as log_file:
             log_file.write(json.dumps(payload, ensure_ascii=False))
             log_file.write("\n")
+        os.replace(tmp_path, log_path)
         return True
     except OSError as exc:
         logger.warning("Failed to initialize log file %s: %s", log_path, exc)
+        with contextlib.suppress(OSError):
+            tmp_path.unlink(missing_ok=True)
         return False
 
 
