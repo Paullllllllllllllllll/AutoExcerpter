@@ -129,11 +129,26 @@ BLANK_PAGE_SENTINELS: tuple[str, ...] = (
 )
 
 
+# A real blank/untranscribable sentinel is a short bracketed marker such as
+# "[<img>: no transcribable text — ...]". Longer bodies are legitimate prose
+# that merely happens to mention a sentinel phrase (e.g. a page discussing an
+# "empty page" motif), so classification is length-gated to avoid dropping them.
+BLANK_TRANSCRIPTION_MAX_LEN = 200
+
+
 def is_blank_transcription(text: str | None) -> bool:
-    """Return True if *text* is a blank/untranscribable-page sentinel."""
+    """Return True if *text* is a blank/untranscribable-page sentinel.
+
+    Only short strings are considered: a sentinel is a compact bracketed marker,
+    whereas long prose that merely contains a sentinel phrase somewhere in its
+    body is genuine content and must not be discarded.
+    """
     if not text:
         return False
-    lowered = text.lower()
+    stripped = text.strip()
+    if len(stripped) >= BLANK_TRANSCRIPTION_MAX_LEN:
+        return False
+    lowered = stripped.lower()
     return any(marker in lowered for marker in BLANK_PAGE_SENTINELS)
 
 
@@ -145,14 +160,22 @@ OPENAI_MODEL_PREFIXES = ("gpt-", "o1", "o3", "o4")
 # ============================================================================
 # Error Detection Constants
 # ============================================================================
-# Markers indicating a page carries no usable summary content. Kept in sync with
-# BLANK_PAGE_SENTINELS plus the generic "error" marker used by summary filtering.
+# Markers indicating a single-bullet page carries no usable summary content.
+# The blank-page phrases come first; the remaining entries are the exact
+# bracketed prefixes the summary layer emits for failed pages (see
+# llm/summary.py._create_placeholder_summary). A bare "error" substring is
+# deliberately NOT included: it matched legitimate prose ("measurement error")
+# and silently dropped real content. Summary filtering only treats a single
+# bullet as a marker when it STARTS WITH "[" and contains one of these.
 ERROR_MARKERS = [
     "no transcribable text",
     "transcription not possible",
     "no transcription possible",
     "empty page",
-    "error",
+    "[error generating summary",
+    "[summary generation failed",
+    "[transcription failed",
+    "[transcription error",
 ]
 
 # ============================================================================

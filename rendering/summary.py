@@ -239,12 +239,72 @@ def _get_structure_types(page_types: list[str]) -> list[str]:
     return [pt for pt in page_types if pt in STRUCTURE_PAGE_TYPE_ORDER]
 
 
+# The bracketed error-placeholder prefixes (the ERROR_MARKERS entries that
+# start with "["). A single bullet matching one of these is a summary-layer
+# failure marker that must stay VISIBLE in the output, unlike the blank-page
+# sentinels (which drop the page). Derived from ERROR_MARKERS so the two stay
+# in sync automatically.
+_ERROR_PLACEHOLDER_MARKERS: tuple[str, ...] = tuple(
+    m for m in ERROR_MARKERS if m.startswith("[")
+)
+
+
+def collapse_internal_newlines(text: str) -> str:
+    """Collapse internal whitespace-newline runs to a single space.
+
+    Internal newlines in a bullet or citation string break Markdown list and
+    numbered-reference structure and land raw inside DOCX runs; flattening them
+    at render time keeps each item a single logical line.
+    """
+    return re.sub(r"\s*\n\s*", " ", text)
+
+
+def _string_bullets(bullet_points: Any) -> list[str]:
+    """Return only the string entries of a bullet-point list.
+
+    Non-string items (None, ints, dicts from a corrupt or reused log) would
+    crash the writers on ``.strip()``/rendering, so they are dropped here. A
+    non-list input yields an empty list.
+    """
+    if not isinstance(bullet_points, list):
+        return []
+    return [b for b in bullet_points if isinstance(b, str)]
+
+
+def _is_error_placeholder_bullet(bullet: str) -> bool:
+    """Return True if *bullet* is a bracketed summary-layer error placeholder."""
+    text = bullet.strip().lower()
+    return any(text.startswith(marker) for marker in _ERROR_PLACEHOLDER_MARKERS)
+
+
+def _is_error_result(result: dict[str, Any], bullet_points: list[str]) -> bool:
+    """Return True if *result* is a failed-page placeholder that must stay visible.
+
+    A failure carries either an explicit ``error`` key (set by
+    ``SummaryManager._create_placeholder_summary``) or a single bracketed
+    error-placeholder bullet. Blank-page sentinels ("[empty page]") are
+    deliberately excluded so genuinely blank pages are still dropped.
+    """
+    if result.get("error"):
+        return True
+    return len(bullet_points) == 1 and _is_error_placeholder_bullet(bullet_points[0])
+
+
 def _is_meaningful_summary(summary_data: dict[str, Any]) -> bool:
     """Check if a summary is meaningful based on page_types and content."""
     # A page carrying references is meaningful even without bullet content:
     # dropping it here would discard its citations before they reach the
     # CitationManager (page-number attribution stays intact downstream).
     if _normalize_references(summary_data.get("references")):
+        return True
+
+    bullet_points = _string_bullets(summary_data.get("bullet_points"))
+
+    # A failed-page placeholder (explicit error key, or a single bracketed error
+    # bullet such as "[Error generating summary: ...]") is kept regardless of its
+    # page_types so the coverage gap stays visible in the rendered document.
+    # Blank-page sentinels do not match here and fall through to be dropped.
+    if _is_error_result(summary_data, bullet_points):
         return True
 
     page_info = _page_information(summary_data)
@@ -256,11 +316,12 @@ def _is_meaningful_summary(summary_data: dict[str, Any]) -> bool:
     has_bullet_types = _should_render_bullets(page_types)
 
     if has_bullet_types:
-        bullet_points = summary_data.get("bullet_points") or []
         if bullet_points:
             if len(bullet_points) == 1:
                 marker_text = bullet_points[0].strip().lower()
-                if any(marker in marker_text for marker in ERROR_MARKERS):
+                if marker_text.startswith("[") and any(
+                    marker in marker_text for marker in ERROR_MARKERS
+                ):
                     return bool(_get_structure_types(page_types))
             return True
         return bool(_get_structure_types(page_types))
@@ -298,12 +359,15 @@ class SummaryData:
             'roman' or 'arabic'. Two-page spreads contribute both page numbers.
         content_page_count: Number of pages with bullet-renderable content.
         page_render_items: Per-page rendering data (only pages with bullets).
+        source_page_count: Number of source pages BEFORE empty-page filtering
+            (the true total page count reported in the document metadata).
     """
 
     filtered_results: list[dict[str, Any]]
     page_type_pages: dict[str, list[tuple[int, str]]]
     content_page_count: int
     page_render_items: list[PageRenderData] = field(default_factory=list)
+    source_page_count: int = 0
 
 
 def prepare_summary_data(
@@ -368,10 +432,14 @@ def prepare_summary_data(
             for pt in _get_structure_types(page_types):
                 page_type_pages[pt].append((pg, page_num_type))
 
+        # Only string bullets are renderable; non-string entries would crash the
+        # writers, so they are filtered out here (an all-non-string list becomes
+        # empty and the page renders no bullets rather than raising).
+        bullet_points = _string_bullets(summary_payload.get("bullet_points"))
+
         # Track content pages and build render data
         if _should_render_bullets(page_types):
             content_page_count += 1
-            bullet_points = summary_payload.get("bullet_points") or []
             if bullet_points:
                 heading = format_page_heading(
                     page_number,
@@ -393,12 +461,37 @@ def prepare_summary_data(
                         is_spread=is_spread,
                     )
                 )
+        elif _is_error_result(result, bullet_points) and bullet_points:
+            # A failed page (page_types typically ["other"], not a bullet-bearing
+            # type) is rendered with its placeholder bullet so the reader sees the
+            # coverage gap in place rather than the page vanishing silently.
+            heading = format_page_heading(
+                page_number,
+                page_num_type,
+                page_types,
+                page_info["is_unnumbered"],
+                page_number_end=page_end,
+                is_spread=is_spread,
+            )
+            page_render_items.append(
+                PageRenderData(
+                    page_number=page_number,
+                    page_number_type=page_num_type,
+                    page_types=page_types,
+                    is_unnumbered=page_info["is_unnumbered"],
+                    bullet_points=bullet_points,
+                    heading_text=heading,
+                    page_number_end=page_end,
+                    is_spread=is_spread,
+                )
+            )
 
     return SummaryData(
         filtered_results=filtered_results,
         page_type_pages=page_type_pages,
         content_page_count=content_page_count,
         page_render_items=page_render_items,
+        source_page_count=len(summary_results),
     )
 
 

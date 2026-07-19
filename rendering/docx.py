@@ -9,6 +9,8 @@ Generates formatted Word documents with structured summaries, including:
 
 from __future__ import annotations
 
+import contextlib
+import os
 import re
 from collections.abc import Callable
 from datetime import datetime
@@ -63,6 +65,7 @@ from rendering.citations import CitationManager, enrich_if_enabled
 from rendering.summary import (
     PAGE_TYPE_LABELS,
     STRUCTURE_PAGE_TYPE_ORDER,
+    collapse_internal_newlines,
     format_structure_page_range,
     prepare_summary_data,
     sanitize_for_xml,
@@ -854,7 +857,6 @@ def create_docx_summary(
         data = prepare_summary_data(summary_results, citation_manager)
         citation_manager.consolidate()
         enrich_if_enabled(citation_manager)
-    filtered_results = data.filtered_results
     page_type_pages = data.page_type_pages
 
     document = Document()
@@ -883,7 +885,7 @@ def create_docx_summary(
     metadata = (
         f"Processed {datetime.now():%Y-%m-%d %H:%M}"
         f" | {data.content_page_count} content pages"
-        f" | {len(filtered_results)} total pages"
+        f" | {data.source_page_count} total pages"
     )
     meta_paragraph = document.add_paragraph()
     meta_paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
@@ -917,7 +919,9 @@ def create_docx_summary(
         for point in page_item.bullet_points:
             paragraph = document.add_paragraph()
             paragraph._p.style = bullet_style_id
-            add_formatted_text_to_paragraph(paragraph, point)
+            add_formatted_text_to_paragraph(
+                paragraph, collapse_internal_newlines(point)
+            )
 
     # === SECTION 4: Consolidated References ===
     if citation_manager.citations:
@@ -955,7 +959,9 @@ def create_docx_summary(
             num_run.bold = True
             num_run.font.size = Pt(REF_FONT_PT)
 
-            citation_text = sanitize_for_xml(citation.raw_text)
+            citation_text = sanitize_for_xml(
+                collapse_internal_newlines(citation.raw_text)
+            )
 
             if citation.url:
                 # A hyperlink is a single styled run; drop emphasis markers.
@@ -994,5 +1000,16 @@ def create_docx_summary(
                     meta_run.italic = True
                     meta_run.font.color.rgb = _rgb(COLOR_REF_META_GRAY)
 
-    document.save(str(output_path))
+    # Save to a sibling temp file and atomically replace the target, so a crash
+    # mid-save never leaves a truncated .docx that resume trusts as COMPLETE
+    # (classification keys on exists() and st_size > 0), mirroring the Markdown
+    # and text writers.
+    tmp_path = output_path.with_name(output_path.name + ".tmp")
+    try:
+        document.save(str(tmp_path))
+        os.replace(tmp_path, output_path)
+    except OSError:
+        with contextlib.suppress(OSError):
+            tmp_path.unlink()
+        raise
     logger.info("Summary document saved to %s", output_path)

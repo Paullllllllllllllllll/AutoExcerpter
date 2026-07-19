@@ -515,12 +515,13 @@ class TestGetStructureTypes:
 class TestCreateDocxSummary:
     """Tests for create_docx_summary with mocked python-docx."""
 
+    @patch("rendering.docx.os.replace")
     @patch("rendering.docx.CitationManager")
     @patch("rendering.docx.Document")
     def test_creates_docx_file(
-        self, mock_doc_class, mock_cm_class, tmp_path: Path
+        self, mock_doc_class, mock_cm_class, mock_replace, tmp_path: Path
     ) -> None:
-        """create_docx_summary calls Document and saves to output_path."""
+        """create_docx_summary saves atomically (temp file then os.replace)."""
         output_path = tmp_path / "summary.docx"
         mock_doc = MagicMock()
         mock_doc.styles = MagicMock()
@@ -544,12 +545,17 @@ class TestCreateDocxSummary:
 
         create_docx_summary(summary_results, output_path, "Test Document")
 
-        mock_doc.save.assert_called_once_with(str(output_path))
+        # The document is saved to a sibling temp file, then atomically moved
+        # onto the target so a crash mid-save cannot leave a partial .docx.
+        tmp = output_path.with_name(output_path.name + ".tmp")
+        mock_doc.save.assert_called_once_with(str(tmp))
+        mock_replace.assert_called_once_with(tmp, output_path)
 
+    @patch("rendering.docx.os.replace")
     @patch("rendering.docx.CitationManager")
     @patch("rendering.docx.Document")
     def test_empty_results_creates_minimal_docx(
-        self, mock_doc_class, mock_cm_class, tmp_path: Path
+        self, mock_doc_class, mock_cm_class, mock_replace, tmp_path: Path
     ) -> None:
         """Empty results still produce a valid document."""
         output_path = tmp_path / "summary.docx"
@@ -564,7 +570,9 @@ class TestCreateDocxSummary:
         create_docx_summary([], output_path, "Empty Doc")
 
         mock_doc.save.assert_called_once()
+        mock_replace.assert_called_once()
 
+    @patch("rendering.docx.os.replace")
     @patch("rendering.docx.add_hyperlink")
     @patch("rendering.docx.config")
     @patch("rendering.docx.CitationManager")
@@ -575,6 +583,7 @@ class TestCreateDocxSummary:
         mock_cm_class,
         mock_config,
         mock_add_hyperlink,
+        mock_replace,
         tmp_path: Path,
     ) -> None:
         """References section is added when citations are present."""

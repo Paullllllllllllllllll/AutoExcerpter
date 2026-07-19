@@ -52,11 +52,13 @@ _PAGE_MARKER_RE = re.compile(r"\b(?:pp?|ss?|fol)\.\s*\d+(?:\s*-\s*\d+)?", re.IGN
 # Volume designators across English/German/French scholarship. The number may
 # be Arabic or a Roman numeral. The period is optional for the spelled-out
 # designators but required for the bare "t." so ordinary words never match;
-# the bare "t." number is further capped at three digits so an author initial
-# before a year ("Smith, T. 1990. Title") is never read as a volume.
+# the bare "t." number is further capped at three digits and the "t" is matched
+# case-sensitively as lowercase (via the scoped "(?-i:t)" flag) so an author
+# initial ("Smith, T. 190. Title" or "Smith, T. 1990. Title") is never read as a
+# tome/volume, while the lowercase French "t. II" abbreviation still parses.
 _VOLUME_RE = re.compile(
     r"\b(?:vol|volume|bd|band|teil|tome)\.?\s*(\d+|[ivxlcdm]+)\b"
-    r"|\bt\.\s*(\d{1,3}|[ivxlcdm]+)\b",
+    r"|\b(?-i:t)\.\s*(\d{1,3}|[ivxlcdm]+)\b",
     re.IGNORECASE,
 )
 
@@ -373,8 +375,12 @@ class Citation:
         for token, folded_span in placeholders.items():
             text = text.replace(token, f" {folded_span} ")
 
-        # Editor / translator markers and bracketed clarifications.
-        text = re.sub(r"\(?\s*(?:eds?|trans)\.?\s*\)?", " ", text)
+        # Editor / translator markers and bracketed clarifications. The marker
+        # must be a standalone token: the (?<![\w-]) / (?![\w-]) guards stop it
+        # from firing inside a word or a hyphenated compound, so "Education"
+        # keeps its "ed" and "Trans-Atlantic" keeps its "trans" (a bare \b would
+        # still strip the latter, since a hyphen is a word boundary).
+        text = re.sub(r"\(?\s*(?<![\w-])(?:eds?|trans)(?![\w-])\.?\s*\)?", " ", text)
         text = re.sub(r"\[[^\]]*\]", " ", text)
 
         # Strip punctuation (straightened quotes, apostrophes, ASCII hyphen).

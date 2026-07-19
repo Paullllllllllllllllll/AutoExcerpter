@@ -202,10 +202,28 @@ class TestErrorDetectionConstants:
         assert all(isinstance(m, str) for m in ERROR_MARKERS)
 
     def test_common_error_markers_present(self) -> None:
-        """Common error markers are present."""
+        """Blank sentinels and bracketed placeholder prefixes are present."""
         markers_lower = [m.lower() for m in ERROR_MARKERS]
         assert any("empty" in m for m in markers_lower)
         assert any("error" in m for m in markers_lower)
+
+    def test_no_bare_error_marker(self) -> None:
+        """A bare ``error`` entry is gone: it matched legitimate prose.
+
+        Error-placeholder markers are now the exact bracketed prefixes the
+        summary layer emits, so every non-blank marker starts with ``[``.
+        """
+        assert "error" not in ERROR_MARKERS
+        blank = {
+            "no transcribable text",
+            "transcription not possible",
+            "no transcription possible",
+            "empty page",
+        }
+        for marker in ERROR_MARKERS:
+            assert marker in blank or marker.startswith("[")
+        assert "[error generating summary" in ERROR_MARKERS
+        assert "[summary generation failed" in ERROR_MARKERS
 
 
 class TestMathConversionConstants:

@@ -56,9 +56,15 @@ def write_transcription_to_text(
             )
 
             for index, result in enumerate(transcription_results):
-                file_handle.write(
-                    result.get("transcription", "[ERROR] Transcription data missing")
+                transcription = result.get(
+                    "transcription", "[ERROR] Transcription data missing"
                 )
+                # A reused or corrupt log entry can carry a None / non-string
+                # transcription; coerce it so file.write() cannot raise TypeError
+                # (which would escape past the tmp-file cleanup below).
+                if not isinstance(transcription, str):
+                    transcription = str(transcription)
+                file_handle.write(transcription)
                 if index < len(transcription_results) - 1:
                     file_handle.write("\n")
 
@@ -72,3 +78,9 @@ def write_transcription_to_text(
             "Error writing transcription to text file %s: %s", output_path, exc
         )
         return False
+    except Exception:
+        # Any non-OSError failure (e.g. a corrupt log entry) must not orphan the
+        # sibling .txt.tmp file; clean it up before re-raising.
+        with contextlib.suppress(OSError):
+            tmp_path.unlink()
+        raise

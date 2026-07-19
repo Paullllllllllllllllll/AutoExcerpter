@@ -13,6 +13,7 @@ from rendering.citations import CitationManager, enrich_if_enabled
 from rendering.summary import (
     PAGE_TYPE_LABELS,
     STRUCTURE_PAGE_TYPE_ORDER,
+    collapse_internal_newlines,
     format_structure_page_range,
     prepare_summary_data,
     sanitize_for_xml,
@@ -55,7 +56,6 @@ def create_markdown_summary(
         data = prepare_summary_data(summary_results, citation_manager)
         citation_manager.consolidate()
         enrich_if_enabled(citation_manager)
-    filtered_results = data.filtered_results
     page_type_pages = data.page_type_pages
 
     lines: list[str] = []
@@ -69,7 +69,7 @@ def create_markdown_summary(
     lines.append(
         f"*Summary generated {datetime.now().strftime('%Y-%m-%d %H:%M')} "
         f"· {data.content_page_count} content pages "
-        f"· {len(filtered_results)} total pages*"
+        f"· {data.source_page_count} total pages*"
     )
     lines.append("")
 
@@ -100,7 +100,7 @@ def create_markdown_summary(
         lines.append("")
 
         for point in page_item.bullet_points:
-            sanitized_point = sanitize_for_xml(point)
+            sanitized_point = sanitize_for_xml(collapse_internal_newlines(point))
             lines.append(f"- {sanitized_point}")
 
         lines.append("")
@@ -127,7 +127,9 @@ def create_markdown_summary(
         citations_with_pages = citation_manager.get_citations_with_pages()
 
         for idx, (citation, page_range_str) in enumerate(citations_with_pages, start=1):
-            citation_text = sanitize_for_xml(citation.raw_text)
+            citation_text = sanitize_for_xml(
+                collapse_internal_newlines(citation.raw_text)
+            )
 
             if citation.url:
                 # Escape link-breaking characters: brackets in the text and
