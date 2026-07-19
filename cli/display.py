@@ -31,6 +31,19 @@ from pipeline.types import ItemSpec
 logger = setup_logger(__name__)
 
 
+def _fmt_int(value: Any) -> str:
+    """Format a value with thousands separators, falling back to ``str()``.
+
+    A hand-edited model.yaml can carry ``max_output_tokens`` as a quoted string;
+    ``f"{value:,}"`` would then raise ValueError before processing even starts.
+    Coerce to int when possible, otherwise print the raw value un-formatted.
+    """
+    try:
+        return f"{int(value):,}"
+    except (ValueError, TypeError):
+        return str(value)
+
+
 def prompt_for_item_selection(
     items: collections.abc.Sequence[ItemSpec],
 ) -> list[ItemSpec]:
@@ -149,7 +162,7 @@ def _display_processing_summary(
     print_info(f"    • Transcription Model: {trans_model_name}")
     if trans_temp is not None:
         print_dim(f"      - Temperature: {trans_temp}")
-    print_dim(f"      - Max output tokens: {trans_max_tokens:,}")
+    print_dim(f"      - Max output tokens: {_fmt_int(trans_max_tokens)}")
 
     # Reasoning configuration
     trans_reasoning = trans_model.get("reasoning", {})
@@ -176,7 +189,7 @@ def _display_processing_summary(
         print_info(f"    • Summary Model: {sum_model_name}")
         if sum_temp is not None:
             print_dim(f"      - Temperature: {sum_temp}")
-        print_dim(f"      - Max output tokens: {sum_max_tokens:,}")
+        print_dim(f"      - Max output tokens: {_fmt_int(sum_max_tokens)}")
 
         # Reasoning configuration
         sum_reasoning = sum_model.get("reasoning", {})
@@ -567,6 +580,7 @@ def _display_resume_info(
     selected_items: list[ItemSpec],
     skipped: list[ResumeResult],
     to_process: list[ItemSpec],
+    dry_run: bool = False,
 ) -> bool:
     """Display resume information and handle the all-skipped case.
 
@@ -575,6 +589,8 @@ def _display_resume_info(
         selected_items: Original list of selected items before filtering.
         skipped: List of ResumeResult for skipped items.
         to_process: List of items that will be processed.
+        dry_run: When True, never prompt to force-reprocess; a dry run is
+            side-effect-free and must not block on interactive input.
 
     Returns:
         True if processing should continue, False if user cancelled or nothing to do.
@@ -613,6 +629,10 @@ def _display_resume_info(
             return False
         else:
             print_warning("All items already processed. Nothing to do.")
+            if dry_run:
+                # A dry run reports the plan (all complete -> skip) without
+                # prompting; short-circuit before the force-reprocess prompt.
+                return False
             force = prompt_yes_no(
                 "Force reprocess all items?",
                 default=False,

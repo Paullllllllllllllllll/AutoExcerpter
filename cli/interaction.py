@@ -14,6 +14,7 @@ Features:
 
 from __future__ import annotations
 
+import contextlib
 import sys
 from collections.abc import Callable
 from typing import TypeVar
@@ -24,11 +25,10 @@ def _safe_print(text: str) -> None:
     try:
         print(text)
     except UnicodeEncodeError:
-        print(
-            text.encode(sys.stdout.encoding, errors="replace").decode(
-                sys.stdout.encoding
-            )
-        )
+        # ``sys.stdout.encoding`` can be None in embedded/redirected contexts;
+        # passing None to str.encode raises TypeError, so fall back to UTF-8.
+        enc = sys.stdout.encoding or "utf-8"
+        print(text.encode(enc, errors="replace").decode(enc))
 
 
 # Initialize colorama for Windows color support
@@ -153,11 +153,35 @@ def print_highlight(message: str) -> None:
 # ============================================================================
 # Program Control Functions
 # ============================================================================
+_exit_hook: Callable[[], None] | None = None
+
+
+def set_exit_hook(hook: Callable[[], None] | None) -> None:
+    """Register (or clear) a callback run once just before the program exits.
+
+    Typing exit/quit/q (or a closed stdin / Ctrl+C) at any interactive prompt
+    terminates the process through ``exit_program``, which bypasses the caller's
+    own shutdown path. main.py registers a hook here so a ``--json`` run still
+    emits its machine-readable summary line on those exits. Pass ``None`` to
+    clear a previously registered hook.
+    """
+    global _exit_hook
+    _exit_hook = hook
+
+
 def exit_program(
     message: str = "Exiting program. Goodbye!", exit_code: int = 0
 ) -> None:
     """Exit the program gracefully with a message."""
+    global _exit_hook
     _safe_print(f"\n{Colors.OKCYAN}{message}{Colors.ENDC}\n")
+    # Run the registered exit hook exactly once, guarded so a failing hook can
+    # never mask the exit. Clearing it first makes the hook one-shot.
+    hook = _exit_hook
+    _exit_hook = None
+    if hook is not None:
+        with contextlib.suppress(Exception):
+            hook()
     sys.exit(exit_code)
 
 
@@ -483,5 +507,6 @@ __all__ = [
     "prompt_yes_no",
     "prompt_continue",
     "exit_program",
+    "set_exit_hook",
     "Colors",
 ]

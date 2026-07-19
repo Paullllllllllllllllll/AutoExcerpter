@@ -54,6 +54,14 @@ def get_api_concurrency(api_type: str = "transcription") -> tuple[int, float]:
         api_cfg = concurrency_cfg.get("api_requests", {}).get(api_type, {})
 
         max_workers = api_cfg.get("concurrency_limit", DEFAULT_CONCURRENT_REQUESTS)
+        # A quoted YAML value (e.g. "80") would survive to min(max_workers, ...)
+        # in the pipeline and raise TypeError mid-run; coerce with a safe
+        # fallback, mirroring get_api_timeout / get_target_dpi.
+        try:
+            max_workers = int(max_workers)
+        except (ValueError, TypeError):
+            logger.debug(f"Malformed concurrency_limit {max_workers!r}; using default")
+            max_workers = DEFAULT_CONCURRENT_REQUESTS
         delay = api_cfg.get("delay_between_tasks", 0.05)
 
         return max_workers, delay

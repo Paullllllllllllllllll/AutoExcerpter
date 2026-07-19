@@ -39,6 +39,7 @@ from cli.interaction import (
     print_section,
     print_success,
     print_warning,
+    set_exit_hook,
 )
 from cli.loop import (
     _check_and_wait_for_token_limit,
@@ -150,7 +151,11 @@ def _setup_and_scan(
         print_info("using state-of-the-art AI models.")
         print()
 
-    base_output_dir.mkdir(parents=True, exist_ok=True)
+    # A --dry-run must be side-effect-free: creating the output tree here would
+    # leave directories behind for a run that does no work. Defer it to the
+    # actual processing loop, which mkdirs each item's output dir on demand.
+    if not bool(getattr(args, "dry_run", False)):
+        base_output_dir.mkdir(parents=True, exist_ok=True)
 
     if not config.CLI_MODE:
         print_section("Scanning Input Directory")
@@ -203,6 +208,7 @@ def _apply_resume_filtering(
     base_output_dir: Path,
     resume_mode: str,
     retranscribe: bool = False,
+    dry_run: bool = False,
 ) -> tuple[list[ItemSpec], dict[Path, ResumeResult], str, list[ResumeResult]]:
     """Filter items through the resume checker.
 
@@ -246,7 +252,7 @@ def _apply_resume_filtering(
         logger.info("Resume mode: overwrite (all files will be reprocessed)")
 
     should_continue = _display_resume_info(
-        resume_mode, selected_items, skipped_items, items_to_process
+        resume_mode, selected_items, skipped_items, items_to_process, dry_run=dry_run
     )
     if not should_continue:
         # Nothing to do (all items already complete, or the user declined a
@@ -418,6 +424,9 @@ def _emit_json_summary(
         ),
         "daily_token_limit": stats.get("daily_limit"),
     }
+    # A summary line was emitted, so disarm any interactive exit hook: a later
+    # exit_program (defensive) must not print a second, contradictory summary.
+    set_exit_hook(None)
     if stats.get("shared_budget_enabled"):
         summary["combined_tokens_today"] = stats.get("combined_tokens_used_today")
     # Per-key pool caps and each pooled bucket's used/remaining, when any pooled
@@ -564,6 +573,13 @@ def main() -> int:
     dry_run = bool(getattr(args, "dry_run", False))
     retranscribe = bool(getattr(args, "retranscribe", False))
 
+    # Typing exit/quit/q (or a closed stdin / Ctrl+C) at any interactive prompt
+    # terminates via exit_program, bypassing main's own JSON emit. Register a
+    # hook so those exits still honor the emit-JSON-on-all-exits contract with
+    # the same zero/empty summary shape used by the decline path. The hook is
+    # one-shot and is cleared by _emit_json_summary, so it can never double-emit.
+    set_exit_hook((lambda: _emit_json_summary(0, 0, 0, 0, [])) if emit_json else None)
+
     # Non-TTY guard: interactive mode would block on input() prompts. Fail fast
     # with a clear message and usage exit code instead of hanging or EOF-ing.
     if not config.CLI_MODE and not sys.stdin.isatty():
@@ -571,6 +587,9 @@ def main() -> int:
             "Interactive mode requires a TTY. Re-run with --cli (and input/"
             "output paths) for non-interactive use."
         )
+        # Honor the emit-JSON-on-all-exits contract even on this early guard.
+        if emit_json:
+            _emit_json_summary(0, 0, 0, 0, [])
         return 2
 
     selected_items, base_output_dir, summary_context, resume_mode = _setup_and_scan(
@@ -579,7 +598,11 @@ def main() -> int:
 
     items_to_process, item_resume_map, resume_mode, skipped_items = (
         _apply_resume_filtering(
-            selected_items, base_output_dir, resume_mode, retranscribe=retranscribe
+            selected_items,
+            base_output_dir,
+            resume_mode,
+            retranscribe=retranscribe,
+            dry_run=dry_run,
         )
     )
 

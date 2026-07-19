@@ -262,6 +262,11 @@ food history        # text search
 Exit at any prompt with `exit`, `quit`, or `q`. `Ctrl+C` aborts with
 exit code 130; a closed input stream exits cleanly with code 1.
 
+Canceling an in-progress run by pressing `q` (for example, during a
+token-limit wait) requires a real console; when stdin is piped or
+redirected, such as when driving the tool from a script, press `Ctrl+C`
+to cancel instead.
+
 Interactive mode also accepts `--input` and `--output` path flags plus
 every behavior and model-override flag listed below (`--context`,
 `--summarize` / `--no-summarize`, `--cleanup`, `--model`,
