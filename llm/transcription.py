@@ -759,14 +759,26 @@ class TranscriptionManager(LLMClientBase):
                     "provider": self.provider,
                 }
 
-        # Fallback if schema retry loop exits (all schema retries exhausted).
-        # Carry "error"/"error_type" so downstream resume treats the page as
-        # failed (and repairs it) rather than logging it as completed and
-        # running a paid summary call on placeholder text.
+        # Fallback if the schema retry loop exits (the shared attempt budget is
+        # consumed before the in-loop exhaustion decision fires). Mirror that
+        # decision: salvage a genuinely recoverable response as a success;
+        # otherwise carry "error"/"error_type" so downstream resume treats the
+        # page as failed (and repairs it) rather than logging it as completed
+        # and running a paid summary call on placeholder text.
+        transcription = self._parse_transcription_from_text(raw_text, image_name)
+        if self._transcription_is_recoverable(raw_text):
+            return {
+                "image": image_name,
+                "sequence_number": sequence_number,
+                "transcription": transcription,
+                "processing_time": round(time.time() - start_time, 2),
+                "schema_retries": schema_retry_attempts.copy(),
+                "provider": self.provider,
+            }
         return {
             "image": image_name,
             "sequence_number": sequence_number,
-            "transcription": self._parse_transcription_from_text(raw_text, image_name),
+            "transcription": transcription,
             "processing_time": round(time.time() - start_time, 2),
             "schema_retries": schema_retry_attempts.copy(),
             "error": "schema validation retries exhausted",

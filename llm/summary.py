@@ -416,18 +416,9 @@ class SummaryManager(LLMClientBase):
                             placeholder["schema_retries"] = schema_retry_attempts.copy()
                         return placeholder
                 else:
-                    # Parse JSON
-                    try:
-                        summary_json = json.loads(summary_json_str)
-                    except json.JSONDecodeError as json_err:
-                        logger.error(
-                            f"JSON decode error for page {page_num}: "
-                            f"{json_err}. Raw content (first 500 chars): "
-                            f"{summary_json_str[:500]}"
-                        )
-                        raise ValueError(
-                            f"Invalid JSON in API response: {json_err}"
-                        ) from json_err
+                    # Validation already parsed this string successfully, so
+                    # the parse cannot fail here.
+                    summary_json = json.loads(summary_json_str)
 
                 # Ensure page_information structure is correct
                 self._ensure_page_information_structure(summary_json, page_num)

@@ -110,6 +110,35 @@ class TestFourDigitPageTradeoff:
         assert _extract_year("Meyer. Some Work. S. 1815.") == 1815
 
 
+class TestMultiLetterMarkersStripFourDigitPages:
+    """pp./ss./fol. are never author initials, so the year guard must not
+    apply to them: a four-digit single page after a multi-letter marker
+    strips cleanly instead of being read as a publication year."""
+
+    def test_pp_four_digit_page_not_read_as_year(self) -> None:
+        """ "pp. 1850" strips; no bogus year 1850."""
+        assert _extract_year("Meyer. Some Work. pp. 1850.") is None
+
+    def test_fol_four_digit_page_not_read_as_year(self) -> None:
+        """ "fol. 1200" strips; no bogus year 1200."""
+        assert _extract_year("Meyer. Some Work. fol. 1200.") is None
+
+    def test_ss_four_digit_page_not_read_as_year(self) -> None:
+        """ "ss. 1980" strips; no bogus year 1980."""
+        assert _extract_year("Meyer. Some Work. ss. 1980.") is None
+
+    def test_real_year_survives_alongside_pp_four_digit_page(self) -> None:
+        """The genuine year is found once "pp. 1850" is stripped."""
+        assert _extract_year("Meyer (1998). Some Work. pp. 1850.") == 1998
+
+    def test_pp_four_digit_page_stripped_from_normalized_key(self) -> None:
+        """ "pp. 1850" does not enter the comparison text / normalized key."""
+        with_page = Citation(raw_text="Meyer. Some Work. pp. 1850.")
+        without = Citation(raw_text="Meyer. Some Work.")
+        assert with_page.comparison_text == without.comparison_text
+        assert with_page.normalized_key == without.normalized_key
+
+
 class TestVerifyMatchYearGuardUnaffected:
     """The initial-before-year fix must not weaken _verify_citation_match."""
 
