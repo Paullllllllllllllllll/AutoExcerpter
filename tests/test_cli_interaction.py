@@ -101,11 +101,14 @@ class TestMatchItemsByName:
         matched = _match_items_by_name("2003", sample_items, display_func)
         assert matched == {3}
 
-    def test_match_in_display_text(self, sample_items: list[MockItem]) -> None:
-        """Test matching against display text (includes parent path)."""
+    def test_parent_path_term_matches_nothing(
+        self, sample_items: list[MockItem]
+    ) -> None:
+        """Round-3 fix 8: a term appearing only in the shared parent directory
+        path must NOT match every item (the directory prefix is excluded from
+        the searchable label), aligning with the filename-only CLI selection."""
         matched = _match_items_by_name("Documents", sample_items, display_func)
-        # All items have Documents in their path
-        assert matched == {0, 1, 2, 3, 4, 5}
+        assert matched == set()
 
     def test_empty_search_term(self, sample_items: list[MockItem]) -> None:
         """Test with empty search term."""

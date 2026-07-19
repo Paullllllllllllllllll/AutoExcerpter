@@ -161,6 +161,23 @@ def exit_program(
     sys.exit(exit_code)
 
 
+def _read_input(prompt: str) -> str:
+    """Read one line of user input, turning stream-close/interrupt into an exit.
+
+    A closed stdin (``EOFError``) or Ctrl+C (``KeyboardInterrupt``) at any prompt
+    must terminate the program rather than loop forever re-calling ``input()``.
+    ``exit_program`` raises ``SystemExit`` (a ``BaseException``), so it passes
+    cleanly through the ``ValueError``/``Exception`` handlers of the callers.
+    """
+    try:
+        return input(prompt)
+    except EOFError:
+        exit_program("Input stream closed; exiting.", exit_code=1)
+    except KeyboardInterrupt:
+        exit_program("Interrupted by user.", exit_code=130)
+    return ""  # unreachable: exit_program always raises SystemExit
+
+
 # ============================================================================
 # Interactive Prompt Functions
 # ============================================================================
@@ -190,7 +207,9 @@ def prompt_yes_no(
     exit_hint = " (or 'exit' to quit)" if allow_exit else ""
 
     while True:
-        response = input(f"{question}{prompt_suffix}{exit_hint}: ").lower().strip()
+        response = (
+            _read_input(f"{question}{prompt_suffix}{exit_hint}: ").lower().strip()
+        )
 
         if allow_exit and response in EXIT_COMMANDS:
             exit_program()
@@ -212,7 +231,9 @@ def prompt_continue(
     """Prompt user to press Enter to continue."""
     exit_hint = " (or 'exit' to quit)" if allow_exit else ""
     response = (
-        input(f"\n{Colors.OKCYAN}{message}{exit_hint}...{Colors.ENDC} ").lower().strip()
+        _read_input(f"\n{Colors.OKCYAN}{message}{exit_hint}...{Colors.ENDC} ")
+        .lower()
+        .strip()
     )
 
     if allow_exit and response in EXIT_COMMANDS:
@@ -244,10 +265,16 @@ def _match_items_by_name(
         item_name = ""
         if hasattr(item, "path"):
             item_name = item.path.name.lower()
+            # Exclude the parent-directory prefix from the searchable label so a
+            # term that appears only in the shared parent path does not match
+            # every item (aligns with _parse_cli_selection's filename-only scope).
+            parent_str = str(item.path.parent).lower()
+            if parent_str and parent_str != ".":
+                display_text = display_text.replace(parent_str, "")
         elif hasattr(item, "name"):
             item_name = item.name.lower()
 
-        # Match against display text or item name
+        # Match against the directory-stripped label or the bare item name
         if search_lower in display_text or search_lower in item_name:
             matched_indices.add(idx)
 
@@ -292,6 +319,12 @@ def prompt_selection(
             description = description[:72] + "..."
         _safe_print(f"  {Colors.BOLD}{index}.{Colors.ENDC} {description}")
 
+    # Explicit "select all" menu entry so the accepted N+1 input is visible
+    # rather than a silent typo trap (the numeric N+1 and 'all' both work).
+    if allow_all:
+        all_label = process_all_label or "Process ALL listed items"
+        _safe_print(f"  {Colors.BOLD}{len(items) + 1}.{Colors.ENDC} {all_label}")
+
     # Selection instructions
     _safe_print(f"\n  {Colors.INFO}Selection options:{Colors.ENDC}")
     if allow_multiple:
@@ -321,7 +354,7 @@ def prompt_selection(
     while True:
         try:
             choice_str = (
-                input(f"\n{Colors.PROMPT}{prompt_message}: {Colors.ENDC}")
+                _read_input(f"\n{Colors.PROMPT}{prompt_message}: {Colors.ENDC}")
                 .lower()
                 .strip()
             )
@@ -392,8 +425,9 @@ def prompt_selection(
                                 )
 
                             selected_indices.update(range(start - 1, end))
-                        except ValueError as e:
-                            print_error(f"Invalid range '{part}': {e}")
+                        except ValueError:
+                            # Re-raise to the single outer handler so a bad range
+                            # prints exactly one error, not two.
                             raise
 
                     # Handle single numbers
@@ -430,12 +464,6 @@ def prompt_selection(
 
         except ValueError as e:
             print_error(f"Invalid selection: {e}")
-        except KeyboardInterrupt:
-            if allow_exit:
-                exit_program("\n\nInterrupted by user.")
-            raise
-        except Exception as e:
-            print_error(f"Unexpected error: {e}")
 
 
 # ============================================================================

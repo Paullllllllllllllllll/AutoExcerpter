@@ -61,6 +61,144 @@ def _apply_mode_override() -> None:
         config.CLI_MODE = False
 
 
+def _add_override_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add the model/behavior override flags shared by both execution modes.
+
+    These flags used to live only in the CLI branch, which made every
+    model/behavior override silently inert in interactive mode. They are now
+    registered unconditionally so ``--context``, ``--model``, ``--summarize``
+    etc. take effect regardless of mode.
+    """
+    parser.add_argument(
+        "--context",
+        type=str,
+        default=None,
+        help="Summary context: topics to focus on during summarization"
+        " (e.g., 'Food History, Wages, Early Modern').",
+    )
+    parser.add_argument(
+        "--summarize",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Enable/disable summarization phase. Overrides summarize in app.yaml.",
+    )
+    parser.add_argument(
+        "--cleanup",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Enable/disable cleanup of temporary working directory."
+        " Overrides delete_temp_working_dir in app.yaml.",
+    )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default=None,
+        help="Set both transcription and summary model names.",
+    )
+    parser.add_argument(
+        "--transcription-model",
+        type=str,
+        default=None,
+        help="Override transcription model name.",
+    )
+    parser.add_argument(
+        "--summary-model",
+        type=str,
+        default=None,
+        help="Override summary model name.",
+    )
+    parser.add_argument(
+        "--reasoning-effort",
+        choices=REASONING_EFFORT_CHOICES,
+        default=None,
+        help="Set reasoning effort for both models (OpenAI reasoning models).",
+    )
+    parser.add_argument(
+        "--transcription-reasoning-effort",
+        choices=REASONING_EFFORT_CHOICES,
+        default=None,
+        help="Override transcription reasoning effort.",
+    )
+    parser.add_argument(
+        "--summary-reasoning-effort",
+        choices=REASONING_EFFORT_CHOICES,
+        default=None,
+        help="Override summary reasoning effort.",
+    )
+    parser.add_argument(
+        "--verbosity",
+        choices=VERBOSITY_CHOICES,
+        default=None,
+        help="Set output verbosity for both models (currently GPT-5 OpenAI models).",
+    )
+    parser.add_argument(
+        "--transcription-verbosity",
+        choices=VERBOSITY_CHOICES,
+        default=None,
+        help="Override transcription verbosity (currently GPT-5 OpenAI models).",
+    )
+    parser.add_argument(
+        "--summary-verbosity",
+        choices=VERBOSITY_CHOICES,
+        default=None,
+        help="Override summary verbosity (currently GPT-5 OpenAI models).",
+    )
+    parser.add_argument(
+        "--max-output-tokens",
+        type=_positive_int,
+        default=None,
+        help="Set max output tokens for both models.",
+    )
+    parser.add_argument(
+        "--transcription-max-output-tokens",
+        type=_positive_int,
+        default=None,
+        help="Override transcription max output tokens.",
+    )
+    parser.add_argument(
+        "--summary-max-output-tokens",
+        type=_positive_int,
+        default=None,
+        help="Override summary max output tokens.",
+    )
+    parser.add_argument(
+        "--temperature",
+        type=_temperature_float,
+        default=None,
+        help="Set temperature for both models (0.0-2.0).",
+    )
+    parser.add_argument(
+        "--transcription-temperature",
+        type=_temperature_float,
+        default=None,
+        help="Override transcription temperature (0.0-2.0).",
+    )
+    parser.add_argument(
+        "--summary-temperature",
+        type=_temperature_float,
+        default=None,
+        help="Override summary temperature (0.0-2.0).",
+    )
+    parser.add_argument(
+        "--provider",
+        choices=PROVIDER_CHOICES,
+        default=None,
+        help="Set provider for both models.",
+    )
+    parser.add_argument(
+        "--transcription-provider",
+        choices=PROVIDER_CHOICES,
+        default=None,
+        help="Override transcription provider.",
+    )
+    parser.add_argument(
+        "--summary-provider",
+        choices=PROVIDER_CHOICES,
+        default=None,
+        help="Override summary provider.",
+    )
+
+
 def setup_argparse() -> argparse.Namespace:
     _apply_mode_override()
 
@@ -123,8 +261,11 @@ def setup_argparse() -> argparse.Namespace:
         help="Force reprocessing of all files, overwriting existing output.",
     )
 
+    # Model/behavior override flags are accepted in BOTH modes.
+    _add_override_arguments(parser)
+
     if config.CLI_MODE:
-        # CLI mode: require input and output arguments
+        # CLI mode: require input and output paths (positional or named).
         parser.add_argument(
             "input",
             nargs="?",
@@ -167,143 +308,20 @@ def setup_argparse() -> argparse.Namespace:
             help="Select items by number (e.g., '1,3,5'), range (e.g., '1-5'),"
             " or filename pattern (e.g., 'Mennell').",
         )
-        parser.add_argument(
-            "--context",
-            type=str,
-            default=None,
-            help="Summary context: topics to focus on during summarization"
-            " (e.g., 'Food History, Wages, Early Modern').",
-        )
-        parser.add_argument(
-            "--summarize",
-            action=argparse.BooleanOptionalAction,
-            default=None,
-            help="Enable/disable summarization phase. Overrides summarize in app.yaml.",
-        )
-        parser.add_argument(
-            "--cleanup",
-            action=argparse.BooleanOptionalAction,
-            default=None,
-            help="Enable/disable cleanup of temporary working directory."
-            " Overrides delete_temp_working_dir in app.yaml.",
-        )
-        parser.add_argument(
-            "--model",
-            type=str,
-            default=None,
-            help="Set both transcription and summary model names.",
-        )
-        parser.add_argument(
-            "--transcription-model",
-            type=str,
-            default=None,
-            help="Override transcription model name.",
-        )
-        parser.add_argument(
-            "--summary-model",
-            type=str,
-            default=None,
-            help="Override summary model name.",
-        )
-        parser.add_argument(
-            "--reasoning-effort",
-            choices=REASONING_EFFORT_CHOICES,
-            default=None,
-            help="Set reasoning effort for both models (OpenAI reasoning models).",
-        )
-        parser.add_argument(
-            "--transcription-reasoning-effort",
-            choices=REASONING_EFFORT_CHOICES,
-            default=None,
-            help="Override transcription reasoning effort.",
-        )
-        parser.add_argument(
-            "--summary-reasoning-effort",
-            choices=REASONING_EFFORT_CHOICES,
-            default=None,
-            help="Override summary reasoning effort.",
-        )
-        parser.add_argument(
-            "--verbosity",
-            choices=VERBOSITY_CHOICES,
-            default=None,
-            help="Set output verbosity for both models"
-            " (currently GPT-5 OpenAI models).",
-        )
-        parser.add_argument(
-            "--transcription-verbosity",
-            choices=VERBOSITY_CHOICES,
-            default=None,
-            help="Override transcription verbosity (currently GPT-5 OpenAI models).",
-        )
-        parser.add_argument(
-            "--summary-verbosity",
-            choices=VERBOSITY_CHOICES,
-            default=None,
-            help="Override summary verbosity (currently GPT-5 OpenAI models).",
-        )
-        parser.add_argument(
-            "--max-output-tokens",
-            type=_positive_int,
-            default=None,
-            help="Set max output tokens for both models.",
-        )
-        parser.add_argument(
-            "--transcription-max-output-tokens",
-            type=_positive_int,
-            default=None,
-            help="Override transcription max output tokens.",
-        )
-        parser.add_argument(
-            "--summary-max-output-tokens",
-            type=_positive_int,
-            default=None,
-            help="Override summary max output tokens.",
-        )
-        parser.add_argument(
-            "--temperature",
-            type=_temperature_float,
-            default=None,
-            help="Set temperature for both models (0.0-2.0).",
-        )
-        parser.add_argument(
-            "--transcription-temperature",
-            type=_temperature_float,
-            default=None,
-            help="Override transcription temperature (0.0-2.0).",
-        )
-        parser.add_argument(
-            "--summary-temperature",
-            type=_temperature_float,
-            default=None,
-            help="Override summary temperature (0.0-2.0).",
-        )
-        parser.add_argument(
-            "--provider",
-            choices=PROVIDER_CHOICES,
-            default=None,
-            help="Set provider for both models.",
-        )
-        parser.add_argument(
-            "--transcription-provider",
-            choices=PROVIDER_CHOICES,
-            default=None,
-            help="Override transcription provider.",
-        )
-        parser.add_argument(
-            "--summary-provider",
-            choices=PROVIDER_CHOICES,
-            default=None,
-            help="Override summary provider.",
-        )
     else:
-        # Interactive mode: optional input argument with default from config
+        # Interactive mode: optional input/output with defaults from config.
         parser.add_argument(
             "--input",
             type=str,
             default=config.INPUT_FOLDER_PATH,
             help="Path to the folder containing PDFs and/or image folders,"
             " or path to a single PDF/image folder.",
+        )
+        parser.add_argument(
+            "--output",
+            type=str,
+            default=config.OUTPUT_FOLDER_PATH,
+            help="Output directory path for transcriptions and summaries.",
         )
 
     args = parser.parse_args()
@@ -361,12 +379,18 @@ def _parse_execution_mode(
         if summary_context:
             logger.info(f"CLI Mode: Summary context={summary_context}")
     else:
-        # Interactive mode: use config defaults and prompts
+        # Interactive mode: use --input/--output (config defaults) and --context.
         input_path_arg = Path(args.input)
-        base_output_dir = Path(config.OUTPUT_FOLDER_PATH)
+        base_output_dir = Path(args.output)
         process_all = False
         select_pattern = None
-        summary_context = None
+        summary_context = getattr(args, "context", None)
+
+        # Resolve relative paths to absolute exactly as the CLI branch does.
+        if not input_path_arg.is_absolute():
+            input_path_arg = Path.cwd() / input_path_arg
+        if not base_output_dir.is_absolute():
+            base_output_dir = Path.cwd() / base_output_dir
 
     return (
         input_path_arg,
@@ -382,12 +406,10 @@ def _apply_app_config_overrides(args: argparse.Namespace) -> None:
     """Apply CLI flag overrides to app_config module-level settings.
 
     Mutates module attributes on ``modules.app_config`` so that downstream
-    code reading ``config.SUMMARIZE`` etc. sees the CLI-specified value.
-    Only effective in CLI mode; no-ops silently otherwise.
+    code reading ``config.SUMMARIZE`` etc. sees the flag-specified value.
+    Effective in both CLI and interactive mode (the override flags are accepted
+    in both); a no-op only when no relevant flag was passed.
     """
-    if not config.CLI_MODE:
-        return
-
     if getattr(args, "summarize", None) is not None:
         config.SUMMARIZE = args.summarize
         logger.info(
@@ -415,10 +437,11 @@ def _set_model_override(
 
 
 def _build_cli_model_overrides(args: argparse.Namespace) -> dict[str, Any]:
-    """Build model.yaml runtime override dict from CLI args."""
-    if not config.CLI_MODE:
-        return {}
+    """Build model.yaml runtime override dict from parsed args.
 
+    Effective in both CLI and interactive mode; returns an empty dict when no
+    model flag was passed.
+    """
     overrides: dict[str, Any] = {}
 
     shared_model = getattr(args, "model", None)

@@ -410,7 +410,9 @@ class TestExecutorLifecycle:
 
         state = {"reset": False}
 
-        def fake_process(idx, source, t_res, s_res, total, count_ref):
+        def fake_process(
+            idx, source, t_res, s_res, total, count_ref, already_complete=0
+        ):
             if not state["reset"] and idx >= 3:
                 obj._budget_exhausted.set()
                 return None
@@ -453,10 +455,10 @@ class TestExecutorLifecycle:
 
         monkeypatch.setattr(concurrent.futures, "ThreadPoolExecutor", SpyExecutor)
 
-        def boom(idx, *a):
+        def boom(idx, *a, **k):
             raise RuntimeError("fatal")
 
-        obj._process_single_page = boom  # type: ignore[method-assign]
+        obj._process_single_page = boom  # type: ignore[method-assign,assignment]
 
         with pytest.raises(RuntimeError, match="fatal"):
             obj._transcribe_and_summarize(_FakeSource(4))  # type: ignore[arg-type]

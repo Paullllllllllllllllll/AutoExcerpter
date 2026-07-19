@@ -560,8 +560,15 @@ class PageNumberProcessor:
                         page_num_type if page_num_type != "none" else "arabic"
                     )
             else:
-                # No anchor available - use virtual-position fallback (1-indexed)
-                resolved_page = p["virtual_pos"] + 1
+                # No anchor available - prefer a model- or inference-set page
+                # number (infer_unnumbered_page_numbers writes it into
+                # model_page_number_int) so an inferred page is not discarded;
+                # otherwise fall back to the virtual position (1-indexed).
+                model_page = p["model_page_number_int"]
+                if isinstance(model_page, int) and model_page >= 1:
+                    resolved_page = model_page
+                else:
+                    resolved_page = p["virtual_pos"] + 1
                 page_info["page_number_integer"] = resolved_page
                 page_info["page_number_type"] = (
                     page_num_type if page_num_type != "none" else "arabic"

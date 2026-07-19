@@ -29,6 +29,12 @@ logger = setup_logger(__name__)
 
 _LOG_HANDLES: dict[Path, tuple[Any, threading.Lock]] = {}
 _LOG_HANDLES_GUARD = threading.Lock()
+# Paths whose handle has been finalized (closed). A late worker appending to a
+# finalized log (e.g. after ``executor.shutdown(cancel_futures=True)``) must not
+# silently reopen and re-cache the handle forever — that leaks one file
+# descriptor per aborted item for the process lifetime and can block Windows
+# working-directory cleanup. Guarded by _LOG_HANDLES_GUARD.
+_FINALIZED_LOGS: set[Path] = set()
 
 
 def _get_log_handle(log_path: Path) -> tuple[Any, threading.Lock]:
@@ -97,6 +103,10 @@ def initialize_log_file(
 
     try:
         _close_log_handle(log_path)
+        # A reinitialized log is live again: drop any stale finalized marker so
+        # subsequent appends use the cached handle rather than the one-shot path.
+        with _LOG_HANDLES_GUARD:
+            _FINALIZED_LOGS.discard(log_path)
         with log_path.open("w", encoding="utf-8") as log_file:
             log_file.write(json.dumps(payload, ensure_ascii=False))
             log_file.write("\n")
@@ -106,8 +116,30 @@ def initialize_log_file(
         return False
 
 
+def _append_one_shot(log_path: Path, entry: dict[str, Any]) -> bool:
+    """Append one line to a finalized log without caching a handle.
+
+    A late worker that appends after the log was finalized must not reopen and
+    re-cache the handle (that leaks a descriptor for the process lifetime);
+    open-append-flush-close in a single guarded step instead.
+    """
+    try:
+        with _LOG_HANDLES_GUARD, log_path.open("a", encoding="utf-8") as log_file:
+            log_file.write(json.dumps(entry, ensure_ascii=False))
+            log_file.write("\n")
+            log_file.flush()
+        return True
+    except (OSError, TypeError, ValueError) as exc:
+        logger.warning("Failed to write to log file %s: %s", log_path, exc)
+        return False
+
+
 def append_to_log(log_path: Path, entry: dict[str, Any]) -> bool:
     """Append a single JSON object as one JSONL line."""
+    with _LOG_HANDLES_GUARD:
+        finalized = log_path in _FINALIZED_LOGS
+    if finalized:
+        return _append_one_shot(log_path, entry)
     try:
         log_file, lock = _get_log_handle(log_path)
         with lock:
@@ -130,7 +162,11 @@ def finalize_log_file(log_path: Path) -> bool:
 
     With JSONL there is no array to close, so this only releases the cached
     file handle. It never creates a file, so calling it on a log that was
-    never initialized is a no-op (no stray artifact is written).
+    never initialized is a no-op (no stray artifact is written). The path is
+    recorded as finalized so a late append performs a one-shot open/close
+    rather than reopening and re-caching a handle that would leak.
     """
     _close_log_handle(log_path)
+    with _LOG_HANDLES_GUARD:
+        _FINALIZED_LOGS.add(log_path)
     return True

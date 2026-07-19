@@ -334,9 +334,16 @@ def balance_dollar_signs(text: str) -> str:
             # Single $ - likely unclosed inline math
             # Check if there's content after it that looks like math
             pos = positions[0]
-            # Currency guard: a lone "$" immediately before a digit is a price
-            # (e.g. "$3 in 1850"), not unclosed math; leave the line untouched.
-            if pos + 1 < len(line) and line[pos + 1].isdigit():
+            # Currency guard: a lone "$" is a price marker, not unclosed math,
+            # when either the character immediately BEFORE it is a digit
+            # (postfix currency, e.g. "100$") or it is followed by optional
+            # whitespace and a digit (prefix currency, e.g. "$3" or "$ 30").
+            # Leave such lines untouched so real currency is not mangled into
+            # "$$" or shifted onto trailing punctuation.
+            before_is_digit = pos > 0 and line[pos - 1].isdigit()
+            after_stripped = line[pos + 1 :].lstrip()
+            after_is_currency = bool(after_stripped) and after_stripped[0].isdigit()
+            if before_is_digit or after_is_currency:
                 result_lines.append(line)
                 continue
             after = line[pos + 1 :].strip()

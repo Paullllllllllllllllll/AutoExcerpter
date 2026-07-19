@@ -156,8 +156,17 @@ class TestBuildCliModelOverrides:
         assert result == {}
 
     @patch.object(config, "CLI_MODE", False)
-    def test_non_cli_mode_returns_empty(self) -> None:
+    def test_interactive_mode_builds_overrides(self) -> None:
+        """Round-3 fix 3: model override flags are now honored in interactive
+        mode too (previously the CLI_MODE guard returned an empty dict)."""
         args = _make_cli_args(model="gpt-5")
+        result = _build_cli_model_overrides(args)
+        assert result["transcription_model"]["name"] == "gpt-5"
+        assert result["summary_model"]["name"] == "gpt-5"
+
+    @patch.object(config, "CLI_MODE", False)
+    def test_no_flags_returns_empty_in_interactive_mode(self) -> None:
+        args = _make_cli_args()
         result = _build_cli_model_overrides(args)
         assert result == {}
 
@@ -402,11 +411,13 @@ class TestApplyAppConfigOverrides:
         assert config.DELETE_TEMP_WORKING_DIR is True
 
     @patch.object(config, "CLI_MODE", False)
-    def test_non_cli_mode_no_ops(self) -> None:
+    def test_interactive_mode_applies_overrides(self) -> None:
+        """Round-3 fix 3: --summarize/--no-summarize now takes effect in
+        interactive mode too (previously the CLI_MODE guard no-oped)."""
         config.SUMMARIZE = True
         args = _make_cli_args(summarize=False)
         _apply_app_config_overrides(args)
-        assert config.SUMMARIZE is True
+        assert config.SUMMARIZE is False
 
 
 # ============================================================================

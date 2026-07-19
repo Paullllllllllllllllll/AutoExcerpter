@@ -279,7 +279,9 @@ class TestItemFailurePropagation:
         monkeypatch.setattr(app_config, "CLI_MODE", True)
 
         item = ItemSpec(kind="pdf", path=tmp_path / "Item.pdf")
-        success, outputs = loop_module._process_single_item(item, 1, 1, tmp_path)
+        success, outputs, _report = loop_module._process_single_item(
+            item, 1, 1, tmp_path
+        )
         assert success is False
         assert outputs == [str(tmp_path / "Item.txt")]
 
@@ -304,7 +306,7 @@ class TestItemFailurePropagation:
         monkeypatch.setattr(app_config, "DELETE_TEMP_WORKING_DIR", True)
 
         item = ItemSpec(kind="pdf", path=tmp_path / "Item.pdf")
-        success, _ = loop_module._process_single_item(
+        success, _outputs, _report = loop_module._process_single_item(
             item, 1, 1, tmp_path, resume_mode="overwrite"
         )
         assert success is False
@@ -330,7 +332,7 @@ class TestItemFailurePropagation:
         monkeypatch.setattr(app_config, "DELETE_TEMP_WORKING_DIR", True)
 
         item = ItemSpec(kind="pdf", path=tmp_path / "Item.pdf")
-        success, _ = loop_module._process_single_item(
+        success, _outputs, _report = loop_module._process_single_item(
             item, 1, 1, tmp_path, resume_mode="overwrite"
         )
         assert success is True
@@ -384,7 +386,9 @@ class TestJsonOutputs:
         monkeypatch.setattr(app_config, "CLI_MODE", True)
 
         item = ItemSpec(kind="pdf", path=tmp_path / "A.pdf")
-        success, outputs = loop_module._process_single_item(item, 1, 1, tmp_path)
+        success, outputs, _report = loop_module._process_single_item(
+            item, 1, 1, tmp_path
+        )
         assert success is True
         assert outputs == [str(p) for p in written]
 
@@ -568,11 +572,14 @@ class TestBudgetDeferralWithholding:
             s_results: list[dict[str, Any]],
             total: int,
             count_ref: list[int],
+            already_complete: int = 0,
         ) -> dict[str, Any] | None:
             if idx >= 1:
                 transcriber._budget_exhausted.set()
                 return None
-            return real_process(idx, source, t_results, s_results, total, count_ref)
+            return real_process(
+                idx, source, t_results, s_results, total, count_ref, already_complete
+            )
 
         monkeypatch.setattr(transcriber, "_process_single_page", deferring)
         # The daily reset never comes (user cancels / limit unreachable).
@@ -619,12 +626,20 @@ class TestBudgetDeferralWithholding:
             s_results: list[dict[str, Any]],
             total: int,
             count_ref: list[int],
+            already_complete: int = 0,
         ) -> dict[str, Any] | None:
             if defer["on"] and idx >= 1:
                 self._budget_exhausted.set()
                 return None
             return real_process(
-                self, idx, source, t_results, s_results, total, count_ref
+                self,
+                idx,
+                source,
+                t_results,
+                s_results,
+                total,
+                count_ref,
+                already_complete,
             )
 
         monkeypatch.setattr(ItemTranscriber, "_process_single_page", maybe_defer)
@@ -769,3 +784,75 @@ class TestUnattemptedNotFailed:
         assert payload["items_failed"] == 0
         # ... it is reported under the skipped/pending count instead.
         assert payload["items_skipped"] == 1
+
+
+# ============================================================================
+# Round-3 fix 9: DOCX and Markdown writers are independent
+# ============================================================================
+class TestIndependentSummaryWriters:
+    def test_docx_failure_does_not_skip_markdown(
+        self,
+        make_pdf: Callable[..., Path],
+        tmp_path: Path,
+        summary_env: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A DOCX writer exception must not prevent the Markdown writer from
+        running; the item still fails because not all outputs were produced."""
+        md_writer = MagicMock()
+        monkeypatch.setattr(
+            transcriber_module,
+            "create_docx_summary",
+            MagicMock(side_effect=RuntimeError("docx exploded")),
+        )
+        monkeypatch.setattr(transcriber_module, "create_markdown_summary", md_writer)
+
+        transcriber = _make_transcriber(make_pdf("Split.pdf", 1), tmp_path / "out")
+        assert transcriber.process_item() is False
+        # The Markdown writer ran despite the DOCX failure.
+        assert md_writer.called
+        # The DOCX path is not advertised; the Markdown path is.
+        suffixes = {p.suffix for p in transcriber.written_outputs}
+        assert ".docx" not in suffixes
+        assert ".md" in suffixes
+
+
+# ============================================================================
+# Round-3 fix 11: per-item run report is populated
+# ============================================================================
+class TestLastRunReport:
+    def test_report_populated_on_success(
+        self,
+        make_pdf: Callable[..., Path],
+        tmp_path: Path,
+        pipeline_env: MagicMock,
+    ) -> None:
+        transcriber = _make_transcriber(make_pdf("Report.pdf", 2), tmp_path / "out")
+        assert transcriber.process_item() is True
+
+        report = transcriber.last_run_report
+        assert report is not None
+        assert report["pages_total"] == 2
+        assert report["pages_attempted"] == 2
+        assert report["pages_ok"] == 2
+        assert report["pages_failed"] == 0
+        assert report["pages_deferred"] == 0
+        assert report["summary_failures"] == 0
+        assert report["elapsed_s"] >= 0
+        assert report["outputs"] == [str(p) for p in transcriber.written_outputs]
+
+    def test_report_populated_on_failure(
+        self,
+        make_pdf: Callable[..., Path],
+        tmp_path: Path,
+        pipeline_env: MagicMock,
+    ) -> None:
+        pipeline_env.transcribe_payload.side_effect = _failed_transcribe
+        transcriber = _make_transcriber(make_pdf("RepFail.pdf", 2), tmp_path / "out")
+        assert transcriber.process_item() is False
+
+        report = transcriber.last_run_report
+        assert report is not None
+        assert report["pages_total"] == 2
+        assert report["pages_failed"] == 2
+        assert report["pages_ok"] == 0

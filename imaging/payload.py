@@ -208,6 +208,14 @@ class PdfPayloadSource(_PayloadSourceBase):
         )
         self._render_lock = threading.Lock()
         self._doc: fitz.Document | None = fitz.open(pdf_path)
+        # A password-protected PDF opens and reports a page count, but every
+        # page render raises, which would otherwise fill a full .txt with error
+        # placeholders. Abort construction so the item fails cleanly via the
+        # payload-source setup-failure path instead.
+        if self._doc.needs_pass:
+            self._doc.close()
+            self._doc = None
+            raise ValueError(f"Cannot open password-protected PDF: {pdf_path.name}")
         logger.debug(
             f"PdfPayloadSource opened {pdf_path.name}: {len(self)} page(s), "
             f"model_type={self.model_type}, dpi={self.target_dpi}"
@@ -375,7 +383,24 @@ class FolderPayloadSource(_PayloadSourceBase):
 
     def file_provenance(self) -> dict[str, Any]:
         """Folder-level reproducibility record (per-image hashes live on pages)."""
-        return self._base_file_provenance()
+        provenance = self._base_file_provenance()
+        # Cheap identity fields consumed by the resume input-change guard
+        # (pipeline.resume._input_changed_since_log): the image count and their
+        # combined byte size. A folder whose image set changed under the same
+        # name would otherwise let page-level reuse splice two documents into
+        # one output. total_image_bytes is None when any image cannot be stat'd
+        # (a mismatch cannot then be proven).
+        provenance["image_count"] = len(self.image_paths)
+        total_bytes = 0
+        total_ok = True
+        for path in self.image_paths:
+            try:
+                total_bytes += path.stat().st_size
+            except OSError:
+                total_ok = False
+                break
+        provenance["total_image_bytes"] = total_bytes if total_ok else None
+        return provenance
 
 
 # ============================================================================

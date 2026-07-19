@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -28,12 +29,12 @@ from cli.display import (
     _display_completion_summary,
     _display_processing_summary,
     _display_resume_info,
+    _print_cli_completion_overview,
     _prompt_for_summary_context,
     prompt_for_item_selection,
 )
 from cli.errors import handle_critical_error
 from cli.interaction import (
-    print_dim,
     print_info,
     print_section,
     print_success,
@@ -294,23 +295,39 @@ def _run_processing_loop(
     item_resume_map: dict[Path, ResumeResult],
     summary_context: str | None,
     resume_mode: str,
-) -> tuple[int, list[str], int, list[str]]:
+) -> tuple[
+    int,
+    list[str],
+    int,
+    list[str],
+    list[tuple[str, dict[str, Any] | None]],
+    float,
+    int | None,
+]:
     """Process items sequentially.
 
     Returns:
-        ``(processed_count, outputs, unattempted_count, incomplete_items)``: the
-        number of items that fully succeeded, the absolute paths of all output
-        files written this run, the number of items never reached because the
-        user cancelled the token-limit wait, and the display names of items that
-        were attempted but finished incomplete (failed/partial pages or missing
-        outputs).
+        ``(processed_count, outputs, unattempted_count, incomplete_items,
+        reports, run_seconds, tokens_used_run)``: the number of items that fully
+        succeeded, the absolute paths of all output files written this run, the
+        number of items never reached because the user cancelled the token-limit
+        wait, the display names of items that were attempted but finished
+        incomplete, the per-item ``(name, last_run_report)`` pairs for every
+        attempted item, the wall-clock time spent in the loop, and the tokens
+        consumed this run (None when daily-token tracking is disabled).
     """
     processed_count = 0
     run_outputs: list[str] = []
     incomplete_items: list[str] = []
+    reports: list[tuple[str, dict[str, Any] | None]] = []
     total_to_process = len(items_to_process)
     attempted_count = 0
 
+    tokens_before: int | None = None
+    if config.DAILY_TOKEN_LIMIT_ENABLED:
+        tokens_before = get_token_tracker().get_stats().get("tokens_used_today")
+
+    loop_start = time.monotonic()
     for index, item_spec in enumerate(items_to_process, start=1):
         if not _check_and_wait_for_token_limit():
             logger.info(
@@ -331,7 +348,7 @@ def _run_processing_loop(
         item_resume = item_resume_map.get(item_spec.path)
         completed_pages = item_resume.completed_page_indices if item_resume else None
 
-        success, item_outputs = _process_single_item(
+        success, item_outputs, report = _process_single_item(
             item_spec,
             index,
             total_to_process,
@@ -350,6 +367,7 @@ def _run_processing_loop(
             logged_log_header=item_resume.log_header if item_resume else None,
         )
         run_outputs.extend(item_outputs)
+        reports.append((item_spec.output_stem, report))
         if success:
             processed_count += 1
         else:
@@ -357,11 +375,22 @@ def _run_processing_loop(
 
         _log_token_usage(f"Token usage after file {index}/{total_to_process}")
 
+    run_seconds = time.monotonic() - loop_start
+
+    tokens_used_run: int | None = None
+    if config.DAILY_TOKEN_LIMIT_ENABLED and tokens_before is not None:
+        tokens_after = get_token_tracker().get_stats().get("tokens_used_today")
+        if tokens_after is not None:
+            tokens_used_run = max(0, tokens_after - tokens_before)
+
     return (
         processed_count,
         run_outputs,
         total_to_process - attempted_count,
         incomplete_items,
+        reports,
+        run_seconds,
+        tokens_used_run,
     )
 
 
@@ -400,24 +429,38 @@ def _emit_json_summary(
     print(json.dumps(summary, ensure_ascii=False))
 
 
-def _warn_incomplete_items(incomplete_items: list[str]) -> None:
+def _warn_incomplete_items(
+    incomplete_items: list[str],
+    reports: dict[str, dict[str, Any] | None] | None = None,
+) -> None:
     """Print a prominent, user-facing warning naming items that finished
     incomplete (failed/partial pages or missing outputs).
 
     Emitted once after all items in BOTH interactive and CLI modes via the
     shared console helper (a real stdout print, not just a log record), so the
     partial failure is visible even when only log-level errors were recorded.
-    Exact failed/deferred page counts per item live in the per-item logs (the
-    transcriber records them there); this level sees only the pass/fail verdict.
+    When a per-item report is available, the exact failed/deferred page counts
+    are shown inline; otherwise it falls back to the log pointer.
     """
     if not incomplete_items:
         return
+    reports = reports or {}
     print_warning(
         f"{len(incomplete_items)} item(s) finished INCOMPLETE. Their "
         ".txt/.docx/.md outputs may contain error placeholders:"
     )
     for name in incomplete_items:
-        print_warning(f"    - {name} (one or more pages failed or were deferred)")
+        rep = reports.get(name)
+        if rep:
+            failed = rep.get("pages_failed", 0)
+            deferred = rep.get("pages_deferred", 0)
+            summary_failures = rep.get("summary_failures", 0)
+            detail = f"{failed} failed, {deferred} deferred page(s)"
+            if summary_failures:
+                detail += f", {summary_failures} summary failure(s)"
+            print_warning(f"    - {name} ({detail})")
+        else:
+            print_warning(f"    - {name} (one or more pages failed or were deferred)")
     print_warning(
         "Re-run with --resume to retry only the missing pages; see each item's "
         "log for the exact failed/deferred page counts."
@@ -449,8 +492,20 @@ def _run_dry_run(
             state,
             pages,
         )
+        # The logger.info above sits below the CLI WARNING threshold and is
+        # otherwise invisible, so also surface the plan on the human channel.
+        plan_line = f"{item.output_stem} -> {state} ({pages} completed page(s))"
+        if config.CLI_MODE:
+            print(f"DRY-RUN: {plan_line}", file=sys.stderr)
+        else:
+            print_info(f"Plan: {plan_line}")
     for skipped in skipped_items:
         logger.info("DRY-RUN skip: %s -> complete", skipped.item_name)
+        skip_line = f"{skipped.item_name} -> already complete (skip)"
+        if config.CLI_MODE:
+            print(f"DRY-RUN: {skip_line}", file=sys.stderr)
+        else:
+            print_info(f"Plan: {skip_line}")
 
     if emit_json:
         print(
@@ -463,6 +518,44 @@ def _run_dry_run(
                 ensure_ascii=False,
             )
         )
+
+
+def _guard_duplicate_outputs(
+    items_to_process: list[ItemSpec],
+    base_output_dir: Path,
+    emit_json: bool,
+) -> None:
+    """Abort if two selected items resolve to the same output target.
+
+    Two items with the same output stem in the same resolved output directory
+    would silently overwrite each other's .txt/.docx/.md and interleave their
+    resume logs. Detect the collision up front and stop with a clear error.
+    """
+    seen: dict[tuple[Path, str], ItemSpec] = {}
+    for item in items_to_process:
+        key = (
+            _resolve_item_output_dir(item, base_output_dir).resolve(),
+            item.output_stem,
+        )
+        prior = seen.get(key)
+        if prior is not None:
+            message = (
+                f"Duplicate output target: '{prior.path}' and '{item.path}' both "
+                f"resolve to output stem '{item.output_stem}' in the same "
+                "directory; their outputs would overwrite each other. Rename one "
+                "input or send them to separate output directories."
+            )
+            if config.CLI_MODE:
+                logger.error(message)
+                if emit_json:
+                    _emit_json_summary(0, 0, 0, len(items_to_process), [])
+                sys.exit(2)
+            else:
+                from cli.interaction import print_error
+
+                print_error(message)
+                sys.exit(1)
+        seen[key] = item
 
 
 def main() -> int:
@@ -507,6 +600,9 @@ def main() -> int:
             _emit_json_summary(0, 0, skipped_count, 0, [])
         return 0
 
+    # Refuse to silently overwrite when two items share an output target.
+    _guard_duplicate_outputs(items_to_process, base_output_dir, emit_json)
+
     # Prompt for summary context in interactive mode
     if not config.CLI_MODE and config.SUMMARIZE and not summary_context:
         summary_context = _prompt_for_summary_context()
@@ -518,19 +614,29 @@ def main() -> int:
         )
         if not confirmed:
             print_info("Processing cancelled by user.")
+            # Honor the --json contract even on an interactive decline: 0
+            # processed/failed, the skipped count, and the full attempted total.
+            if emit_json:
+                _emit_json_summary(0, 0, len(skipped_items), len(items_to_process), [])
             return 0
         print_section(f"Processing {len(items_to_process)} Item(s)")
 
     _log_token_usage()
 
-    processed_count, run_outputs, unattempted_count, incomplete_items = (
-        _run_processing_loop(
-            items_to_process,
-            base_output_dir,
-            item_resume_map,
-            summary_context,
-            resume_mode,
-        )
+    (
+        processed_count,
+        run_outputs,
+        unattempted_count,
+        incomplete_items,
+        reports,
+        run_seconds,
+        tokens_used_run,
+    ) = _run_processing_loop(
+        items_to_process,
+        base_output_dir,
+        item_resume_map,
+        summary_context,
+        resume_mode,
     )
 
     # Final summary
@@ -550,18 +656,30 @@ def main() -> int:
         if unattempted_count > 0:
             msg += f" {unattempted_count} item(s) not attempted (stopped early)."
         logger.info(msg)
+        # The logger.info line above is below the CLI WARNING threshold and thus
+        # invisible; print a concise overview to stderr so the outcome is seen.
+        _print_cli_completion_overview(
+            processed_count,
+            total_to_process,
+            skipped_count=skipped_count,
+            unattempted_count=unattempted_count,
+            reports=reports,
+            run_seconds=run_seconds,
+            tokens_used_run=tokens_used_run,
+            run_outputs=run_outputs,
+        )
     else:
         _display_completion_summary(
             processed_count,
             total_to_process,
             base_output_dir if not config.INPUT_PATHS_IS_OUTPUT_PATH else None,
+            skipped_count=skipped_count,
+            unattempted_count=unattempted_count,
+            reports=reports,
+            run_seconds=run_seconds,
+            tokens_used_run=tokens_used_run,
+            run_outputs=run_outputs,
         )
-        if skipped_count > 0:
-            print_dim(f"  ({skipped_count} item(s) were skipped as already complete)")
-            print()
-        if unattempted_count > 0:
-            print_dim(f"  ({unattempted_count} item(s) were not attempted)")
-            print()
 
     logger.info(
         f"{processed_count}/{total_to_process} selected items have been processed."
@@ -575,7 +693,7 @@ def main() -> int:
     # Prominent, once-per-run warning naming any item that finished incomplete.
     # Printed before the JSON line so a --json consumer still finds the summary
     # as the last stdout line.
-    _warn_incomplete_items(incomplete_items)
+    _warn_incomplete_items(incomplete_items, dict(reports))
 
     if emit_json:
         _emit_json_summary(

@@ -39,7 +39,7 @@ def _process_single_item(
     prior_transcription_results: list[dict[str, Any]] | None = None,
     prior_summary_results: list[dict[str, Any]] | None = None,
     logged_log_header: dict[str, Any] | None = None,
-) -> tuple[bool, list[str]]:
+) -> tuple[bool, list[str], dict[str, Any] | None]:
     """Process a single PDF or image folder item.
 
     Args:
@@ -60,9 +60,11 @@ def _process_single_item(
             check. None falls back to a disk read.
 
     Returns:
-        ``(success, outputs)`` where *success* is True only when every page
-        succeeded and all configured outputs were written, and *outputs* is
-        the list of absolute output-file paths written for this item.
+        ``(success, outputs, report)`` where *success* is True only when every
+        page succeeded and all configured outputs were written, *outputs* is the
+        list of absolute output-file paths written for this item, and *report*
+        is the transcriber's ``last_run_report`` (None if the item aborted
+        before any per-item stats were computed).
     """
     logger.info(
         "--- Starting Item %s of %s: %s (%s) ---",
@@ -105,6 +107,7 @@ def _process_single_item(
         )
         success = transcriber_instance.process_item()
         outputs = [str(p) for p in transcriber_instance.written_outputs]
+        report = transcriber_instance.last_run_report
 
         if success:
             if config.CLI_MODE:
@@ -121,7 +124,8 @@ def _process_single_item(
                     f"Completed with failures: {item_spec.output_stem}"
                     " (see log for failed pages)"
                 )
-        return success, outputs
+        _print_item_result(item_spec.output_stem, report)
+        return success, outputs, report
 
     except Exception as exc:
         handle_critical_error(
@@ -136,7 +140,13 @@ def _process_single_item(
             if transcriber_instance is not None
             else []
         )
-        return False, outputs
+        report = (
+            transcriber_instance.last_run_report
+            if transcriber_instance is not None
+            else None
+        )
+        _print_item_result(item_spec.output_stem, report)
+        return False, outputs, report
 
     finally:
         # Clean up temporary working directory if configured
@@ -151,6 +161,48 @@ def _process_single_item(
             working_dir = transcriber_instance.working_dir
             if working_dir.exists():
                 _cleanup_working_directory(working_dir)
+
+
+def _print_item_result(name: str, report: dict[str, Any] | None) -> None:
+    """Print a compact per-item result block after each item.
+
+    Interactive mode uses the dimmed print helpers (stdout); CLI mode writes
+    one or two plain lines to stderr (stdout is reserved for the --json line).
+    A no-op when no report was produced (item aborted before stats).
+    """
+    if not isinstance(report, dict):
+        return
+
+    attempted = report.get("pages_attempted", 0)
+    ok = report.get("pages_ok", 0)
+    failed = report.get("pages_failed", 0)
+    deferred = report.get("pages_deferred", 0)
+    elapsed = report.get("elapsed_s")
+    avg_api = report.get("avg_api_s")
+    outputs = report.get("outputs") or []
+
+    if config.CLI_MODE:
+        line = (
+            f"  {name}: {ok}/{attempted} page(s) ok, "
+            f"{failed} failed, {deferred} deferred"
+        )
+        if elapsed is not None:
+            line += f"; {elapsed:.1f}s"
+        if avg_api is not None:
+            line += f"; avg API {avg_api:.1f}s"
+        print(line, file=sys.stderr)
+        if outputs:
+            print(f"    outputs: {', '.join(outputs)}", file=sys.stderr)
+    else:
+        print_dim(
+            f"    • Pages: {ok}/{attempted} ok, {failed} failed, {deferred} deferred"
+        )
+        if elapsed is not None:
+            print_dim(f"    • Elapsed: {elapsed:.1f}s")
+        if avg_api is not None:
+            print_dim(f"    • Avg API time: {avg_api:.1f}s")
+        for out in outputs:
+            print_dim(f"    • Output: {out}")
 
 
 def _cleanup_working_directory(working_dir: Path) -> None:
@@ -209,9 +261,24 @@ def _check_and_wait_for_token_limit() -> bool:
 def _wait_for_token_reset(
     token_tracker: DailyTokenTracker, seconds_until_reset: int
 ) -> bool:
-    """Wait for token limit reset with cancellation support."""
+    """Wait for token limit reset with cancellation support.
+
+    The cancellation poll stays at 1 s for responsiveness, but the two costly
+    side effects are throttled: the shared-ledger force-sync runs at most every
+    ~10 s and the app.yaml / pool-settings re-reads at most every ~30 s. A wait
+    can last hours, so doing both every second churned the shared ledger and
+    re-parsed YAML needlessly.
+    """
+    ledger_sync_interval = 10
+    config_reload_interval = 30
+
     elapsed = 0
     sleep_interval = 1  # Check every second for responsiveness
+    # Seed the throttle markers one interval in the past so the first sync and
+    # config re-read fire early (external changes are picked up promptly, and a
+    # short wait still rereads), then settle onto the throttled cadence.
+    last_ledger_sync = -ledger_sync_interval
+    last_config_reload = -config_reload_interval
 
     while elapsed < seconds_until_reset:
         if _user_requested_cancel():
@@ -224,35 +291,38 @@ def _wait_for_token_reset(
         time.sleep(interval)
         elapsed += interval
 
-        # Forced ledger refresh each poll so another tool's usage or its 00:01
-        # UTC reset is observed while we wait. A no-op when the shared budget is
-        # off, so single-tool waits are unchanged.
-        if token_tracker._shared_enabled:
+        # Throttled forced ledger refresh so another tool's usage or its 00:01
+        # UTC reset is observed while we wait, without a sync every second. A
+        # no-op when the shared budget is off, so single-tool waits are cheap.
+        if (
+            token_tracker._shared_enabled
+            and elapsed - last_ledger_sync >= ledger_sync_interval
+        ):
+            last_ledger_sync = elapsed
             try:
                 token_tracker.sync_ledger_now()
             except Exception:
                 logger.debug("Shared ledger refresh during wait failed", exc_info=True)
 
-        # Live re-read of the configured daily limit: a user raising
-        # daily_token_limit.daily_tokens mid-wait lifts the cap without a
-        # restart. A read failure keeps the current limit.
-        new_limit = config.reload_daily_token_limit()
-        if new_limit is not None:
-            token_tracker.set_daily_limit(new_limit)
+        # Throttled live re-read of the configured daily limit and per-key-pool
+        # settings so a mid-wait edit (raising daily_tokens, remapping pools)
+        # takes effect without a restart, without re-parsing YAML every second.
+        # The per-item managers re-resolve their key env vars at the next item's
+        # construction, so an api_keys.yaml remap is picked up on the next item.
+        if elapsed - last_config_reload >= config_reload_interval:
+            last_config_reload = elapsed
+            new_limit = config.reload_daily_token_limit()
+            if new_limit is not None:
+                token_tracker.set_daily_limit(new_limit)
 
-        # Also live re-read the per-key-pool settings (scope, pool-cap toggle,
-        # cap mapping, custom pool definitions) so a mid-wait edit takes effect
-        # without a restart. The per-item managers re-resolve their key env
-        # vars at the next item's construction, so an api_keys.yaml remap is
-        # picked up on the next item.
-        pool_cfg = config.reload_pool_settings()
-        if pool_cfg is not None:
-            token_tracker.set_pool_settings(
-                scope=pool_cfg.get("scope"),
-                pool_caps_enabled=pool_cfg.get("pool_caps_enabled"),
-                pool_caps=pool_cfg.get("pool_caps"),
-                pool_models=pool_cfg.get("pool_models"),
-            )
+            pool_cfg = config.reload_pool_settings()
+            if pool_cfg is not None:
+                token_tracker.set_pool_settings(
+                    scope=pool_cfg.get("scope"),
+                    pool_caps_enabled=pool_cfg.get("pool_caps_enabled"),
+                    pool_caps=pool_cfg.get("pool_caps"),
+                    pool_models=pool_cfg.get("pool_models"),
+                )
 
         # Re-check if it's a new day (or the cap was lifted above)
         if not token_tracker.is_limit_reached():

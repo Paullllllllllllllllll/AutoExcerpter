@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import collections.abc
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -258,16 +259,95 @@ def _display_processing_summary(
     return prompt_yes_no("Proceed with processing?", default=True, allow_exit=True)
 
 
+def _summarize_reports(
+    reports: list[tuple[str, dict[str, Any] | None]] | None,
+) -> tuple[int, int, int, int]:
+    """Sum per-item page counters across the run's reports.
+
+    Returns ``(pages_ok, pages_failed, pages_deferred, summary_failures)``;
+    items with a missing report (None) contribute nothing.
+    """
+    pages_ok = pages_failed = pages_deferred = summary_failures = 0
+    for _name, rep in reports or []:
+        if not rep:
+            continue
+        pages_ok += int(rep.get("pages_ok", 0) or 0)
+        pages_failed += int(rep.get("pages_failed", 0) or 0)
+        pages_deferred += int(rep.get("pages_deferred", 0) or 0)
+        summary_failures += int(rep.get("summary_failures", 0) or 0)
+    return pages_ok, pages_failed, pages_deferred, summary_failures
+
+
+def _print_cli_completion_overview(
+    processed_count: int,
+    total_count: int,
+    *,
+    skipped_count: int,
+    unattempted_count: int,
+    reports: list[tuple[str, dict[str, Any] | None]] | None,
+    run_seconds: float | None,
+    tokens_used_run: int | None,
+    run_outputs: list[str] | None,
+) -> None:
+    """Print a concise final overview to stderr for CLI mode.
+
+    The existing logger.info summary sits below the WARNING console threshold
+    and is therefore invisible; this block (a real stderr print) surfaces the
+    same numbers so an operator sees the run outcome without raising log levels.
+    """
+    failed = total_count - processed_count - unattempted_count
+    pages_ok, pages_failed, pages_deferred, summary_failures = _summarize_reports(
+        reports
+    )
+    lines = [
+        "Run complete:",
+        f"  items: {processed_count} processed, {failed} failed, "
+        f"{unattempted_count} not attempted, {skipped_count} skipped "
+        f"(of {total_count})",
+        f"  pages: {pages_ok} ok, {pages_failed} failed, {pages_deferred} deferred"
+        + (f", {summary_failures} summary failure(s)" if summary_failures else ""),
+    ]
+    if run_seconds is not None:
+        lines.append(f"  run time: {run_seconds:.1f}s")
+    if tokens_used_run is not None:
+        lines.append(f"  tokens this run: {tokens_used_run:,}")
+    if run_outputs:
+        lines.append(f"  outputs ({len(run_outputs)}):")
+        for out in run_outputs[:20]:
+            lines.append(f"    {out}")
+        if len(run_outputs) > 20:
+            lines.append(f"    ... and {len(run_outputs) - 20} more")
+    for line in lines:
+        print(line, file=sys.stderr)
+
+
 def _display_completion_summary(
-    processed_count: int, total_count: int, output_dir: Path | None
+    processed_count: int,
+    total_count: int,
+    output_dir: Path | None,
+    *,
+    skipped_count: int = 0,
+    unattempted_count: int = 0,
+    reports: list[tuple[str, dict[str, Any] | None]] | None = None,
+    run_seconds: float | None = None,
+    tokens_used_run: int | None = None,
+    run_outputs: list[str] | None = None,
 ) -> None:
     """Display completion summary with statistics.
 
     Args:
         processed_count: Number of successfully processed items
-        total_count: Total number of selected items
+        total_count: Total number of items attempted (items_to_process)
         output_dir: Output directory (None if co-located with input)
+        skipped_count: Items skipped as already complete
+        unattempted_count: Items never reached (cancelled token wait)
+        reports: Per-item ``(name, last_run_report)`` pairs for page aggregates
+        run_seconds: Wall-clock time spent in the processing loop
+        tokens_used_run: Tokens consumed this run (None when not tracked)
+        run_outputs: Absolute paths of output files written this run
     """
+    failed = total_count - processed_count - unattempted_count
+
     print()
     print_header("PROCESSING COMPLETE")
 
@@ -275,7 +355,48 @@ def _display_completion_summary(
         print_success(f"All {processed_count} item(s) processed successfully!")
     else:
         print_warning(f"Processed {processed_count} out of {total_count} item(s)")
-        print_info(f"{total_count - processed_count} item(s) failed or were skipped")
+        detail = []
+        if failed > 0:
+            detail.append(f"{failed} failed")
+        if unattempted_count > 0:
+            detail.append(f"{unattempted_count} not attempted")
+        if detail:
+            # Skipped items are never part of total_count, so the old
+            # "failed or were skipped" wording mislabeled this line.
+            print_info("    " + "; ".join(detail))
+
+    # === Run Overview ===
+    print()
+    print_highlight("  Run Overview:")
+    print_separator()
+    print_info(
+        f"    • Items: {processed_count} processed, {failed} failed, "
+        f"{unattempted_count} not attempted, {skipped_count} skipped"
+    )
+    pages_ok, pages_failed, pages_deferred, summary_failures = _summarize_reports(
+        reports
+    )
+    print_info(
+        f"    • Pages: {pages_ok} transcribed ok, {pages_failed} failed, "
+        f"{pages_deferred} deferred"
+    )
+    if summary_failures:
+        print_info(f"    • Summary failures: {summary_failures}")
+    if run_seconds is not None:
+        print_info(f"    • Total run time: {run_seconds:.1f}s")
+    if tokens_used_run is not None:
+        print_info(f"    • Tokens used this run: {tokens_used_run:,}")
+    print_separator()
+
+    if run_outputs:
+        print()
+        print_highlight("  Output Files Written This Run:")
+        print_separator()
+        for out in run_outputs[:20]:
+            print_dim(f"    • {out}")
+        if len(run_outputs) > 20:
+            print_dim(f"    ... and {len(run_outputs) - 20} more")
+        print_separator()
 
     print()
     print_highlight("  Output Files:")
@@ -373,18 +494,21 @@ def _log_token_limit_reached(
     stats: dict[str, Any], reset_time: datetime, hours: int, minutes: int
 ) -> None:
     """Log token limit reached message to appropriate output."""
-    logger.warning(
-        f"Daily token limit reached: {stats['tokens_used_today']:,}"
-        f"/{stats['daily_limit']:,} tokens used"
-    )
-    logger.info(
-        f"Waiting until {_describe_reset_time(reset_time)}"
-        f" ({hours}h {minutes}m) for token limit reset..."
-    )
-
     if config.CLI_MODE:
+        # CLI mode: the logger (stderr, WARNING+) is the only human channel.
+        logger.warning(
+            f"Daily token limit reached: {stats['tokens_used_today']:,}"
+            f"/{stats['daily_limit']:,} tokens used"
+        )
+        logger.info(
+            f"Waiting until {_describe_reset_time(reset_time)}"
+            f" ({hours}h {minutes}m) for token limit reset..."
+        )
         logger.info("Type 'q' and press Enter to cancel and exit.")
     else:
+        # Interactive mode: the pretty block below is the user-facing channel;
+        # the logger.warning/info would duplicate it on stderr, so it is gated
+        # to CLI mode only.
         print()
         print_separator(char="=")
         print_warning("  Daily Token Limit Reached")
@@ -429,7 +553,12 @@ def _prompt_for_summary_context() -> str | None:
                 " Will use file/folder/general context if available."
             )
             return None
-    except (KeyboardInterrupt, EOFError):
+    except KeyboardInterrupt:
+        # Ctrl+C here must abort the (paid) run, not silently continue. Re-raise
+        # so the __main__ handler exits with code 130.
+        raise
+    except EOFError:
+        # Closed stdin on this optional prompt: skip context, keep going.
         return None
 
 

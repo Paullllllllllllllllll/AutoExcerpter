@@ -130,7 +130,9 @@ class TestTranscribeAndSummarizeResumeLoop:
 
         # First pass defers pages >= 2 (budget exhausted); after a simulated
         # reset, the remaining pages all process.
-        def fake_process(idx, source, t_results, s_results, total, count_ref):
+        def fake_process(
+            idx, source, t_results, s_results, total, count_ref, already_complete=0
+        ):
             if not state["reset"] and idx >= 2:
                 obj._budget_exhausted.set()
                 return None
@@ -173,7 +175,9 @@ class TestTranscribeAndSummarizeResumeLoop:
             transcriber, "get_transcription_concurrency", lambda: (2, None)
         )
 
-        def fake_process(idx, source, t_results, s_results, total, count_ref):
+        def fake_process(
+            idx, source, t_results, s_results, total, count_ref, already_complete=0
+        ):
             if idx >= 2:
                 obj._budget_exhausted.set()
                 return None

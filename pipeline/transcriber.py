@@ -132,6 +132,11 @@ class ItemTranscriber:
         # loop for the --json run summary.
         self.written_outputs: list[Path] = []
 
+        # Per-item run report populated at the end of process_item (normal,
+        # partial, and failure verdicts). Consumed by the CLI overview layer;
+        # remains None when the item aborts before any stats are computed.
+        self.last_run_report: dict[str, Any] | None = None
+
         # Load model configuration from model.yaml
         config_loader = get_config_loader()
         model_cfg = config_loader.get_model_config()
@@ -236,7 +241,11 @@ class ItemTranscriber:
         # transcription endpoint (pool None) is never blocked by a paid summary
         # key's exhaustion because they occupy independent buckets.
         self._transcription_stamp: dict[str, str | None] = {
-            "provider": self.transcription_provider,
+            # Use the manager's RESOLVED provider (mirrors the summary stamp
+            # below): with ``provider: null`` in model.yaml the raw config value
+            # is None, which would land reservations in the UNATTRIBUTED bucket
+            # while commits land in the real one.
+            "provider": getattr(self.transcribe_manager, "provider", None),
             "key_env": getattr(self.transcribe_manager, "key_env", None),
             "model": self.transcription_model,
         }
@@ -431,14 +440,20 @@ class ItemTranscriber:
         source: PdfPayloadSource | FolderPayloadSource,
         transcription_results: list[dict[str, Any]],
         summary_results: list[dict[str, Any]],
-        total_images: int,
+        progress_total: int,
         processed_count_ref: list[int],
+        already_complete: int = 0,
     ) -> dict[str, Any] | None:
         """Render/load, transcribe, and optionally summarize a single page.
 
         Appends results to the shared lists and increments the processed counter.
         Returns None without touching the shared lists or logs when the page is
         deferred by the token-budget gate, so the resume path re-runs it later.
+
+        *progress_total* is the number of pending pages for THIS run (not the
+        source page count), so progress and ETA are not skewed by pages already
+        completed on a prior run; *already_complete* is that prior-run count,
+        reported in the progress line for context.
         """
         # Whole-page budget gate: reserve a combined transcription + summary
         # estimate up front. If it cannot fit the remaining daily budget, defer
@@ -523,16 +538,28 @@ class ItemTranscriber:
             ):
                 self.transcription_times.append(transcription_result["processing_time"])
 
-            status = (
-                "SUCCESS"
-                if "error" not in transcription_result
-                else f"FAILED ({transcription_result.get('retries', 0)} retries)"
-            )
+            if "error" not in transcription_result:
+                status = "SUCCESS"
+            else:
+                # Report what producers actually set: the error_type and, when
+                # present, the schema-validation retry count (a per-model dict).
+                # No producer ever set "retries", so the old read always
+                # reported "0 retries".
+                error_type = transcription_result.get("error_type", "unknown")
+                schema_retries = transcription_result.get("schema_retries")
+                if isinstance(schema_retries, dict) and schema_retries:
+                    total_schema_retries = sum(schema_retries.values())
+                    status = (
+                        f"FAILED ({error_type}, {total_schema_retries} schema retries)"
+                    )
+                else:
+                    status = f"FAILED ({error_type})"
             item_num_str = str(original_input_order_index + 1)
-            eta_str = self._calculate_eta(processed_now, total_images)
+            eta_str = self._calculate_eta(processed_now, progress_total)
 
             logger.debug(
-                f"Processed {processed_now}/{total_images} "
+                f"Processed {processed_now}/{progress_total} pending page(s) "
+                f"({already_complete} already complete) "
                 f"- Item {item_num_str} - Status: {status} - {eta_str}"
             )
             transcription_results.append(transcription_result)
@@ -832,8 +859,9 @@ class ItemTranscriber:
                         source,
                         transcription_results,
                         summary_results,
-                        total_images,
+                        len(pending_indices),
                         processed_count_ref,
+                        already_complete=skipped_page_count,
                     )
                     for idx in pending
                 ]
@@ -863,6 +891,25 @@ class ItemTranscriber:
                 if not pending:
                     break
 
+                # Safeguard evaluated BEFORE the wait: if a reset still yields no
+                # progress twice running, a page cannot fit the available daily
+                # budget. Deciding here (rather than after wait_for_token_reset)
+                # lets a hopeless page fail fast instead of waiting through up to
+                # two daily resets (~48 h) first. A page that CAN fit after a
+                # reset makes progress and resets the counter, so its semantics
+                # are unchanged.
+                if not made_progress:
+                    stalled_resets += 1
+                    if stalled_resets >= 2:
+                        logger.warning(
+                            "A page cannot fit the daily token budget; stopping. "
+                            "Raise daily_tokens to process the remaining %d page(s).",
+                            len(pending),
+                        )
+                        break
+                else:
+                    stalled_resets = 0
+
                 logger.warning(
                     "Daily token budget reached; %d page(s) deferred. "
                     "Waiting for daily reset...",
@@ -885,21 +932,6 @@ class ItemTranscriber:
                         len(pending),
                     )
                     break
-
-                # Safeguard: if a reset still yields no progress twice running, a
-                # page cannot fit the available daily budget; stop rather than
-                # loop.
-                if not made_progress:
-                    stalled_resets += 1
-                    if stalled_resets >= 2:
-                        logger.warning(
-                            "A page cannot fit the daily token budget; stopping. "
-                            "Raise daily_tokens to process the remaining %d page(s).",
-                            len(pending),
-                        )
-                        break
-                else:
-                    stalled_resets = 0
         finally:
             # Deterministic teardown. cancel_futures cancels any pages still
             # queued (e.g. after a KeyboardInterrupt) instead of letting them
@@ -1151,47 +1183,57 @@ class ItemTranscriber:
                         )
                     )
 
+                    # Build ONE citation manager per item: citations are
+                    # collected, consolidated, and OpenAlex-enriched exactly
+                    # once, then both writers render from the same instance
+                    # (prevents duplicate API lookups and diverging
+                    # bibliographies). A failure here blocks BOTH writers.
+                    render_context = None
                     try:
-                        # Build ONE citation manager per item: citations are
-                        # collected, consolidated, and OpenAlex-enriched exactly
-                        # once, then both writers render from the same instance
-                        # (prevents duplicate API lookups and diverging
-                        # bibliographies).
-                        citation_manager, render_data = build_render_context(
+                        render_context = build_render_context(
                             adjusted_summary_results,
                             polite_pool_email=config.CITATION_OPENALEX_EMAIL,
                         )
-                        enrich_if_enabled(citation_manager)
-
-                        # Generate DOCX if enabled
-                        if config.OUTPUT_DOCX:
-                            create_docx_summary(
-                                adjusted_summary_results,
-                                self.output_summary_docx_path,
-                                self.name,
-                                citation_manager=citation_manager,
-                                data=render_data,
-                            )
-                            self.written_outputs.append(
-                                self.output_summary_docx_path.resolve()
-                            )
-
-                        # Generate Markdown if enabled
-                        if config.OUTPUT_MARKDOWN:
-                            create_markdown_summary(
-                                adjusted_summary_results,
-                                self.output_summary_md_path,
-                                self.name,
-                                citation_manager=citation_manager,
-                                data=render_data,
-                            )
-                            self.written_outputs.append(
-                                self.output_summary_md_path.resolve()
-                            )
-
+                        enrich_if_enabled(render_context[0])
                     except Exception as e:
                         summary_render_ok = False
-                        logger.error(f"Error creating summary files: {e}")
+                        logger.error(f"Error building summary render context: {e}")
+
+                    if render_context is not None:
+                        citation_manager, render_data = render_context
+                        # Each writer gets its own try/except so a DOCX failure
+                        # does not skip the (independent) Markdown writer.
+                        if config.OUTPUT_DOCX:
+                            try:
+                                create_docx_summary(
+                                    adjusted_summary_results,
+                                    self.output_summary_docx_path,
+                                    self.name,
+                                    citation_manager=citation_manager,
+                                    data=render_data,
+                                )
+                                self.written_outputs.append(
+                                    self.output_summary_docx_path.resolve()
+                                )
+                            except Exception as e:
+                                summary_render_ok = False
+                                logger.error(f"Error creating DOCX summary: {e}")
+
+                        if config.OUTPUT_MARKDOWN:
+                            try:
+                                create_markdown_summary(
+                                    adjusted_summary_results,
+                                    self.output_summary_md_path,
+                                    self.name,
+                                    citation_manager=citation_manager,
+                                    data=render_data,
+                                )
+                                self.written_outputs.append(
+                                    self.output_summary_md_path.resolve()
+                                )
+                            except Exception as e:
+                                summary_render_ok = False
+                                logger.error(f"Error creating Markdown summary: {e}")
 
             logger.info(f"PROCESSING COMPLETE for item: {self.name}")
             logger.info(f"  Total images for this item: {len(transcription_results)}")
@@ -1227,6 +1269,26 @@ class ItemTranscriber:
                 " and " + str(self.summary_log_path) if config.SUMMARIZE else ""
             )
             logger.info(f"  Detailed logs: {self.log_path}{detail_suffix}")
+
+            # Structured per-item report for the CLI overview layer, built from
+            # values already computed above. Populated on every verdict that
+            # reaches this point (complete, partial/deferred, failed).
+            avg_api_s = (
+                sum(self.transcription_times) / len(self.transcription_times)
+                if self.transcription_times
+                else None
+            )
+            self.last_run_report = {
+                "pages_total": self.total_items_to_transcribe,
+                "pages_attempted": len(transcription_results),
+                "pages_ok": final_success_count,
+                "pages_failed": final_failure_count,
+                "pages_deferred": pages_deferred,
+                "summary_failures": summary_failure_count,
+                "elapsed_s": total_elapsed_time,
+                "avg_api_s": avg_api_s,
+                "outputs": [str(p) for p in self.written_outputs],
+            }
 
             # Item verdict: a budget-deferred page, any failed page
             # (transcription or summary), or a failed summary-file render means

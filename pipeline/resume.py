@@ -25,7 +25,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from config.constants import LOG_FORMAT_VERSION
+from config.constants import LOG_FORMAT_VERSION, SUPPORTED_IMAGE_EXTENSIONS
 from config.logger import setup_logger
 from pipeline.paths import create_safe_directory_name, create_safe_log_filename
 
@@ -432,6 +432,11 @@ def _input_changed_since_log(header: dict[str, Any] | None) -> bool:
     if not isinstance(source_file, str):
         return False
 
+    # Folder inputs record an image-set identity (image_count + combined byte
+    # size) instead of a single-file size; compare those fields analogously.
+    if "image_count" in provenance or "total_image_bytes" in provenance:
+        return _folder_changed_since_log(Path(source_file), provenance)
+
     try:
         stat = Path(source_file).stat()
     except OSError:
@@ -445,6 +450,40 @@ def _input_changed_since_log(header: dict[str, Any] | None) -> bool:
 
     stored_mtime = provenance.get("mtime")
     return isinstance(stored_mtime, (int, float)) and stored_mtime != stat.st_mtime
+
+
+def _folder_changed_since_log(folder: Path, provenance: dict[str, Any]) -> bool:
+    """Whether an image folder changed since its provenance was recorded.
+
+    Compares the cheap image-set identity fields written by
+    ``imaging.payload.FolderPayloadSource.file_provenance`` (image count, then
+    combined byte size) against the folder currently on disk. Returns False
+    (current behavior preserved) when the folder cannot be scanned or a stored
+    field is absent, so a mismatch is never merely assumed.
+    """
+    try:
+        current_paths = [
+            p
+            for p in folder.glob("*")
+            if p.suffix.lower() in SUPPORTED_IMAGE_EXTENSIONS
+        ]
+    except OSError:
+        return False
+
+    stored_count = provenance.get("image_count")
+    if isinstance(stored_count, int) and stored_count != len(current_paths):
+        return True
+
+    stored_bytes = provenance.get("total_image_bytes")
+    if not isinstance(stored_bytes, int):
+        return False
+    total = 0
+    for path in current_paths:
+        try:
+            total += path.stat().st_size
+        except OSError:
+            return False
+    return total != stored_bytes
 
 
 def _header_from_entries(
