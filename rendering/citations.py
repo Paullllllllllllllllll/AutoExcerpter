@@ -48,7 +48,18 @@ _REPRINT_RE = re.compile(
 )
 # Page-marker spans (English pp./p., German S./SS., folio fol.) stripped before
 # year scanning so a page range such as "S. 1066-1071" is never read as a year.
-_PAGE_MARKER_RE = re.compile(r"\b(?:pp?|ss?|fol)\.\s*\d+(?:\s*-\s*\d+)?", re.IGNORECASE)
+# The bare-number alternative is guarded by a negative lookahead so an author
+# initial adjoining a year ("Sen, S. 1981") is NOT swallowed as a page marker:
+# a marker followed by a lone plausible year (1000-2099) is left intact, while
+# page ranges and non-year page numbers still strip. The range alternative comes
+# first so "S. 1066-1071" is consumed whole (never mistaken for a year). Trade-off:
+# a genuine single-page German cite of a four-digit page ("S. 1815") is read as a
+# year — a rare, accepted false positive versus the initial-vs-year collapse.
+_PAGE_MARKER_RE = re.compile(
+    r"\b(?:pp?|ss?|fol)\.\s*"
+    r"(?:\d+\s*-\s*\d+|(?!(?:1[0-9]{3}|20[0-9]{2})\b)\d+)",
+    re.IGNORECASE,
+)
 # Volume designators across English/German/French scholarship. The number may
 # be Arabic or a Roman numeral. The period is optional for the spelled-out
 # designators but required for the bare "t." so ordinary words never match;
@@ -356,8 +367,14 @@ class Citation:
         # Remove page numbers, including German (S., SS.) and folio (fol.) forms
         # (p. 123, pp. 123-145, (pp. 123), S. 12-34); text is already folded to
         # lowercase here, but \b keeps "words." from matching the bare "s.".
+        # Mirrors _PAGE_MARKER_RE's year guard so an author initial before a year
+        # ("Sen, S. 1981") is not stripped here either (which would otherwise
+        # collapse distinct editions onto one key); range alternative comes first.
         text = re.sub(
-            r"\(?\s*\b(?:pp?|ss?|fol)\.\s*\d+(?:\s*-\s*\d+)?\s*\)?", " ", text
+            r"\(?\s*\b(?:pp?|ss?|fol)\.\s*"
+            r"(?:\d+\s*-\s*\d+|(?!(?:1[0-9]{3}|20[0-9]{2})\b)\d+)\s*\)?",
+            " ",
+            text,
         )
 
         # Protect the folded title span so the stop-list only strips the
