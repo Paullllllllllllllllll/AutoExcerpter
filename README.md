@@ -1,4 +1,4 @@
-# AutoExcerpter v2.2.0
+# AutoExcerpter v2.2.1
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -820,6 +820,23 @@ a single baseline commit at v1.0.0 on 25 April 2026; version numbers before
 v1.0.0 do not exist.
 
 ## Changelog
+
+- **v2.2.1** (19 July 2026) -- Fourth-round deep bug-hunt sweep. Citation
+  processing no longer strips author initials P./S. before a year as page
+  markers (which collapsed distinct editions onto one reference); a
+  summary-only resume that hits the daily token budget now waits for the
+  reset and finishes its deferred pages in-run; the resume path persists
+  reusable summaries before any regeneration and writes log headers
+  atomically, closing two crash windows; exhausted validation retries mark
+  unrecoverable pages as failed instead of logging garbage as completed;
+  transient empty API responses are retried in-run; shared rate limiting
+  keys by the resolved provider so "provider: null" cannot double the
+  request rate; the --json summary line is emitted on every exit path,
+  including interactive "exit" and non-TTY aborts; dry runs are fully
+  side-effect-free; and hand-edited config or state files with malformed
+  numeric values fall back safely instead of crashing mid-run. The tqdm
+  progress bar now redirects concurrent log lines so console output stays
+  intact. 56 new regression tests (1,755 total).
 
 - **v2.2.0** (19 July 2026) -- Third-round sweep: interactive overhaul,
     comprehensive summaries, and deeper edge-case fixes. Interactive mode
