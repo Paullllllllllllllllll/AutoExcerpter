@@ -532,6 +532,15 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
         ),
     ),
     (
+        # GPT-4.5 (research preview): vision-capable standard model. Must
+        # precede the bare "gpt-4" entry (which is vision-less) so it is not
+        # misresolved with supports_vision=False.
+        ("gpt-4.5-preview", "gpt-4.5"),
+        "gpt-4.5",
+        _OPENAI_STANDARD_BASE,
+        {},
+    ),
+    (
         ("gpt-4-turbo",),
         "gpt-4-turbo",
         _OPENAI_STANDARD_BASE,

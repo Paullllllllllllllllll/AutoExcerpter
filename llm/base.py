@@ -74,17 +74,40 @@ def _load_retry_config() -> dict[str, Any]:
 # Load retry configuration from concurrency.yaml
 _RETRY_CONFIG = _load_retry_config()
 
+
+def _cfg_int(value: Any, default: int) -> int:
+    """Coerce a config value to ``int``, returning *default* on malformed input.
+
+    A hand-edited concurrency.yaml can carry a non-numeric value (e.g.
+    ``max_attempts: fast``); guarding the conversion keeps such a value from
+    crashing at import time.
+    """
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return default
+
+
+def _cfg_float(value: Any, default: float) -> float:
+    """Coerce a config value to ``float``, returning *default* on malformed
+    input."""
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return default
+
+
 # Constants for retry logic (loaded from config with fallback defaults).
 # retry.max_attempts is the TOTAL number of attempts (initial call included),
 # so the retry count is one less. Default reduced from 15 to 8: with honored
 # Retry-After and a 120 s backoff cap, 8 transient attempts already spans
 # several minutes of retrying.
-DEFAULT_MAX_RETRIES = max(0, int(_RETRY_CONFIG.get("max_attempts", 8)) - 1)
+DEFAULT_MAX_RETRIES = max(0, _cfg_int(_RETRY_CONFIG.get("max_attempts", 8), 8) - 1)
 
 # Hard ceiling on any single backoff wait (seconds), including a server-provided
 # Retry-After. Keeps a hostile Retry-After header from stalling a worker for an
 # unbounded time.
-BACKOFF_CAP_S = float(_RETRY_CONFIG.get("backoff_cap", 120))
+BACKOFF_CAP_S = _cfg_float(_RETRY_CONFIG.get("backoff_cap", 120), 120.0)
 
 # Time-based retry horizon (seconds) bounding the TOTAL time spent retrying one
 # request from its first attempt. Precedence: a retryable error is retried while
@@ -92,11 +115,15 @@ BACKOFF_CAP_S = float(_RETRY_CONFIG.get("backoff_cap", 120))
 # (elapsed < MAX_ELAPSED_S); it stops only once BOTH are exhausted. A value of 0
 # disables the window, restoring legacy attempts-only behavior (governed solely
 # by DEFAULT_MAX_RETRIES). Recommended ~900 for OpenAI flex-tier queuing.
-MAX_ELAPSED_S = float(_RETRY_CONFIG.get("max_elapsed", 0))
+MAX_ELAPSED_S = _cfg_float(_RETRY_CONFIG.get("max_elapsed", 0), 0.0)
 
+# A ``jitter:`` key present but null yields None here; fall back to an empty
+# dict so the ``.get`` calls below cannot raise AttributeError at import time.
 _JITTER = _RETRY_CONFIG.get("jitter", {})
-JITTER_MIN = _JITTER.get("min", 0.5)
-JITTER_MAX = _JITTER.get("max", 1.0)
+if not isinstance(_JITTER, dict):
+    _JITTER = {}
+JITTER_MIN = _cfg_float(_JITTER.get("min", 0.5), 0.5)
+JITTER_MAX = _cfg_float(_JITTER.get("max", 1.0), 1.0)
 
 _ANTHROPIC_EFFORT_TO_BUDGET: dict[str, int] = {
     "none": 0,
@@ -165,6 +192,23 @@ def _extract_from_aimessage(data: Any) -> str | None:
     if not result:
         logger.warning("Empty content extracted from LangChain AIMessage response.")
     return result
+
+
+def _coerce_token_count(value: Any) -> int | None:
+    """Coerce a provider-reported token count to an ``int``.
+
+    Accepts ``int`` and ``float`` (some providers report counts as floats such
+    as ``123.0``); rejects ``bool`` and non-numeric values. Floats are rounded
+    to the nearest integer so a float count is committed to the budget rather
+    than silently dropped.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(round(value))
+    return None
 
 
 def _extract_from_output_attribute(data: Any) -> str | None:
@@ -243,18 +287,43 @@ def _extract_from_structured_output_wrapper(data: Any) -> str | None:
     if not isinstance(data, dict) or "raw" not in data:
         return None
 
-    # Prefer the parsed dict (already schema-validated by LangChain)
+    # Prefer the parsed value (already schema-validated by LangChain)
     parsed = data.get("parsed")
     if isinstance(parsed, dict):
         try:
             return _json.dumps(parsed, ensure_ascii=False)
         except (TypeError, ValueError):
             pass
+    elif parsed is not None:
+        # A pydantic model instance rather than a dict: serialize via
+        # model_dump() so a structured answer is not dropped.
+        model_dump = getattr(parsed, "model_dump", None)
+        if callable(model_dump):
+            try:
+                return _json.dumps(model_dump(), ensure_ascii=False)
+            except (TypeError, ValueError):
+                pass
 
     # Fallback: extract text from the raw AIMessage
     raw = data.get("raw")
     if raw is not None:
-        return _extract_from_aimessage(raw)
+        text = _extract_from_aimessage(raw)
+        if text:
+            return text
+        # OpenRouter tool-mode and Anthropic json_schema can return an
+        # AIMessage with EMPTY content while the model's JSON lives in the
+        # first tool call's args (parsed is None with a parsing_error).
+        # Serialize those args so a complete answer is not reported as empty.
+        tool_calls = getattr(raw, "tool_calls", None)
+        if tool_calls:
+            first = tool_calls[0]
+            args = first.get("args") if isinstance(first, dict) else None
+            if args is not None:
+                try:
+                    return _json.dumps(args, ensure_ascii=False)
+                except (TypeError, ValueError):
+                    pass
+        return text
 
     return None
 
@@ -737,13 +806,15 @@ class LLMClientBase:
                 )
                 return
 
-            total_tokens = usage_meta.get("total_tokens")
+            # Accept int and float counts (some providers report e.g. 123.0);
+            # bool is excluded and floats are rounded to int.
+            total_tokens = _coerce_token_count(usage_meta.get("total_tokens"))
 
             # Fallback: compute from input_tokens + output_tokens (Anthropic-style)
-            if not total_tokens or not isinstance(total_tokens, int):
-                input_tokens = usage_meta.get("input_tokens", 0)
-                output_tokens = usage_meta.get("output_tokens", 0)
-                if isinstance(input_tokens, int) and isinstance(output_tokens, int):
+            if not total_tokens:
+                input_tokens = _coerce_token_count(usage_meta.get("input_tokens", 0))
+                output_tokens = _coerce_token_count(usage_meta.get("output_tokens", 0))
+                if input_tokens is not None and output_tokens is not None:
                     total_tokens = input_tokens + output_tokens
 
             # Add raw-Anthropic-shape cache tokens at full weight ONLY when the
@@ -752,7 +823,7 @@ class LLMClientBase:
             if not self._usage_metadata_folds_cache(usage_meta):
                 cache_add = self._additive_cache_tokens(usage_meta, target)
 
-            if total_tokens and isinstance(total_tokens, int):
+            if total_tokens:
                 committed = total_tokens + cache_add
                 token_tracker = get_token_tracker()
                 token_tracker.add_tokens(
@@ -862,9 +933,20 @@ class LLMClientBase:
             ``(is_retryable, error_type)`` where *error_type* is one of
             ``"rate_limit"``, ``"server_error"``, ``"timeout"``, or ``"other"``.
         """
-        # Check for HTTP status code on the exception
-        status = getattr(exc, "status_code", None) or getattr(exc, "status", None)
-        if isinstance(status, int):
+        # Check for an HTTP status code on the exception. Providers expose it
+        # under different attribute names: OpenAI/Anthropic use ``status_code``;
+        # google.genai ``APIError`` carries the numeric HTTP status on ``code``
+        # (an int) while its ``status`` holds a non-numeric label such as
+        # "RESOURCE_EXHAUSTED". Only ints count as an HTTP status, so a string
+        # ``status`` never surfaces where an int is expected (and a 429/500 from
+        # Google is no longer misclassified as terminal).
+        for status in (
+            getattr(exc, "status_code", None),
+            getattr(exc, "code", None),
+            getattr(exc, "status", None),
+        ):
+            if isinstance(status, bool) or not isinstance(status, int):
+                continue
             if status == 429:
                 return True, "rate_limit"
             if 500 <= status < 600:
@@ -878,7 +960,17 @@ class LLMClientBase:
             return True, "timeout"
         if "rate" in exc_str and "limit" in exc_str:
             return True, "rate_limit"
+        # Google quota exhaustion surfaces as a "RESOURCE_EXHAUSTED" status or a
+        # "quota"/"resource has been exhausted" message; treat as retryable.
+        if (
+            "quota" in exc_str
+            or "resource_exhausted" in exc_str
+            or "resource has been exhausted" in exc_str
+        ):
+            return True, "rate_limit"
         if "server" in exc_str and "error" in exc_str:
+            return True, "server_error"
+        if "internal error" in exc_str:
             return True, "server_error"
         if "overloaded" in exc_str or "capacity" in exc_str:
             return True, "server_error"
@@ -904,9 +996,11 @@ class LLMClientBase:
         Returns:
             Backoff delay in seconds (<= ``BACKOFF_CAP_S``).
         """
-        backoff_base = _RETRY_CONFIG.get("backoff_base", 0.5)
+        backoff_base = _cfg_float(_RETRY_CONFIG.get("backoff_base", 0.5), 0.5)
         multipliers = _RETRY_CONFIG.get("backoff_multipliers", {})
-        multiplier = multipliers.get(error_type, 2.0)
+        if not isinstance(multipliers, dict):
+            multipliers = {}
+        multiplier = _cfg_float(multipliers.get(error_type, 2.0), 2.0)
 
         jitter = random.uniform(JITTER_MIN, JITTER_MAX)
         return min(

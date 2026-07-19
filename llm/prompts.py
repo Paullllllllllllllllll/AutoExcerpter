@@ -61,10 +61,17 @@ def strip_markdown_code_block(text: str) -> str:
         Text with code block fencing removed.
     """
     stripped = text.strip()
-    if stripped[:7].lower() == "```json":
-        stripped = stripped[7:]
-    elif stripped.startswith("```"):
-        stripped = stripped[3:]
+    if stripped.startswith("```"):
+        newline_idx = stripped.find("\n")
+        if newline_idx != -1:
+            # Multi-line fence: drop the whole opening fence line regardless of
+            # its info-string label (```json, ```markdown, ```python, ...).
+            stripped = stripped[newline_idx + 1 :]
+        elif stripped[:7].lower() == "```json":
+            # Single-line ```json ... fence.
+            stripped = stripped[7:]
+        else:
+            stripped = stripped[3:]
     if stripped.endswith("```"):
         stripped = stripped[:-3]
     return stripped.strip()

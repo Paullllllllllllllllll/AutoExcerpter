@@ -565,6 +565,16 @@ class DailyTokenTracker:
                 time.sleep(0.02)
             with contextlib.suppress(Exception):
                 self.sync_ledger_now()
+            # If the shared ledger stayed degraded through the final sync, this
+            # run's own usage would otherwise be discarded: the private state
+            # file is not written while the ledger is the active persistence,
+            # yet the degraded deltas never reached it. Persist own usage to
+            # the private file now so the next run seeds from a correct
+            # baseline instead of a stale one and the daily cap is not
+            # overshot across restarts.
+            with self._lock:
+                if self._ledger_degraded:
+                    self._save_state(force=True)
             return
         with self._lock:
             if self._pending_save:

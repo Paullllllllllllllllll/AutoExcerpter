@@ -62,7 +62,7 @@
       },
       "bullet_points": {
         "type": ["array", "null"],
-        "description": "2-5 concise bullet points capturing essential ideas. Include LaTeX formulas in $$ delimiters. Provide bullet points for pages with summarizable prose: content, abstract, preface, appendix, figures_tables_sources. Set to null ONLY for pages without summarizable semantic content: table_of_contents, bibliography, title_page, index, blank, copyright, other.",
+        "description": "3-10 detailed bullet points proportional to the page's information density; each bullet a complete sentence that carries the page's specific claims, arguments, evidence, figures, and named entities. Cover ALL substantive content, preferring more bullets over omitting material. Include LaTeX formulas in $$ delimiters. Provide bullet points for pages with summarizable prose: content, abstract, preface, appendix, figures_tables_sources. Set to null ONLY for pages without summarizable semantic content: table_of_contents, bibliography, title_page, index, blank, copyright, other.",
         "items": {
           "type": "string"
         }

@@ -13,6 +13,7 @@ Key rules:
 - Enclose mathematical formulas in $$ delimiters.
 - Extract citations from ALL page types in APA style. If a page cites a work only by author and year (in-text citation) without full bibliographic details, set is_partial=true and record only what the page states (e.g. 'Conrad, A. H., & Meyer, J. R. (1957).') — never fabricate bracketed placeholder titles or descriptions. Set is_partial=false only for complete references (bibliography entries, full footnotes).
 - For page_types, select 1-3 classifications that ALL apply (e.g., ["content", "bibliography"] for a page with both prose and references).
+- Bullet points must be comprehensive and detailed, not brief: represent every substantive claim, dataset, argument step, figure, and example on the page, and prefer more bullet points over omitting content. Scale the number of bullets (3-10) to the page's information density.
 - Provide bullet points for pages with summarizable prose: content, abstract, preface, appendix, figures_tables_sources.
 - Two-page spreads: if the transcription contains two consecutive page numbers or clearly covers two facing pages (a page-spread scan), set is_two_page_spread=true, page_number_integer=left page, page_number_integer_end=right page; otherwise set is_two_page_spread=false and page_number_integer_end=null.
 - Reason hard to extract all data properly.

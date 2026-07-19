@@ -288,9 +288,11 @@ class TranscriptionManager(LLMClientBase):
         if not text:
             return f"[transcription error: {image_name or '[unknown image]'}]"
 
-        # Plain-text mode: response IS the transcription (no JSON)
+        # Plain-text mode: response IS the transcription (no JSON). Strip any
+        # markdown code fence a model may wrap the text in so fence debris does
+        # not reach the final .txt output.
         if self.is_plain_text_mode:
-            stripped = text.strip()
+            stripped = strip_markdown_code_block(text)
             img_name = self._format_image_name(image_name)
             if stripped == "[no transcribable text]":
                 return f"[{img_name}: no transcribable text]"
@@ -302,7 +304,9 @@ class TranscriptionManager(LLMClientBase):
         stripped = strip_markdown_code_block(text)
 
         if not stripped.startswith("{"):
-            return text
+            # Return the fence-stripped text, never the raw fenced original, so
+            # code-fence debris does not land in the final output.
+            return stripped
 
         # Try to parse JSON response
         try:
@@ -322,7 +326,9 @@ class TranscriptionManager(LLMClientBase):
                             continue
 
             if obj is None:
-                return text
+                # Salvage failed: return the fence-stripped text rather than
+                # the raw fenced original.
+                return stripped
 
         # Handle special flags in parsed JSON
         if isinstance(obj, dict):
@@ -488,12 +494,23 @@ class TranscriptionManager(LLMClientBase):
                 # "average API processing time" statistic.
                 processing_time = time.time() - start_time
                 self._record_processing_time(time.time() - attempt_start)
-                self._report_success()
 
-                # Report token usage (built into LangChain's response metadata)
+                # Report token usage BEFORE the emptiness check so an HTTP-200
+                # empty response still gets its consumed tokens accounted for.
                 self._report_token_usage(response, f"Transcription for {image_name}")
 
                 raw_text = self._extract_output_text(response)
+                if not raw_text:
+                    # Empty content is a failure, not a success: raise before
+                    # recording success so it is counted once (via the generic
+                    # except -> _report_failure), never as both, and the page is
+                    # not logged as completed with placeholder text.
+                    raise ValueError(
+                        "LLM API returned empty content for transcription."
+                    )
+
+                # Content confirmed non-empty: count this attempt as a success.
+                self._report_success()
 
                 # --- Validation retry (fires BEFORE schema-flag retries) ---
                 # Active in standard mode (Modes A/C) when response must be
@@ -650,13 +667,18 @@ class TranscriptionManager(LLMClientBase):
                     "provider": self.provider,
                 }
 
-        # Fallback if schema retry loop exits (all schema retries exhausted)
+        # Fallback if schema retry loop exits (all schema retries exhausted).
+        # Carry "error"/"error_type" so downstream resume treats the page as
+        # failed (and repairs it) rather than logging it as completed and
+        # running a paid summary call on placeholder text.
         return {
             "image": image_name,
             "sequence_number": sequence_number,
             "transcription": self._parse_transcription_from_text(raw_text, image_name),
             "processing_time": round(time.time() - start_time, 2),
             "schema_retries": schema_retry_attempts.copy(),
+            "error": "schema validation retries exhausted",
+            "error_type": "schema_validation_exhausted",
             "provider": self.provider,
         }
 

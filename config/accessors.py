@@ -88,7 +88,11 @@ def get_api_timeout() -> int:
         default=DEFAULT_OPENAI_TIMEOUT,
         log_context="API timeout",
     )
-    return int(timeout)
+    try:
+        return int(timeout)
+    except (ValueError, TypeError):
+        logger.debug(f"Malformed api_timeout {timeout!r}; using default")
+        return DEFAULT_OPENAI_TIMEOUT
 
 
 def get_rate_limits() -> list[tuple[int, int]]:
@@ -133,7 +137,11 @@ def get_target_dpi() -> int:
         default=DEFAULT_TARGET_DPI,
         log_context="target DPI",
     )
-    return int(dpi)
+    try:
+        return int(dpi)
+    except (ValueError, TypeError):
+        logger.debug(f"Malformed target_dpi {dpi!r}; using default")
+        return DEFAULT_TARGET_DPI
 
 
 # ============================================================================
