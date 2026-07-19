@@ -51,6 +51,13 @@ TRANSCRIPTION_REQUIRED_KEYS = frozenset(
     }
 )
 
+# Bounded in-run retries for a transient HTTP-200 empty response. These extra
+# attempts are separate from the schema-validation/flag retries and are gated
+# by their own counter, so one empty response no longer burns the page for the
+# whole run (cross-run resume would otherwise be the only repair).
+_EMPTY_RESPONSE_MAX_RETRIES = 2
+_EMPTY_RESPONSE_BACKOFF_S = 0.5
+
 
 class TranscriptionManager(LLMClientBase):
     """
@@ -271,6 +278,42 @@ class TranscriptionManager(LLMClientBase):
             return False, f"missing keys: {', '.join(sorted(missing))}"
         return True, ""
 
+    def _transcription_is_recoverable(self, raw_text: str) -> bool:
+        """Whether *raw_text* yields a genuinely usable transcription.
+
+        Used only when schema-validation retries are exhausted, to decide
+        between salvaging the response and marking the page failed. Returns
+        True exactly when ``_parse_transcription_from_text`` would produce
+        meaningful output rather than passing raw text straight through: the
+        (fence-stripped) response parses to a JSON object carrying a string
+        ``transcription`` or an explicit ``no_transcribable_text`` /
+        ``transcription_not_possible`` flag. Mirrors that method's brace-salvage
+        so a slightly-malformed-but-recoverable response is not discarded.
+        """
+        stripped = strip_markdown_code_block(raw_text)
+        if not stripped.startswith("{"):
+            return False
+        try:
+            obj: Any = json.loads(stripped)
+        except (json.JSONDecodeError, ValueError):
+            obj = None
+            last_close = stripped.rfind("}")
+            if last_close != -1:
+                for i in range(last_close, -1, -1):
+                    if stripped[i] == "{":
+                        try:
+                            obj = json.loads(stripped[i : last_close + 1])
+                            break
+                        except (json.JSONDecodeError, ValueError):
+                            continue
+        if not isinstance(obj, dict):
+            return False
+        if obj.get("no_transcribable_text") is True:
+            return True
+        if obj.get("transcription_not_possible") is True:
+            return True
+        return isinstance(obj.get("transcription"), str)
+
     def _parse_transcription_from_text(self, text: str, image_name: str = "") -> str:
         """
         Parse transcription from API response, handling special flags.
@@ -464,10 +507,12 @@ class TranscriptionManager(LLMClientBase):
             "no_transcribable_text": 0,
             "transcription_not_possible": 0,
         }
+        empty_response_attempts = 0
         raw_text = ""
 
-        # Schema retry loop (API retries handled by _invoke_with_retry)
-        for _ in range(max_schema_retries + 1):
+        # Schema retry loop (API retries handled by _invoke_with_retry). The
+        # iteration budget also covers the bounded empty-response retries.
+        for _ in range(max_schema_retries + 1 + _EMPTY_RESPONSE_MAX_RETRIES):
             try:
                 attempt_start = time.time()
 
@@ -501,10 +546,25 @@ class TranscriptionManager(LLMClientBase):
 
                 raw_text = self._extract_output_text(response)
                 if not raw_text:
-                    # Empty content is a failure, not a success: raise before
-                    # recording success so it is counted once (via the generic
-                    # except -> _report_failure), never as both, and the page is
-                    # not logged as completed with placeholder text.
+                    # An HTTP-200 empty response is transient. Retry a bounded
+                    # number of times in-run before failing the page; token
+                    # usage was already reported above. A retried empty attempt
+                    # is counted as neither success nor failure -- only the
+                    # final, exhausted one raises into the generic handler and
+                    # is counted once there (via _report_failure), so nothing is
+                    # double-counted.
+                    if empty_response_attempts < _EMPTY_RESPONSE_MAX_RETRIES:
+                        empty_response_attempts += 1
+                        logger.warning(
+                            f"Empty content for {image_name}. Retrying "
+                            f"({empty_response_attempts}/"
+                            f"{_EMPTY_RESPONSE_MAX_RETRIES}) in "
+                            f"{_EMPTY_RESPONSE_BACKOFF_S:.2f}s..."
+                        )
+                        time.sleep(_EMPTY_RESPONSE_BACKOFF_S)
+                        continue
+                    # Retries exhausted: fail exactly as before (counted once
+                    # via the generic except -> _report_failure).
                     raise ValueError(
                         "LLM API returned empty content for transcription."
                     )
@@ -535,6 +595,38 @@ class TranscriptionManager(LLMClientBase):
                             )
                             time.sleep(backoff_time)
                             continue
+
+                        # Validation retries exhausted. Salvage only when a
+                        # usable transcription can genuinely be recovered from
+                        # the (schema-invalid) response; otherwise return an
+                        # error-marked dict so resume repairs the page rather
+                        # than logging garbage as a completed transcription and
+                        # running a paid summary on it. Mirrors the summary
+                        # side, which returns a validation-marked placeholder on
+                        # exhaustion instead of a silent success.
+                        if not self._transcription_is_recoverable(raw_text):
+                            logger.error(
+                                "Validation retries exhausted for "
+                                f"{image_name}: {reason}. Marking page failed."
+                            )
+                            return {
+                                "image": image_name,
+                                "sequence_number": sequence_number,
+                                "transcription": (
+                                    self._parse_transcription_from_text(
+                                        raw_text, image_name
+                                    )
+                                ),
+                                "processing_time": round(time.time() - start_time, 2),
+                                "schema_retries": schema_retry_attempts.copy(),
+                                "error": (
+                                    f"schema validation retries exhausted: {reason}"
+                                ),
+                                "error_type": "schema_validation_exhausted",
+                                "provider": self.provider,
+                            }
+                        # Recoverable: fall through to the normal parse and
+                        # success return below.
 
                 transcription = self._parse_transcription_from_text(
                     raw_text, image_name

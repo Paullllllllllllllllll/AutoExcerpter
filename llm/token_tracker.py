@@ -440,7 +440,18 @@ class DailyTokenTracker:
                 state = json.load(f)
 
             saved_date = state.get("date", "")
-            saved_tokens = state.get("tokens_used", 0)
+            # Sanitize the persisted count before adopting it: a hand-edited or
+            # corrupted state file can carry a string, a negative, a float, or a
+            # bool. A bad value previously slipped through and only "reset" the
+            # counter via a later f-string TypeError inside this try, silently
+            # forgetting same-day usage (so the budget could be spent twice).
+            saved_tokens_raw = state.get("tokens_used", 0)
+            if isinstance(saved_tokens_raw, bool) or not isinstance(
+                saved_tokens_raw, (int, float)
+            ):
+                saved_tokens = 0
+            else:
+                saved_tokens = max(0, int(saved_tokens_raw))
 
             current_date = self._get_current_date_str()
 

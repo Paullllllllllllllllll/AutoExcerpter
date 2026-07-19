@@ -41,6 +41,12 @@ PLAIN_TEXT_SUMMARY_PROMPT_FILE = "summary_plain_text_prompt.txt"
 # Required top-level keys in the summary JSON schema response
 SUMMARY_REQUIRED_KEYS = frozenset({"page_information", "bullet_points", "references"})
 
+# Bounded in-run retries for a transient HTTP-200 empty response. Separate from
+# the schema-validation retries and gated by their own counter, so one empty
+# response no longer burns the page for the whole run.
+_EMPTY_RESPONSE_MAX_RETRIES = 2
+_EMPTY_RESPONSE_BACKOFF_S = 0.5
+
 
 class SummaryManager(LLMClientBase):
     """
@@ -284,9 +290,11 @@ class SummaryManager(LLMClientBase):
 
         summary_json = None
         schema_retry_attempts: dict[str, int] = {"validation_failure": 0}
+        empty_response_attempts = 0
 
-        # Schema retry loop (API retries handled by _invoke_with_retry)
-        for _ in range(max_schema_retries + 1):
+        # Schema retry loop (API retries handled by _invoke_with_retry). The
+        # iteration budget also covers the bounded empty-response retries.
+        for _ in range(max_schema_retries + 1 + _EMPTY_RESPONSE_MAX_RETRIES):
             try:
                 attempt_start = time.time()
 
@@ -319,9 +327,24 @@ class SummaryManager(LLMClientBase):
 
                 summary_json_str = self._extract_output_text(response)
                 if not summary_json_str:
-                    # Empty content is a failure, not a success: raise before
-                    # recording success so it is counted once (via the generic
-                    # except -> _report_failure), never as both.
+                    # An HTTP-200 empty response is transient. Retry a bounded
+                    # number of times in-run before failing the page; token
+                    # usage was already reported above. A retried empty attempt
+                    # is counted as neither success nor failure -- only the
+                    # final, exhausted one raises into the generic handler and
+                    # is counted once there (via _report_failure).
+                    if empty_response_attempts < _EMPTY_RESPONSE_MAX_RETRIES:
+                        empty_response_attempts += 1
+                        logger.warning(
+                            f"Empty content for page {page_num}. Retrying "
+                            f"({empty_response_attempts}/"
+                            f"{_EMPTY_RESPONSE_MAX_RETRIES}) in "
+                            f"{_EMPTY_RESPONSE_BACKOFF_S:.2f}s..."
+                        )
+                        time.sleep(_EMPTY_RESPONSE_BACKOFF_S)
+                        continue
+                    # Retries exhausted: fail exactly as before (counted once
+                    # via the generic except -> _report_failure).
                     raise ValueError("LLM API returned empty content for summary.")
 
                 # Content confirmed non-empty: count this attempt as a success.

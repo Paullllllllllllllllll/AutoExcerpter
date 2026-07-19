@@ -823,8 +823,8 @@ class LLMClientBase:
             if not self._usage_metadata_folds_cache(usage_meta):
                 cache_add = self._additive_cache_tokens(usage_meta, target)
 
-            if total_tokens:
-                committed = total_tokens + cache_add
+            if total_tokens or cache_add:
+                committed = (total_tokens or 0) + cache_add
                 token_tracker = get_token_tracker()
                 token_tracker.add_tokens(
                     committed,
@@ -881,28 +881,27 @@ class LLMClientBase:
                 return
 
             # Try total_tokens, then prompt_tokens+completion_tokens (OpenAI),
-            # then input_tokens+output_tokens (Anthropic)
-            total = usage.get("total_tokens")
-            if not isinstance(total, int) or total <= 0:
-                prompt = usage.get("prompt_tokens", 0)
-                completion = usage.get("completion_tokens", 0)
+            # then input_tokens+output_tokens (Anthropic). Route each field
+            # through _coerce_token_count so float counts (e.g. 123.0) are
+            # accepted the same way the success path accepts them, rather than
+            # dropped by an int-only isinstance check.
+            total = _coerce_token_count(usage.get("total_tokens"))
+            if not total or total <= 0:
+                prompt = _coerce_token_count(usage.get("prompt_tokens"))
+                completion = _coerce_token_count(usage.get("completion_tokens"))
                 if (
-                    isinstance(prompt, int)
-                    and isinstance(completion, int)
+                    prompt is not None
+                    and completion is not None
                     and (prompt + completion) > 0
                 ):
                     total = prompt + completion
                 else:
-                    inp = usage.get("input_tokens", 0)
-                    out = usage.get("output_tokens", 0)
-                    if (
-                        isinstance(inp, int)
-                        and isinstance(out, int)
-                        and (inp + out) > 0
-                    ):
+                    inp = _coerce_token_count(usage.get("input_tokens"))
+                    out = _coerce_token_count(usage.get("output_tokens"))
+                    if inp is not None and out is not None and (inp + out) > 0:
                         total = inp + out
 
-            if isinstance(total, int) and total > 0:
+            if total is not None and total > 0:
                 token_tracker = get_token_tracker()
                 token_tracker.add_tokens(
                     total,
@@ -1223,8 +1222,11 @@ class LLMClientBase:
         if not flag_value:
             return False, 0.0, 0
 
-        # Get max attempts for this flag
-        max_attempts = flag_config.get("max_attempts", 0)
+        # Get max attempts for this flag. Route through _cfg_int so a
+        # hand-edited concurrency.yaml carrying a string (e.g. max_attempts:
+        # "three") falls back to the default rather than raising a TypeError
+        # in the comparison below.
+        max_attempts = _cfg_int(flag_config.get("max_attempts", 0), 0)
 
         # Check if we've exceeded max attempts
         if current_attempt >= max_attempts:
@@ -1233,9 +1235,11 @@ class LLMClientBase:
         # Calculate backoff time. Additive jitter (base * multiplier^attempt +
         # jitter), matching the documented formula in concurrency.example.yaml
         # and the sibling _calculate_backoff; a multiplicative jitter in
-        # [0.5, 1.0] would instead halve the intended wait.
-        backoff_base = flag_config.get("backoff_base", 2.0)
-        backoff_multiplier = flag_config.get("backoff_multiplier", 1.5)
+        # [0.5, 1.0] would instead halve the intended wait. The base and
+        # multiplier are coerced through _cfg_float so a malformed config value
+        # cannot raise inside the arithmetic below.
+        backoff_base = _cfg_float(flag_config.get("backoff_base", 2.0), 2.0)
+        backoff_multiplier = _cfg_float(flag_config.get("backoff_multiplier", 1.5), 1.5)
         jitter = random.uniform(JITTER_MIN, JITTER_MAX)
 
         backoff_time = backoff_base * (backoff_multiplier**current_attempt) + jitter
