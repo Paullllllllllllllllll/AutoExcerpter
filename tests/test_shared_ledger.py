@@ -26,7 +26,7 @@ import pytest
 # Content hash of shared_ledger.py with newlines normalized to LF.
 # Update ONLY when intentionally releasing a new ledger module version,
 # then re-copy module + tests to all sibling repos.
-EXPECTED_SHA256 = "b594e617c377a6678e4048418710068f23ad86f9040ac052c20b948ca736773c"
+EXPECTED_SHA256 = "22726acc658f0bb5cf4bf24d899ffa943519ec2c495573db79057c92ff444028"
 
 _SKIP_DIRS = {".venv", ".git", "scratch", "backup", "node_modules", ".mypy_cache"}
 
@@ -594,7 +594,7 @@ class TestModuleDrift:
         )
 
     def test_module_version_matches(self) -> None:
-        assert sl.LEDGER_MODULE_VERSION == "2.1.1"
+        assert sl.LEDGER_MODULE_VERSION == "2.1.2"
 
 
 class TestResetBoundary:

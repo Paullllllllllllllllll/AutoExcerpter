@@ -112,8 +112,10 @@ class LLMConfig:
         provider: Provider name ("openai", "anthropic", "google", "openrouter")
         api_key: Optional API key (defaults to environment variable)
         timeout: Request timeout in seconds
-        max_retries: Maximum retry attempts. LangChain handles retry with exponential
-            backoff.
+        max_retries: SDK-level retry attempts. Defaults to 0 by design: retries
+            are owned by ``LLMClientBase._invoke_with_retry`` so every attempt
+            is token-tracked. Raise it only for a client used outside that
+            path.
         temperature: Model temperature (0.0 - 2.0)
         max_tokens: Maximum output tokens
         service_tier: OpenAI service tier ("flex", "default", "auto")
@@ -126,7 +128,7 @@ class LLMConfig:
     provider: ProviderType | None = None
     api_key: str | None = None
     timeout: int = 900
-    max_retries: int = 5  # LangChain handles exponential backoff automatically
+    max_retries: int = 0  # SDK retries off; llm.base owns retry + token tracking
     temperature: float | None = None
     max_tokens: int | None = None
     service_tier: str | None = None  # OpenAI-specific: "flex", "default", "auto"
@@ -275,10 +277,14 @@ def get_chat_model(config: LLMConfig) -> BaseChatModel:
     # Get API key
     api_key = _get_api_key(provider, config.api_key, config.section_hint)
 
-    # Parse model name (remove provider prefix if present)
+    # Parse model name: strip a leading "provider:" prefix ONLY when the
+    # prefix names a supported provider. Model ids may legitimately contain a
+    # colon — an OpenAI fine-tune reads "ft:gpt-4o-mini:org:suffix:id" — and an
+    # unconditional split mangled those into an unusable model name.
     model_name = config.model
-    if ":" in model_name:
-        model_name = model_name.split(":", 1)[1]
+    prefix, separator, remainder = model_name.partition(":")
+    if separator and prefix.lower() in SUPPORTED_PROVIDERS:
+        model_name = remainder
 
     # Build common kwargs
     kwargs: dict[str, Any] = {
@@ -335,7 +341,9 @@ def _create_openai_model(
 ) -> BaseChatModel:
     """Create an OpenAI chat model instance.
 
-    Uses LangChain's built-in retry with exponential backoff via max_retries parameter.
+    ``max_retries`` comes from :class:`LLMConfig` and is 0 by default, so the
+    SDK does not retry silently behind the token tracker; retries and backoff
+    belong to ``LLMClientBase._invoke_with_retry``.
     """
     try:
         from langchain_openai import ChatOpenAI
@@ -355,7 +363,7 @@ def _create_openai_model(
 
     logger.debug(
         f"Creating OpenAI model: {kwargs.get('model')} "
-        f"(max_retries={kwargs.get('max_retries', 2)})"
+        f"(max_retries={kwargs.get('max_retries', 0)})"
     )
     return ChatOpenAI(**kwargs)
 

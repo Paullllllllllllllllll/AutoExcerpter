@@ -26,7 +26,7 @@ from config.accessors import get_api_timeout
 from config.loader import PROMPTS_DIR, SCHEMAS_DIR
 from config.logger import setup_logger
 from llm.base import LLMClientBase
-from llm.client import ProviderType
+from llm.client import ProviderType, get_provider_for_model
 from llm.prompts import render_prompt_with_schema, strip_markdown_code_block
 from llm.rate_limit import RateLimiter, get_shared_rate_limiter
 from llm.types import CustomEndpointCapabilities
@@ -89,7 +89,13 @@ class SummaryManager(LLMClientBase):
                 and summary requests share one set of rate-limit windows.
         """
         if rate_limiter is None:
-            rate_limiter = get_shared_rate_limiter(provider)
+            # Key the shared limiter by the RESOLVED provider, exactly as
+            # LLMClientBase.__init__ resolves it, so a manager built without an
+            # explicit provider shares one set of rate-limit windows with the
+            # transcription manager instead of getting a "default" bucket.
+            rate_limiter = get_shared_rate_limiter(
+                provider if provider is not None else get_provider_for_model(model_name)
+            )
         super().__init__(
             model_name,
             provider,

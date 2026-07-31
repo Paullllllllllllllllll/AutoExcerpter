@@ -11,7 +11,8 @@ Key Features:
 2. **Adaptive Backoff**: Dynamically adjusts wait times based on consecutive errors:
    - Increases multiplier on rate limit/server errors
    - Gradually decreases on successful requests
-   - Prevents thundering herd with jitter
+   - Waits are deterministic here; jitter is applied by the retry layer
+     in ``llm.base``
 
 3. **Thread-Safe**: Uses locks to ensure thread-safe operation in concurrent
    environments
@@ -160,7 +161,9 @@ class RateLimiter:
                     self.total_wait_time += total_wait
                     return total_wait
 
-            # Sleep with jitter to avoid thundering herd
+            # Sleep out the computed wait (bounded below by MIN_SLEEP_TIME so
+            # the loop never spins, and above by MAX_SLEEP_TIME so a long wait
+            # is re-evaluated). Deterministic: no jitter is applied here.
             sleep_time = min(wait_time + MIN_SLEEP_TIME, MAX_SLEEP_TIME)
             time.sleep(sleep_time)
 

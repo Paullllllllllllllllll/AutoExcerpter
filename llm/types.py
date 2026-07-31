@@ -24,8 +24,6 @@ class TranscriptionResult(TypedDict, total=False):
     sequence_number: int
     transcription: str
     processing_time: float
-    retries: int
-    api_retries: int
     schema_retries: dict[str, int]
     error: str | None
     error_type: str

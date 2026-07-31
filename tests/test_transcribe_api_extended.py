@@ -385,12 +385,30 @@ class TestParseTranscriptionFromText:
         result = mgr._parse_transcription_from_text(text)
         assert result == "plain backtick"
 
-    def test_json_without_known_flags_returns_original(self) -> None:
-        """JSON without any known flags or transcription returns original."""
+    def test_json_without_known_flags_returns_stripped(self) -> None:
+        """JSON without known flags/transcription returns the stripped text.
+
+        The fallback honors the fence-strip contract: the fence-stripped body
+        is returned, never the raw fenced original.
+        """
         mgr = _make_manager()
         data = json.dumps({"unknown_key": "value"})
-        result = mgr._parse_transcription_from_text(data)
-        assert result == data
+        assert mgr._parse_transcription_from_text(data) == data
+        assert mgr._parse_transcription_from_text(f"```json\n{data}\n```") == data
+
+    def test_explicit_null_transcription_returns_placeholder(self) -> None:
+        """A schema-conform ``"transcription": null`` is the no-text case."""
+        mgr = _make_manager()
+        data = json.dumps(
+            {
+                "image_analysis": "Blank verso.",
+                "transcription": None,
+                "no_transcribable_text": False,
+                "transcription_not_possible": False,
+            }
+        )
+        result = mgr._parse_transcription_from_text(data, "page_02.png")
+        assert result == "[page_02.png: no transcribable text]"
 
     def test_no_transcribable_text_without_analysis(self) -> None:
         """no_transcribable_text without image_analysis still works."""

@@ -119,9 +119,3 @@ retry:
         max_attempts: 3
         backoff_base: 0.5
         backoff_multiplier: 1.5
-
-      page_type_null_bullets:  # Non-content page with null bullet_points
-        enabled: false
-        max_attempts: 0  # Usually correct, no retry needed
-        backoff_base: 0.5
-        backoff_multiplier: 1.5

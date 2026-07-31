@@ -53,7 +53,9 @@ class TestLLMConfig:
         config = LLMConfig(model="gpt-5")
 
         assert config.timeout == 900
-        assert config.max_retries == 5
+        # SDK retries are off by design: llm.base owns retry so every attempt
+        # is token-tracked.
+        assert config.max_retries == 0
         assert config.temperature is None
         assert config.max_tokens is None
         assert config.service_tier is None

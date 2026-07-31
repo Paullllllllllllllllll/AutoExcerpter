@@ -11,7 +11,7 @@ This module provides the foundational LLM client implementation with:
    is visible to the token tracker.
 
 3. **Schema-Specific Retries**: Optional retries based on model-returned flags
-   in responses (e.g., no_transcribable_text, page_type_null_bullets).
+   in responses (e.g., no_transcribable_text, transcription_not_possible).
 
 4. **Rate Limiting Integration**: Works with RateLimiter to throttle requests and
    prevent API quota exhaustion (complementary to application-level retry).

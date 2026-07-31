@@ -29,7 +29,11 @@ from config.logger import setup_logger
 from imaging.payload import PagePayload
 from llm.base import LLMClientBase
 from llm.capabilities import detect_capabilities
-from llm.client import ProviderType, get_model_capabilities
+from llm.client import (
+    ProviderType,
+    get_model_capabilities,
+    get_provider_for_model,
+)
 from llm.prompts import render_prompt_with_schema, strip_markdown_code_block
 from llm.rate_limit import RateLimiter, get_shared_rate_limiter
 from llm.types import CustomEndpointCapabilities
@@ -95,11 +99,19 @@ class TranscriptionManager(LLMClientBase):
             timeout: Request timeout in seconds.
             custom_capabilities: Declared capabilities for custom endpoints.
 
-        Raises:
-            ValueError: If the selected model doesn't support multimodal (image) input.
+        Note:
+            A model without multimodal (image) support is not rejected; a
+            warning is logged and transcription is attempted anyway.
         """
         if rate_limiter is None:
-            rate_limiter = get_shared_rate_limiter(provider)
+            # Key the shared limiter by the RESOLVED provider, exactly as
+            # LLMClientBase.__init__ resolves it. Keying by the raw argument
+            # filed provider=None under "default" while an explicitly
+            # configured manager for the same provider got its own window, so
+            # the two drew on independent rate-limit budgets.
+            rate_limiter = get_shared_rate_limiter(
+                provider if provider is not None else get_provider_for_model(model_name)
+            )
         super().__init__(
             model_name,
             provider,
@@ -394,8 +406,17 @@ class TranscriptionManager(LLMClientBase):
             if isinstance(transcription, str):
                 return transcription
 
-        # Fallback: return original text
-        return text
+            # The schema's own description tells the model to emit
+            # ``"transcription": null`` for a page with nothing to transcribe.
+            # Treat an explicit null as that case instead of falling through
+            # and handing the raw JSON blob back as a successful
+            # transcription.
+            if "transcription" in obj and transcription is None:
+                return f"[{img_name}: no transcribable text]"
+
+        # Fallback: return the fence-stripped text, never the raw fenced
+        # original (same contract as the two early returns above).
+        return stripped
 
     def _resolve_image_detail(self) -> str | None:
         """Resolve the OpenAI per-image ``detail`` value from model config.

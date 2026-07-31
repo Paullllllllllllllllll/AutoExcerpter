@@ -1279,40 +1279,68 @@ def wait_for_token_reset(
         _describe_reset_time(reset_time),
     )
 
+    # The cancellation/deadline poll stays at 1 s, but the two costly side
+    # effects are throttled exactly as in cli.loop._wait_for_token_reset: a
+    # wait can last until the next UTC day, so force-syncing the shared ledger
+    # and re-parsing YAML every second churned both for nothing.
+    ledger_sync_interval = 10
+    config_reload_interval = 30
+
     elapsed = 0
+    # Seed the throttle markers one interval in the past so the first sync and
+    # config re-read fire on the first pass (external changes are picked up
+    # promptly, and a short wait still rereads), then settle onto the cadence.
+    last_ledger_sync = -ledger_sync_interval
+    last_config_reload = -config_reload_interval
     try:
         while elapsed < seconds_until_reset:
             interval = min(1, max(0, seconds_until_reset - elapsed))
             time.sleep(interval)
             elapsed += interval
 
-            # Forced ledger refresh each poll so another tool's usage or its
+            # Throttled forced ledger refresh so another tool's usage or its
             # 00:01 UTC reset is observed while we wait. A no-op when the shared
             # budget is disabled, so single-tool waits are unchanged.
-            if tracker._shared_enabled:
+            if (
+                tracker._shared_enabled
+                and elapsed - last_ledger_sync >= ledger_sync_interval
+            ):
+                last_ledger_sync = elapsed
                 with contextlib.suppress(Exception):
                     tracker.sync_ledger_now()
 
-            # Live re-read of the configured daily limit and per-key-pool
-            # settings: a user editing app.yaml mid-wait (raising daily_tokens,
-            # changing scope, or remapping caps) takes effect without a restart.
-            # A read failure keeps the current values.
-            new_limit = config.reload_daily_token_limit()
-            if new_limit is not None:
-                tracker.set_daily_limit(new_limit)
-            pool_cfg = config.reload_pool_settings()
-            if pool_cfg is not None:
-                tracker.set_pool_settings(
-                    scope=pool_cfg.get("scope"),
-                    pool_caps_enabled=pool_cfg.get("pool_caps_enabled"),
-                    pool_caps=pool_cfg.get("pool_caps"),
-                    pool_models=pool_cfg.get("pool_models"),
-                )
+            # Throttled live re-read of the configured daily limit and
+            # per-key-pool settings: a user editing app.yaml mid-wait (raising
+            # daily_tokens, changing scope, or remapping caps) takes effect
+            # without a restart. A read failure keeps the current values.
+            if elapsed - last_config_reload >= config_reload_interval:
+                last_config_reload = elapsed
+                new_limit = config.reload_daily_token_limit()
+                if new_limit is not None:
+                    tracker.set_daily_limit(new_limit)
+                pool_cfg = config.reload_pool_settings()
+                if pool_cfg is not None:
+                    tracker.set_pool_settings(
+                        scope=pool_cfg.get("scope"),
+                        pool_caps_enabled=pool_cfg.get("pool_caps_enabled"),
+                        pool_caps=pool_cfg.get("pool_caps"),
+                        pool_models=pool_cfg.get("pool_models"),
+                    )
 
             if tracker.can_admit_page(provider=provider, key_env=key_env, model=model):
                 logger.info("Token budget has reset. Resuming processing.")
                 return True
-        logger.info("Token budget has reset. Resuming processing.")
+        # Deadline reached. The bucket usually has room again, but not always
+        # (another tool consumed the fresh day, or the reset estimate was
+        # short), so report what is actually true. True is still returned
+        # either way: the downstream admission gates re-block if needed.
+        if tracker.can_admit_page(provider=provider, key_env=key_env, model=model):
+            logger.info("Token budget has reset. Resuming processing.")
+        else:
+            logger.warning(
+                "Token-reset wait elapsed but the budget still cannot fit a "
+                "page. Resuming; admission gates will re-check."
+            )
         return True
     except KeyboardInterrupt:
         logger.info("Token-limit wait cancelled by user.")
