@@ -1,4 +1,4 @@
-# AutoExcerpter v2.3.1
+# AutoExcerpter v2.3.2
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -843,6 +843,27 @@ v1.0.0 do not exist.
 
 ## Changelog
 
+- **v2.3.2** (31 July 2026) -- Second maintenance sweep, bug fixes only.
+  Image folders with dotted names now transcribe under their full name, so
+  sibling folders no longer overwrite each other's outputs and resume finds
+  their logs; an input file replaced under the same name is reprocessed
+  instead of being skipped as already complete, and folder resume detects
+  renames via a name-set hash; Ctrl+C aborts in-flight API retry ladders
+  instead of hanging the process for the retry window, and a cancelled
+  token-limit wait stops the batch rather than stalling every following
+  item. Silent output corruption closed: 16-bit grayscale scans are rescaled
+  instead of clipped to blank white, dollar amounts in summaries are no
+  longer rendered as equations, markdown-escaped brackets ("[sic]") stay
+  literal, a lone currency "$" is left alone, and string page numbers no
+  longer crash page numbering. Citations: OpenAlex misses are now throttled
+  by the polite delay too, unlabeled 429s back off and retry, consolidation
+  is order-independent (longest variant survives), abbreviated year ranges
+  ("1951-73") keep their years, reprint-year partials merge into their
+  fulls, spurious year-volumes are rejected, and non-decomposable letters
+  transliterate. Also: the crash path keeps the --json line last on stdout,
+  dry runs surface output collisions, resume filtering parses each working
+  log once, and retired config plumbing is removed (43 tests added, suite
+  at 1,902).
 - **v2.3.1** (31 July 2026) -- Maintenance sweep across all subsystems. A
   schema-valid null transcription no longer leaks the raw JSON response into
   the output as a success; the --json summary line is now genuinely emitted on
