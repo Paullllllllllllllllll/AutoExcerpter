@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from rendering.citations import (
+    MAX_API_RETRIES,
     Citation,
     CitationManager,
     _is_budget_exhausted,
@@ -606,19 +607,26 @@ class TestOpenAlexRateLimitRetry:
         assert manager._openalex_budget_exhausted is True
         assert _is_budget_exhausted() is True
 
-    def test_unknown_retry_after_skips_without_latch(self) -> None:
-        """A 429 with no usable retryAfter skips the citation only."""
+    def test_unknown_retry_after_backs_off_retries_then_skips(self) -> None:
+        """A 429 with no usable retryAfter backs off and retries within the
+        attempt budget (previously it returned immediately, letting a 429
+        storm burn one citation per response at full speed), then skips the
+        citation without latching the budget."""
         manager = CitationManager()
 
-        with patch(
-            "rendering.citations.requests.get", return_value=_mock_429()
-        ) as mock_get:
+        with (
+            patch(
+                "rendering.citations.requests.get", return_value=_mock_429()
+            ) as mock_get,
+            patch("rendering.citations.time.sleep") as mock_sleep,
+        ):
             result = manager._make_openalex_request(
                 "https://api.openalex.org/works", {}, "ctx"
             )
 
         assert result is None
-        assert mock_get.call_count == 1
+        assert mock_get.call_count == MAX_API_RETRIES
+        assert mock_sleep.call_count == MAX_API_RETRIES - 1
         assert manager._openalex_budget_exhausted is False
         assert _is_budget_exhausted() is False
 

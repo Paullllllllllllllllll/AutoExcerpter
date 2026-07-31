@@ -26,6 +26,9 @@ logger = setup_logger(__name__)
 
 # Curly quotes/apostrophes and the several dash characters folded to ASCII so
 # that "Müller's" / "Muller's" and en/em dashes do not defeat deduplication.
+# Also transliterates the non-decomposable Latin letters (no NFKD mapping, so
+# combining-mark stripping never reaches them): without ø->o, "Møller" tokenized
+# as {"ller"} and never matched its "Moller" transliteration.
 _CURLY_TRANSLATION = {
     ord("‘"): "'",
     ord("’"): "'",
@@ -35,6 +38,18 @@ _CURLY_TRANSLATION = {
     ord("—"): "-",
     ord("−"): "-",
     ord("­"): "",  # soft hyphen
+    ord("ø"): "o",
+    ord("Ø"): "O",
+    ord("æ"): "ae",
+    ord("Æ"): "Ae",
+    ord("œ"): "oe",
+    ord("Œ"): "Oe",
+    ord("ł"): "l",
+    ord("Ł"): "L",
+    ord("ð"): "d",
+    ord("Ð"): "D",
+    ord("þ"): "th",
+    ord("Þ"): "Th",
 }
 
 _YEAR_CORE = r"(1[0-9]{3}|20[0-9]{2})"
@@ -54,18 +69,21 @@ _PUB_YEAR = r"(?:1[5-9][0-9]{2}|20[0-9]{2})"
 # For the single-letter markers p./s. only, both alternatives are guarded so an
 # author initial adjoining a year is NOT swallowed as a page marker:
 #   - a lone plausible year ("Sen, S. 1981") is left intact;
-#   - a range whose BOTH endpoints are plausible publication years
-#     ("Sraffa, P. 1951-1973") is left intact.
+#   - a range whose first endpoint is a plausible publication year and whose
+#     second endpoint is either a full year or a two-digit abbreviation
+#     ("Sraffa, P. 1951-1973" and "Sraffa, P. 1951-73") is left intact.
 # Non-year page numbers and ordinary page ranges ("S. 42", "S. 1066-1071",
 # whose endpoints fall below 1500) still strip. Multi-letter markers
 # (pp./ss./fol.) are never author initials, so they strip any page number —
 # including four-digit ones ("pp. 1850", "fol. 1200"). The range alternative
 # comes first so "S. 1066-1071" is consumed whole. Trade-off: a genuine
-# single-page German cite of a four-digit page ("S. 1815") is read as a year —
-# a rare, accepted false positive versus the initial-vs-year collapse.
+# single-page German cite of a four-digit page ("S. 1815") is read as a year,
+# and a page range led by a year-like page ("S. 1518-23") is left intact —
+# rare, accepted false positives versus the initial-vs-year collapse.
 _PAGE_MARKER_RE = re.compile(
     r"\b(?:(?:pp|ss|fol)\.\s*(?:\d+\s*-\s*\d+|\d+)"
-    r"|[ps]\.\s*(?:(?!" + _PUB_YEAR + r"\s*-\s*" + _PUB_YEAR + r"\b)\d+\s*-\s*\d+"
+    r"|[ps]\.\s*(?:(?!" + _PUB_YEAR + r"\s*-\s*(?:" + _PUB_YEAR + r"|\d{2})\b)"
+    r"\d+\s*-\s*\d+"
     r"|(?!(?:1[0-9]{3}|20[0-9]{2})\b)\d+))",
     re.IGNORECASE,
 )
@@ -171,7 +189,14 @@ def _extract_volume(text: str) -> int | None:
     if captured is None:
         return None
     if captured.isdigit():
-        return int(captured)
+        arabic = int(captured)
+        if 1500 <= arabic <= 2099:
+            # A "volume" in the plausible publication-year window is almost
+            # always a year following an English word that doubles as a German
+            # designator ("The Band 1968 Story"); a spurious volume would
+            # poison the dedup key and veto legitimate merges.
+            return None
+        return arabic
     value = _roman_to_int(captured)
     if value is not None and value > MAX_ROMAN_VOLUME:
         # An implausibly large Roman "volume" is an ordinary word that happens
@@ -394,13 +419,14 @@ class Citation:
         # lowercase here, but \b keeps "words." from matching the bare "s.".
         # Mirrors _PAGE_MARKER_RE: the year guard applies only to the
         # single-letter markers p./s. so neither an author initial before a
-        # year ("Sen, S. 1981") nor one before a year range ("Sraffa, P.
-        # 1951-1973") is stripped here either (which would otherwise collapse
-        # distinct editions onto one key), while multi-letter markers
-        # (pp./ss./fol.) strip any page number; range alternative comes first.
+        # year ("Sen, S. 1981") nor one before a year range — full
+        # ("Sraffa, P. 1951-1973") or abbreviated ("Sraffa, P. 1951-73") — is
+        # stripped here either (which would otherwise collapse distinct
+        # editions onto one key), while multi-letter markers (pp./ss./fol.)
+        # strip any page number; range alternative comes first.
         text = re.sub(
             r"\(?\s*\b(?:(?:pp|ss|fol)\.\s*(?:\d+\s*-\s*\d+|\d+)"
-            r"|[ps]\.\s*(?:(?!" + _PUB_YEAR + r"\s*-\s*" + _PUB_YEAR + r"\b)"
+            r"|[ps]\.\s*(?:(?!" + _PUB_YEAR + r"\s*-\s*(?:" + _PUB_YEAR + r"|\d{2})\b)"
             r"\d+\s*-\s*\d+"
             r"|(?!(?:1[0-9]{3}|20[0-9]{2})\b)\d+))"
             r"\s*\)?",
@@ -431,8 +457,9 @@ class Citation:
         text = re.sub(r"\(?\s*(?<![\w-])(?:eds?|trans)(?![\w-])\.?\s*\)?", " ", text)
         text = re.sub(r"\[[^\]]*\]", " ", text)
 
-        # Strip punctuation (straightened quotes, apostrophes, ASCII hyphen).
-        text = re.sub(r"[,.:;()\[\]\"'\-]", " ", text)
+        # Strip punctuation (straightened quotes, apostrophes, ASCII hyphen,
+        # markdown-italic asterisks).
+        text = re.sub(r"[,.:;()\[\]\"'\-*]", " ", text)
         text = re.sub(r"\s+", " ", text).strip()
 
         self.comparison_text = text
@@ -578,6 +605,13 @@ class CitationManager:
 
         merged: dict[str, Citation] = {}
         for block in blocks.values():
+            # Deterministic merge order: longest (most complete) variant first,
+            # so the survivor set does not depend on document mention order.
+            # Unsorted, the greedy loop produced different bibliographies for
+            # the same citation set (a short first mention became the survivor,
+            # was promoted mid-merge, and could then chain-absorb variants the
+            # original survivor would have rejected).
+            block.sort(key=lambda c: (-len(c.comparison_text), c.comparison_text))
             survivors: list[Citation] = []
             for candidate in block:
                 target = self._find_merge_target(candidate, survivors)
@@ -627,6 +661,26 @@ class CitationManager:
                 and full is not partial
                 and partial_tokens <= _token_set(full.comparison_text)
             ]
+            if not candidates and partial.year is not None:
+                # Reprint fallback: an in-text partial conventionally cites the
+                # reprint year ("(Smith 1990)") while the full reference
+                # ("1990 [1890]") canonicalizes to the earliest year, landing
+                # the two in different year blocks. Retry against ALL fulls of
+                # the same author; the subset test still corroborates the year,
+                # since the partial's year token must appear among the full's
+                # comparison tokens. The ambiguity rule below is unchanged.
+                candidates = [
+                    full
+                    for candidates_block in (
+                        b
+                        for (author, _year), b in blocks.items()
+                        if author == partial.author
+                    )
+                    for full in candidates_block
+                    if not full.partial
+                    and full is not partial
+                    and partial_tokens <= _token_set(full.comparison_text)
+                ]
             if len(candidates) == 1:
                 self._merge_partial_into(candidates[0], partial)
                 self.citations.pop(partial.normalized_key, None)
@@ -799,8 +853,11 @@ class CitationManager:
                 self._apply_metadata(citation, metadata)
                 self._persistent_cache[citation.normalized_key] = metadata
                 api_enriched += 1
-                # Be polite to the API
-                time.sleep(API_POLITE_DELAY)
+            # Be polite to the API after EVERY request, hit or miss. Misses
+            # (404s, failed verification) previously skipped the delay, so a
+            # bibliography of mostly unmatchable citations — the common case
+            # for historical sources — hammered the API unthrottled.
+            time.sleep(API_POLITE_DELAY)
 
         # Post-enrichment: merge any citations that resolved to the same work.
         # This (and the cache save) must run even in cache-only mode, so it lives
@@ -999,13 +1056,28 @@ class CitationManager:
                         )
                         return None
                     else:
-                        # No usable retryAfter at all: skip this citation
-                        # (nothing tells us how long to back off).
+                        # No usable retryAfter: back off a fixed delay and
+                        # retry within the attempt budget. Returning
+                        # immediately let a 429 storm burn one citation per
+                        # response at full speed.
+                        if attempt < MAX_API_RETRIES - 1:
+                            logger.warning(
+                                "OpenAlex rate limit hit for %s (no usable "
+                                "retryAfter; attempt %d/%d). Backing off %.1fs "
+                                "and retrying.",
+                                context_description,
+                                attempt + 1,
+                                MAX_API_RETRIES,
+                                API_RETRY_DELAY,
+                            )
+                            time.sleep(API_RETRY_DELAY)
+                            continue
                         logger.warning(
-                            "OpenAlex rate limit hit for %s (retryAfter=%ds). "
-                            "Skipping this citation.",
+                            "OpenAlex rate limit hit for %s (no usable "
+                            "retryAfter) after %d attempts; skipping this "
+                            "citation.",
                             context_description,
-                            retry_after,
+                            MAX_API_RETRIES,
                         )
                         return None
                 elif response.status_code == 500:

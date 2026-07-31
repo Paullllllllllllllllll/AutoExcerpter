@@ -109,8 +109,13 @@ class TestParticleAndNonAsciiSurnames:
         assert next(iter(manager.citations.values())).get_sorted_pages() == [1, 2]
 
     def test_latin_extended_surname_not_mangled(self) -> None:
-        """ "Łukasz" keeps its leading Ł-derived letter instead of losing it."""
-        assert _first_author_surname("Łukasz, K. (2010). X.") == "łukasz"
+        """ "Łukasz" keeps its full surname (Ł transliterated, not dropped).
+
+        Non-decomposable letters now transliterate to ASCII (ł->l) so the
+        surname also matches its "Lukasz" transliteration; the guard here is
+        that no letter is lost.
+        """
+        assert _first_author_surname("Łukasz, K. (2010). X.") == "lukasz"
 
     def test_umlaut_surname_folds_to_ascii(self) -> None:
         """ "Müller" folds to "muller" (accent stripped, not dropped)."""
