@@ -1,4 +1,4 @@
-# AutoExcerpter v2.3.0
+# AutoExcerpter v2.3.1
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -193,7 +193,7 @@ Three capability patterns are available:
 ## Installation
 
 ```bash
-git clone https://github.com/yourusername/AutoExcerpter.git
+git clone https://github.com/Paullllllllllllllllll/AutoExcerpter.git
 cd AutoExcerpter
 uv sync
 ```
@@ -292,12 +292,12 @@ python main.py <input> <output> [options]
 | `<input>` | PDF file, image folder, or directory of items |
 | `<output>` | Destination directory |
 | `--input-path` / `--output-path` | Named path overrides |
-| `--all` | Process all discovered items |
-| `--select PATTERN` | Filter by number, range, or filename |
+| `--all` | Process all discovered items (mutually exclusive with `--select`) |
+| `--select PATTERN` | Filter by number, range, or filename (mutually exclusive with `--all`) |
 | `--context TOPICS` | Summarization focus topics |
 | `--summarize` / `--no-summarize` | Override app.yaml at runtime |
 | `--cleanup` / `--no-cleanup` | Override temp dir deletion |
-| `--resume` / `--force` | Resume or force-reprocess |
+| `--resume` / `--force` (alias `--overwrite`) | Resume or force-reprocess |
 | `--retranscribe` | Re-transcribe resumable items instead of reusing logged transcriptions |
 | `--cli` / `--interactive` | Force execution mode, overriding `cli_mode` in `app.yaml` |
 | `--json` | Emit one machine-readable JSON run-summary line on stdout at exit |
@@ -311,6 +311,24 @@ neither `--all` nor `--select`); `130` = user interrupt. `--cli` /
 `--interactive` let an agent drive the tool without editing the gitignored
 YAML. `--dry-run` reports the planned actions (and, with `--json`, a JSON
 plan) and exits without side effects.
+
+**JSON contract.** With `--json`, exactly one JSON object is written to
+stdout as the last stdout line, on every exit path — including an
+interactive `exit`, a non-TTY abort, a Ctrl+C interrupt, and an unhandled
+exception. Every object carries a `dry_run` boolean, so a summary produced
+while `--dry-run` was in effect is never mistaken for a real run that did
+nothing. The run-summary shape is:
+
+```json
+{"dry_run": false, "items_total": 3, "items_complete": 2, "items_failed": 1,
+ "items_skipped": 0, "outputs": ["/abs/path/A.txt"],
+ "tokens_used_today": 12345, "daily_token_limit": 10000000}
+```
+
+`combined_tokens_today` is added when the shared cross-tool budget is
+active, and `per_key_pool_caps_enabled` / `pool_buckets` when a pooled key
+was used. A completed `--dry-run` instead emits the plan shape
+(`{"dry_run": true, "to_process": [...], "skipped": [...]}`).
 
 **Model overrides** (available in both modes; global or per-phase with
 `--transcription-` / `--summary-` prefix):
@@ -499,7 +517,6 @@ retry:
       transcription_not_possible: { enabled: true, max_attempts: 3 }
     summary:
       validation_failure: { enabled: true, max_attempts: 3 }
-      page_type_null_bullets: { enabled: false, max_attempts: 0 }
 ```
 
 **Three retry layers** operate in sequence: (1) API errors
@@ -826,7 +843,23 @@ v1.0.0 do not exist.
 
 ## Changelog
 
-- **v2.3.0** (19 July 2026) -- Dependency and documentation sweep. All
+- **v2.3.1** (31 July 2026) -- Maintenance sweep across all subsystems. A
+  schema-valid null transcription no longer leaks the raw JSON response into
+  the output as a success; the --json summary line is now genuinely emitted on
+  every exit path including Ctrl+C and unhandled exceptions, and always carries
+  a dry_run key; partial user configs deep-merge over the bundled example
+  templates so omitted keys get the documented defaults instead of divergent
+  hardcoded constants; fuzzy citation merges union the partial flag so merged
+  full citations are never dropped, P./S. initials before year ranges keep
+  their years, URL-only citations no longer collide, and malformed OMML math
+  is repaired instead of degrading to italic text. Further fixes: token-reset
+  waits throttle their ledger syncs, o3-mini bills against the correct pool,
+  shared rate limiters key on the resolved provider, a log finalize/append
+  race and a unicode-cleaning race are closed, critical-error pages appear in
+  logs and summaries, image-folder names with dots keep their full output
+  stem, the layout-repair tool stops gluing words and reports failures
+  honestly, and stale docs, dead code, and duplicate tests are pruned
+  (99 tests added, suite at 1,859).
   dependencies upgraded to their latest compatible versions within current
   majors (LangChain provider stack, OpenAI/Anthropic SDKs, PyMuPDF 1.28,
   Pillow 12.3, tqdm 4.69, mypy 2.3) with floors raised to the tested
