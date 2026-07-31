@@ -53,6 +53,29 @@ if TYPE_CHECKING:
 
 logger = setup_logger(__name__)
 
+# Cooperative shutdown signal. Set by the pipeline on KeyboardInterrupt so
+# in-flight retry ladders abort instead of sleeping out their multi-minute
+# backoff schedule on non-daemon worker threads after the user asked to exit
+# (the interpreter joins those threads at shutdown, so an uncancelled ladder
+# kept the process alive for up to the full retry window). Checked before
+# every retry and waited on instead of a plain sleep.
+_ABORT_EVENT = threading.Event()
+
+
+def request_abort() -> None:
+    """Ask all in-flight retry ladders to stop at the next check point."""
+    _ABORT_EVENT.set()
+
+
+def clear_abort() -> None:
+    """Reset the abort signal (test hook; a real abort ends the process)."""
+    _ABORT_EVENT.clear()
+
+
+def abort_requested() -> bool:
+    """Whether an abort has been requested."""
+    return _ABORT_EVENT.is_set()
+
 
 def _load_retry_config() -> dict[str, Any]:
     """Load retry and backoff configuration from concurrency.yaml."""
@@ -1138,6 +1161,11 @@ class LLMClientBase:
                 window_open = max_elapsed > 0 and elapsed < max_elapsed
                 if not retryable or not (attempts_left or window_open):
                     raise
+                # Cooperative shutdown: after a KeyboardInterrupt the pipeline
+                # sets the abort event; stop retrying immediately rather than
+                # sleeping out the remaining backoff schedule.
+                if _ABORT_EVENT.is_set():
+                    raise
 
                 # Honor Retry-After: wait at least as long as the server asks,
                 # never below the computed backoff and never above the cap.
@@ -1156,7 +1184,18 @@ class LLMClientBase:
                     f"{f'/{max_elapsed:.0f}s window' if max_elapsed > 0 else ''})"
                     f"{' (Retry-After honored)' if retry_after is not None else ''}..."
                 )
-                time.sleep(backoff)
+                # Sleep out the backoff in short, abort-aware slices: a plain
+                # time.sleep(backoff) kept in-flight ladders alive for minutes
+                # after Ctrl+C (the interpreter joins the non-daemon workers
+                # at exit before the process can end). time.sleep stays the
+                # primitive so tests patching it remain effective.
+                remaining_backoff = backoff
+                while remaining_backoff > 0:
+                    if _ABORT_EVENT.is_set():
+                        raise
+                    slice_s = min(1.0, remaining_backoff)
+                    time.sleep(slice_s)
+                    remaining_backoff -= slice_s
                 attempt += 1
 
     def get_stats(self) -> dict[str, Any]:
@@ -1405,4 +1444,7 @@ class LLMClientBase:
 # for testing.
 __all__ = [
     "DEFAULT_MAX_RETRIES",
+    "abort_requested",
+    "clear_abort",
+    "request_abort",
 ]

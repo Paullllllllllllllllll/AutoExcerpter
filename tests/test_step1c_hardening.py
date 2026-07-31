@@ -167,7 +167,9 @@ class TestRetryAfter:
             result = client._invoke_with_retry(model, [], {}, "ctx")
         assert result == "ok"
         # Waited at least the server-requested 45 s (backoff was far smaller).
-        assert slept[0] == pytest.approx(45.0)
+        # The backoff is now slept in short abort-aware slices, so the total
+        # is asserted rather than a single sleep call.
+        assert sum(slept) == pytest.approx(45.0)
 
     def test_invoke_caps_hostile_retry_after(self) -> None:
         client = _retry_client(max_retries=2)
@@ -179,7 +181,7 @@ class TestRetryAfter:
             patch("llm.base.get_token_tracker"),
         ):
             client._invoke_with_retry(model, [], {}, "ctx")
-        assert slept[0] == pytest.approx(BACKOFF_CAP_S)
+        assert sum(slept) == pytest.approx(BACKOFF_CAP_S)
 
     def test_retry_after_feeds_rate_limit_signal(self) -> None:
         """A Retry-After on an otherwise-unclassified error still signals the

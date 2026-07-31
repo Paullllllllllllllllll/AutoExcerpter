@@ -391,6 +391,14 @@ class FolderPayloadSource(_PayloadSourceBase):
         # one output. total_image_bytes is None when any image cannot be stat'd
         # (a mismatch cannot then be proven).
         provenance["image_count"] = len(self.image_paths)
+        # Name-set identity: page order is derived deterministically from the
+        # filenames (natural sort), so a hash over the sorted names pins the
+        # order too. Count + bytes alone missed a RENAME that reshuffles the
+        # order while preserving both (e.g. a.jpg -> z.jpg), which let resume
+        # splice logged pages into the wrong slots.
+        provenance["image_names_sha256"] = hashlib.sha256(
+            "\n".join(sorted(p.name for p in self.image_paths)).encode("utf-8")
+        ).hexdigest()
         total_bytes = 0
         total_ok = True
         for path in self.image_paths:

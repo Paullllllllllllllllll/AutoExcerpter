@@ -28,6 +28,7 @@ from config.loader import get_config_loader
 from config.logger import setup_logger
 from imaging.payload import FolderPayloadSource, PagePayload, PdfPayloadSource
 from llm import SummaryManager, TranscriptionManager
+from llm.base import abort_requested, request_abort
 from llm.token_tracker import get_token_tracker, wait_for_token_reset
 from llm.types import CustomEndpointCapabilities
 from pipeline.context import format_context_for_prompt, resolve_summary_context
@@ -80,7 +81,14 @@ class ItemTranscriber:
     ) -> None:
         self.input_path = input_path
         self.input_type = input_type  # "pdf" or "image_folder"
-        self.name = self.input_path.stem
+        # Mirror ItemSpec.output_stem: for an image folder keep the FULL
+        # directory name. Path.stem would collapse "photos.2023" to "photos",
+        # contradicting the resume checker (which looks for photos.2023.txt,
+        # so resume never matched) and silently letting sibling folders
+        # "photos.2023"/"photos.2024" overwrite each other's outputs.
+        self.name = (
+            self.input_path.stem if input_type == "pdf" else self.input_path.name
+        )
         self.resume_mode = resume_mode
         self.completed_page_indices = completed_page_indices or set()
         # Working-log data already parsed by ResumeChecker during the resume
@@ -138,6 +146,14 @@ class ItemTranscriber:
         # partial, and failure verdicts). Consumed by the CLI overview layer;
         # remains None when the item aborts before any stats are computed.
         self.last_run_report: dict[str, Any] | None = None
+
+        # True once the user cancelled a token-limit wait for this item.
+        # Surfaced through last_run_report so the batch loop stops instead of
+        # marching every remaining item into its own multi-hour wait.
+        self._budget_wait_cancelled = False
+        # Worker count of the current transcription pass, consumed by the ETA
+        # blend (a per-page API time understates throughput by that factor).
+        self._active_workers = 1
 
         # Load model configuration from model.yaml
         config_loader = get_config_loader()
@@ -472,6 +488,11 @@ class ItemTranscriber:
         # after the daily reset. try_reserve returns 0 when limiting is disabled.
         if self._budget_exhausted.is_set():
             return None
+        # After a KeyboardInterrupt, pages whose future started before the
+        # cancellation must not open new API calls (or log noisy
+        # "source is closed" error entries); defer them like a budget stall.
+        if abort_requested():
+            return None
         # Stamp the page-level reservation with the TRANSCRIPTION key-pool bucket
         # (the page's primary call). A free/local transcription endpoint (pool
         # None) is never blocked here even when a paid summary key is exhausted;
@@ -729,9 +750,6 @@ class ItemTranscriber:
         later resume run. A blank page's placeholder summary costs no tokens, so
         it skips the gate entirely and never stalls on an exhausted budget.
         """
-        prior_results = self._prior_transcription_results or (
-            load_transcription_results_from_log(self.log_path) or []
-        )
         prior_summary_by_idx: dict[int, dict[str, Any]] = {}
         for summ in self._prior_summary_results:
             idx = summ.get("original_input_order_index")
@@ -743,21 +761,24 @@ class ItemTranscriber:
 
         summarizing = bool(config.SUMMARIZE and self.summary_manager)
 
-        # Eligibility filter computed once and shared by both passes: a real
-        # per-page index, marked completed, and within the current page count
-        # (a stale phantom index from a swapped, shorter input is dropped).
-        eligible = [
-            entry
-            for entry in prior_results
-            if isinstance(entry.get("original_input_order_index"), int)
-            and entry["original_input_order_index"] in self.completed_page_indices
-            and entry["original_input_order_index"] < self.total_items_to_transcribe
-        ]
+        eligible = self._eligible_prior_entries()
 
         # --- Pass 1: persist every completed transcription NOW (no LLM calls),
-        # closing the truncate-then-reappend loss window. ---
+        # closing the truncate-then-reappend loss window. A failed re-append
+        # means that page exists nowhere on disk anymore (initialize_log_file
+        # just truncated its only copy), so surface it loudly.
+        pass1_failures = 0
         for entry in eligible:
-            append_to_log(self.log_path, entry)
+            if not append_to_log(self.log_path, entry):
+                pass1_failures += 1
+        if pass1_failures:
+            logger.error(
+                "Item %s: %d completed page(s) could not be re-appended to the "
+                "truncated transcription log; a crash before this run finishes "
+                "would lose them for later resumes.",
+                getattr(self, "name", "<unknown>"),
+                pass1_failures,
+            )
 
         # --- Pass 1b: persist every REUSABLE prior summary NOW (no LLM calls),
         # closing the summary-log loss window that pass 2's lazy re-append would
@@ -781,6 +802,26 @@ class ItemTranscriber:
             ):
                 deferred.append(entry)
         return deferred
+
+    def _eligible_prior_entries(self) -> list[dict[str, Any]]:
+        """Return prior transcription entries eligible for page-level reuse.
+
+        Eligibility: a real per-page index, marked completed, and within the
+        current page count (a stale phantom index from a swapped, shorter
+        input is dropped). Reads only the in-memory snapshot taken before the
+        log was truncated, falling back to a disk read when no snapshot exists
+        (direct calls outside process_item).
+        """
+        prior_results = self._prior_transcription_results or (
+            load_transcription_results_from_log(self.log_path) or []
+        )
+        return [
+            entry
+            for entry in prior_results
+            if isinstance(entry.get("original_input_order_index"), int)
+            and entry["original_input_order_index"] in self.completed_page_indices
+            and entry["original_input_order_index"] < self.total_items_to_transcribe
+        ]
 
     def _regenerate_one(
         self,
@@ -878,6 +919,7 @@ class ItemTranscriber:
                     "a later run.",
                     len(deferred),
                 )
+                self._budget_wait_cancelled = True
                 return
             self._budget_exhausted.clear()
 
@@ -926,16 +968,27 @@ class ItemTranscriber:
         # reused and freshly generated summaries are appended to the same file.
         if config.SUMMARIZE and self.summary_manager:
             max_workers = get_transcription_concurrency()
-            self._initialize_log_or_raise(
-                self.summary_log_path,
-                self.name,
-                str(self.input_path),
-                "PDF" if self.input_type == "pdf" else "Image Folder",
-                total_images,
-                self.summary_model,
-                concurrency_limit=max_workers,
-                log_type="summary",
-            )
+            try:
+                self._initialize_log_or_raise(
+                    self.summary_log_path,
+                    self.name,
+                    str(self.input_path),
+                    "PDF" if self.input_type == "pdf" else "Image Folder",
+                    total_images,
+                    self.summary_model,
+                    concurrency_limit=max_workers,
+                    log_type="summary",
+                )
+            except RuntimeError:
+                # The transcription log was already truncated by
+                # _run_processing, and the pass-1 re-append that restores the
+                # completed pages lives in _reload_completed_pages — which this
+                # raise would skip. Persist those pages NOW so an aborted item
+                # does not lose its only on-disk copy of completed work.
+                if self.completed_page_indices:
+                    for entry in self._eligible_prior_entries():
+                        append_to_log(self.log_path, entry)
+                raise
 
         # --- Page-level resume: reload completed transcriptions, reuse their
         # summaries where logged, and regenerate summaries for completed pages
@@ -998,6 +1051,7 @@ class ItemTranscriber:
         max_workers = min(max_workers, len(pending_indices))
         if max_workers <= 0:
             max_workers = 1
+        self._active_workers = max_workers
         logger.info(f"Using {max_workers} concurrent workers for transcription")
 
         # Page-level token-budget loop: each pass submits the pending pages and
@@ -1111,7 +1165,16 @@ class ItemTranscriber:
                             len(pending),
                         )
                         wait_cancelled = True
+                        self._budget_wait_cancelled = True
                         break
+        except KeyboardInterrupt:
+            # Signal in-flight retry ladders to stop: cancel_futures below only
+            # cancels QUEUED pages, while up to max_workers in-flight pages
+            # would otherwise sleep out their full backoff schedule on
+            # non-daemon threads that the interpreter joins at exit, keeping
+            # the process alive for many minutes after the user pressed Ctrl+C.
+            request_abort()
+            raise
         finally:
             # Deterministic teardown. cancel_futures cancels any pages still
             # queued (e.g. after a KeyboardInterrupt) instead of letting them
@@ -1157,7 +1220,11 @@ class ItemTranscriber:
 
         remaining_items = total_images - processed_count
         eta_seconds = remaining_items / blended_rate
-        return f"ETA: {time.strftime('%H:%M:%S', time.gmtime(eta_seconds))}"
+        # Explicit divmod formatting: time.gmtime wrapped ETAs above 24 h
+        # modulo one day (a 25-hour ETA displayed as 01:00:00).
+        hours, rem = divmod(int(eta_seconds), 3600)
+        minutes, seconds = divmod(rem, 60)
+        return f"ETA: {hours:02d}:{minutes:02d}:{seconds:02d}"
 
     def _calculate_blended_processing_rate(self, overall_rate: float) -> float:
         """Calculate blended processing rate from overall and recent samples."""
@@ -1166,7 +1233,13 @@ class ItemTranscriber:
             return overall_rate
 
         recent_avg_time = sum(recent_samples) / len(recent_samples)
-        recent_rate = 1.0 / recent_avg_time if recent_avg_time > 0 else overall_rate
+        # Per-page API time measures ONE worker; with N concurrent workers the
+        # pipeline completes ~N pages per avg_time, so scale by the active
+        # worker count or the blend understates throughput by that factor.
+        active_workers = getattr(self, "_active_workers", 1)
+        recent_rate = (
+            active_workers / recent_avg_time if recent_avg_time > 0 else overall_rate
+        )
 
         return (
             ETA_BLEND_WEIGHT_OVERALL * overall_rate
@@ -1476,6 +1549,9 @@ class ItemTranscriber:
                 "elapsed_s": total_elapsed_time,
                 "avg_api_s": avg_api_s,
                 "outputs": [str(p) for p in self.written_outputs],
+                # The batch loop stops on this flag: one cancelled token wait
+                # must not march every remaining item into its own wait.
+                "wait_cancelled": getattr(self, "_budget_wait_cancelled", False),
             }
 
             # Item verdict: a budget-deferred page, any failed page

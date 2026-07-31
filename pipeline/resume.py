@@ -18,6 +18,7 @@ Processing states:
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -192,7 +193,8 @@ class ResumeChecker:
         # name since this log was written, its logged pages describe a different
         # document. Refuse page-level reuse (drop the completed set) so the item
         # is reprocessed from scratch rather than emitting a chimeric mix.
-        if completed_pages is not None and _input_changed_since_log(header):
+        input_changed = _input_changed_since_log(header)
+        if completed_pages is not None and input_changed:
             logger.warning(
                 "Input file changed since the working log was written "
                 "(cheap provenance mismatch); refusing page-level resume for "
@@ -245,7 +247,11 @@ class ResumeChecker:
             else 0
         )
         log_has_failures = transcription_error_count > 0 or summary_error_count > 0
-        log_incomplete = log_shortfall or log_has_failures
+        # A changed input also blocks COMPLETE: existing outputs describe a
+        # DIFFERENT document, so "all outputs exist" must not skip the item
+        # (previously the guard above only dropped the completed-page set while
+        # the COMPLETE branch still fired, silently keeping stale outputs).
+        log_incomplete = log_shortfall or log_has_failures or input_changed
 
         # Determine state
         if not missing and not log_incomplete:
@@ -281,6 +287,8 @@ class ResumeChecker:
                     f" ({transcription_error_count} failed transcription page(s), "
                     f"{summary_error_count} failed summary page(s); retrying them)"
                 )
+            if input_changed:
+                reason += " (input changed since log; reprocessing from scratch)"
             return ResumeResult(
                 item_name=item_name,
                 state=ProcessingState.TRANSCRIPTION_ONLY,
@@ -473,6 +481,18 @@ def _folder_changed_since_log(folder: Path, provenance: dict[str, Any]) -> bool:
     stored_count = provenance.get("image_count")
     if isinstance(stored_count, int) and stored_count != len(current_paths):
         return True
+
+    # Name-set identity (order derives deterministically from the names via
+    # natural sort, so a lexicographically sorted-name hash pins the order):
+    # catches a rename that preserves count and bytes but reshuffles page
+    # order. Absent in older headers -> no comparison (behavior preserved).
+    stored_names = provenance.get("image_names_sha256")
+    if isinstance(stored_names, str):
+        current_names = hashlib.sha256(
+            "\n".join(sorted(p.name for p in current_paths)).encode("utf-8")
+        ).hexdigest()
+        if current_names != stored_names:
+            return True
 
     stored_bytes = provenance.get("total_image_bytes")
     if not isinstance(stored_bytes, int):

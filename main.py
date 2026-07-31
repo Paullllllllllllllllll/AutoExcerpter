@@ -225,24 +225,26 @@ def _apply_resume_filtering(
         output_markdown=config.OUTPUT_MARKDOWN,
         retranscribe=retranscribe,
     )
-    filtered_result = resume_checker.filter_items(
-        items=selected_items,
-        output_dir_func=lambda item: _resolve_item_output_dir(item, base_output_dir),
-        name_func=lambda item: item.output_stem,
-    )
-    items_to_process: list[ItemSpec] = filtered_result[0]
-    skipped_items: list[ResumeResult] = filtered_result[1]
-
-    # Keyed by the item's input path, not its output stem: two items in
-    # different directories can share a stem (e.g. BookA/images and BookB/images
-    # both stem "images" under input_paths_is_output_path), and a stem key would
-    # let one item's resume set clobber the other's (AE-1).
+    # One should_skip pass per item classifies it AND feeds the resume map
+    # (previously filter_items parsed every item's working logs and the map
+    # loop immediately re-parsed them — twice the JSONL I/O per run, plus a
+    # small classification/map TOCTOU window).
+    # The map is keyed by the item's input path, not its output stem: two items
+    # in different directories can share a stem (e.g. BookA/images and
+    # BookB/images both stem "images" under input_paths_is_output_path), and a
+    # stem key would let one item's resume set clobber the other's (AE-1).
+    items_to_process: list[ItemSpec] = []
+    skipped_items: list[ResumeResult] = []
     item_resume_map: dict[Path, ResumeResult] = {}
-    for item in items_to_process:
+    for item in selected_items:
         result = resume_checker.should_skip(
             item.output_stem,
             _resolve_item_output_dir(item, base_output_dir),
         )
+        if result.state == ProcessingState.COMPLETE:
+            skipped_items.append(result)
+            continue
+        items_to_process.append(item)
         if result.state in (
             ProcessingState.PARTIAL,
             ProcessingState.TRANSCRIPTION_ONLY,
@@ -270,6 +272,10 @@ def _apply_resume_filtering(
         items_to_process = list(selected_items)
         resume_mode = "overwrite"
         item_resume_map.clear()
+        # The force-reprocess path re-queues every previously skipped item;
+        # keeping them in skipped_items too double-counted them in the --json
+        # summary (reported both as processed and as skipped).
+        skipped_items = []
 
     return items_to_process, item_resume_map, resume_mode, skipped_items
 
@@ -383,6 +389,24 @@ def _run_processing_loop(
             incomplete_items.append(item_spec.output_stem)
 
         _log_token_usage(f"Token usage after file {index}/{total_to_process}")
+
+        # The user cancelled a token-limit wait inside this item: stop the
+        # batch. Continuing would march every remaining item into its own
+        # instant page deferral and multi-hour wait, forcing one Ctrl+C per
+        # item to actually end the run.
+        if isinstance(report, dict) and report.get("wait_cancelled"):
+            logger.info(
+                "Token-limit wait cancelled by user; stopping after "
+                "%d/%d item(s). Remaining items are left for a later run.",
+                attempted_count,
+                total_to_process,
+            )
+            if not config.CLI_MODE:
+                print_warning(
+                    f"\nProcessing stopped after the cancelled token wait. "
+                    f"Completed {processed_count}/{total_to_process} items."
+                )
+            break
 
     run_seconds = time.monotonic() - loop_start
 
@@ -630,6 +654,9 @@ def main() -> int:
     )
 
     if dry_run:
+        # Run the duplicate-output guard in dry-run too: the plan must reveal
+        # a collision the real run would abort on, not hide it.
+        _guard_duplicate_outputs(items_to_process, base_output_dir, emit_json, dry_run)
         _run_dry_run(items_to_process, item_resume_map, skipped_items, emit_json)
         return 0
 
@@ -773,10 +800,15 @@ if __name__ == "__main__":
         run_exit_hook()
         sys.exit(130)
     except Exception as exc:
-        run_exit_hook()
+        # Print the error banner BEFORE the JSON hook, and never to stdout in
+        # CLI mode: run_exit_hook writes the --json summary to stdout, and a
+        # banner printed after it broke the "JSON line is the last stdout
+        # line" contract that drives automated consumers.
         handle_critical_error(
             exc,
             "main execution flow",
-            exit_on_error=True,
-            show_user_message=True,
+            exit_on_error=False,
+            show_user_message=not config.CLI_MODE,
         )
+        run_exit_hook()
+        sys.exit(1)
