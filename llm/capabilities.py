@@ -65,6 +65,9 @@ class ProviderCapabilities:
         supports_json_mode: Whether JSON mode is available
         is_reasoning_model: Whether this is a reasoning-capable model family
         supports_reasoning_effort: Whether reasoning_effort/thinking parameters work
+        uses_adaptive_thinking: Anthropic adaptive-thinking generation (Claude
+            4.6+): rejects ``thinking.budget_tokens`` (HTTP 400); reasoning
+            effort goes through ``output_config.effort`` instead
         supports_text_verbosity: Whether text verbosity parameters work (GPT-5 family)
         supports_temperature: Whether temperature sampling is supported
         supports_top_p: Whether top_p sampling is supported
@@ -94,6 +97,7 @@ class ProviderCapabilities:
     # Reasoning models
     is_reasoning_model: bool = False
     supports_reasoning_effort: bool = False
+    uses_adaptive_thinking: bool = False
 
     # Text verbosity (GPT-5 family only)
     supports_text_verbosity: bool = False
@@ -569,6 +573,7 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
         dict(
             is_reasoning_model=True,
             supports_reasoning_effort=True,
+            uses_adaptive_thinking=True,
             supports_top_p=False,
             max_context_tokens=1000000,
             max_output_tokens=128000,
@@ -581,6 +586,7 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
         dict(
             is_reasoning_model=True,
             supports_reasoning_effort=True,
+            uses_adaptive_thinking=True,
             supports_top_p=False,
             max_context_tokens=1000000,
             max_output_tokens=128000,
@@ -593,6 +599,7 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
         dict(
             is_reasoning_model=True,
             supports_reasoning_effort=True,
+            uses_adaptive_thinking=True,
             supports_top_p=False,
             max_context_tokens=1000000,
             max_output_tokens=128000,
@@ -605,6 +612,7 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
         dict(
             is_reasoning_model=True,
             supports_reasoning_effort=True,
+            uses_adaptive_thinking=True,
             supports_top_p=False,
             max_context_tokens=1000000,
             max_output_tokens=128000,
@@ -617,6 +625,7 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
         dict(
             is_reasoning_model=True,
             supports_reasoning_effort=True,
+            uses_adaptive_thinking=True,
             supports_top_p=False,
             max_context_tokens=1000000,
             max_output_tokens=128000,
@@ -629,6 +638,7 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
         dict(
             is_reasoning_model=True,
             supports_reasoning_effort=True,
+            uses_adaptive_thinking=True,
             supports_top_p=False,
             max_context_tokens=1000000,
             max_output_tokens=128000,

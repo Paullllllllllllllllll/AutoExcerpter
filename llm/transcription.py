@@ -655,7 +655,11 @@ class TranscriptionManager(LLMClientBase):
 
                 # --- Plain-text mode: sentinel-based retries ---
                 if self.is_plain_text_mode:
-                    stripped_text = raw_text.strip()
+                    # Mirror _parse_transcription_from_text: models sometimes
+                    # wrap the sentinel in a markdown code fence, and a bare
+                    # .strip() comparison would skip the configured sentinel
+                    # retries while the parser still recognizes the sentinel.
+                    stripped_text = strip_markdown_code_block(raw_text)
                     if stripped_text == "[no transcribable text]":
                         should_retry, backoff_time, max_attempts = (
                             self._should_retry_for_schema_flag(

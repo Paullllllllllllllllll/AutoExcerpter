@@ -94,7 +94,13 @@ def get_model_capabilities(model_name: str) -> dict[str, bool]:
         "reasoning": caps.is_reasoning_model,
         "text_verbosity": caps.supports_text_verbosity,
         "thinking": caps.is_reasoning_model and caps.provider_name == "google",
+        # Budget-style extended thinking (thinking.budget_tokens) and the
+        # adaptive-thinking generation (Claude 4.6+, output_config.effort;
+        # budget_tokens is rejected with HTTP 400) are mutually exclusive.
         "extended_thinking": caps.is_reasoning_model
+        and caps.provider_name == "anthropic"
+        and not caps.uses_adaptive_thinking,
+        "adaptive_thinking": caps.uses_adaptive_thinking
         and caps.provider_name == "anthropic",
         "temperature": caps.supports_temperature,
         "max_tokens": True,  # Always allow setting max tokens

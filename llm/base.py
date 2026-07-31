@@ -156,6 +156,21 @@ _ANTHROPIC_EFFORT_TO_BUDGET: dict[str, int] = {
     "xhigh": 16384,
 }
 
+# Adaptive-thinking Claude models (4.6+) reject thinking.budget_tokens with
+# HTTP 400; reasoning effort is expressed via output_config.effort instead
+# (accepted levels: low/medium/high/xhigh/max). "minimal" has no Anthropic
+# equivalent and maps to the lowest level; "none" is deliberately absent —
+# these models think by default and the budget path likewise omits the
+# parameter for effort "none".
+_ANTHROPIC_ADAPTIVE_EFFORT: dict[str, str] = {
+    "minimal": "low",
+    "low": "low",
+    "medium": "medium",
+    "high": "high",
+    "xhigh": "xhigh",
+    "max": "max",
+}
+
 _GOOGLE_EFFORT_TO_BUDGET: dict[str, int] = {
     "none": 0,
     "low": 1024,
@@ -1333,24 +1348,37 @@ class LLMClientBase:
                     invoke_kwargs["reasoning"] = {"effort": reasoning_cfg["effort"]}
                     logger.debug(f"Added reasoning params for {self.model_name}")
 
-        # Anthropic-specific: extended thinking (Claude 4.5+, Opus models)
-        elif self.provider == "anthropic" and capabilities.get(
-            "extended_thinking", False
+        # Anthropic-specific: reasoning effort. The adaptive-thinking
+        # generation (Claude 4.6+) rejects thinking.budget_tokens with
+        # HTTP 400 and takes output_config.effort instead; older reasoning
+        # models (Claude 4.5 and earlier) use budget-style extended thinking.
+        elif self.provider == "anthropic" and (
+            capabilities.get("adaptive_thinking", False)
+            or capabilities.get("extended_thinking", False)
         ):
             if "reasoning" in self.model_config:
                 reasoning_cfg = self.model_config["reasoning"]
                 if isinstance(reasoning_cfg, dict) and "effort" in reasoning_cfg:
                     effort = reasoning_cfg["effort"]
-                    budget = _ANTHROPIC_EFFORT_TO_BUDGET.get(effort)
-                    if budget is not None and budget > 0:
-                        invoke_kwargs["thinking"] = {
-                            "type": "enabled",
-                            "budget_tokens": budget,
-                        }
-                        logger.debug(
-                            f"Added Anthropic extended thinking for "
-                            f"{self.model_name}: budget_tokens={budget}"
-                        )
+                    if capabilities.get("adaptive_thinking", False):
+                        level = _ANTHROPIC_ADAPTIVE_EFFORT.get(effort)
+                        if level is not None:
+                            invoke_kwargs["output_config"] = {"effort": level}
+                            logger.debug(
+                                f"Added Anthropic adaptive-thinking effort for "
+                                f"{self.model_name}: output_config.effort={level}"
+                            )
+                    else:
+                        budget = _ANTHROPIC_EFFORT_TO_BUDGET.get(effort)
+                        if budget is not None and budget > 0:
+                            invoke_kwargs["thinking"] = {
+                                "type": "enabled",
+                                "budget_tokens": budget,
+                            }
+                            logger.debug(
+                                f"Added Anthropic extended thinking for "
+                                f"{self.model_name}: budget_tokens={budget}"
+                            )
 
         # Google-specific: thinking mode (Gemini 2.5+, 3.x)
         elif self.provider == "google" and capabilities.get("thinking", False):
