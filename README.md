@@ -1,4 +1,4 @@
-# AutoExcerpter v2.3.2
+# AutoExcerpter v2.3.3
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -615,9 +615,11 @@ logged. OpenAlex enrichment (free, no key required; set
 is shared by both writers. A candidate links only when title-word overlap
 clears `match_title_overlap` AND a corroborating signal matches (publication
 year within +/-1 of a cited year, or the candidate author surname appears in
-the citation) -- preferring no link over a wrong one. Every OpenAlex request
-counts against `max_api_requests`, and results are cached across runs in the
-state directory. When OpenAlex signals daily-quota exhaustion (a 429 with a
+the citation) -- preferring no link over a wrong one. Every citation lookup
+counts against `max_api_requests` (a single lookup can issue several HTTP
+requests across its DOI and text-search retries, pooled over one shared HTTP
+session per document), and results are cached across runs in the state
+directory. When OpenAlex signals daily-quota exhaustion (a 429 with a
 long `retryAfter`), enrichment latches off process-wide and across runs
 (`openalex_budget.json` in the state directory) until the quota window
 passes; remaining citations are still served from the persistent cache, and
@@ -842,6 +844,28 @@ a single baseline commit at v1.0.0 on 25 April 2026; version numbers before
 v1.0.0 do not exist.
 
 ## Changelog
+
+- **v2.3.3** (31 July 2026) -- Third and final maintenance sweep round, bug
+  fixes only. Inline formulas now render as bare `m:oMath` interleaved with
+  the surrounding runs instead of being wrapped in the block-level
+  `m:oMathPara` display container, so a mid-sentence formula no longer breaks
+  the sentence around a centered own-line equation in Word; a rejected
+  currency capture resumes just past its opening dollar, so a genuine formula
+  after an odd dollar count is no longer dropped; non-string debris in a
+  corrupt log's `page_types` no longer crashes both writers; and the text
+  writer disables platform newline translation so embedded CRLFs are written
+  verbatim. Configuring `reasoning.effort` with an adaptive-thinking Claude
+  model (4.6+) now sends `output_config.effort` instead of the
+  `thinking.budget_tokens` parameter those models reject with HTTP 400, and
+  code-fenced plain-text sentinels trigger the configured sentinel retries
+  like bare ones. OpenAlex enrichment pools all lookups of a document over
+  one shared `requests.Session`, and the `max_api_requests` documentation
+  now states what the cap really limits (citations looked up, not HTTP
+  calls). File-specific summary context for an image folder resolves against
+  the full directory name, so dotted folder names find their own context
+  file; the never-fired mtime/file_size comparisons in the resume
+  input-change guard and the never-read `ItemTranscriber.resume_mode`
+  attribute are removed. All 1,922 tests pass; ruff and mypy are clean.
 
 - **v2.3.2** (31 July 2026) -- Second maintenance sweep, bug fixes only.
   Image folders with dotted names now transcribe under their full name, so
