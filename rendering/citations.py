@@ -334,6 +334,11 @@ def enrich_if_enabled(citation_manager: CitationManager) -> None:
 
     Reads ``config.app.CITATION_ENABLE_OPENALEX`` and
     ``config.app.CITATION_MAX_API_REQUESTS``; logs the decision.
+
+    Note that ``CITATION_MAX_API_REQUESTS`` (config key
+    ``citation.max_api_requests``) caps the number of *citations looked up*
+    per document, not the number of HTTP calls: see
+    :meth:`CitationManager.enrich_with_metadata`.
     """
     from config import app as config  # deferred to avoid import cycles
 
@@ -514,6 +519,9 @@ class CitationManager:
         # this work otherwise; with the cache it is O(unique raw texts)).
         self._normalized_key_cache: dict[str, str] = {}
         self._openalex_budget_exhausted: bool = False
+        # Connection pool for one enrich_with_metadata run; None outside it, in
+        # which case requests are issued through the module-level requests.get.
+        self._session: requests.Session | None = None
 
         # Merge/linking thresholds (config-exposed under `citation:`).
         try:
@@ -782,7 +790,19 @@ class CitationManager:
         Enrich citations with metadata from OpenAlex API.
 
         Args:
-            max_requests: Maximum number of API requests to make (None for unlimited).
+            max_requests: Maximum number of *citations looked up* against
+                OpenAlex in this run (None for unlimited). This caps lookups,
+                not HTTP calls: one lookup runs a DOI query and/or a text
+                search, and each of those retries up to ``MAX_API_RETRIES``
+                times on transient failures, so a single citation can issue up
+                to ``2 * MAX_API_RETRIES`` HTTP requests. The config key
+                ``citation.max_api_requests`` that feeds this argument is
+                therefore a per-document citation-lookup cap, and the true
+                worst-case HTTP volume is that many times six.
+
+        All lookups in one call share a single :class:`requests.Session`, so
+        the run pays one TCP+TLS handshake instead of one per request; the
+        session is closed before returning.
         """
         logger.info("Enriching %d unique citations with metadata", len(self.citations))
 
@@ -792,72 +812,88 @@ class CitationManager:
         if _is_budget_exhausted():
             self._openalex_budget_exhausted = True
 
-        requests_made = 0
+        lookups_made = 0
         cache_hits = 0
         api_enriched = 0
         skipped_api = 0
-        max_requests_notified = False
+        lookup_cap_notified = False
         budget_notified = False
-        for processed, citation in enumerate(self.citations.values(), start=1):
-            # Log progress periodically
-            if processed % PROGRESS_LOG_INTERVAL == 0:
-                logger.info(
-                    "Processed %d/%d citations, enriched %d with metadata",
-                    processed,
-                    len(self.citations),
-                    cache_hits + api_enriched,
-                )
+        try:
+            with requests.Session() as session:
+                self._session = session
+                for processed, citation in enumerate(self.citations.values(), start=1):
+                    # Log progress periodically
+                    if processed % PROGRESS_LOG_INTERVAL == 0:
+                        logger.info(
+                            "Processed %d/%d citations, enriched %d with metadata",
+                            processed,
+                            len(self.citations),
+                            cache_hits + api_enriched,
+                        )
 
-            # Persistent cross-run cache: reuse a prior lookup without spending
-            # a request against the daily budget. Cache hits are always served,
-            # even after the API budget is exhausted or the request cap is hit.
-            cached = self._persistent_cache.get(citation.normalized_key)
-            if cached is not None:
-                self._apply_metadata(citation, cached)
-                cache_hits += 1
-                continue
+                    # Persistent cross-run cache: reuse a prior lookup without
+                    # spending a lookup against the daily budget. Cache hits are
+                    # always served, even after the API budget is exhausted or
+                    # the lookup cap is hit.
+                    cached = self._persistent_cache.get(citation.normalized_key)
+                    if cached is not None:
+                        self._apply_metadata(citation, cached)
+                        cache_hits += 1
+                        continue
 
-            # Cache miss: this citation would require an API request. When the
-            # API is unavailable (budget exhausted) or the per-item cap is
-            # reached, do NOT break — keep iterating so later citations still
-            # get their persistent-cache hits; only the request itself is
-            # skipped, and the reason is logged once (not per citation).
-            budget_out = self._openalex_budget_exhausted or _is_budget_exhausted()
-            if budget_out:
-                if not budget_notified:
-                    logger.warning(
-                        "OpenAlex daily budget exhausted — serving remaining "
-                        "citations from the persistent cache only; skipping "
-                        "API lookups for the rest of this item."
+                    # Cache miss: this citation would require an API lookup.
+                    # When the API is unavailable (budget exhausted) or the
+                    # per-item cap is reached, do NOT break — keep iterating so
+                    # later citations still get their persistent-cache hits;
+                    # only the lookup itself is skipped, and the reason is
+                    # logged once (not per citation).
+                    budget_out = (
+                        self._openalex_budget_exhausted or _is_budget_exhausted()
                     )
-                    budget_notified = True
-                skipped_api += 1
-                continue
+                    if budget_out:
+                        if not budget_notified:
+                            logger.warning(
+                                "OpenAlex daily budget exhausted — serving "
+                                "remaining citations from the persistent cache "
+                                "only; skipping API lookups for the rest of "
+                                "this item."
+                            )
+                            budget_notified = True
+                        skipped_api += 1
+                        continue
 
-            if max_requests is not None and requests_made >= max_requests:
-                if not max_requests_notified:
-                    logger.info(
-                        "Reached maximum API requests limit (%d) — serving "
-                        "remaining citations from the persistent cache only.",
-                        max_requests,
-                    )
-                    max_requests_notified = True
-                skipped_api += 1
-                continue
+                    if max_requests is not None and lookups_made >= max_requests:
+                        if not lookup_cap_notified:
+                            logger.info(
+                                "Reached the citation lookup cap (%d citations "
+                                "looked up; each may cost several HTTP "
+                                "requests) — serving remaining citations from "
+                                "the persistent cache only.",
+                                max_requests,
+                            )
+                            lookup_cap_notified = True
+                        skipped_api += 1
+                        continue
 
-            # Every attempt counts against the budget (hit or miss), so a
-            # document of hard-to-match citations cannot silently exceed the cap.
-            metadata = self._fetch_metadata_from_openalex(citation.raw_text)
-            requests_made += 1
-            if metadata:
-                self._apply_metadata(citation, metadata)
-                self._persistent_cache[citation.normalized_key] = metadata
-                api_enriched += 1
-            # Be polite to the API after EVERY request, hit or miss. Misses
-            # (404s, failed verification) previously skipped the delay, so a
-            # bibliography of mostly unmatchable citations — the common case
-            # for historical sources — hammered the API unthrottled.
-            time.sleep(API_POLITE_DELAY)
+                    # Every lookup counts against the cap (hit or miss), so a
+                    # document of hard-to-match citations cannot silently
+                    # exceed it.
+                    metadata = self._fetch_metadata_from_openalex(citation.raw_text)
+                    lookups_made += 1
+                    if metadata:
+                        self._apply_metadata(citation, metadata)
+                        self._persistent_cache[citation.normalized_key] = metadata
+                        api_enriched += 1
+                    # Be polite to the API after EVERY lookup, hit or miss.
+                    # Misses (404s, failed verification) previously skipped the
+                    # delay, so a bibliography of mostly unmatchable citations —
+                    # the common case for historical sources — hammered the API
+                    # unthrottled.
+                    time.sleep(API_POLITE_DELAY)
+        finally:
+            # Drop the reference even if the loop raised: a stale, closed
+            # session must never be reused by a later call.
+            self._session = None
 
         # Post-enrichment: merge any citations that resolved to the same work.
         # This (and the cache save) must run even in cache-only mode, so it lives
@@ -978,6 +1014,12 @@ class CitationManager:
         """
         Make a request to OpenAlex API with retry logic and error handling.
 
+        Issues the GET through the pooled session opened by
+        :meth:`enrich_with_metadata` when one is active, and through the
+        module-level ``requests.get`` otherwise (direct calls outside an
+        enrichment run). Both raise the same ``requests.RequestException``
+        family, so retry and error handling are identical either way.
+
         Args:
             url: The API endpoint URL.
             params: Query parameters.
@@ -997,9 +1039,12 @@ class CitationManager:
             )
             return None
 
+        session = self._session
+        http_get = requests.get if session is None else session.get
+
         for attempt in range(MAX_API_RETRIES):
             try:
-                response = requests.get(url, params=params, timeout=API_REQUEST_TIMEOUT)
+                response = http_get(url, params=params, timeout=API_REQUEST_TIMEOUT)
 
                 # Log request URL on first attempt if not successful
                 if attempt == 0 and response.status_code != 200:

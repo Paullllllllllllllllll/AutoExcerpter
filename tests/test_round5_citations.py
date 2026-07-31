@@ -226,9 +226,9 @@ class TestNo429DeadBand:
         manager.add_citations(["Ccc, C. (2003). Third Work Here. Press."], 3)
         assert len(manager.citations) == 3
 
-        with patch(
-            "rendering.citations.requests.get", return_value=_mock_429(120)
-        ) as mock_get:
+        # enrich_with_metadata pools its GETs in a requests.Session, so the
+        # session method is the seam that must be stubbed (never the network).
+        with patch("requests.Session.get", return_value=_mock_429(120)) as mock_get:
             manager.enrich_with_metadata(max_requests=10)
 
         # Exactly one doomed request, then the latch stops the rest.

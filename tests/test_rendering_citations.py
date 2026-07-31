@@ -9,6 +9,7 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+import requests
 
 from rendering.citations import (
     MAX_API_RETRIES,
@@ -497,8 +498,14 @@ class TestOpenAlexBudgetLatch:
 
         _mark_budget_exhausted(3600)
 
-        with patch("rendering.citations.requests.get") as mock_get:
+        # Enrichment issues its GETs through a pooled requests.Session; patch
+        # both that seam and the module-level fallback so neither can slip out.
+        with (
+            patch("requests.Session.get") as mock_session_get,
+            patch("rendering.citations.requests.get") as mock_get,
+        ):
             manager.enrich_with_metadata(max_requests=10)
+            mock_session_get.assert_not_called()
             mock_get.assert_not_called()
 
         cached = manager.citations.get(keys[0])
@@ -514,8 +521,12 @@ class TestOpenAlexBudgetLatch:
         manager = CitationManager()
         manager.add_citations(["Gamma, G. (2003). Work with DOI 10.1234/gamma."], 1)
 
-        with patch("rendering.citations.requests.get") as mock_get:
+        with (
+            patch("requests.Session.get") as mock_session_get,
+            patch("rendering.citations.requests.get") as mock_get,
+        ):
             manager.enrich_with_metadata(max_requests=10)
+            mock_session_get.assert_not_called()
             mock_get.assert_not_called()
 
     def test_expired_latch_allows_requests(self) -> None:
@@ -540,9 +551,8 @@ class TestOpenAlexBudgetLatch:
             "authorships": [],
             "primary_location": {},
         }
-        with patch(
-            "rendering.citations.requests.get", return_value=_mock_200(work)
-        ) as mock_get:
+        # Enrichment goes through the pooled session, so that is the seam.
+        with patch("requests.Session.get", return_value=_mock_200(work)) as mock_get:
             manager.enrich_with_metadata(max_requests=10)
             mock_get.assert_called()
 
@@ -665,6 +675,81 @@ class TestEnrichMaxRequestsContinues:
         third = manager.citations.get(keys[2])
         assert third is not None
         assert third.metadata is not None
+
+
+class TestOpenAlexSessionReuse:
+    """One pooled connection per enrichment run, reused and then closed."""
+
+    _ONE = 'Aaa, Alfred. (2001). "A Sufficiently Long First Title." Some Press.'
+    _TWO = 'Bbb, Bertha. (2002). "A Sufficiently Long Second Title." Other Press.'
+
+    def test_single_session_serves_all_lookups_and_is_closed(self) -> None:
+        """Both lookups share one requests.Session, which is closed at the end.
+
+        A real ``requests.Session`` is instantiated (its ``get`` and ``close``
+        are patched at class level, so nothing reaches the network) to keep the
+        genuine context-manager semantics: ``__exit__`` must call ``close``.
+        """
+        manager = CitationManager()
+        manager.add_citations([self._ONE], 1)
+        manager.add_citations([self._TWO], 2)
+        assert len(manager.citations) == 2
+
+        real_session_cls = requests.Session
+        created: list[requests.Session] = []
+
+        def factory(*args: Any, **kwargs: Any) -> requests.Session:
+            session = real_session_cls(*args, **kwargs)
+            created.append(session)
+            return session
+
+        with (
+            patch("rendering.citations.requests.Session", side_effect=factory),
+            patch.object(
+                real_session_cls, "get", return_value=_mock_200({"results": []})
+            ) as mock_get,
+            patch.object(real_session_cls, "close") as mock_close,
+            patch("rendering.citations.time.sleep"),
+        ):
+            manager.enrich_with_metadata(max_requests=10)
+
+        assert len(created) == 1  # one handshake, not one per citation
+        assert mock_get.call_count == 2  # both lookups rode the same session
+        mock_close.assert_called_once()  # closed on the way out
+        assert manager._session is None  # no stale session left behind
+
+    def test_session_closed_and_cleared_when_enrichment_raises(self) -> None:
+        """A failure mid-loop still closes the session and clears the handle."""
+        manager = CitationManager()
+        manager.add_citations([self._ONE], 1)
+
+        real_session_cls = requests.Session
+
+        with (
+            patch.object(real_session_cls, "close") as mock_close,
+            patch.object(
+                manager, "_fetch_metadata_from_openalex", side_effect=RuntimeError("x")
+            ),
+            pytest.raises(RuntimeError),
+        ):
+            manager.enrich_with_metadata(max_requests=10)
+
+        mock_close.assert_called_once()
+        assert manager._session is None
+
+    def test_direct_query_without_session_uses_module_level_get(self) -> None:
+        """Outside an enrichment run there is no session; requests.get is used."""
+        manager = CitationManager()
+
+        with patch(
+            "rendering.citations.requests.get", return_value=_mock_200({"ok": True})
+        ) as mock_get:
+            result = manager._make_openalex_request(
+                "https://api.openalex.org/works", {}, "ctx"
+            )
+
+        assert result == {"ok": True}
+        assert mock_get.call_count == 1
 
 
 _FULL = (
