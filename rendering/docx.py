@@ -416,9 +416,14 @@ def sanitize_omml_xml(omml_markup: str) -> str:
         ET.fromstring(omml_markup)
         return omml_markup
     except ET.ParseError as e:
-        error_msg = str(e)
+        # Gate on the markup itself, not the parser message: expat error
+        # strings never name the offending tag ("mismatched tag: line 1,
+        # column 158"), so matching "groupChr" against them would leave the
+        # repair logic unreachable. The repairs are no-ops when no
+        # groupChrPr construct exists.
+        logger.debug("OMML parse failed, attempting sanitization: %s", e)
 
-        if "groupChr" in error_msg:
+        if "<m:groupChrPr" in omml_markup:
             fixed_markup = omml_markup
 
             pattern = r"<m:groupChrPr[^>]*>"
@@ -526,7 +531,11 @@ def add_math_to_paragraph(paragraph: Any, latex_code: str) -> None:
 
         try:
             omml_element = parse_xml(omml_para)
-        except (ET.ParseError, ValueError) as parse_error:
+        # python-docx parses with lxml, whose XMLSyntaxError derives from
+        # SyntaxError (not from xml.etree's ParseError); without SyntaxError in
+        # the tuple the sanitize-and-retry path below never runs and every
+        # malformed equation degrades to italic text.
+        except (ET.ParseError, ValueError, SyntaxError) as parse_error:
             logger.warning(
                 "XML parsing failed, attempting to sanitize OMML: %s", parse_error
             )
@@ -913,7 +922,10 @@ def create_docx_summary(
 
     # === SECTION 3: Content Summaries ===
     for page_item in data.page_render_items:
-        page_heading = document.add_paragraph(page_item.heading_text)
+        # The heading is the one string reaching add_paragraph unsanitized: a
+        # lenient endpoint can return a page_number carrying an XML-illegal
+        # control character, which would fail the entire save.
+        page_heading = document.add_paragraph(sanitize_for_xml(page_item.heading_text))
         page_heading._p.style = heading2_style_id
 
         for point in page_item.bullet_points:
@@ -1009,6 +1021,13 @@ def create_docx_summary(
         document.save(str(tmp_path))
         os.replace(tmp_path, output_path)
     except OSError:
+        with contextlib.suppress(OSError):
+            tmp_path.unlink()
+        raise
+    except Exception:
+        # A non-OSError failure (e.g. a ValueError raised from document.save on
+        # XML-incompatible content) must not orphan the sibling .docx.tmp;
+        # clean it up before re-raising, mirroring rendering/text.py.
         with contextlib.suppress(OSError):
             tmp_path.unlink()
         raise

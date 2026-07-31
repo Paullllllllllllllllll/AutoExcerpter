@@ -96,7 +96,9 @@ def create_markdown_summary(
         lines.append("")
 
     for page_item in data.page_render_items:
-        lines.append(f"### {page_item.heading_text}")
+        # Sanitized for the same reason as in the DOCX writer: a page number
+        # from a lenient endpoint may carry XML-illegal control characters.
+        lines.append(f"### {sanitize_for_xml(page_item.heading_text)}")
         lines.append("")
 
         for point in page_item.bullet_points:
@@ -133,12 +135,15 @@ def create_markdown_summary(
 
             if citation.url:
                 # Escape link-breaking characters: brackets in the text and
-                # parentheses/spaces in the URL (e.g. DOIs like S0140-6736(00)…).
+                # parentheses/spaces/angle brackets in the URL (DOIs like
+                # S0140-6736(00)… or ones carrying <...> segments).
                 link_text = citation_text.replace("[", "\\[").replace("]", "\\]")
                 link_url = (
                     citation.url.replace("(", "%28")
                     .replace(")", "%29")
                     .replace(" ", "%20")
+                    .replace("<", "%3C")
+                    .replace(">", "%3E")
                 )
                 line = f"{idx}. [{link_text}]({link_url})"
             else:
@@ -163,9 +168,16 @@ def create_markdown_summary(
     # mid-write never leaves a truncated .md that resume trusts as COMPLETE.
     tmp_path = output_path.with_name(output_path.name + ".tmp")
     try:
-        tmp_path.write_text("\n".join(lines), encoding="utf-8")
+        tmp_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
         os.replace(tmp_path, output_path)
     except OSError:
+        with contextlib.suppress(OSError):
+            tmp_path.unlink()
+        raise
+    except Exception:
+        # A non-OSError failure (e.g. a UnicodeEncodeError from write_text)
+        # must not orphan the sibling .md.tmp; clean it up before re-raising,
+        # mirroring rendering/text.py.
         with contextlib.suppress(OSError):
             tmp_path.unlink()
         raise

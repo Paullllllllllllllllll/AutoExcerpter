@@ -46,23 +46,41 @@ _REPRINT_RE = re.compile(
     _YEAR_CORE + r"\s*\[\s*" + _YEAR_CORE + r"\s*\]"
     r"|\[\s*" + _YEAR_CORE + r"\s*\]\s*" + _YEAR_CORE
 )
+# Plausible publication-year span (1500-2099) used by the initial-vs-year guard
+# below. Narrower than the year pattern itself, which also admits 1000-1499.
+_PUB_YEAR = r"(?:1[5-9][0-9]{2}|20[0-9]{2})"
 # Page-marker spans (English pp./p., German S./SS., folio fol.) stripped before
 # year scanning so a page range such as "S. 1066-1071" is never read as a year.
-# For the single-letter markers p./s. only, the bare-number alternative is
-# guarded by a negative lookahead so an author initial adjoining a year
-# ("Sen, S. 1981") is NOT swallowed as a page marker: a marker followed by a
-# lone plausible year (1000-2099) is left intact, while page ranges and
-# non-year page numbers still strip. Multi-letter markers (pp./ss./fol.) are
-# never author initials, so they strip any page number — including four-digit
-# ones ("pp. 1850", "fol. 1200"). The range alternative comes first so
-# "S. 1066-1071" is consumed whole (never mistaken for a year). Trade-off: a
-# genuine single-page German cite of a four-digit page ("S. 1815") is read as
-# a year — a rare, accepted false positive versus the initial-vs-year collapse.
+# For the single-letter markers p./s. only, both alternatives are guarded so an
+# author initial adjoining a year is NOT swallowed as a page marker:
+#   - a lone plausible year ("Sen, S. 1981") is left intact;
+#   - a range whose BOTH endpoints are plausible publication years
+#     ("Sraffa, P. 1951-1973") is left intact.
+# Non-year page numbers and ordinary page ranges ("S. 42", "S. 1066-1071",
+# whose endpoints fall below 1500) still strip. Multi-letter markers
+# (pp./ss./fol.) are never author initials, so they strip any page number —
+# including four-digit ones ("pp. 1850", "fol. 1200"). The range alternative
+# comes first so "S. 1066-1071" is consumed whole. Trade-off: a genuine
+# single-page German cite of a four-digit page ("S. 1815") is read as a year —
+# a rare, accepted false positive versus the initial-vs-year collapse.
 _PAGE_MARKER_RE = re.compile(
     r"\b(?:(?:pp|ss|fol)\.\s*(?:\d+\s*-\s*\d+|\d+)"
-    r"|[ps]\.\s*(?:\d+\s*-\s*\d+|(?!(?:1[0-9]{3}|20[0-9]{2})\b)\d+))",
+    r"|[ps]\.\s*(?:(?!" + _PUB_YEAR + r"\s*-\s*" + _PUB_YEAR + r"\b)\d+\s*-\s*\d+"
+    r"|(?!(?:1[0-9]{3}|20[0-9]{2})\b)\d+))",
     re.IGNORECASE,
 )
+# Roman numeral in canonical (subtractive) form. A bare character class of
+# {i,v,x,l,c,d,m} would accept any letter salad — German "Bd. im" or French
+# "t. dix" then parse as volumes 999 and 509 and block legitimate merges — so
+# the branch is anchored to real Roman grammar. The leading lookahead forces a
+# non-empty match (every quantified group is optional on its own).
+_ROMAN_NUMERAL = (
+    r"(?=[mdclxvi])m{0,3}(?:cm|cd|d?c{0,3})(?:xc|xl|l?x{0,3})(?:ix|iv|v?i{0,3})"
+)
+# Canonical grammar alone still admits word-shaped numerals such as "dix"
+# (= DIX = 509); a volume designator that large is not a real citation, so
+# Roman-derived volumes above this bound are rejected as false positives.
+MAX_ROMAN_VOLUME = 200
 # Volume designators across English/German/French scholarship. The number may
 # be Arabic or a Roman numeral. The period is optional for the spelled-out
 # designators but required for the bare "t." so ordinary words never match;
@@ -71,8 +89,8 @@ _PAGE_MARKER_RE = re.compile(
 # initial ("Smith, T. 190. Title" or "Smith, T. 1990. Title") is never read as a
 # tome/volume, while the lowercase French "t. II" abbreviation still parses.
 _VOLUME_RE = re.compile(
-    r"\b(?:vol|volume|bd|band|teil|tome)\.?\s*(\d+|[ivxlcdm]+)\b"
-    r"|\b(?-i:t)\.\s*(\d{1,3}|[ivxlcdm]+)\b",
+    r"\b(?:vol|volume|bd|band|teil|tome)\.?\s*(\d+|" + _ROMAN_NUMERAL + r")\b"
+    r"|\b(?-i:t)\.\s*(\d{1,3}|" + _ROMAN_NUMERAL + r")\b",
     re.IGNORECASE,
 )
 
@@ -154,7 +172,12 @@ def _extract_volume(text: str) -> int | None:
         return None
     if captured.isdigit():
         return int(captured)
-    return _roman_to_int(captured)
+    value = _roman_to_int(captured)
+    if value is not None and value > MAX_ROMAN_VOLUME:
+        # An implausibly large Roman "volume" is an ordinary word that happens
+        # to be well-formed Roman ("dix"), not a designator.
+        return None
+    return value
 
 
 def _title_spans(text: str) -> list[str]:
@@ -299,15 +322,14 @@ def enrich_if_enabled(citation_manager: CitationManager) -> None:
 
 # Constants for API configuration
 OPENALEX_API_BASE = "https://api.openalex.org"
-OPENALEX_POLITE_POOL_EMAIL = "your-email@example.com"  # Users should update this
 API_REQUEST_TIMEOUT = 10
 API_RETRY_DELAY = 1.0
 MAX_API_RETRIES = 3
 API_POLITE_DELAY = 0.1  # Delay between API calls to be polite
-# 429 budget-exhaustion: skip remaining enrichment if retryAfter exceeds this (seconds)
-BUDGET_EXHAUSTED_RETRY_AFTER_THRESHOLD = 300  # 5 minutes
 # 429 short rate-limit: sleep-and-retry within the attempt loop when retryAfter
-# is at or below this (seconds); larger values keep the skip behavior.
+# is at or below this (seconds). Anything above it means the wait is longer than
+# the run can absorb, so the daily budget is latched instead of firing one
+# doomed request per remaining citation.
 RATE_LIMIT_MAX_SLEEP = 30  # seconds
 
 # Constants for citation matching
@@ -371,13 +393,16 @@ class Citation:
         # (p. 123, pp. 123-145, (pp. 123), S. 12-34); text is already folded to
         # lowercase here, but \b keeps "words." from matching the bare "s.".
         # Mirrors _PAGE_MARKER_RE: the year guard applies only to the
-        # single-letter markers p./s. so an author initial before a year
-        # ("Sen, S. 1981") is not stripped here either (which would otherwise
-        # collapse distinct editions onto one key), while multi-letter markers
+        # single-letter markers p./s. so neither an author initial before a
+        # year ("Sen, S. 1981") nor one before a year range ("Sraffa, P.
+        # 1951-1973") is stripped here either (which would otherwise collapse
+        # distinct editions onto one key), while multi-letter markers
         # (pp./ss./fol.) strip any page number; range alternative comes first.
         text = re.sub(
             r"\(?\s*\b(?:(?:pp|ss|fol)\.\s*(?:\d+\s*-\s*\d+|\d+)"
-            r"|[ps]\.\s*(?:\d+\s*-\s*\d+|(?!(?:1[0-9]{3}|20[0-9]{2})\b)\d+))"
+            r"|[ps]\.\s*(?:(?!" + _PUB_YEAR + r"\s*-\s*" + _PUB_YEAR + r"\b)"
+            r"\d+\s*-\s*\d+"
+            r"|(?!(?:1[0-9]{3}|20[0-9]{2})\b)\d+))"
             r"\s*\)?",
             " ",
             text,
@@ -412,9 +437,15 @@ class Citation:
 
         self.comparison_text = text
 
+        # A citation made up entirely of stripped material (a bare URL, say)
+        # leaves no comparison text at all; keying on "" would collapse every
+        # such citation onto one hash. Fall back to the folded raw text, which
+        # still distinguishes two different URLs.
+        key_source = text or _fold(self.raw_text.strip())
+
         # Keep year and volume in the key material so different editions never
         # collapse onto the same hash.
-        key_material = f"{text}|y={self.year}|v={self.volume}"
+        key_material = f"{key_source}|y={self.year}|v={self.volume}"
         return hashlib.md5(key_material.encode("utf-8")).hexdigest()
 
     def add_page(self, page: int | None) -> None:
@@ -442,10 +473,13 @@ class CitationManager:
         Initialize the citation manager.
 
         Args:
-            polite_pool_email: Email for OpenAlex API polite pool access.
+            polite_pool_email: Email for OpenAlex API polite pool access. Left
+                blank (the default), no ``mailto`` parameter is sent at all —
+                honoring the "leave blank to skip" contract in the shipped
+                config rather than announcing a placeholder address.
         """
         self.citations: dict[str, Citation] = {}
-        self.polite_pool_email = polite_pool_email or OPENALEX_POLITE_POOL_EMAIL
+        self.polite_pool_email = (polite_pool_email or "").strip()
         self._api_cache: dict[str, dict[str, Any] | None] = {}
         # Memoize the deterministic raw_text -> normalized_key derivation so a
         # repeated mention of the same citation skips the regex/NFKD/MD5
@@ -630,6 +664,12 @@ class CitationManager:
     ) -> Citation | None:
         """Return an existing survivor *candidate* should merge into, or None."""
         for survivor in survivors:
+            if not candidate.comparison_text or not survivor.comparison_text:
+                # A citation stripped down to nothing (a bare URL) carries no
+                # comparison material, and SequenceMatcher scores two empty
+                # strings as a perfect match — which would silently collapse
+                # distinct references. Never fuzzy-merge on absent evidence.
+                continue
             if (
                 candidate.volume is not None
                 and survivor.volume is not None
@@ -672,6 +712,10 @@ class CitationManager:
 
         survivor.pages |= other.pages
         survivor.unnumbered = survivor.unnumbered or other.unnumbered
+        # Full wins over partial, exactly as in add_citations: a partial
+        # survivor that absorbs a full near-duplicate must stop being partial,
+        # or _resolve_partials would later drop the merged citation outright.
+        survivor.partial = survivor.partial and other.partial
         if survivor.doi is None:
             survivor.doi = other.doi
         if survivor.metadata is None:
@@ -917,8 +961,9 @@ class CitationManager:
                     except Exception:
                         error_detail = {}
                     retry_after = self._parse_retry_after(error_detail, response)
-                    if retry_after > BUDGET_EXHAUSTED_RETRY_AFTER_THRESHOLD:
-                        # Long retryAfter means the daily budget is depleted;
+                    if retry_after > RATE_LIMIT_MAX_SLEEP:
+                        # Any wait longer than the in-loop sleep ceiling means
+                        # the API is unavailable for the rest of this run;
                         # latch it process-wide + cross-run so no further items
                         # (this run or the next) re-hammer the API.
                         self._openalex_budget_exhausted = True
@@ -954,8 +999,8 @@ class CitationManager:
                         )
                         return None
                     else:
-                        # No usable retryAfter, or one between the short-sleep
-                        # ceiling and the budget threshold: skip this citation.
+                        # No usable retryAfter at all: skip this citation
+                        # (nothing tells us how long to back off).
                         logger.warning(
                             "OpenAlex rate limit hit for %s (retryAfter=%ds). "
                             "Skipping this citation.",
@@ -1022,10 +1067,21 @@ class CitationManager:
 
         return None
 
+    def _polite_pool_params(self) -> dict[str, Any]:
+        """Return the ``mailto`` parameter, or an empty dict when unconfigured.
+
+        OpenAlex treats ``mailto`` as an opt-in courtesy; sending a blank or
+        placeholder address is worse than sending none, so an unset email
+        simply omits the parameter.
+        """
+        if not self.polite_pool_email:
+            return {}
+        return {"mailto": self.polite_pool_email}
+
     def _query_openalex_by_doi(self, doi: str) -> dict[str, Any] | None:
         """Query OpenAlex API using DOI."""
         url = f"{OPENALEX_API_BASE}/works/https://doi.org/{doi}"
-        params = {"mailto": self.polite_pool_email}
+        params = self._polite_pool_params()
 
         data = self._make_openalex_request(url, params, f"DOI {doi}")
         if data:
@@ -1047,10 +1103,10 @@ class CitationManager:
             return None
 
         url = f"{OPENALEX_API_BASE}/works"
-        params = {
+        params: dict[str, Any] = {
             "search": search_query,
-            "mailto": self.polite_pool_email,
             "per-page": SEARCH_RESULTS_PER_PAGE,
+            **self._polite_pool_params(),
         }
 
         data = self._make_openalex_request(

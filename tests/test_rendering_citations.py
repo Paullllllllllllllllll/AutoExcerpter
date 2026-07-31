@@ -588,13 +588,30 @@ class TestOpenAlexRateLimitRetry:
         assert result == {"ok": True}
         mock_sleep.assert_any_call(3)
 
-    def test_medium_retry_after_skips_without_latch(self) -> None:
-        """A retryAfter between the sleep ceiling and the budget threshold skips
-        the citation but does not latch the budget."""
+    def test_medium_retry_after_latches_budget(self) -> None:
+        """A retryAfter above the sleep ceiling latches the budget instead of
+        skipping only this citation (no dead band that keeps firing doomed
+        requests for every remaining citation)."""
         manager = CitationManager()
 
         with patch(
             "rendering.citations.requests.get", return_value=_mock_429(120)
+        ) as mock_get:
+            result = manager._make_openalex_request(
+                "https://api.openalex.org/works", {}, "ctx"
+            )
+
+        assert result is None
+        assert mock_get.call_count == 1
+        assert manager._openalex_budget_exhausted is True
+        assert _is_budget_exhausted() is True
+
+    def test_unknown_retry_after_skips_without_latch(self) -> None:
+        """A 429 with no usable retryAfter skips the citation only."""
+        manager = CitationManager()
+
+        with patch(
+            "rendering.citations.requests.get", return_value=_mock_429()
         ) as mock_get:
             result = manager._make_openalex_request(
                 "https://api.openalex.org/works", {}, "ctx"

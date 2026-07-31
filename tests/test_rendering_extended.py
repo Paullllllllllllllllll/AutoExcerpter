@@ -78,7 +78,7 @@ def _clear_log_handles() -> Generator[None]:
 class TestInitializeLogFile:
     """Tests for initialize_log_file()."""
 
-    @patch("pipeline.log.get_api_concurrency", return_value=(4, 0.05))
+    @patch("pipeline.log.get_api_concurrency", return_value=4)
     @patch("pipeline.log.get_api_timeout", return_value=900)
     @patch("pipeline.log.get_service_tier", return_value="flex")
     def test_creates_log_file_with_header(
@@ -109,7 +109,7 @@ class TestInitializeLogFile:
         assert payload["configuration"]["concurrent_requests"] == 8
         assert payload["configuration"]["extraction_dpi"] == 300
 
-    @patch("pipeline.log.get_api_concurrency", return_value=(4, 0.05))
+    @patch("pipeline.log.get_api_concurrency", return_value=4)
     @patch("pipeline.log.get_api_timeout", return_value=900)
     @patch("pipeline.log.get_service_tier", return_value="flex")
     def test_non_openai_model_service_tier_na(
@@ -131,7 +131,7 @@ class TestInitializeLogFile:
         payload = json.loads(content.splitlines()[0])
         assert payload["configuration"]["service_tier"] == "N/A"
 
-    @patch("pipeline.log.get_api_concurrency", return_value=(4, 0.05))
+    @patch("pipeline.log.get_api_concurrency", return_value=4)
     @patch("pipeline.log.get_api_timeout", return_value=900)
     @patch("pipeline.log.get_service_tier", return_value="flex")
     def test_returns_false_on_error(
@@ -158,7 +158,7 @@ class TestInitializeLogFile:
 class TestAppendToLog:
     """Tests for append_to_log()."""
 
-    @patch("pipeline.log.get_api_concurrency", return_value=(4, 0.05))
+    @patch("pipeline.log.get_api_concurrency", return_value=4)
     @patch("pipeline.log.get_api_timeout", return_value=900)
     @patch("pipeline.log.get_service_tier", return_value="flex")
     def test_appends_entry_as_json(
@@ -185,7 +185,7 @@ class TestAppendToLog:
         content = log_path.read_text(encoding="utf-8")
         assert '"page": 1' in content
 
-    @patch("pipeline.log.get_api_concurrency", return_value=(4, 0.05))
+    @patch("pipeline.log.get_api_concurrency", return_value=4)
     @patch("pipeline.log.get_api_timeout", return_value=900)
     @patch("pipeline.log.get_service_tier", return_value="flex")
     def test_entry_is_on_disk_before_finalize(
@@ -227,7 +227,7 @@ class TestAppendToLog:
 class TestFinalizeLogFile:
     """Tests for finalize_log_file()."""
 
-    @patch("pipeline.log.get_api_concurrency", return_value=(4, 0.05))
+    @patch("pipeline.log.get_api_concurrency", return_value=4)
     @patch("pipeline.log.get_api_timeout", return_value=900)
     @patch("pipeline.log.get_service_tier", return_value="flex")
     def test_closes_json_array(
@@ -254,7 +254,7 @@ class TestFinalizeLogFile:
         # Last line is a complete JSON object (no array bracket in JSONL).
         assert json.loads(content.splitlines()[-1]) == {"page": 1, "status": "ok"}
 
-    @patch("pipeline.log.get_api_concurrency", return_value=(4, 0.05))
+    @patch("pipeline.log.get_api_concurrency", return_value=4)
     @patch("pipeline.log.get_api_timeout", return_value=900)
     @patch("pipeline.log.get_service_tier", return_value="flex")
     def test_full_lifecycle_produces_valid_json(
