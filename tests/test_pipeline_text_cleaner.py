@@ -142,6 +142,17 @@ class TestBalanceDollarSigns:
         result = balance_dollar_signs(text)
         assert result == text
 
+    def test_bare_currency_symbol_in_prose_untouched(self) -> None:
+        """A lone "$" followed by plain prose gets no spurious closing "$"."""
+        text = "Prices in $ ranged widely across markets"
+        assert balance_dollar_signs(text) == text
+
+    def test_lone_dollar_before_math_still_closed(self) -> None:
+        """The prose guard does not disarm genuine unclosed math."""
+        assert balance_dollar_signs("The value $x^2 is large") == (
+            "The value $x^2 is large$"
+        )
+
 
 class TestCloseUnclosedBraces:
     """Tests for closing unclosed LaTeX braces."""
@@ -276,6 +287,14 @@ class TestMergeHyphenation:
         assert "-" in merge_hyphenation("co-\nordinating")
         assert "-" in merge_hyphenation("self-\nevident")
         assert "-" in merge_hyphenation("non-\ntrivial")
+
+    def test_word_split_across_three_lines_fully_merged(self) -> None:
+        """Every break of a multi-line split merges, not just the first."""
+        assert merge_hyphenation("encyclo-\npae-\ndia") == "encyclopaedia"
+
+    def test_multi_line_split_respects_compound_guard(self) -> None:
+        """Fixpoint iteration does not override the keep-hyphen guard."""
+        assert merge_hyphenation("co-\nordina-\ntion") == "co-\nordination"
 
 
 class TestShouldKeepHyphen:
@@ -577,6 +596,28 @@ class TestNormalizeMathDelimiters:
         r"""Inline and display forms convert together."""
         text = r"\(a\) and \[b\]"
         assert normalize_math_delimiters(text) == "$a$ and $$b$$"
+
+    def test_markdown_escaped_brackets_kept(self) -> None:
+        r"""Editorial \[sic\] is an escaped bracket, not display math."""
+        text = r"He wrote \[sic\] in the margin."
+        assert normalize_math_delimiters(text) == text
+        assert "$$" not in clean_transcription(
+            text, {"enabled": True, "latex_fixing": _LATEX_ALL_ON}
+        )
+
+    def test_math_brackets_still_converted(self) -> None:
+        r"""A genuine \[x^2 + y^2\] becomes display math."""
+        assert normalize_math_delimiters(r"\[x^2 + y^2\]") == "$$x^2 + y^2$$"
+
+    def test_editorial_query_bracket_kept(self) -> None:
+        r"""\[?\] carries no math signal and stays literal."""
+        text = r"the word \[?\] is unclear"
+        assert normalize_math_delimiters(text) == text
+
+    def test_unpaired_bracket_left_alone(self) -> None:
+        r"""A lone \[ is not rewritten into "$$"."""
+        text = r"an opening \[ with no partner"
+        assert normalize_math_delimiters(text) == text
 
 
 class TestConvertHtmlSubsup:

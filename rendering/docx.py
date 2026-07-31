@@ -74,6 +74,22 @@ from rendering.summary import (
 logger = setup_logger(__name__)
 
 
+_MATH_INDICATORS = frozenset("\\^_={}")
+
+
+def _is_currency_span(content: str) -> bool:
+    """Return True when a ``$...$`` capture is prose currency, not inline math.
+
+    "Wages rose from $3 to $5" would otherwise be parsed as inline math over
+    "3 to ", destroying the sentence. A capture opening on a digit and holding
+    no math indicator (``\\``, ``^``, ``_``, ``=``, ``{``, ``}``) is treated as
+    a price range and left as literal text.
+    """
+    if not content or not content[0].isdigit():
+        return False
+    return not any(ch in _MATH_INDICATORS for ch in content)
+
+
 def parse_latex_in_text(text: str) -> list[tuple[str, str]]:
     """Parse text and split it into segments of regular text and LaTeX formulas.
 
@@ -124,7 +140,9 @@ def parse_latex_in_text(text: str) -> list[tuple[str, str]]:
         return any(start < d_end and d_start < end for d_start, d_end in display_ranges)
 
     for match in re.finditer(inline_pattern, protected_text, re.DOTALL):
-        if not overlaps_display_range(match.start(), match.end()):
+        if not overlaps_display_range(
+            match.start(), match.end()
+        ) and not _is_currency_span(match.group(1)):
             temp_segments.append(
                 (match.group(1), "latex_inline", match.start(), match.end())
             )
@@ -227,8 +245,15 @@ def _simplify_delimiter_sizing(text: str) -> str:
         for delim in delims:
             target = f"{size}{delim}"
             if target in text:
-                plain = delim if delim not in ("\\{", "\\}", "\\|") else delim[1:]
-                text = text.replace(target, plain if delim != "." else "")
+                # "\{" / "\}" stay escaped: unescaping them would turn visible
+                # braces into invisible LaTeX grouping. Only "\|" collapses.
+                if delim == ".":
+                    plain = ""
+                elif delim == "\\|":
+                    plain = "|"
+                else:
+                    plain = delim
+                text = text.replace(target, plain)
     return text
 
 
@@ -368,10 +393,12 @@ _LATEX_SIMPLIFICATIONS: list[_LaTeXRule] = [
     _regex_rule(
         r"\\begin\{cases\}(.+?)\\end\{cases\}", r"\1", "cases env unwrapped", re.DOTALL
     ),
-    # Alignment markers
+    # Alignment markers. The row separator goes first so "\\&" degrades to a
+    # bare alignment "&"; the negative lookbehind then spares an escaped "\&",
+    # which is a printable ampersand rather than an alignment marker.
     (
         lambda text: "&" in text or "\\\\" in text,
-        lambda text: text.replace("&", " ").replace("\\\\", " "),
+        lambda text: re.sub(r"(?<!\\)&", " ", text.replace("\\\\", " ")),
         "alignment markers cleaned",
     ),
     # Limits modifiers
@@ -598,8 +625,10 @@ def add_formatted_text_to_paragraph(paragraph: Any, text: str) -> None:
                     run.italic = True
 
 
+# The italic alternative requires non-space flanking characters, as CommonMark
+# does: "a * b * c" is literal prose, not emphasis. Bold (**) is unchanged.
 _MARKDOWN_EMPHASIS_PATTERN = re.compile(
-    r"\*\*(?P<bold>[^*]+)\*\*|\*(?P<italic>[^*]+)\*"
+    r"\*\*(?P<bold>[^*]+)\*\*|\*(?P<italic>[^*\s](?:[^*]*[^*\s])?)\*"
 )
 
 

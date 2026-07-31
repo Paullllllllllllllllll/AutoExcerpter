@@ -84,6 +84,10 @@ LATEX_COMMAND_FIXES = [
 # Regex pattern for hyphenated line breaks
 _HYPHEN_PATTERN = re.compile(r"(\w{3,})-\n(\w{2,})")
 
+# Characters that make the tail of a lone "$" read as unclosed inline math
+# rather than as prose containing a bare currency symbol.
+_INLINE_MATH_CHARS = frozenset("\\=^_{+")
+
 # Collapse runs of 3+ internal spaces (between non-space chars) to two spaces.
 _COLLAPSE_SPACES_PATTERN = re.compile(r"(?<=\S) {3,}(?=\S)")
 
@@ -351,6 +355,14 @@ def balance_dollar_signs(text: str) -> str:
                 continue
             after = line[pos + 1 :].strip()
 
+            # Prose guard: a lone "$" in running text (a bare currency symbol,
+            # e.g. "Prices in $ ranged widely") is only unclosed math when what
+            # follows actually looks like math. Otherwise leave the line alone
+            # rather than appending a spurious closing "$".
+            if after and not any(ch in _INLINE_MATH_CHARS for ch in after):
+                result_lines.append(line)
+                continue
+
             if after and not after.endswith("$"):
                 # Add closing $ at end of meaningful content
                 # Find end of math-like content (before punctuation/whitespace)
@@ -443,13 +455,45 @@ def fix_common_latex_commands(text: str) -> str:
     return text
 
 
+# A "\[...\]" pair: display math in LaTeX, an escaped square bracket in
+# Markdown. Only the math reading is converted; see _display_math_or_literal.
+_ESCAPED_BRACKET_PAIR = re.compile(r"\\\[(.+?)\\\]", re.DOTALL)
+
+# Characters that mark the content of a bracket pair as mathematical.
+_MATH_CONTENT_CHARS = frozenset("\\^_=+*/<>")
+
+
+def _looks_like_math(content: str) -> bool:
+    """Return True when bracket-pair content reads as math rather than prose.
+
+    Math is signalled by an operator, a digit, or a bare single-symbol
+    variable. Editorial interpolations ("sic", "illegible", "?") carry none of
+    these and stay literal.
+    """
+    stripped = content.strip()
+    if not stripped:
+        return False
+    if len(stripped) == 1 and stripped.isalnum():
+        return True
+    return any(ch in _MATH_CONTENT_CHARS or ch.isdigit() for ch in stripped)
+
+
+def _display_math_or_literal(match: re.Match[str]) -> str:
+    """Convert a ``\\[...\\]`` pair to ``$$...$$`` only when it is math."""
+    content = match.group(1)
+    if _looks_like_math(content):
+        return f"$${content}$$"
+    return match.group(0)
+
+
 def normalize_math_delimiters(text: str) -> str:
     """Normalize alternate LaTeX math delimiters to dollar-sign form.
 
-    Maps ``\\(...\\)`` to inline ``$...$`` and ``\\[...\\]`` to display
-    ``$$...$$``. This is a safe textual substitution: the delimiter tokens
-    only occur as math markers, so the mapping preserves the enclosed content
-    while unifying the delimiter style the downstream renderer expects.
+    Maps ``\\(...\\)`` to inline ``$...$``. Bracket pairs are converted to
+    display ``$$...$$`` only when the enclosed content looks like math:
+    ``\\[`` also occurs as a Markdown-escaped square bracket, so editorial
+    interpolations such as ``\\[sic\\]`` or ``\\[illegible\\]`` must survive.
+    Unpaired brackets are left alone.
 
     Args:
         text: Text potentially using ``\\(...\\)`` / ``\\[...\\]`` delimiters.
@@ -461,7 +505,7 @@ def normalize_math_delimiters(text: str) -> str:
         return text
 
     # Display first, then inline (distinct tokens, so order is not critical).
-    text = text.replace("\\[", "$$").replace("\\]", "$$")
+    text = _ESCAPED_BRACKET_PAIR.sub(_display_math_or_literal, text)
     text = text.replace("\\(", "$").replace("\\)", "$")
     return text
 
@@ -647,6 +691,11 @@ def merge_hyphenation(text: str) -> str:
     genuine hyphenated compounds like "Jean-Baptiste" or "co-ordinating",
     while still merging ordinary line-break hyphenation like "Manage-\\nment".
 
+    Substitution is repeated to a fixpoint: a single pass cannot see the
+    second break of a word split across three or more lines
+    ("encyclo-\\npae-\\ndia"), because the first match consumes the fragment
+    that opens the next one.
+
     Args:
         text: Text with potential line-break hyphenation.
 
@@ -661,7 +710,11 @@ def merge_hyphenation(text: str) -> str:
             return left + "-\n" + right
         return left + right
 
-    return _HYPHEN_PATTERN.sub(_replace, text)
+    while True:
+        merged = _HYPHEN_PATTERN.sub(_replace, text)
+        if merged == text:
+            return text
+        text = merged
 
 
 # ============================================================================

@@ -382,3 +382,32 @@ class TestPreprocessPilImage:
 
         assert result.mode == "L"
         assert result.size == (100, 100)
+
+    @pytest.mark.parametrize("mode", ["I", "I;16"])
+    def test_sixteen_bit_gray_rescaled_not_clipped(
+        self, openai_config: dict[str, Any], mode: str
+    ) -> None:
+        """16-bit scans are scaled to 8 bits instead of clipped to white."""
+        openai_config["resize_profile"] = "none"
+        width = 256
+        image = Image.new(mode, (width, 8))
+        row = [x * 257 for x in range(width)]
+        image.putdata(row * 8)
+
+        result = ImageProcessor.preprocess_pil_image(image, openai_config, "openai")
+
+        assert result.mode == "L"
+        values = list(result.tobytes())
+        near_white = sum(1 for v in values if v >= 250) / len(values)
+        assert near_white < 0.1
+        assert max(values) - min(values) > 200
+
+    def test_sixteen_bit_endian_variants_supported(
+        self, openai_config: dict[str, Any]
+    ) -> None:
+        """The "I;16B/L/N" variants are promoted before point() is applied."""
+        openai_config["resize_profile"] = "none"
+        for mode in ("I;16B", "I;16L", "I;16N"):
+            image = Image.new(mode, (16, 16))
+            result = ImageProcessor.preprocess_pil_image(image, openai_config, "openai")
+            assert result.mode == "L"

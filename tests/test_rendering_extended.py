@@ -38,8 +38,10 @@ from rendering.docx import (
     add_formatted_text_to_paragraph,
     add_hyperlink,
     create_docx_summary,
+    parse_latex_in_text,
     parse_markdown_emphasis,
     sanitize_omml_xml,
+    simplify_problematic_latex,
     strip_markdown_emphasis,
 )
 from rendering.markdown import create_markdown_summary
@@ -1187,3 +1189,45 @@ class TestMarkdownEmphasisHelpers:
             strip_markdown_emphasis("*The Review, 87*(2) and **bold**")
             == "The Review, 87(2) and bold"
         )
+
+    def test_space_flanked_asterisks_are_not_italic(self) -> None:
+        """CommonMark: "a * b * c" is literal prose, not emphasis."""
+        segments = parse_markdown_emphasis("a * b * c")
+        assert all(kind == "text" for kind, _ in segments)
+        assert "".join(piece for _, piece in segments) == "a * b * c"
+
+    def test_single_word_italic_still_parsed(self) -> None:
+        assert parse_markdown_emphasis("*word*") == [("italic", "word")]
+
+    def test_bold_still_parsed(self) -> None:
+        assert parse_markdown_emphasis("**word**") == [("bold", "word")]
+
+
+class TestLatexProseGuards:
+    """Prose that merely resembles LaTeX must survive DOCX rendering."""
+
+    def test_currency_range_is_not_inline_math(self) -> None:
+        """A "$3 to $5" span is a price range, not an inline formula."""
+        segments = parse_latex_in_text("Wages rose from $3 to $5 per day.")
+        assert all(kind == "text" for _, kind in segments)
+        assert "".join(content for content, _ in segments) == (
+            "Wages rose from $3 to $5 per day."
+        )
+
+    def test_subscripted_variable_still_inline_math(self) -> None:
+        segments = parse_latex_in_text("value $x_1$ here")
+        assert [kind for _, kind in segments].count("latex_inline") == 1
+
+    def test_digit_formula_with_math_indicator_kept(self) -> None:
+        """A digit-initial capture carrying math markup stays math."""
+        segments = parse_latex_in_text("see $2^n = m$ above")
+        assert [kind for _, kind in segments].count("latex_inline") == 1
+
+    def test_escaped_braces_survive_delimiter_sizing(self) -> None:
+        simplified, _ = simplify_problematic_latex(r"\bigl\{ x \bigr\}")
+        assert "\\{" in simplified
+        assert "\\}" in simplified
+
+    def test_escaped_ampersand_survives_alignment_cleanup(self) -> None:
+        simplified, _ = simplify_problematic_latex(r"A \& B & C")
+        assert "\\&" in simplified

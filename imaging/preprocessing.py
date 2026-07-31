@@ -50,6 +50,10 @@ DEFAULT_ANTHROPIC_HIGH_MAX_SIDE = 1568
 DEFAULT_ORIGINAL_MAX_SIDE_PX = 6000
 DEFAULT_ORIGINAL_MAX_PIXELS = 10_240_000
 
+# PIL modes carrying more than 8 bits per grayscale sample. Pillow's grayscale
+# conversion clips (not scales) these, so they are rescaled to 8-bit first.
+_SIXTEEN_BIT_MODES = frozenset({"I", "I;16", "I;16B", "I;16L", "I;16N"})
+
 # Resampling algorithm mapping
 _RESAMPLING_ALGORITHMS = {
     "bilinear": Image.Resampling.BILINEAR,
@@ -325,9 +329,9 @@ class ImageProcessor:
     ) -> Image.Image:
         """Apply preprocessing steps to an in-memory PIL image.
 
-        Performs: transparency handling -> grayscale -> resize (provider-specific).
-        This is the shared preprocessing core used by the PDF and image-folder
-        payload sources.
+        Performs: 16-bit depth reduction -> transparency handling -> grayscale ->
+        resize (provider-specific). This is the shared preprocessing core used by
+        the PDF and image-folder payload sources.
 
         Args:
             pil_img: PIL Image to preprocess.
@@ -337,6 +341,16 @@ class ImageProcessor:
         Returns:
             Preprocessed PIL Image.
         """
+        # 16-bit grayscale scans must be scaled down to 8 bits explicitly: a
+        # plain convert("L")/ImageOps.grayscale() clips every value above 255
+        # instead of rescaling, which flattens the page to near-white.
+        if pil_img.mode in _SIXTEEN_BIT_MODES:
+            # point() only accepts the endian-neutral "I" mode, so the "I;16*"
+            # variants are promoted first.
+            if pil_img.mode != "I":
+                pil_img = pil_img.convert("I")
+            pil_img = pil_img.point(lambda v: v * (1 / 256)).convert("L")
+
         # Handle transparency
         if img_cfg.get("handle_transparency", True) and (
             pil_img.mode in ("RGBA", "LA")

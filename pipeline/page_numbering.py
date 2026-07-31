@@ -35,6 +35,25 @@ SUMMARY_SECTION_TYPES = {
 }
 
 
+def _coerce_page_number(value: Any) -> int | None:
+    """Coerce a model-reported page number to ``int`` or ``None``.
+
+    Structured output occasionally yields a string ("12") or a bool where an
+    integer is expected; both would otherwise reach the arithmetic in
+    ``adjust_and_sort_page_numbers`` and raise ``TypeError``. Anything that
+    cannot be read as an integer is treated as "unnumbered".
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        logger.debug("Ignoring uninterpretable page number %r", value)
+        return None
+
+
 class PageNumberProcessor:
     """Process and adjust page numbers for document summaries.
 
@@ -66,7 +85,7 @@ class PageNumberProcessor:
         if not isinstance(page_info_obj, dict) or not page_info_obj:
             page_info_obj = {}
 
-        model_page_num = None
+        model_page_num: int | None = None
         page_number_type = "none"
         page_types = ["content"]
         is_genuinely_unnumbered = True
@@ -75,7 +94,9 @@ class PageNumberProcessor:
 
         if isinstance(page_info_obj, dict) and page_info_obj:
             # New schema format with page_information object
-            model_page_num = page_info_obj.get("page_number_integer")
+            model_page_num = _coerce_page_number(
+                page_info_obj.get("page_number_integer")
+            )
             page_number_type = page_info_obj.get("page_number_type", "none")
 
             raw_page_types = page_info_obj.get("page_types")
@@ -280,14 +301,16 @@ class PageNumberProcessor:
         """
         Infer page numbers for unnumbered pages based on surrounding context.
 
-        Uses multiple passes to maximize inference:
-        1. Forward inference from following Arabic page (N-1)
-        2. Forward inference from following Roman page (N-1)
+        Runs one pass per numbering type. In each pass an unnumbered page is
+        filled only when both immediate neighbors are numbered with that same
+        type and their numbers leave exactly this page's slot free; a gap
+        spanning a change of numbering type is never bridged.
 
         Examples:
-        - [Preface] Page xii -> [Unnumbered] -> Page 2  =>  infer Arabic page 1
         - Page 5 -> [Unnumbered] -> Page 7  =>  infer Arabic page 6
         - Page viii -> [Unnumbered] -> Page x  =>  infer Roman page ix
+        - [Preface] Page xii -> [Unnumbered] -> Page 2  =>  no inference
+          (the neighbors use different numbering types)
 
         Args:
             parsed_summaries: List of parsed summary wrappers.

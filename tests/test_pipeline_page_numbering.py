@@ -1046,6 +1046,59 @@ class TestSpreadAdjustment:
         assert parsed_summaries[1]["is_genuinely_unnumbered"] is False
 
 
+class TestNonIntegerPageNumbers:
+    """Non-integer model output must not crash the numbering pass."""
+
+    @pytest.fixture
+    def processor(self) -> PageNumberProcessor:
+        return PageNumberProcessor()
+
+    @staticmethod
+    def _summary(index: int, page_number: Any) -> dict[str, Any]:
+        return {
+            "original_input_order_index": index,
+            "page_information": {
+                "page_number_integer": page_number,
+                "page_number_type": "arabic",
+                "page_types": ["content"],
+            },
+            "bullet_points": ["bp"],
+        }
+
+    def test_string_page_number_coerced(self, processor) -> None:
+        """A page number arriving as "12" is read as page 12."""
+        results = [self._summary(0, "12"), self._summary(1, 13)]
+
+        adjusted = processor.adjust_and_sort_page_numbers(results)
+
+        by_idx = {r["original_input_order_index"]: r for r in adjusted}
+        assert by_idx[0]["page_information"]["page_number_integer"] == 12
+
+    def test_bool_page_number_treated_as_unnumbered(self, processor) -> None:
+        """A bool is not a page number, despite being an int subclass."""
+        results = [self._summary(0, True), self._summary(1, 13)]
+
+        adjusted = processor.adjust_and_sort_page_numbers(results)
+
+        by_idx = {r["original_input_order_index"]: r for r in adjusted}
+        assert by_idx[0]["page_information"]["page_number_type"] == "none"
+
+    def test_unparsable_page_number_treated_as_unnumbered(self, processor) -> None:
+        """Free text where an integer was expected degrades to unnumbered."""
+        parsed = processor.parse_page_information(self._summary(0, "n. pag."))
+        assert parsed[0] is None
+        assert parsed[3] is True
+
+
+class TestInferenceDocstringMatchesBehavior:
+    """The documented inference examples must be reproducible."""
+
+    def test_docstring_drops_impossible_cross_type_example(self) -> None:
+        doc = PageNumberProcessor.infer_unnumbered_page_numbers.__doc__ or ""
+        assert "infer Arabic page 1" not in doc
+        assert "same" in doc
+
+
 class TestSectionMedianOrdering:
     """Tests for section-median final ordering."""
 
