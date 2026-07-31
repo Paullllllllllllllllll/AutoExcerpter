@@ -19,8 +19,6 @@ class ConcurrencyConfig:
     image_processing_limit: int = 24
     transcription_limit: int = 150
     summary_limit: int = 150
-    transcription_delay: float = 0.05
-    summary_delay: float = 0.05
     transcription_service_tier: str = "flex"
     summary_service_tier: str = "flex"
 
@@ -36,8 +34,6 @@ class ConcurrencyConfig:
             image_processing_limit=img_proc.get("concurrency_limit", 24),
             transcription_limit=trans_cfg.get("concurrency_limit", 150),
             summary_limit=summ_cfg.get("concurrency_limit", 150),
-            transcription_delay=trans_cfg.get("delay_between_tasks", 0.05),
-            summary_delay=summ_cfg.get("delay_between_tasks", 0.05),
             transcription_service_tier=trans_cfg.get("service_tier", "flex"),
             summary_service_tier=summ_cfg.get("service_tier", "flex"),
         )

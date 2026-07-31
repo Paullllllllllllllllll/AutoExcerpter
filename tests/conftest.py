@@ -212,12 +212,10 @@ def mock_concurrency_config() -> dict[str, Any]:
         "api_requests": {
             "transcription": {
                 "concurrency_limit": 150,
-                "delay_between_tasks": 0.05,
                 "service_tier": "flex",
             },
             "summary": {
                 "concurrency_limit": 150,
-                "delay_between_tasks": 0.05,
                 "service_tier": "flex",
             },
         },

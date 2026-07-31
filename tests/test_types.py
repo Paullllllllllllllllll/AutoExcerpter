@@ -154,8 +154,6 @@ class TestConcurrencyConfig:
         assert config.image_processing_limit == 24
         assert config.transcription_limit == 150
         assert config.summary_limit == 150
-        assert config.transcription_delay == 0.05
-        assert config.summary_delay == 0.05
         assert config.transcription_service_tier == "flex"
         assert config.summary_service_tier == "flex"
 
@@ -165,8 +163,6 @@ class TestConcurrencyConfig:
             image_processing_limit=16,
             transcription_limit=100,
             summary_limit=50,
-            transcription_delay=0.1,
-            summary_delay=0.2,
             transcription_service_tier="default",
             summary_service_tier="default",
         )
@@ -183,12 +179,10 @@ class TestConcurrencyConfig:
             "api_requests": {
                 "transcription": {
                     "concurrency_limit": 200,
-                    "delay_between_tasks": 0.1,
                     "service_tier": "default",
                 },
                 "summary": {
                     "concurrency_limit": 100,
-                    "delay_between_tasks": 0.05,
                     "service_tier": "flex",
                 },
             },
@@ -198,7 +192,6 @@ class TestConcurrencyConfig:
 
         assert config.image_processing_limit == 32
         assert config.transcription_limit == 200
-        assert config.transcription_delay == 0.1
         assert config.transcription_service_tier == "default"
 
     def test_from_dict_with_missing_keys(self) -> None:

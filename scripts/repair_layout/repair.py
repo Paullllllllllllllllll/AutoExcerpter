@@ -70,7 +70,6 @@ class RepairAudit:
     """Diagnostics about a single file's repair, for the read-only LLM audit."""
 
     hyphen_decisions: list[HyphenDecision] = field(default_factory=list)
-    page_width_estimates: list[int] = field(default_factory=list)
 
 
 def is_passthrough_line(line: str) -> bool:
@@ -348,13 +347,9 @@ def repair_text(text: str) -> tuple[str, RepairAudit]:
         input only in whitespace and merged line-break hyphens.
     """
     lines = text.split("\n")
-    widths = [w for w in _line_widths(lines) if w is not None]
 
     rejoined = _rejoin_wrapped_lines(lines)
     final_lines, decisions = _dehyphenate_lines(rejoined)
 
-    audit = RepairAudit(
-        hyphen_decisions=decisions,
-        page_width_estimates=sorted(set(widths)),
-    )
+    audit = RepairAudit(hyphen_decisions=decisions)
     return "\n".join(final_lines), audit
