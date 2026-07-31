@@ -513,11 +513,13 @@ def _log_token_limit_reached(
             f"Daily token limit reached: {stats['tokens_used_today']:,}"
             f"/{stats['daily_limit']:,} tokens used"
         )
-        logger.info(
+        # WARNING, not INFO: below the console threshold these two lines are
+        # invisible, and a run that silently waits for up to 24 h looks hung.
+        logger.warning(
             f"Waiting until {_describe_reset_time(reset_time)}"
             f" ({hours}h {minutes}m) for token limit reset..."
         )
-        logger.info("Type 'q' and press Enter to cancel and exit.")
+        logger.warning("Type 'q' and press Enter to cancel and exit.")
     else:
         # Interactive mode: the pretty block below is the user-facing channel;
         # the logger.warning/info would duplicate it on stderr, so it is gated

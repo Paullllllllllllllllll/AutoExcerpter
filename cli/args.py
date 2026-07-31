@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +39,10 @@ def _temperature_float(value: str) -> float:
         parsed = float(value)
     except ValueError as exc:
         raise argparse.ArgumentTypeError("must be a number") from exc
+    # NaN compares False against both bounds, so the range check alone would
+    # let "nan" (and inf, via the same laxity of float()) through to the API.
+    if not math.isfinite(parsed):
+        raise argparse.ArgumentTypeError("must be a finite number")
     if parsed < 0.0 or parsed > 2.0:
         raise argparse.ArgumentTypeError("must be between 0.0 and 2.0")
     return parsed
@@ -296,17 +301,22 @@ def setup_argparse() -> argparse.Namespace:
             help="Named output path (same as positional output)."
             " Overrides positional output if both are provided.",
         )
-        parser.add_argument(
+        # --all and --select are mutually exclusive: the selection resolver
+        # honors --all first and would silently discard --select otherwise.
+        selection_group = parser.add_mutually_exclusive_group()
+        selection_group.add_argument(
             "--all",
             action="store_true",
-            help="Process all items found in input directory without prompting.",
+            help="Process all items found in input directory without prompting."
+            " Mutually exclusive with --select.",
         )
-        parser.add_argument(
+        selection_group.add_argument(
             "--select",
             type=str,
             default=None,
             help="Select items by number (e.g., '1,3,5'), range (e.g., '1-5'),"
-            " or filename pattern (e.g., 'Mennell').",
+            " or filename pattern (e.g., 'Mennell')."
+            " Mutually exclusive with --all.",
         )
     else:
         # Interactive mode: optional input/output with defaults from config.
@@ -347,12 +357,7 @@ def _parse_execution_mode(
     # selects overwrite; --resume is the explicit form of the default, so it
     # and the unstated default both resolve to "skip" (there is no
     # config-file resume_mode setting).
-    if getattr(args, "force", None):
-        resume_mode = "overwrite"
-    elif getattr(args, "resume", None):
-        resume_mode = "skip"
-    else:
-        resume_mode = "skip"
+    resume_mode = "overwrite" if getattr(args, "force", None) else "skip"
 
     if config.CLI_MODE:
         # CLI mode: use command line arguments

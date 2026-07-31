@@ -389,9 +389,7 @@ class TestExecutorLifecycle:
     ) -> None:
         obj = _repass_transcriber(tmp_path)
         monkeypatch.setattr(app_config, "SUMMARIZE", False, raising=False)
-        monkeypatch.setattr(
-            transcriber, "get_transcription_concurrency", lambda: (2, None)
-        )
+        monkeypatch.setattr(transcriber, "get_transcription_concurrency", lambda: 2)
 
         real_executor = concurrent.futures.ThreadPoolExecutor
         instances: list[Any] = []
@@ -441,9 +439,7 @@ class TestExecutorLifecycle:
     ) -> None:
         obj = _repass_transcriber(tmp_path)
         monkeypatch.setattr(app_config, "SUMMARIZE", False, raising=False)
-        monkeypatch.setattr(
-            transcriber, "get_transcription_concurrency", lambda: (1, None)
-        )
+        monkeypatch.setattr(transcriber, "get_transcription_concurrency", lambda: 1)
 
         real_executor = concurrent.futures.ThreadPoolExecutor
         shutdowns: list[tuple[bool, bool]] = []

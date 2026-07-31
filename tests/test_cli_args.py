@@ -140,6 +140,22 @@ class TestTemperatureFloat:
         with pytest.raises(argparse.ArgumentTypeError, match="must be a number"):
             _temperature_float("abc")
 
+    @pytest.mark.parametrize("raw", ["nan", "NaN", "-nan"])
+    def test_nan_rejected(self, raw: str) -> None:
+        """Regression: NaN compares False against both bounds.
+
+        ``float("nan") < 0.0`` and ``> 2.0`` are both False, so the range
+        check alone waved NaN straight through to the API payload.
+        """
+        with pytest.raises(argparse.ArgumentTypeError, match="must be a finite"):
+            _temperature_float(raw)
+
+    @pytest.mark.parametrize("raw", ["inf", "-inf", "Infinity"])
+    def test_infinity_rejected(self, raw: str) -> None:
+        """float() accepts inf too; it is rejected as non-finite."""
+        with pytest.raises(argparse.ArgumentTypeError, match="must be a finite"):
+            _temperature_float(raw)
+
 
 # ============================================================================
 # _build_cli_model_overrides
@@ -482,6 +498,48 @@ class TestParseExecutionMode:
         args = _make_cli_args(context="Food History")
         _, _, _, _, context, _ = _parse_execution_mode(args)
         assert context == "Food History"
+
+
+# ============================================================================
+# setup_argparse: --all / --select mutual exclusion
+# ============================================================================
+
+
+class TestSelectionFlagExclusion:
+    """--all and --select may not be combined.
+
+    Regression: the selection resolver honors --all first and silently
+    dropped a --select given alongside it, so a caller asking for three
+    specific items quietly got all of them processed.
+    """
+
+    def _parse(self, monkeypatch: pytest.MonkeyPatch, argv: list[str]) -> Any:
+        import sys
+
+        from cli.args import setup_argparse
+
+        monkeypatch.setattr(config, "CLI_MODE", True)
+        monkeypatch.setattr(sys, "argv", ["main.py", *argv])
+        return setup_argparse()
+
+    def test_all_with_select_is_rejected(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        with pytest.raises(SystemExit) as exc:
+            self._parse(monkeypatch, ["in", "out", "--all", "--select", "1-3"])
+        # argparse usage error, not a silent drop.
+        assert exc.value.code == 2
+        assert "not allowed with argument" in capsys.readouterr().err
+
+    def test_all_alone_is_accepted(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        args = self._parse(monkeypatch, ["in", "out", "--all"])
+        assert args.all is True
+        assert args.select is None
+
+    def test_select_alone_is_accepted(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        args = self._parse(monkeypatch, ["in", "out", "--select", "1-3"])
+        assert args.all is False
+        assert args.select == "1-3"
 
 
 # ============================================================================

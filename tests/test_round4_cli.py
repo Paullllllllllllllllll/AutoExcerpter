@@ -97,6 +97,8 @@ class TestExitHook:
         assert payload["items_failed"] == 0
         assert payload["items_skipped"] == 0
         assert payload["outputs"] == []
+        # Every summary stamps dry_run so an early exit is never ambiguous.
+        assert payload["dry_run"] is False
 
     def test_exit_program_via_hook_emits_json_once(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -106,9 +108,7 @@ class TestExitHook:
         import main as main_module
 
         monkeypatch.setattr(app_config, "DAILY_TOKEN_LIMIT_ENABLED", False)
-        inter.set_exit_hook(
-            lambda: main_module._emit_json_summary(0, 0, 0, 0, [])
-        )
+        inter.set_exit_hook(lambda: main_module._emit_json_summary(0, 0, 0, 0, []))
 
         with pytest.raises(SystemExit) as exc:
             inter.exit_program("Exiting.", exit_code=0)
@@ -138,7 +138,7 @@ class TestConcurrencyLimitCoercion:
         import config.accessors as acc
 
         monkeypatch.setattr(acc, "get_config_loader", lambda: self._loader("80"))
-        workers, _delay = acc.get_api_concurrency("transcription")
+        workers = acc.get_api_concurrency("transcription")
         assert workers == 80
         assert isinstance(workers, int)
 
@@ -149,7 +149,7 @@ class TestConcurrencyLimitCoercion:
         from config.constants import DEFAULT_CONCURRENT_REQUESTS
 
         monkeypatch.setattr(acc, "get_config_loader", lambda: self._loader("abc"))
-        workers, _delay = acc.get_api_concurrency("transcription")
+        workers = acc.get_api_concurrency("transcription")
         assert workers == DEFAULT_CONCURRENT_REQUESTS
 
 

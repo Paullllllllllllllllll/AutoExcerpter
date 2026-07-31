@@ -252,7 +252,7 @@ class TestProgressAndBudgetLoop:
         obj._process_single_page = spy  # type: ignore[method-assign]
         monkeypatch.setattr(app_config, "SUMMARIZE", False, raising=False)
         monkeypatch.setattr(
-            transcriber_module, "get_transcription_concurrency", lambda: (2, None)
+            transcriber_module, "get_transcription_concurrency", lambda: 2
         )
 
         obj._transcribe_and_summarize(_FakeSource(5))  # type: ignore[arg-type]
@@ -343,7 +343,7 @@ class TestProgressAndBudgetLoop:
 
         monkeypatch.setattr(app_config, "SUMMARIZE", False, raising=False)
         monkeypatch.setattr(
-            transcriber_module, "get_transcription_concurrency", lambda: (2, None)
+            transcriber_module, "get_transcription_concurrency", lambda: 2
         )
         monkeypatch.setattr(transcriber_module, "wait_for_token_reset", fake_wait)
 

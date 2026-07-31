@@ -221,12 +221,15 @@ def normalize_unicode(text: str) -> str:
         cp = ord(ch)
         if cp in seen:
             continue
-        seen.add(cp)
-        if cp in (9, 10):  # keep tab and newline (control chars we preserve)
-            continue
-        if unicodedata.category(ch).startswith("C"):
+        # Publish the table decision BEFORE marking the codepoint as seen:
+        # with the reverse order a concurrent worker could observe the
+        # codepoint in ``seen`` while its table entry is still missing and
+        # return the text uncleaned (check-then-act race across threads).
+        if cp not in (9, 10) and unicodedata.category(ch).startswith("C"):
             # Drop control/format/surrogate/unassigned characters
+            # (tab and newline are the control chars we preserve)
             table[cp] = None
+        seen.add(cp)
 
     # Skip the full-string translate when no present codepoint is remapped
     # (byte-identical: translate would be a no-op). Most prose pages hit this.

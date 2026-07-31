@@ -11,12 +11,9 @@ import pytest
 
 from config.logger import (
     DEFAULT_LOG_LEVEL,
-    DETAILED_FORMAT,
     SIMPLE_FORMAT,
     USER_LOG_LEVEL,
     set_log_level,
-    setup_console_handler,
-    setup_file_handler,
     setup_logger,
 )
 
@@ -111,191 +108,6 @@ class TestSetupLogger:
 
 
 # ============================================================================
-# setup_console_handler
-# ============================================================================
-class TestSetupConsoleHandler:
-    """Tests for setup_console_handler()."""
-
-    def test_adds_handler(self) -> None:
-        """Adds a StreamHandler to the logger."""
-        logger = logging.getLogger("test_logger_console_add")
-        logger.handlers.clear()
-
-        setup_console_handler(logger)
-
-        stream_handlers = [
-            h for h in logger.handlers if isinstance(h, logging.StreamHandler)
-        ]
-        assert len(stream_handlers) == 1
-
-    def test_removes_existing_stderr_handlers(self) -> None:
-        """Existing stderr StreamHandlers are removed before adding new one."""
-        logger = logging.getLogger("test_logger_console_replace")
-        logger.handlers.clear()
-
-        # Add two stderr handlers manually
-        h1 = logging.StreamHandler(sys.stderr)
-        h2 = logging.StreamHandler(sys.stderr)
-        logger.addHandler(h1)
-        logger.addHandler(h2)
-        assert len(logger.handlers) == 2
-
-        setup_console_handler(logger)
-
-        # Only the new one should remain
-        stderr_handlers = [
-            h
-            for h in logger.handlers
-            if isinstance(h, logging.StreamHandler) and h.stream == sys.stderr
-        ]
-        assert len(stderr_handlers) == 1
-
-    def test_simple_format_true(self) -> None:
-        """When simple_format is True, SIMPLE_FORMAT is used."""
-        logger = logging.getLogger("test_logger_console_simple")
-        logger.handlers.clear()
-
-        setup_console_handler(logger, simple_format=True)
-
-        handler = logger.handlers[0]
-        assert handler.formatter is not None
-        assert handler.formatter._fmt == SIMPLE_FORMAT
-
-    def test_simple_format_false_uses_detailed(self) -> None:
-        """When simple_format is False, DETAILED_FORMAT is used."""
-        logger = logging.getLogger("test_logger_console_detailed")
-        logger.handlers.clear()
-
-        setup_console_handler(logger, simple_format=False)
-
-        handler = logger.handlers[0]
-        assert handler.formatter is not None
-        assert handler.formatter._fmt == DETAILED_FORMAT
-
-    def test_custom_level(self) -> None:
-        """Console handler respects a custom log level."""
-        logger = logging.getLogger("test_logger_console_level")
-        logger.handlers.clear()
-
-        setup_console_handler(logger, level=logging.ERROR)
-
-        handler = logger.handlers[0]
-        assert handler.level == logging.ERROR
-
-    def test_preserves_non_stderr_handlers(self) -> None:
-        """Non-stderr handlers are not removed."""
-        logger = logging.getLogger("test_logger_console_preserve")
-        logger.handlers.clear()
-
-        # Add a file-like handler (stdout instead of stderr)
-        stdout_handler = logging.StreamHandler(sys.stdout)
-        logger.addHandler(stdout_handler)
-
-        setup_console_handler(logger)
-
-        # stdout handler should still be there
-        assert stdout_handler in logger.handlers
-        assert len(logger.handlers) == 2  # stdout + new stderr
-
-
-# ============================================================================
-# setup_file_handler
-# ============================================================================
-class TestSetupFileHandler:
-    """Tests for setup_file_handler()."""
-
-    def test_creates_file_handler(self, tmp_path: Path) -> None:
-        """Adds a FileHandler to the logger."""
-        logger = logging.getLogger("test_logger_file_create")
-        logger.handlers.clear()
-
-        log_file = tmp_path / "test.log"
-        setup_file_handler(logger, str(log_file))
-
-        file_handlers = [
-            h for h in logger.handlers if isinstance(h, logging.FileHandler)
-        ]
-        assert len(file_handlers) == 1
-
-    def test_writes_to_file(self, tmp_path: Path) -> None:
-        """Logger writes messages to the log file."""
-        logger = logging.getLogger("test_logger_file_write")
-        logger.handlers.clear()
-        logger.setLevel(logging.DEBUG)
-
-        log_file = tmp_path / "output.log"
-        setup_file_handler(logger, str(log_file), level=logging.DEBUG)
-
-        logger.debug("test message for file")
-
-        # Flush handler
-        for handler in logger.handlers:
-            handler.flush()
-
-        content = log_file.read_text(encoding="utf-8")
-        assert "test message for file" in content
-
-    def test_default_level_is_debug(self, tmp_path: Path) -> None:
-        """Default file handler level is DEBUG."""
-        logger = logging.getLogger("test_logger_file_level")
-        logger.handlers.clear()
-
-        log_file = tmp_path / "debug.log"
-        setup_file_handler(logger, str(log_file))
-
-        file_handler = [
-            h for h in logger.handlers if isinstance(h, logging.FileHandler)
-        ][0]
-        assert file_handler.level == logging.DEBUG
-
-    def test_custom_level(self, tmp_path: Path) -> None:
-        """File handler respects a custom log level."""
-        logger = logging.getLogger("test_logger_file_custom_level")
-        logger.handlers.clear()
-
-        log_file = tmp_path / "custom.log"
-        setup_file_handler(logger, str(log_file), level=logging.WARNING)
-
-        file_handler = [
-            h for h in logger.handlers if isinstance(h, logging.FileHandler)
-        ][0]
-        assert file_handler.level == logging.WARNING
-
-    def test_uses_detailed_format(self, tmp_path: Path) -> None:
-        """File handler uses DETAILED_FORMAT."""
-        logger = logging.getLogger("test_logger_file_format")
-        logger.handlers.clear()
-
-        log_file = tmp_path / "fmt.log"
-        setup_file_handler(logger, str(log_file))
-
-        file_handler = [
-            h for h in logger.handlers if isinstance(h, logging.FileHandler)
-        ][0]
-        assert file_handler.formatter is not None
-        assert file_handler.formatter._fmt == DETAILED_FORMAT
-
-    def test_append_mode(self, tmp_path: Path) -> None:
-        """File handler opens in append mode."""
-        logger = logging.getLogger("test_logger_file_append")
-        logger.handlers.clear()
-        logger.setLevel(logging.DEBUG)
-
-        log_file = tmp_path / "append.log"
-        log_file.write_text("existing content\n", encoding="utf-8")
-
-        setup_file_handler(logger, str(log_file), level=logging.DEBUG)
-        logger.debug("new line")
-
-        for handler in logger.handlers:
-            handler.flush()
-
-        content = log_file.read_text(encoding="utf-8")
-        assert "existing content" in content
-        assert "new line" in content
-
-
-# ============================================================================
 # set_log_level
 # ============================================================================
 class TestSetLogLevel:
@@ -331,15 +143,19 @@ class TestSetLogLevel:
             assert handler.level == logging.DEBUG
 
     def test_multiple_handlers_all_updated(self, tmp_path: Path) -> None:
-        """All handlers (console and file) are updated."""
+        """Every attached handler is updated, not just the first."""
         logger = logging.getLogger("test_logger_multi_handler")
         logger.handlers.clear()
         logger.setLevel(logging.INFO)
 
-        # Add console and file handlers
-        setup_console_handler(logger, level=logging.WARNING)
-        log_file = tmp_path / "multi.log"
-        setup_file_handler(logger, str(log_file), level=logging.DEBUG)
+        console_handler = logging.StreamHandler(sys.stderr)
+        console_handler.setLevel(logging.WARNING)
+        logger.addHandler(console_handler)
+        file_handler = logging.FileHandler(
+            str(tmp_path / "multi.log"), mode="a", encoding="utf-8"
+        )
+        file_handler.setLevel(logging.DEBUG)
+        logger.addHandler(file_handler)
 
         assert len(logger.handlers) == 2
 
@@ -348,3 +164,25 @@ class TestSetLogLevel:
         assert logger.level == logging.CRITICAL
         for handler in logger.handlers:
             assert handler.level == logging.CRITICAL
+
+        file_handler.close()
+        logger.handlers.clear()
+
+
+# ============================================================================
+# Removed handler-management helpers
+# ============================================================================
+class TestRemovedHandlerHelpers:
+    """setup_console_handler / setup_file_handler were dead code.
+
+    Neither was called outside its own tests, and both carried latent defects
+    (an unclosed FileHandler; a stale-stream identity comparison that appended
+    duplicate console handlers instead of replacing them). They are gone.
+    """
+
+    def test_helpers_no_longer_exist(self) -> None:
+        import config.logger as logger_module
+
+        assert not hasattr(logger_module, "setup_console_handler")
+        assert not hasattr(logger_module, "setup_file_handler")
+        assert logger_module.__all__ == ["setup_logger", "set_log_level"]

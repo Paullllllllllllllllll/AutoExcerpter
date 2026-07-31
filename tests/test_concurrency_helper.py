@@ -10,27 +10,25 @@ import config.accessors as ch
 
 class TestConcurrencyHelper:
     def test_get_api_concurrency_reads_config(self, monkeypatch) -> None:
-        cfg = {
-            "api_requests": {
-                "transcription": {"concurrency_limit": 10, "delay_between_tasks": 0.25},
-            }
-        }
+        cfg = {"api_requests": {"transcription": {"concurrency_limit": 10}}}
         loader = MagicMock()
         loader.get_concurrency_config.return_value = cfg
         monkeypatch.setattr(ch, "get_config_loader", lambda: loader)
 
-        max_workers, delay = ch.get_api_concurrency("transcription")
+        # Returns a bare int: the old (max_workers, delay) tuple's second
+        # element was discarded by every caller and delay_between_tasks is
+        # gone from the templates.
+        max_workers = ch.get_api_concurrency("transcription")
         assert max_workers == 10
-        assert delay == 0.25
+        assert isinstance(max_workers, int)
 
     def test_get_api_concurrency_falls_back_on_error(self, monkeypatch) -> None:
         loader = MagicMock()
         loader.get_concurrency_config.side_effect = RuntimeError("boom")
         monkeypatch.setattr(ch, "get_config_loader", lambda: loader)
 
-        max_workers, delay = ch.get_api_concurrency("transcription")
-        assert isinstance(max_workers, int)
-        assert delay == 0.05
+        max_workers = ch.get_api_concurrency("transcription")
+        assert max_workers == ch.DEFAULT_CONCURRENT_REQUESTS
 
     def test_get_service_tier_default_flex_when_missing(self, monkeypatch) -> None:
         cfg: dict[str, Any] = {"api_requests": {"transcription": {}}}

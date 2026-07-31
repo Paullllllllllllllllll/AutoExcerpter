@@ -2,6 +2,7 @@
 
 Covers:
 - get_api_concurrency: missing api_type in config, empty config dict
+  (returns a bare worker count, not a tuple)
 - get_transcription_concurrency: delegates to get_api_concurrency
 - get_service_tier: tier present, tier missing, error branch
 - get_api_timeout: missing key, error branch
@@ -47,9 +48,8 @@ class TestGetApiConcurrency:
             ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg=cfg)
         )
 
-        workers, delay = ch.get_api_concurrency("transcription")
+        workers = ch.get_api_concurrency("transcription")
         assert workers == ch.DEFAULT_CONCURRENT_REQUESTS
-        assert delay == 0.05
 
     def test_completely_empty_config(self, monkeypatch) -> None:
         """Empty concurrency config returns defaults."""
@@ -57,24 +57,34 @@ class TestGetApiConcurrency:
             ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg={})
         )
 
-        workers, delay = ch.get_api_concurrency("transcription")
+        workers = ch.get_api_concurrency("transcription")
         assert workers == ch.DEFAULT_CONCURRENT_REQUESTS
-        assert delay == 0.05
 
     def test_summary_api_type(self, monkeypatch) -> None:
         """Correctly reads 'summary' api_type settings."""
-        cfg = {
-            "api_requests": {
-                "summary": {"concurrency_limit": 20, "delay_between_tasks": 0.1},
-            }
-        }
+        cfg = {"api_requests": {"summary": {"concurrency_limit": 20}}}
         monkeypatch.setattr(
             ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg=cfg)
         )
 
-        workers, delay = ch.get_api_concurrency("summary")
+        workers = ch.get_api_concurrency("summary")
         assert workers == 20
-        assert delay == 0.1
+
+    def test_returns_bare_int_not_tuple(self, monkeypatch) -> None:
+        """Regression: the accessor no longer returns a (workers, delay) tuple.
+
+        Every caller unpacked ``max_workers, _`` and discarded the delay, and
+        ``delay_between_tasks`` was removed from the shipped templates.
+        """
+        cfg = {"api_requests": {"transcription": {"concurrency_limit": 7}}}
+        monkeypatch.setattr(
+            ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg=cfg)
+        )
+
+        result = ch.get_api_concurrency("transcription")
+        assert result == 7
+        assert isinstance(result, int)
+        assert not isinstance(result, tuple)
 
 
 # ============================================================================
@@ -86,18 +96,13 @@ class TestConvenienceWrappers:
     def test_get_transcription_concurrency(self, monkeypatch) -> None:
         """get_transcription_concurrency delegates to get_api_concurrency(
         'transcription')."""
-        cfg = {
-            "api_requests": {
-                "transcription": {"concurrency_limit": 8, "delay_between_tasks": 0.02},
-            }
-        }
+        cfg = {"api_requests": {"transcription": {"concurrency_limit": 8}}}
         monkeypatch.setattr(
             ch, "get_config_loader", lambda: _mock_loader(concurrency_cfg=cfg)
         )
 
-        workers, delay = ch.get_transcription_concurrency()
+        workers = ch.get_transcription_concurrency()
         assert workers == 8
-        assert delay == 0.02
 
     def test_get_transcription_concurrency_error_fallback(self, monkeypatch) -> None:
         """get_transcription_concurrency returns defaults on error."""
@@ -105,9 +110,8 @@ class TestConvenienceWrappers:
         loader.get_concurrency_config.side_effect = RuntimeError("fail")
         monkeypatch.setattr(ch, "get_config_loader", lambda: loader)
 
-        workers, delay = ch.get_transcription_concurrency()
+        workers = ch.get_transcription_concurrency()
         assert workers == ch.DEFAULT_CONCURRENT_REQUESTS
-        assert delay == 0.05
 
 
 # ============================================================================

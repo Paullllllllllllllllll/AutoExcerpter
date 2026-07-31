@@ -128,6 +128,93 @@ class TestLoadYamlAppConfig:
 
 
 # ============================================================================
+# _load_yaml_app_config: example-baseline deep merge
+# ============================================================================
+class TestAppConfigExampleMerge:
+    """The real app.yaml is deep-merged OVER app.example.yaml.
+
+    Regression: a present-but-partial real app.yaml was used verbatim, so
+    every key it omitted fell through to a hardcoded default that could
+    contradict the shipped template.
+    """
+
+    def _write_example(self, tmp_path: Path) -> Path:
+        (tmp_path / "app.example.yaml").write_text(
+            yaml.dump(
+                {
+                    "cli_mode": False,
+                    "summarize": True,
+                    "citation": {
+                        "openalex_email": "",
+                        "max_api_requests": 300,
+                        "match_title_overlap": 0.5,
+                    },
+                    "paths": {"state_dir": ""},
+                }
+            ),
+            encoding="utf-8",
+        )
+        return tmp_path / "app.yaml"
+
+    def test_partial_real_inherits_example_values(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Omitted keys and omitted sub-keys keep the template's value."""
+        real_path = self._write_example(tmp_path)
+        real_path.write_text(
+            yaml.dump({"cli_mode": True, "citation": {"max_api_requests": 50}}),
+            encoding="utf-8",
+        )
+
+        import config.app as ac
+
+        monkeypatch.setattr(ac, "_APP_CONFIG_PATH", real_path)
+
+        result = _load_yaml_app_config()
+        # The real file wins where it speaks ...
+        assert result["cli_mode"] is True
+        assert result["citation"]["max_api_requests"] == 50
+        # ... and inherits the rest, including whole omitted sections.
+        assert result["summarize"] is True
+        assert result["citation"]["match_title_overlap"] == 0.5
+        assert result["paths"] == {"state_dir": ""}
+
+    def test_corrupt_real_falls_back_to_example_wholesale(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """An unparseable real app.yaml yields the example unchanged."""
+        real_path = self._write_example(tmp_path)
+        real_path.write_text(":::not: valid: yaml: [[[", encoding="utf-8")
+
+        import config.app as ac
+
+        monkeypatch.setattr(ac, "_APP_CONFIG_PATH", real_path)
+
+        result = _load_yaml_app_config()
+        assert result["summarize"] is True
+        assert result["citation"]["max_api_requests"] == 300
+
+
+# ============================================================================
+# Citation defaults
+# ============================================================================
+class TestOpenAlexEmailDefault:
+    """A missing openalex_email must not become a fake mailto address."""
+
+    def test_default_is_blank(self) -> None:
+        """The template documents "leave blank to skip"; the default matches."""
+        from config.app import _get_str
+
+        assert _get_str({}, "openalex_email", "") == ""
+
+    def test_no_placeholder_default_in_module(self) -> None:
+        """The old ``your-email@example.com`` placeholder default is gone."""
+        import config.app as ac
+
+        assert ac.CITATION_OPENALEX_EMAIL != "your-email@example.com"
+
+
+# ============================================================================
 # _get_str
 # ============================================================================
 class TestGetStr:
@@ -212,15 +299,30 @@ class TestGetBool:
         data = {"key": False}
         assert _get_bool(data, "key", True) is False
 
-    def test_truthy_string(self) -> None:
-        """Non-empty strings are truthy."""
-        data = {"key": "yes"}
-        assert _get_bool(data, "key", False) is True
+    def test_recognized_true_literals(self) -> None:
+        """Quoted true-ish literals map to True, case- and space-insensitively."""
+        for raw in ("true", "TRUE", " True ", "yes", "on", "1"):
+            assert _get_bool({"key": raw}, "key", False) is True
 
-    def test_falsy_empty_string(self) -> None:
-        """Empty string is falsy."""
-        data = {"key": ""}
-        assert _get_bool(data, "key", True) is False
+    def test_recognized_false_literals(self) -> None:
+        """Regression: a quoted "false"/"no"/"off"/"0" must NOT read as True.
+
+        ``bool("false")`` is True, so the previous implementation silently
+        inverted every quoted negative the user wrote in YAML.
+        """
+        for raw in ("false", "FALSE", " False ", "no", "off", "0"):
+            assert _get_bool({"key": raw}, "key", True) is False
+
+    def test_unrecognized_string_returns_default(self) -> None:
+        """An unparseable string falls back to the default with a warning.
+
+        Mirrors _get_int / _get_float, which also reject garbage rather than
+        coercing it. The empty string is unrecognized too.
+        """
+        assert _get_bool({"key": "maybe"}, "key", True) is True
+        assert _get_bool({"key": "maybe"}, "key", False) is False
+        assert _get_bool({"key": ""}, "key", True) is True
+        assert _get_bool({"key": ""}, "key", False) is False
 
     def test_truthy_int(self) -> None:
         """Non-zero int is truthy."""

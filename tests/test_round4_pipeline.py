@@ -225,9 +225,7 @@ class TestTranscribeAndSummarizeDeferredFinish:
         obj._token_tracker = tracker  # type: ignore[assignment]
 
         monkeypatch.setattr(app_config, "SUMMARIZE", True, raising=False)
-        monkeypatch.setattr(
-            transcriber, "get_transcription_concurrency", lambda: (2, None)
-        )
+        monkeypatch.setattr(transcriber, "get_transcription_concurrency", lambda: 2)
 
         wait_calls: list[dict[str, Any]] = []
 
@@ -255,9 +253,7 @@ class TestTranscribeAndSummarizeDeferredFinish:
         obj._token_tracker = tracker  # type: ignore[assignment]
 
         monkeypatch.setattr(app_config, "SUMMARIZE", True, raising=False)
-        monkeypatch.setattr(
-            transcriber, "get_transcription_concurrency", lambda: (2, None)
-        )
+        monkeypatch.setattr(transcriber, "get_transcription_concurrency", lambda: 2)
 
         def fake_process(
             idx: int,
@@ -303,9 +299,7 @@ class TestTranscribeAndSummarizeDeferredFinish:
         obj._token_tracker = tracker  # type: ignore[assignment]
 
         monkeypatch.setattr(app_config, "SUMMARIZE", True, raising=False)
-        monkeypatch.setattr(
-            transcriber, "get_transcription_concurrency", lambda: (2, None)
-        )
+        monkeypatch.setattr(transcriber, "get_transcription_concurrency", lambda: 2)
 
         def fake_process(
             idx: int,

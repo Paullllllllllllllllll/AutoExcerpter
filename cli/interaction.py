@@ -169,19 +169,30 @@ def set_exit_hook(hook: Callable[[], None] | None) -> None:
     _exit_hook = hook
 
 
-def exit_program(
-    message: str = "Exiting program. Goodbye!", exit_code: int = 0
-) -> None:
-    """Exit the program gracefully with a message."""
+def run_exit_hook() -> None:
+    """Run the registered exit hook exactly once, if any.
+
+    Clears the hook before invoking it (one-shot semantics) and swallows any
+    exception it raises, so a failing hook can never mask the exit in
+    progress. A no-op when no hook is registered. Call this from any shutdown
+    path that bypasses ``exit_program`` — notably the ``__main__``
+    KeyboardInterrupt and unhandled-exception handlers, which must still honor
+    the emit-JSON-on-all-exits contract.
+    """
     global _exit_hook
-    _safe_print(f"\n{Colors.OKCYAN}{message}{Colors.ENDC}\n")
-    # Run the registered exit hook exactly once, guarded so a failing hook can
-    # never mask the exit. Clearing it first makes the hook one-shot.
     hook = _exit_hook
     _exit_hook = None
     if hook is not None:
         with contextlib.suppress(Exception):
             hook()
+
+
+def exit_program(
+    message: str = "Exiting program. Goodbye!", exit_code: int = 0
+) -> None:
+    """Exit the program gracefully with a message."""
+    _safe_print(f"\n{Colors.OKCYAN}{message}{Colors.ENDC}\n")
+    run_exit_hook()
     sys.exit(exit_code)
 
 
@@ -437,22 +448,20 @@ def prompt_selection(
 
                     # Handle ranges (e.g., "1-3")
                     if "-" in part and allow_multiple:
-                        try:
-                            start_str, end_str = part.split("-", 1)
-                            start = int(start_str)
-                            end = int(end_str)
+                        # Any ValueError (bad int or out-of-range) propagates to
+                        # the single outer handler, so a bad range prints
+                        # exactly one error, not two.
+                        start_str, end_str = part.split("-", 1)
+                        start = int(start_str)
+                        end = int(end_str)
 
-                            if not (1 <= start <= end <= len(items)):
-                                raise ValueError(
-                                    f"Range {part} is invalid."
-                                    f" Must be between 1 and {len(items)}."
-                                )
+                        if not (1 <= start <= end <= len(items)):
+                            raise ValueError(
+                                f"Range {part} is invalid."
+                                f" Must be between 1 and {len(items)}."
+                            )
 
-                            selected_indices.update(range(start - 1, end))
-                        except ValueError:
-                            # Re-raise to the single outer handler so a bad range
-                            # prints exactly one error, not two.
-                            raise
+                        selected_indices.update(range(start - 1, end))
 
                     # Handle single numbers
                     elif part.isdigit():
@@ -508,5 +517,6 @@ __all__ = [
     "prompt_continue",
     "exit_program",
     "set_exit_hook",
+    "run_exit_hook",
     "Colors",
 ]

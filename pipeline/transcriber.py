@@ -586,6 +586,23 @@ class ItemTranscriber:
                 "error": str(e),
                 "original_input_order_index": original_input_order_index,
             }
+            # Keep the working log and the summary outputs consistent with the
+            # normal failure path: without these, the page is present in the
+            # in-memory .txt but absent from the log (so resume disagrees) and
+            # silently missing from the DOCX/MD summaries.
+            append_to_log(self.log_path, error_result)
+            try:
+                summary_result = self._summarize_transcription(
+                    error_result, original_input_order_index, image_name
+                )
+            except Exception:
+                logger.exception(
+                    f"Failed to build placeholder summary for {image_name}"
+                )
+                summary_result = None
+            if summary_result is not None:
+                append_to_log(self.summary_log_path, summary_result)
+                summary_results.append(summary_result)
             transcription_results.append(error_result)
             with self._count_lock:
                 processed_count_ref[0] += 1
@@ -908,7 +925,7 @@ class ItemTranscriber:
         # Initialize the summary log ONCE up front (if summarizing) so that both
         # reused and freshly generated summaries are appended to the same file.
         if config.SUMMARIZE and self.summary_manager:
-            max_workers, _ = get_transcription_concurrency()
+            max_workers = get_transcription_concurrency()
             self._initialize_log_or_raise(
                 self.summary_log_path,
                 self.name,
@@ -977,7 +994,7 @@ class ItemTranscriber:
         # across budget re-passes so exhaustion + reset does not churn a fresh
         # pool each pass. Sized to the initial pending count; later, smaller
         # passes simply leave surplus workers idle.
-        max_workers, _ = get_transcription_concurrency()
+        max_workers = get_transcription_concurrency()
         max_workers = min(max_workers, len(pending_indices))
         if max_workers <= 0:
             max_workers = 1
@@ -1244,7 +1261,7 @@ class ItemTranscriber:
 
         # Initialize log file with a header (incl. file-level provenance)
         target_dpi = source.target_dpi if isinstance(source, PdfPayloadSource) else None
-        actual_concurrency, _ = get_transcription_concurrency()
+        actual_concurrency = get_transcription_concurrency()
         self._initialize_log_or_raise(
             self.log_path,
             self.name,

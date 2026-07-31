@@ -9,9 +9,8 @@ from __future__ import annotations
 # ============================================================================
 # API Configuration Defaults
 # ============================================================================
-DEFAULT_MODEL = "gpt-5-mini"
+DEFAULT_MODEL = "gpt-5.6-luna"
 DEFAULT_CONCURRENT_REQUESTS = 4
-DEFAULT_API_TIMEOUT = 320
 DEFAULT_OPENAI_TIMEOUT = 900
 DEFAULT_RATE_LIMITS: list[tuple[int, int]] = [(120, 1), (15000, 60), (15000, 3600)]
 
@@ -207,7 +206,6 @@ __all__ = [
     # API defaults
     "DEFAULT_MODEL",
     "DEFAULT_CONCURRENT_REQUESTS",
-    "DEFAULT_API_TIMEOUT",
     "DEFAULT_OPENAI_TIMEOUT",
     "DEFAULT_RATE_LIMITS",
     # Image processing

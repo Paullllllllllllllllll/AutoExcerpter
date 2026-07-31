@@ -39,16 +39,24 @@ _LOG_HANDLES_GUARD = threading.Lock()
 _FINALIZED_LOGS: set[Path] = set()
 
 
-def _get_log_handle(log_path: Path) -> tuple[Any, threading.Lock]:
-    key = log_path
-    with _LOG_HANDLES_GUARD:
-        existing = _LOG_HANDLES.get(key)
-        if existing is not None:
-            return existing
-        handle = key.open("a", encoding="utf-8")
-        lock = threading.Lock()
-        _LOG_HANDLES[key] = (handle, lock)
-        return handle, lock
+def _acquire_log_handle_locked(log_path: Path) -> tuple[Any, threading.Lock] | None:
+    """Return the cached (handle, lock) for *log_path*, opening it if needed.
+
+    Returns ``None`` when the log is already finalized, so the caller falls
+    back to the one-shot append path. Caller MUST hold ``_LOG_HANDLES_GUARD``:
+    checking the finalized set and caching the handle in one hold is what keeps
+    a concurrent ``finalize_log_file`` from leaving a re-cached descriptor
+    behind.
+    """
+    if log_path in _FINALIZED_LOGS:
+        return None
+    existing = _LOG_HANDLES.get(log_path)
+    if existing is not None:
+        return existing
+    handle = log_path.open("a", encoding="utf-8")
+    lock = threading.Lock()
+    _LOG_HANDLES[log_path] = (handle, lock)
+    return handle, lock
 
 
 def _close_log_handle(log_path: Path) -> None:
@@ -77,7 +85,7 @@ def initialize_log_file(
     """Create the per-item log file header as the first JSONL line."""
     # Determine if this is an OpenAI model for flex processing metadata
     is_openai_model = model_name.startswith(OPENAI_MODEL_PREFIXES)
-    default_concurrency, _ = get_api_concurrency()
+    default_concurrency = get_api_concurrency()
     service_tier = get_service_tier() if is_openai_model else "N/A"
     configuration = {
         "concurrent_requests": (
@@ -145,12 +153,20 @@ def _append_one_shot(log_path: Path, entry: dict[str, Any]) -> bool:
 
 def append_to_log(log_path: Path, entry: dict[str, Any]) -> bool:
     """Append a single JSON object as one JSONL line."""
-    with _LOG_HANDLES_GUARD:
-        finalized = log_path in _FINALIZED_LOGS
-    if finalized:
-        return _append_one_shot(log_path, entry)
+    # Finalized check and handle acquisition happen under ONE guard hold: with
+    # two separate holds a finalize landing between them re-cached a handle for
+    # an already-finalized log, leaking that descriptor for the process
+    # lifetime.
     try:
-        log_file, lock = _get_log_handle(log_path)
+        with _LOG_HANDLES_GUARD:
+            acquired = _acquire_log_handle_locked(log_path)
+    except OSError as exc:
+        logger.warning("Failed to open log file %s: %s", log_path, exc)
+        return False
+    if acquired is None:
+        return _append_one_shot(log_path, entry)
+    log_file, lock = acquired
+    try:
         with lock:
             log_file.write(json.dumps(entry, ensure_ascii=False))
             log_file.write("\n")

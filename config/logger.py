@@ -14,8 +14,6 @@ import sys
 __all__ = [
     "setup_logger",
     "set_log_level",
-    "setup_console_handler",
-    "setup_file_handler",
 ]
 
 # ============================================================================
@@ -23,7 +21,6 @@ __all__ = [
 # ============================================================================
 DEFAULT_LOG_LEVEL = logging.INFO
 USER_LOG_LEVEL = logging.WARNING  # Only show warnings and errors to users by default
-DETAILED_FORMAT = "[%(levelname)s] %(asctime)s - %(name)s - %(message)s"
 SIMPLE_FORMAT = "[%(levelname)s] %(message)s"
 DEFAULT_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
@@ -54,12 +51,14 @@ def setup_logger(
 
     Example:
         >>> logger = setup_logger(__name__)
-        >>> logger.info("This goes to detailed logs only")
-        >>> logger.warning("This shows on console and in detailed logs")
+        >>> logger.info("Discarded in production: no file handler exists")
+        >>> logger.warning("This shows on the console (stderr)")
 
     Note:
         - Only adds a handler if the logger doesn't already have one
         - Uses StreamHandler to output to stderr
+        - No file handler is installed, so records below the console level
+          (WARNING unless *verbose*) are discarded rather than archived
         - All loggers share the same format by design for consistency
     """
     logger = logging.getLogger(name)
@@ -85,62 +84,6 @@ def setup_logger(
         logger.propagate = False
 
     return logger
-
-
-# ============================================================================
-# Handler Management Functions
-# ============================================================================
-def setup_console_handler(
-    logger: logging.Logger,
-    level: int = USER_LOG_LEVEL,
-    simple_format: bool = True,
-) -> None:
-    """
-    Add or update console handler for a logger.
-
-    Args:
-        logger: Logger instance to modify
-        level: Logging level for console output
-        simple_format: If True, use simple format; otherwise detailed format
-    """
-    # Remove existing StreamHandlers
-    for handler in logger.handlers[:]:
-        if isinstance(handler, logging.StreamHandler) and handler.stream == sys.stderr:
-            logger.removeHandler(handler)
-
-    console_handler = logging.StreamHandler(sys.stderr)
-    console_handler.setLevel(level)
-
-    format_str = SIMPLE_FORMAT if simple_format else DETAILED_FORMAT
-    formatter = logging.Formatter(fmt=format_str, datefmt=DEFAULT_DATE_FORMAT)
-    console_handler.setFormatter(formatter)
-
-    logger.addHandler(console_handler)
-
-
-def setup_file_handler(
-    logger: logging.Logger,
-    log_file_path: str,
-    level: int = logging.DEBUG,
-) -> None:
-    """
-    Add file handler to logger for detailed logging.
-
-    Args:
-        logger: Logger instance to modify
-        log_file_path: Path to log file
-        level: Logging level for file output (default: DEBUG for full details)
-    """
-    file_handler = logging.FileHandler(log_file_path, mode="a", encoding="utf-8")
-    file_handler.setLevel(level)
-
-    formatter = logging.Formatter(
-        fmt=DETAILED_FORMAT,
-        datefmt=DEFAULT_DATE_FORMAT,
-    )
-    file_handler.setFormatter(formatter)
-
-    logger.addHandler(file_handler)
 
 
 # ============================================================================

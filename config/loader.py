@@ -107,10 +107,16 @@ class ConfigLoader:
         """Load a single YAML configuration file.
 
         Resolution order:
-        1. Real file (``config/defaults/<filename>``).
-        2. Bundled example (``config/defaults/<stem>.example.yaml``) with an
-           informational message prompting the user to copy and customize it.
+        1. Real file (``config/defaults/<filename>``) deep-merged OVER the
+           bundled example, so keys the user omitted keep the shipped
+           template's value instead of silently falling through to an
+           unrelated hardcoded constant.
+        2. Bundled example (``config/defaults/<stem>.example.yaml``) alone,
+           with an informational message prompting the user to copy and
+           customize it.
         3. Neither present: return {} with a WARNING.
+
+        A real file that fails to parse falls back to the example wholesale.
         """
 
         def _read_yaml(path: Path) -> dict[str, Any] | None:
@@ -137,6 +143,13 @@ class ConfigLoader:
         example_filename = f"{stem}.example.yaml"
         example_path = CONFIG_DIR / example_filename
 
+        # The bundled example is the baseline for every resolution branch.
+        baseline: dict[str, Any] = {}
+        if example_path.exists():
+            example_data = _read_yaml(example_path)
+            if example_data is not None:
+                baseline = example_data
+
         if not config_path.exists():
             if example_path.exists():
                 logger.info(
@@ -144,14 +157,17 @@ class ConfigLoader:
                     f"'{example_filename}'. Copy it to '{filename}' and edit it "
                     "to set your own values."
                 )
-                data = _read_yaml(example_path)
-                return data if data is not None else {}
+                return baseline
             logger.warning(f"Config file not found: {filename}")
             return {}
 
         data = _read_yaml(config_path)
         if data is not None:
-            return data
+            # Key-level merge: a present-but-partial real file inherits the
+            # template's value for every key it omits (the real file still
+            # wins wherever it speaks). Without this, omitting a section
+            # silently selected an unrelated hardcoded default.
+            return _deep_merge_dicts(baseline, data) if baseline else data
 
         # Real file was present but failed to parse (or was not a dict); fall
         # back to the bundled example so a corrupt user file does not wipe out
@@ -161,10 +177,7 @@ class ConfigLoader:
                 f"Config '{filename}' failed to load; using bundled defaults "
                 f"from '{example_filename}'."
             )
-            fallback = _read_yaml(example_path)
-            if fallback is not None:
-                return fallback
-        return {}
+        return baseline
 
     def get_image_processing_config(self) -> dict[str, Any]:
         """Get the image processing configuration."""
@@ -200,7 +213,9 @@ class ConfigLoader:
 
     def is_loaded(self) -> bool:
         """Check if configurations have been loaded."""
-        return bool(self._image_processing or self._concurrency or self._model)
+        return bool(
+            self._image_processing or self._concurrency or self._model or self._api_keys
+        )
 
 
 # ============================================================================
@@ -238,7 +253,9 @@ def resolve_env_var(provider: str, default_env_var: str) -> str:
     """
     mapped = get_config_loader().get_api_keys_config().get(provider)
     if isinstance(mapped, str) and mapped.strip():
-        return mapped
+        # Strip before returning: a trailing space in the YAML would otherwise
+        # produce an env-var name that can never resolve.
+        return mapped.strip()
     return default_env_var
 
 

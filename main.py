@@ -39,6 +39,7 @@ from cli.interaction import (
     print_section,
     print_success,
     print_warning,
+    run_exit_hook,
     set_exit_hook,
 )
 from cli.loop import (
@@ -60,6 +61,7 @@ def _select_items_for_processing(
     process_all: bool,
     select_pattern: str | None = None,
     emit_json: bool = False,
+    dry_run: bool = False,
 ) -> list[ItemSpec]:
     """Select items for processing based on mode and user input."""
     if config.CLI_MODE:
@@ -83,7 +85,7 @@ def _select_items_for_processing(
                 # per the "emit JSON on all exits" contract (AE-5).
                 logger.error(f"No items found matching '{select_pattern}'")
                 if emit_json:
-                    _emit_json_summary(0, 0, 0, 0, [])
+                    _emit_json_summary(0, 0, 0, 0, [], dry_run=dry_run)
                 sys.exit(1)
         elif len(all_items) == 1:
             logger.info("Processing single item in CLI mode")
@@ -101,7 +103,7 @@ def _select_items_for_processing(
                 len(all_items),
             )
             if emit_json:
-                _emit_json_summary(0, 0, 0, 0, [])
+                _emit_json_summary(0, 0, 0, 0, [], dry_run=dry_run)
             sys.exit(2)
     else:
         # Interactive mode: prompt user for selection
@@ -132,6 +134,9 @@ def _setup_and_scan(
         resume_mode,
     ) = _parse_execution_mode(args)
 
+    emit_json = bool(getattr(args, "json", False))
+    dry_run = bool(getattr(args, "dry_run", False))
+
     _apply_app_config_overrides(args)
 
     cli_model_overrides = _build_cli_model_overrides(args)
@@ -154,7 +159,7 @@ def _setup_and_scan(
     # A --dry-run must be side-effect-free: creating the output tree here would
     # leave directories behind for a run that does no work. Defer it to the
     # actual processing loop, which mkdirs each item's output dir on demand.
-    if not bool(getattr(args, "dry_run", False)):
+    if not dry_run:
         base_output_dir.mkdir(parents=True, exist_ok=True)
 
     if not config.CLI_MODE:
@@ -162,8 +167,6 @@ def _setup_and_scan(
         print_info(f"Searching for PDFs and image folders in: {input_path_arg}")
 
     all_items_to_consider = scan_input_path(input_path_arg)
-
-    emit_json = bool(getattr(args, "json", False))
 
     if not all_items_to_consider:
         _hint = (
@@ -173,7 +176,7 @@ def _setup_and_scan(
         if config.CLI_MODE:
             logger.error("No items found to process in: %s. %s", input_path_arg, _hint)
             if emit_json:
-                _emit_json_summary(0, 0, 0, 0, [])
+                _emit_json_summary(0, 0, 0, 0, [], dry_run=dry_run)
             sys.exit(1)
         else:
             from cli.interaction import print_error
@@ -181,7 +184,7 @@ def _setup_and_scan(
             print_error(f"No items found to process in: {input_path_arg}. {_hint}")
             logger.debug("No items found in: %s", input_path_arg)
             if emit_json:
-                _emit_json_summary(0, 0, 0, 0, [])
+                _emit_json_summary(0, 0, 0, 0, [], dry_run=dry_run)
             sys.exit(0)
 
     if not config.CLI_MODE:
@@ -190,13 +193,13 @@ def _setup_and_scan(
         )
 
     selected_items = _select_items_for_processing(
-        all_items_to_consider, process_all, select_pattern, emit_json
+        all_items_to_consider, process_all, select_pattern, emit_json, dry_run
     )
     if not selected_items:
         if not config.CLI_MODE:
             print_info("No items selected for processing. Exiting.")
         if emit_json:
-            _emit_json_summary(0, 0, 0, 0, [])
+            _emit_json_summary(0, 0, 0, 0, [], dry_run=dry_run)
         sys.exit(0)
 
     logger.info("Selected %s item(s) for processing.", len(selected_items))
@@ -406,14 +409,21 @@ def _emit_json_summary(
     skipped: int,
     total: int,
     outputs: list[str],
+    dry_run: bool = False,
 ) -> None:
-    """Print one machine-readable JSON run-summary line on stdout."""
+    """Print one machine-readable JSON run-summary line on stdout.
+
+    Every emitted object carries a ``dry_run`` boolean so a consumer can tell
+    a real run's summary from one produced while ``--dry-run`` was in effect
+    (an early exit under ``--dry-run`` otherwise emitted an ambiguous shape).
+    """
     stats = get_token_tracker().get_stats() if config.DAILY_TOKEN_LIMIT_ENABLED else {}
     # tokens_used_today stays this tool's OWN usage; when the shared budget is
     # enabled the ledger exposes the per-tool figure as own_tokens_used_today
     # (equal to tokens_used_today in standalone mode). The combined cross-tool
     # total is surfaced separately only when the shared budget is active.
     summary: dict[str, Any] = {
+        "dry_run": dry_run,
         "items_total": total,
         "items_complete": processed,
         "items_failed": failed,
@@ -533,6 +543,7 @@ def _guard_duplicate_outputs(
     items_to_process: list[ItemSpec],
     base_output_dir: Path,
     emit_json: bool,
+    dry_run: bool = False,
 ) -> None:
     """Abort if two selected items resolve to the same output target.
 
@@ -557,12 +568,20 @@ def _guard_duplicate_outputs(
             if config.CLI_MODE:
                 logger.error(message)
                 if emit_json:
-                    _emit_json_summary(0, 0, 0, len(items_to_process), [])
+                    _emit_json_summary(
+                        0, 0, 0, len(items_to_process), [], dry_run=dry_run
+                    )
                 sys.exit(2)
             else:
                 from cli.interaction import print_error
 
                 print_error(message)
+                # The interactive branch honors the same emit-JSON-on-all-exits
+                # contract as its CLI-mode sibling above.
+                if emit_json:
+                    _emit_json_summary(
+                        0, 0, 0, len(items_to_process), [], dry_run=dry_run
+                    )
                 sys.exit(1)
         seen[key] = item
 
@@ -578,7 +597,11 @@ def main() -> int:
     # hook so those exits still honor the emit-JSON-on-all-exits contract with
     # the same zero/empty summary shape used by the decline path. The hook is
     # one-shot and is cleared by _emit_json_summary, so it can never double-emit.
-    set_exit_hook((lambda: _emit_json_summary(0, 0, 0, 0, [])) if emit_json else None)
+    set_exit_hook(
+        (lambda: _emit_json_summary(0, 0, 0, 0, [], dry_run=dry_run))
+        if emit_json
+        else None
+    )
 
     # Non-TTY guard: interactive mode would block on input() prompts. Fail fast
     # with a clear message and usage exit code instead of hanging or EOF-ing.
@@ -589,7 +612,7 @@ def main() -> int:
         )
         # Honor the emit-JSON-on-all-exits contract even on this early guard.
         if emit_json:
-            _emit_json_summary(0, 0, 0, 0, [])
+            _emit_json_summary(0, 0, 0, 0, [], dry_run=dry_run)
         return 2
 
     selected_items, base_output_dir, summary_context, resume_mode = _setup_and_scan(
@@ -620,11 +643,11 @@ def main() -> int:
             skipped_count,
         )
         if emit_json:
-            _emit_json_summary(0, 0, skipped_count, 0, [])
+            _emit_json_summary(0, 0, skipped_count, 0, [], dry_run=dry_run)
         return 0
 
     # Refuse to silently overwrite when two items share an output target.
-    _guard_duplicate_outputs(items_to_process, base_output_dir, emit_json)
+    _guard_duplicate_outputs(items_to_process, base_output_dir, emit_json, dry_run)
 
     # Prompt for summary context in interactive mode
     if not config.CLI_MODE and config.SUMMARIZE and not summary_context:
@@ -640,7 +663,9 @@ def main() -> int:
             # Honor the --json contract even on an interactive decline: 0
             # processed/failed, the skipped count, and the full attempted total.
             if emit_json:
-                _emit_json_summary(0, 0, len(skipped_items), len(items_to_process), [])
+                _emit_json_summary(
+                    0, 0, len(skipped_items), len(items_to_process), [], dry_run=dry_run
+                )
             return 0
         print_section(f"Processing {len(items_to_process)} Item(s)")
 
@@ -725,6 +750,7 @@ def main() -> int:
             skipped_count + unattempted_count,
             total_to_process,
             run_outputs,
+            dry_run=dry_run,
         )
 
     # Exit code contract: 0 = all requested items succeeded; 1 = one or more
@@ -739,8 +765,15 @@ if __name__ == "__main__":
         raise
     except KeyboardInterrupt:
         logger.info("Processing interrupted by user (Ctrl+C). Exiting.")
+        # These two handlers bypass exit_program, so fire the registered exit
+        # hook by hand: without it a --json run interrupted with Ctrl+C (or
+        # aborted by an unhandled exception) emitted no summary line at all,
+        # breaking the emit-JSON-on-all-exits contract. The hook is one-shot
+        # and _emit_json_summary clears it, so this can never double-emit.
+        run_exit_hook()
         sys.exit(130)
     except Exception as exc:
+        run_exit_hook()
         handle_critical_error(
             exc,
             "main execution flow",

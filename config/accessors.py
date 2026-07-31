@@ -46,32 +46,29 @@ def _get_config_value(
 # ============================================================================
 # Concurrency Configuration Access
 # ============================================================================
-def get_api_concurrency(api_type: str = "transcription") -> tuple[int, float]:
-    """Get concurrency settings for API requests."""
+def get_api_concurrency(api_type: str = "transcription") -> int:
+    """Get the parallel-worker count for API requests of *api_type*."""
     try:
         cfg_loader = get_config_loader()
         concurrency_cfg = cfg_loader.get_concurrency_config()
         api_cfg = concurrency_cfg.get("api_requests", {}).get(api_type, {})
 
-        max_workers = api_cfg.get("concurrency_limit", DEFAULT_CONCURRENT_REQUESTS)
+        raw_workers = api_cfg.get("concurrency_limit", DEFAULT_CONCURRENT_REQUESTS)
         # A quoted YAML value (e.g. "80") would survive to min(max_workers, ...)
         # in the pipeline and raise TypeError mid-run; coerce with a safe
         # fallback, mirroring get_api_timeout / get_target_dpi.
         try:
-            max_workers = int(max_workers)
+            return int(raw_workers)
         except (ValueError, TypeError):
-            logger.debug(f"Malformed concurrency_limit {max_workers!r}; using default")
-            max_workers = DEFAULT_CONCURRENT_REQUESTS
-        delay = api_cfg.get("delay_between_tasks", 0.05)
-
-        return max_workers, delay
+            logger.debug(f"Malformed concurrency_limit {raw_workers!r}; using default")
+            return DEFAULT_CONCURRENT_REQUESTS
     except Exception as e:
         logger.warning(f"Error loading {api_type} concurrency config: {e}")
-        return DEFAULT_CONCURRENT_REQUESTS, 0.05
+        return DEFAULT_CONCURRENT_REQUESTS
 
 
-def get_transcription_concurrency() -> tuple[int, float]:
-    """Get concurrency settings for transcription API requests."""
+def get_transcription_concurrency() -> int:
+    """Get the parallel-worker count for transcription API requests."""
     return get_api_concurrency("transcription")
 
 

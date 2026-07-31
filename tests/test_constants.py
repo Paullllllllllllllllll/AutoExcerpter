@@ -8,7 +8,6 @@ from config.constants import (
     BULLET_INDENT_PT,
     BULLET_SPACE_AFTER_PT,
     CONSECUTIVE_ERRORS_THRESHOLD,
-    DEFAULT_API_TIMEOUT,
     DEFAULT_CONCURRENT_REQUESTS,
     DEFAULT_HIGH_TARGET_HEIGHT,
     DEFAULT_HIGH_TARGET_WIDTH,
@@ -50,33 +49,42 @@ from config.constants import (
 
 
 class TestAPIConfigurationDefaults:
-    """Tests for API configuration defaults."""
+    """Tests for API configuration defaults.
 
-    def test_default_model_is_string(self) -> None:
-        """DEFAULT_MODEL is a non-empty string."""
-        assert isinstance(DEFAULT_MODEL, str)
-        assert len(DEFAULT_MODEL) > 0
+    Drift-prone values are asserted EXACTLY, not merely "non-empty" or
+    "positive": DEFAULT_MODEL sat at a stale "gpt-5-mini" for three minor
+    releases after the shipped default moved on, and a shape-only assertion
+    could never have caught it.
+    """
 
-    def test_default_concurrent_requests_positive(self) -> None:
-        """DEFAULT_CONCURRENT_REQUESTS is positive integer."""
+    def test_default_model_exact(self) -> None:
+        """DEFAULT_MODEL matches the shipped default model name."""
+        assert DEFAULT_MODEL == "gpt-5.6-luna"
+
+    def test_default_concurrent_requests_exact(self) -> None:
+        """DEFAULT_CONCURRENT_REQUESTS is the expected conservative fallback."""
         assert isinstance(DEFAULT_CONCURRENT_REQUESTS, int)
-        assert DEFAULT_CONCURRENT_REQUESTS > 0
+        assert DEFAULT_CONCURRENT_REQUESTS == 4
 
-    def test_default_api_timeout_positive(self) -> None:
-        """DEFAULT_API_TIMEOUT is positive integer."""
-        assert isinstance(DEFAULT_API_TIMEOUT, int)
-        assert DEFAULT_API_TIMEOUT > 0
-
-    def test_default_openai_timeout_positive(self) -> None:
-        """DEFAULT_OPENAI_TIMEOUT is positive integer."""
+    def test_default_openai_timeout_exact(self) -> None:
+        """DEFAULT_OPENAI_TIMEOUT matches the flex-tier timeout in the template."""
         assert isinstance(DEFAULT_OPENAI_TIMEOUT, int)
-        assert DEFAULT_OPENAI_TIMEOUT > 0
-        assert DEFAULT_OPENAI_TIMEOUT >= DEFAULT_API_TIMEOUT
+        assert DEFAULT_OPENAI_TIMEOUT == 900
 
-    def test_default_rate_limits_structure(self) -> None:
-        """DEFAULT_RATE_LIMITS has correct structure."""
-        assert isinstance(DEFAULT_RATE_LIMITS, list)
-        assert len(DEFAULT_RATE_LIMITS) > 0
+    def test_dead_api_timeout_constant_removed(self) -> None:
+        """DEFAULT_API_TIMEOUT is gone: the live fallback is the OpenAI one.
+
+        It was referenced only by this test file; config/accessors.py uses
+        DEFAULT_OPENAI_TIMEOUT for the real api_timeout fallback.
+        """
+        import config.constants as constants
+
+        assert not hasattr(constants, "DEFAULT_API_TIMEOUT")
+        assert "DEFAULT_API_TIMEOUT" not in constants.__all__
+
+    def test_default_rate_limits_exact(self) -> None:
+        """DEFAULT_RATE_LIMITS has the expected values and structure."""
+        assert DEFAULT_RATE_LIMITS == [(120, 1), (15000, 60), (15000, 3600)]
 
         for limit in DEFAULT_RATE_LIMITS:
             assert isinstance(limit, tuple)
@@ -88,27 +96,24 @@ class TestAPIConfigurationDefaults:
 class TestImageProcessingDefaults:
     """Tests for image processing defaults."""
 
-    def test_default_target_dpi_reasonable(self) -> None:
-        """DEFAULT_TARGET_DPI is reasonable value."""
-        assert isinstance(DEFAULT_TARGET_DPI, int)
+    def test_default_target_dpi_exact(self) -> None:
+        """DEFAULT_TARGET_DPI matches the shipped image_processing template."""
+        assert DEFAULT_TARGET_DPI == 300
         assert 72 <= DEFAULT_TARGET_DPI <= 600
 
-    def test_default_jpeg_quality_in_range(self) -> None:
-        """DEFAULT_JPEG_QUALITY is in valid range."""
-        assert isinstance(DEFAULT_JPEG_QUALITY, int)
+    def test_default_jpeg_quality_exact(self) -> None:
+        """DEFAULT_JPEG_QUALITY matches the shipped image_processing template."""
+        assert DEFAULT_JPEG_QUALITY == 95
         assert 1 <= DEFAULT_JPEG_QUALITY <= 100
 
-    def test_default_low_max_side_positive(self) -> None:
-        """DEFAULT_LOW_MAX_SIDE_PX is positive."""
-        assert isinstance(DEFAULT_LOW_MAX_SIDE_PX, int)
-        assert DEFAULT_LOW_MAX_SIDE_PX > 0
+    def test_default_low_max_side_exact(self) -> None:
+        """DEFAULT_LOW_MAX_SIDE_PX is the low-detail cap the API expects."""
+        assert DEFAULT_LOW_MAX_SIDE_PX == 512
 
-    def test_default_high_dimensions_positive(self) -> None:
-        """High detail target dimensions are positive."""
-        assert isinstance(DEFAULT_HIGH_TARGET_WIDTH, int)
-        assert isinstance(DEFAULT_HIGH_TARGET_HEIGHT, int)
-        assert DEFAULT_HIGH_TARGET_WIDTH > 0
-        assert DEFAULT_HIGH_TARGET_HEIGHT > 0
+    def test_default_high_dimensions_exact(self) -> None:
+        """High-detail target dimensions match the API tile geometry."""
+        assert DEFAULT_HIGH_TARGET_WIDTH == 768
+        assert DEFAULT_HIGH_TARGET_HEIGHT == 1536
 
     def test_white_background_color_valid(self) -> None:
         """WHITE_BACKGROUND_COLOR is valid RGB tuple."""

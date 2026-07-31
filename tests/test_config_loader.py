@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 from config.loader import (
@@ -155,8 +156,109 @@ class TestConfigLoaderLoadConfigs:
         assert result == {}
 
 
+class TestExampleBaselineMerge:
+    """The real file is deep-merged OVER the bundled example.
+
+    Regression: a present-but-partial real config was used verbatim, so every
+    key it omitted fell through to an unrelated hardcoded constant instead of
+    the shipped template's value. The sharpest case was a concurrency.yaml
+    written without ``rate_limits``, which silently selected constants.py's
+    (120, 1) burst limit rather than the template's conservative [10, 1].
+    """
+
+    def test_partial_real_inherits_example_values(self, temp_dir: Path) -> None:
+        """Keys the real file omits keep the example's value."""
+        (temp_dir / "concurrency.example.yaml").write_text(
+            "api_requests:\n"
+            "  api_timeout: 900\n"
+            "  rate_limits:\n"
+            "    - [10, 1]\n"
+            "    - [600, 60]\n"
+            "  transcription:\n"
+            "    concurrency_limit: 80\n"
+            "    service_tier: flex\n",
+            encoding="utf-8",
+        )
+        # A real file that speaks ONLY about concurrency_limit.
+        (temp_dir / "concurrency.yaml").write_text(
+            "api_requests:\n  transcription:\n    concurrency_limit: 4\n",
+            encoding="utf-8",
+        )
+
+        loader = ConfigLoader()
+        with patch("config.loader.CONFIG_DIR", temp_dir):
+            result = loader._load_yaml_config("concurrency.yaml")
+
+        api = result["api_requests"]
+        # The real file wins where it speaks ...
+        assert api["transcription"]["concurrency_limit"] == 4
+        # ... and inherits everything it omitted, at every nesting depth.
+        assert api["rate_limits"] == [[10, 1], [600, 60]]
+        assert api["api_timeout"] == 900
+        assert api["transcription"]["service_tier"] == "flex"
+
+    def test_real_scalar_values_still_win(self, temp_dir: Path) -> None:
+        """An explicit real value overrides the example, including falsy ones."""
+        (temp_dir / "model.example.yaml").write_text(
+            "transcription_model:\n  name: example-model\n  stream: true\n",
+            encoding="utf-8",
+        )
+        (temp_dir / "model.yaml").write_text(
+            "transcription_model:\n  name: real-model\n  stream: false\n",
+            encoding="utf-8",
+        )
+
+        loader = ConfigLoader()
+        with patch("config.loader.CONFIG_DIR", temp_dir):
+            result = loader._load_yaml_config("model.yaml")
+
+        assert result["transcription_model"]["name"] == "real-model"
+        assert result["transcription_model"]["stream"] is False
+
+    def test_corrupt_real_falls_back_to_example_wholesale(self, temp_dir: Path) -> None:
+        """A real file that fails to parse yields the example unchanged."""
+        (temp_dir / "model.example.yaml").write_text(
+            "transcription_model:\n  name: example-model\n", encoding="utf-8"
+        )
+        (temp_dir / "model.yaml").write_text("key: [unclosed", encoding="utf-8")
+
+        loader = ConfigLoader()
+        with patch("config.loader.CONFIG_DIR", temp_dir):
+            result = loader._load_yaml_config("model.yaml")
+
+        assert result == {"transcription_model": {"name": "example-model"}}
+
+    def test_api_keys_partial_real_inherits_provider_defaults(
+        self, temp_dir: Path
+    ) -> None:
+        """api_keys.yaml merges too; omitted providers keep their default var."""
+        (temp_dir / "api_keys.example.yaml").write_text(
+            "openai: OPENAI_API_KEY\nanthropic: ANTHROPIC_API_KEY\n",
+            encoding="utf-8",
+        )
+        (temp_dir / "api_keys.yaml").write_text(
+            "openai: OPENAI_API_KEY_2\n", encoding="utf-8"
+        )
+
+        loader = ConfigLoader()
+        with patch("config.loader.CONFIG_DIR", temp_dir):
+            result = loader._load_yaml_config("api_keys.yaml")
+
+        assert result["openai"] == "OPENAI_API_KEY_2"
+        # Behavior-neutral: the example maps each provider to its own default.
+        assert result["anthropic"] == "ANTHROPIC_API_KEY"
+
+
 class TestApiKeysConfig:
     """Tests for the optional api_keys.yaml mapping."""
+
+    def test_is_loaded_counts_api_keys(self) -> None:
+        """is_loaded() reflects api_keys.yaml, the fourth loaded file."""
+        loader = ConfigLoader()
+        assert loader.is_loaded() is False
+
+        loader._api_keys = {"openai": "OPENAI_API_KEY"}
+        assert loader.is_loaded() is True
 
     def test_get_api_keys_config_empty_when_absent(self, temp_dir: Path) -> None:
         """get_api_keys_config returns {} when api_keys.yaml is absent."""
@@ -173,6 +275,34 @@ class TestApiKeysConfig:
         loader = ConfigLoader()
 
         assert loader.get_api_keys_config() == {}
+
+
+class TestResolveEnvVar:
+    """Tests for resolve_env_var()."""
+
+    def _patch_mapping(self, monkeypatch: Any, mapping: dict[str, Any]) -> None:
+        loader = ConfigLoader()
+        loader._api_keys = mapping
+        monkeypatch.setattr("config.loader.get_config_loader", lambda: loader)
+
+    def test_mapped_value_is_stripped(self, monkeypatch: Any) -> None:
+        """Regression: the guard stripped but the return value did not.
+
+        A trailing space in the YAML produced an env-var name that could
+        never resolve, so the key looked unset with no explanation.
+        """
+        from config.loader import resolve_env_var
+
+        self._patch_mapping(monkeypatch, {"openai": "  OPENAI_API_KEY_2  "})
+        assert resolve_env_var("openai", "OPENAI_API_KEY") == "OPENAI_API_KEY_2"
+
+    def test_blank_mapping_falls_back_to_default(self, monkeypatch: Any) -> None:
+        """A whitespace-only or missing entry keeps the default env-var name."""
+        from config.loader import resolve_env_var
+
+        self._patch_mapping(monkeypatch, {"openai": "   "})
+        assert resolve_env_var("openai", "OPENAI_API_KEY") == "OPENAI_API_KEY"
+        assert resolve_env_var("google", "GOOGLE_API_KEY") == "GOOGLE_API_KEY"
 
 
 class TestConfigLoaderGetters:

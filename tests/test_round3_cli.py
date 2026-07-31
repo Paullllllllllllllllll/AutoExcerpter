@@ -203,6 +203,7 @@ class TestJsonOnDecline:
         assert payload["items_failed"] == 0
         assert payload["items_skipped"] == 0
         assert payload["outputs"] == []
+        assert payload["dry_run"] is False
 
 
 # ============================================================================
@@ -467,4 +468,12 @@ class TestTokenBannerGating:
         reset = datetime(2026, 7, 20, tzinfo=UTC)
         display_module._log_token_limit_reached(self._stats(), reset, 1, 30)
 
-        assert mock_logger.warning.call_count == 1
+        # All three lines go to WARNING: in CLI mode the logger is the only
+        # human channel, and the wait-duration and cancel-hint lines were
+        # invisible at INFO, making a multi-hour wait look like a hang.
+        assert mock_logger.warning.call_count == 3
+        assert mock_logger.info.call_count == 0
+        messages = [call.args[0] for call in mock_logger.warning.call_args_list]
+        assert any("Daily token limit reached" in m for m in messages)
+        assert any("Waiting until" in m for m in messages)
+        assert any("to cancel and exit" in m for m in messages)

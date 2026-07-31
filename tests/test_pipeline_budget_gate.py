@@ -122,9 +122,7 @@ class TestTranscribeAndSummarizeResumeLoop:
 
         # Skip the summary-log setup branch.
         monkeypatch.setattr(app_config, "SUMMARIZE", False, raising=False)
-        monkeypatch.setattr(
-            transcriber, "get_transcription_concurrency", lambda: (2, None)
-        )
+        monkeypatch.setattr(transcriber, "get_transcription_concurrency", lambda: 2)
 
         state = {"reset": False}
 
@@ -171,9 +169,7 @@ class TestTranscribeAndSummarizeResumeLoop:
                 return n
 
         monkeypatch.setattr(app_config, "SUMMARIZE", False, raising=False)
-        monkeypatch.setattr(
-            transcriber, "get_transcription_concurrency", lambda: (2, None)
-        )
+        monkeypatch.setattr(transcriber, "get_transcription_concurrency", lambda: 2)
 
         def fake_process(
             idx, source, t_results, s_results, total, count_ref, already_complete=0

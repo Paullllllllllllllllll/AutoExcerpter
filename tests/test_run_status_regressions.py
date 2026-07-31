@@ -412,6 +412,7 @@ class TestJsonOutputs:
         assert payload["items_complete"] == 1
         assert payload["items_failed"] == 0
         assert payload["items_skipped"] == 0
+        assert payload["dry_run"] is False
 
 
 # ============================================================================

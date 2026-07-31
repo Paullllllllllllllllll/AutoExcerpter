@@ -8,7 +8,8 @@ Public interface:
   and ``require_api_key``.
 - ``config.constants`` — hardcoded default values and named constants.
 - ``config.get_config_loader()`` — singleton YAML loader for
-  ``image_processing.yaml``, ``concurrency.yaml``, ``model.yaml``.
+  ``image_processing.yaml``, ``concurrency.yaml``, ``model.yaml``, and
+  ``api_keys.yaml``.
 - Typed accessor functions for concurrency/rate-limit/DPI settings.
 - Path constants (``PROJECT_ROOT``, ``CONFIG_DIR``, ``PROMPTS_DIR``,
   ``SCHEMAS_DIR``).

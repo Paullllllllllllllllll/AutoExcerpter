@@ -212,8 +212,13 @@ def _cleanup_working_directory(working_dir: Path) -> None:
         working_dir: Path to working directory to remove.
     """
 
-    def _on_remove_error(func: Any, path_to_fix: Any, _exc_info: Any) -> None:
-        """Handle permission errors during directory removal."""
+    def _on_remove_error(func: Any, path_to_fix: Any, _exc: BaseException) -> None:
+        """Handle permission errors during directory removal.
+
+        Signature matches ``shutil.rmtree(onexc=...)`` (the ``onerror``
+        callback is deprecated since Python 3.12): the third argument is the
+        exception instance, not an exc_info triple.
+        """
         try:
             os.chmod(path_to_fix, stat.S_IWRITE)
             func(path_to_fix)
@@ -221,7 +226,7 @@ def _cleanup_working_directory(working_dir: Path) -> None:
             logger.warning("Could not forcibly remove %s: %s", path_to_fix, exc_inner)
 
     try:
-        shutil.rmtree(working_dir, onerror=_on_remove_error)
+        shutil.rmtree(working_dir, onexc=_on_remove_error)
         logger.debug("Deleted temporary working directory: %s", working_dir)
     except Exception as exc:
         logger.warning("Failed to remove working directory %s: %s", working_dir, exc)
@@ -331,9 +336,21 @@ def _wait_for_token_reset(
                 print_success("Token limit has been reset. Resuming processing.")
             return True
 
-    logger.info("Token limit has been reset. Resuming processing.")
-    if not config.CLI_MODE:
-        print_success("\nToken limit has been reset. Resuming processing.")
+    # The wait deadline elapsed without the in-loop re-check ever observing a
+    # reset. Re-check once more rather than asserting a reset that may not have
+    # happened (a stale reset-time estimate, or a cap that is still exceeded).
+    if not token_tracker.is_limit_reached():
+        logger.info("Token limit has been reset. Resuming processing.")
+        if not config.CLI_MODE:
+            print_success("\nToken limit has been reset. Resuming processing.")
+    else:
+        message = (
+            "Wait deadline reached; the token limit may still be in effect. "
+            "Proceeding anyway — downstream budget checks will re-verify."
+        )
+        logger.warning(message)
+        if not config.CLI_MODE:
+            print_warning(f"\n{message}")
     return True
 
 

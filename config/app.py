@@ -37,6 +37,7 @@ from typing import Any
 
 import yaml
 
+from config.loader import _deep_merge_dicts
 from config.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -52,53 +53,75 @@ _APP_CONFIG_PATH = _CONFIG_DIR / "defaults" / "app.yaml"
 # ============================================================================
 # Configuration Loading Functions
 # ============================================================================
+def _read_app_yaml(path: Path) -> dict[str, Any] | None:
+    """Read and parse *path*; return a dict, or None on any failure."""
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+    except yaml.YAMLError as e:
+        logger.error(f"YAML parsing error in {path.name}: {e}. Using defaults.")
+        return None
+    except Exception as e:
+        logger.error(f"Error loading app config: {e}. Using defaults.")
+        return None
+
+    if not isinstance(data, dict):
+        logger.warning("App config is not a dictionary. Using defaults.")
+        return None
+    return data
+
+
 def _load_yaml_app_config() -> dict[str, Any]:
     """Load the application config YAML.
 
     Resolution order:
-    1. Real file (``config/defaults/app.yaml``).
-    2. Bundled example (``config/defaults/app.example.yaml``) with an
+    1. Real file (``config/defaults/app.yaml``) deep-merged OVER the bundled
+       example, so keys the user omitted keep the shipped template's value
+       instead of falling through to an unrelated hardcoded default.
+    2. Bundled example (``config/defaults/app.example.yaml``) alone, with an
        informational message prompting the user to copy and customize it.
     3. Neither present: return {} with a WARNING.
+
+    A real file that fails to parse falls back to the example wholesale.
 
     Returns:
         Configuration dictionary, or empty dict on error
     """
     app_config_path = _APP_CONFIG_PATH
+    example_path = app_config_path.parent / f"{app_config_path.stem}.example.yaml"
+
+    # The bundled example is the baseline for every resolution branch.
+    baseline: dict[str, Any] = {}
+    if example_path.exists():
+        example_data = _read_app_yaml(example_path)
+        if example_data is not None:
+            baseline = example_data
 
     if not app_config_path.exists():
-        # Look for the bundled example next to the expected real file.
-        stem = app_config_path.stem
-        example_path = app_config_path.parent / f"{stem}.example.yaml"
         if example_path.exists():
             logger.info(
                 f"Config '{app_config_path.name}' not found; using bundled "
                 f"defaults from '{example_path.name}'. Copy it to "
                 f"'{app_config_path.name}' and edit it to set your own values."
             )
-            app_config_path = example_path
-        else:
-            logger.warning(
-                f"App config file not found: {_APP_CONFIG_PATH}. Using defaults."
+            return baseline
+        logger.warning(
+            f"App config file not found: {_APP_CONFIG_PATH}. Using defaults."
+        )
+        return {}
+
+    data = _read_app_yaml(app_config_path)
+    if data is None:
+        if baseline:
+            logger.info(
+                f"Config '{app_config_path.name}' failed to load; using bundled "
+                f"defaults from '{example_path.name}'."
             )
-            return {}
+        return baseline
 
-    try:
-        with app_config_path.open("r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-
-        if not isinstance(data, dict):
-            logger.warning("App config is not a dictionary. Using defaults.")
-            return {}
-
-        return data
-
-    except yaml.YAMLError as e:
-        logger.error(f"YAML parsing error in app.yaml: {e}. Using defaults.")
-        return {}
-    except Exception as e:
-        logger.error(f"Error loading app config: {e}. Using defaults.")
-        return {}
+    # Key-level merge: a present-but-partial real file inherits the template's
+    # value for every key it omits (the real file still wins wherever it speaks).
+    return _deep_merge_dicts(baseline, data) if baseline else data
 
 
 def _get_str(data: dict[str, Any], key: str, default: str) -> str:
@@ -116,11 +139,40 @@ def _get_int(data: dict[str, Any], key: str, default: int) -> int:
         return default
 
 
+# YAML string literals recognized as booleans. A quoted "false"/"no"/"off" is
+# a non-empty string and would be truthy under a bare bool(), silently
+# inverting the setting the user wrote.
+_BOOL_LITERALS: dict[str, bool] = {
+    "true": True,
+    "yes": True,
+    "on": True,
+    "1": True,
+    "false": False,
+    "no": False,
+    "off": False,
+    "0": False,
+}
+
+
 def _get_bool(data: dict[str, Any], key: str, default: bool) -> bool:
-    """Safely get a boolean value from config dictionary."""
+    """Safely get a boolean value from config dictionary.
+
+    Quoted YAML values are mapped through the recognized boolean literals
+    (true/false/yes/no/on/off/1/0, case-insensitive, stripped); any other
+    string is rejected with a warning and the default is used, mirroring the
+    defensiveness of ``_get_int`` / ``_get_float``.
+    """
     value = data.get(key, default)
     if value is None:
         return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        literal = _BOOL_LITERALS.get(value.strip().lower())
+        if literal is None:
+            logger.warning(f"Invalid boolean for '{key}', using default: {default}")
+            return default
+        return literal
     return bool(value)
 
 
@@ -167,9 +219,9 @@ INPUT_PATHS_IS_OUTPUT_PATH = _get_bool(_APP_CFG, "input_paths_is_output_path", F
 DELETE_TEMP_WORKING_DIR = _get_bool(_APP_CFG, "delete_temp_working_dir", True)
 
 # --- Citation Management Settings ---
-CITATION_OPENALEX_EMAIL = _get_str(
-    _CITATION, "openalex_email", "your-email@example.com"
-)
+# Blank by default: the template documents "leave blank to skip", and a
+# placeholder default would send a fake mailto to OpenAlex.
+CITATION_OPENALEX_EMAIL = _get_str(_CITATION, "openalex_email", "")
 CITATION_MAX_API_REQUESTS = _get_int(_CITATION, "max_api_requests", 50)
 CITATION_ENABLE_OPENALEX = _get_bool(_CITATION, "enable_openalex_enrichment", True)
 
