@@ -9,6 +9,14 @@ punctuation mark can have been added, removed, reordered, or re-spelled.
 
 Because the signature is whitespace-blind, structural drift (a dropped blank
 line, a line gained) is caught by separate count checks instead.
+
+Known blind spot: whitespace-only damage is invisible to this gate. Since the
+signature deletes all whitespace before comparing, a repair that glues two
+words together ("theend") or splits one apart ("th eend") produces the same
+signature as the original, and the alphanumeric count is unchanged too. Only
+the line counts would move, and word-gluing does not move them. Defects of that
+class must therefore be prevented in ``repair.py`` and pinned by its unit tests;
+a passing gate is not evidence that word boundaries survived.
 """
 
 from __future__ import annotations

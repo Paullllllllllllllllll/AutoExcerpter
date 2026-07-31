@@ -1,4 +1,3 @@
-/tmp_math_parse.py
 /.autoexcerpter_token_state.json
 .idea/
 .claude/
@@ -11,6 +10,8 @@ config/defaults/*.yaml
 
 .coverage
 .windsurf
+dist/
+*.egg-info/
 __pycache__/
 .pytest_cache/
 htmlcov/

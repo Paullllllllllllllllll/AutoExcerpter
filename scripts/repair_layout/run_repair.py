@@ -25,6 +25,7 @@ from scripts.repair_layout.verifier import VerifyResult, verify
 
 HEADER_MARKER = "# Transcription of:"
 _LONG_LINE_AUDIT_THRESHOLD = 110
+_BOM = "\ufeff"
 
 
 def find_targets(root: Path) -> list[Path]:
@@ -38,24 +39,38 @@ def find_targets(root: Path) -> list[Path]:
                 head = handle.read(256)
         except (OSError, UnicodeDecodeError):
             continue
-        if head.lstrip("﻿").startswith(HEADER_MARKER):
+        if head.lstrip(_BOM).startswith(HEADER_MARKER):
             targets.append(path)
     return targets
 
 
-def read_text_preserve(path: Path) -> tuple[str, bool]:
-    """Read a file as UTF-8, returning (text_with_lf, had_crlf)."""
+def read_text_preserve(path: Path) -> tuple[str, bool, bool]:
+    """Read a file as UTF-8, returning (text_with_lf, had_crlf, had_bom).
+
+    ``find_targets`` accepts BOM-prefixed files, but a surviving U+FEFF would
+    sit in front of the ``# Transcription of:`` header and defeat its
+    passthrough protection (``str.strip()`` does not remove it). The BOM is
+    therefore stripped on read and restored on write, leaving the file's bytes
+    outside the repair unchanged.
+    """
     with open(path, encoding="utf-8", newline="") as handle:
         raw = handle.read()
+    had_bom = raw.startswith(_BOM)
+    if had_bom:
+        raw = raw[1:]
     had_crlf = "\r\n" in raw
     text = raw.replace("\r\n", "\n").replace("\r", "\n")
-    return text, had_crlf
+    return text, had_crlf, had_bom
 
 
-def write_text_preserve(path: Path, text: str, had_crlf: bool) -> None:
-    """Write text back, preserving the file's original newline style."""
+def write_text_preserve(
+    path: Path, text: str, had_crlf: bool, had_bom: bool = False
+) -> None:
+    """Write text back, preserving the original newline style and any BOM."""
     eol = "\r\n" if had_crlf else "\n"
     data = text.replace("\n", eol)
+    if had_bom:
+        data = _BOM + data
     with open(path, "w", encoding="utf-8", newline="") as handle:
         handle.write(data)
 
@@ -70,8 +85,19 @@ def _next_backup_version(backup_dir: Path, stem: str, date: str) -> Path:
         version += 1
 
 
-def create_backup(targets: list[Path], root: Path, backup_dir: Path, date: str) -> Path:
-    """Zip all target files (paths relative to root) and document the snapshot."""
+def create_backup(
+    targets: list[Path],
+    root: Path,
+    backup_dir: Path,
+    date: str,
+    total_candidates: int | None = None,
+) -> Path:
+    """Zip all target files (paths relative to root) and document the snapshot.
+
+    ``total_candidates`` is the number of files found before ``--limit``
+    truncated the list; when it exceeds the number backed up, the doc line says
+    so, since the archive is then not a full-tree snapshot.
+    """
     backup_dir.mkdir(parents=True, exist_ok=True)
     zip_path = _next_backup_version(backup_dir, "literature_transcriptions", date)
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as archive:
@@ -86,9 +112,13 @@ def create_backup(targets: list[Path], root: Path, backup_dir: Path, date: str) 
         )
 
     doc = backup_dir / "backup_doc.md"
+    scope = ""
+    if total_candidates is not None and total_candidates > len(targets):
+        scope = f" (limited run: first {len(targets)} of {total_candidates} candidates)"
     line = (
         f"- `{zip_path.name}` ({date}): {len(targets)} transcription .txt files, "
-        f"pre line-break-repair snapshot. Restore by extracting over `{root}`.\n"
+        f"pre line-break-repair snapshot{scope}. "
+        f"Restore by extracting over `{root}`.\n"
     )
     if doc.exists():
         existing = doc.read_text(encoding="utf-8")
@@ -109,19 +139,18 @@ class FileResult:
     kept_hyphens: list[str]
     merged_hyphens: int
     long_lines: list[str]
-    width_estimates: list[int]
 
 
 def process_file(path: Path, root: Path, dry_run: bool) -> FileResult:
     """Repair, verify, and (unless dry-run) write back a single file."""
-    text, had_crlf = read_text_preserve(path)
+    text, had_crlf, had_bom = read_text_preserve(path)
     repaired, audit = repair_text(text)
     changed = repaired != text
     result = verify(text, repaired)
 
     written = False
     if changed and result.passed and not dry_run:
-        write_text_preserve(path, repaired, had_crlf)
+        write_text_preserve(path, repaired, had_crlf, had_bom)
         written = True
 
     # Flag long lines in the repaired output that are newly formed (i.e. not
@@ -143,12 +172,21 @@ def process_file(path: Path, root: Path, dry_run: bool) -> FileResult:
         kept_hyphens=kept,
         merged_hyphens=merged,
         long_lines=long_lines,
-        width_estimates=audit.page_width_estimates,
     )
 
 
-def write_reports(results: list[FileResult], backup_dir: Path, date: str) -> None:
-    """Write the human-readable markdown report and the LLM-audit JSON."""
+def write_reports(
+    results: list[FileResult],
+    backup_dir: Path,
+    date: str,
+    read_failures: list[tuple[str, str]] | None = None,
+) -> None:
+    """Write the human-readable markdown report and the LLM-audit JSON.
+
+    ``read_failures`` holds (path, error) pairs for files that could not be
+    read or decoded; they are reported so a partial run is never silent.
+    """
+    read_failures = read_failures or []
     failures = [r for r in results if r.changed and not r.verify.passed]
     changed = [r for r in results if r.changed]
     flagged = [r for r in results if r.kept_hyphens or r.long_lines]
@@ -157,7 +195,7 @@ def write_reports(results: list[FileResult], backup_dir: Path, date: str) -> Non
         f"# Line-break repair report ({date})",
         "",
         f"Files scanned: {len(results)}; changed: {len(changed)}; "
-        f"FAILED gate: {len(failures)}.",
+        f"FAILED gate: {len(failures)}; unreadable: {len(read_failures)}.",
         "",
         "All gates: equal content signature, equal ordered page markers, equal "
         "alphanumeric count, and line count never increases.",
@@ -170,6 +208,16 @@ def write_reports(results: list[FileResult], backup_dir: Path, date: str) -> Non
             lines.append(f"- FAIL `{r.path}`: {r.verify.summary()}")
     else:
         lines.append("None. Every changed file preserved content exactly.")
+    lines += [
+        "",
+        "## Unreadable files (skipped)",
+        "",
+    ]
+    if read_failures:
+        for path_str, error in read_failures:
+            lines.append(f"- SKIPPED `{path_str}`: {error}")
+    else:
+        lines.append("None. Every file was read successfully.")
     lines += [
         "",
         "## Per-file",
@@ -201,8 +249,8 @@ def write_reports(results: list[FileResult], backup_dir: Path, date: str) -> Non
     )
 
 
-def main() -> None:
-    """CLI entry point."""
+def main() -> int:
+    """CLI entry point. Returns the process exit code (0 ok, 1 problems)."""
     parser = argparse.ArgumentParser(description="Repair transcription line breaks.")
     parser.add_argument("--root", required=True, type=Path)
     parser.add_argument("--backup-dir", type=Path, default=None)
@@ -212,31 +260,45 @@ def main() -> None:
     args = parser.parse_args()
 
     root: Path = args.root
+    if not root.is_dir():
+        parser.error(f"--root is not an existing directory: {root}")
     backup_dir: Path = args.backup_dir or (root / "backup")
     date = _dt.date.today().strftime("%d_%m_%Y")
 
     targets = find_targets(root)
+    total_candidates = len(targets)
     if args.limit is not None:
         targets = targets[: args.limit]
     print(f"Found {len(targets)} transcription .txt files under {root}")
 
-    if not args.dry_run and not args.skip_backup:
-        zip_path = create_backup(targets, root, backup_dir, date)
+    if targets and not args.dry_run and not args.skip_backup:
+        zip_path = create_backup(targets, root, backup_dir, date, total_candidates)
         print(f"Backup written and verified: {zip_path}")
 
-    results = [process_file(path, root, args.dry_run) for path in targets]
+    # A single unreadable file must not abort a run that has already rewritten
+    # earlier files: record it and carry on, so the reports are always written.
+    results: list[FileResult] = []
+    read_failures: list[tuple[str, str]] = []
+    for path in targets:
+        try:
+            results.append(process_file(path, root, args.dry_run))
+        except (OSError, UnicodeDecodeError) as exc:
+            read_failures.append((str(path.relative_to(root)), f"{exc!r}"))
+            print(f"SKIPPED (unreadable) {path}: {exc}")
 
     backup_dir.mkdir(parents=True, exist_ok=True)
-    write_reports(results, backup_dir, date)
+    write_reports(results, backup_dir, date, read_failures)
 
     changed = sum(1 for r in results if r.changed)
     written = sum(1 for r in results if r.written)
     failures = sum(1 for r in results if r.changed and not r.verify.passed)
     print(
         f"Changed: {changed}; written: {written}; gate failures: {failures}; "
-        f"dry_run={args.dry_run}. Reports in {backup_dir}"
+        f"unreadable: {len(read_failures)}; dry_run={args.dry_run}. "
+        f"Reports in {backup_dir}"
     )
+    return 1 if failures or read_failures else 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

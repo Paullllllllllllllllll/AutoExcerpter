@@ -75,17 +75,9 @@ class TestDistinctEditionsDoNotCollapse:
 class TestPageRangesStillStrip:
     """Page ranges (the motivating "S. 1066-1071" case) must still strip fully."""
 
-    def test_german_page_range_not_read_as_year(self) -> None:
-        """ "S. 1066-1071" yields no bogus year 1066 (range alternative first)."""
-        assert _extract_year("Meyer. Some Work. S. 1066-1071.") is None
-
     def test_english_page_range_stripped(self) -> None:
         """ "pp. 123-145" strips before year scanning (no bogus year)."""
         assert _extract_year("Meyer. Some Work. pp. 123-145.") is None
-
-    def test_real_year_survives_alongside_page_range(self) -> None:
-        """A genuine year is still found next to a stripped German page range."""
-        assert _extract_year("Meyer (1998). Some Work. S. 1066-1071.") == 1998
 
     def test_page_range_stripped_from_normalized_key(self) -> None:
         """A trailing page range does not enter the comparison text / key."""

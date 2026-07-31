@@ -65,7 +65,6 @@ disallow_incomplete_defs = false
 packages = [
     "cli",
     "config",
-    "context",
     "imaging",
     "llm",
     "pipeline",

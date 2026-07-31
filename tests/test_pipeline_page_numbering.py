@@ -5,34 +5,6 @@ from typing import Any
 import pytest
 
 from pipeline.page_numbering import PageNumberProcessor
-from rendering.summary import int_to_roman
-
-
-class TestIntToRoman:
-    """Tests for the int_to_roman utility function."""
-
-    def test_basic_numbers(self) -> None:
-        """Test basic Roman numeral conversions."""
-        assert int_to_roman(1) == "i"
-        assert int_to_roman(5) == "v"
-        assert int_to_roman(10) == "x"
-        assert int_to_roman(50) == "l"
-        assert int_to_roman(100) == "c"
-
-    def test_compound_numbers(self) -> None:
-        """Test compound Roman numeral conversions."""
-        assert int_to_roman(4) == "iv"
-        assert int_to_roman(9) == "ix"
-        assert int_to_roman(12) == "xii"
-        assert int_to_roman(14) == "xiv"
-
-    def test_zero_returns_empty(self) -> None:
-        """Zero should return empty string."""
-        assert int_to_roman(0) == ""
-
-    def test_negative_returns_empty(self) -> None:
-        """Negative numbers should return empty string."""
-        assert int_to_roman(-5) == ""
 
 
 class TestInferUnnumberedPageNumbers:

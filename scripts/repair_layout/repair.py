@@ -70,9 +70,7 @@ class RepairAudit:
     """Diagnostics about a single file's repair, for the read-only LLM audit."""
 
     hyphen_decisions: list[HyphenDecision] = field(default_factory=list)
-    long_lines: list[str] = field(default_factory=list)
     page_width_estimates: list[int] = field(default_factory=list)
-    rejoin_applied: bool = False
 
 
 def is_passthrough_line(line: str) -> bool:
@@ -81,6 +79,12 @@ def is_passthrough_line(line: str) -> bool:
     These act as hard boundaries: prose is never merged into or out of them.
     Covers the metadata header and markdown headings (``#``), page markers,
     image descriptions, markdown table rows, and display math.
+
+    Page markers are recognized anywhere in the line, not only at its start:
+    ``_page_regions`` splits on ANY line matching ``PAGE_MARKER_RE``, so the
+    closing half of a marker split across lines (``3</page_number>``) and a
+    trailing inline marker must be boundaries here too, or they would be
+    treated as prose and rejoined into the surrounding text.
     """
     stripped = line.strip()
     if not stripped:
@@ -88,6 +92,8 @@ def is_passthrough_line(line: str) -> bool:
     if stripped.startswith("#"):
         return True
     if stripped.startswith("<page") or stripped.startswith("[Page"):
+        return True
+    if "</page_number>" in stripped:
         return True
     if stripped.startswith("!["):
         return True
@@ -197,13 +203,12 @@ def _line_is_full(lines: list[str], idx: int, b_len: int, width: int) -> bool:
     return b_len + 1 + _first_word_len(nxt) > width
 
 
-def _rejoin_wrapped_lines(lines: list[str]) -> tuple[list[str], bool]:
+def _rejoin_wrapped_lines(lines: list[str]) -> list[str]:
     """Reverse greedy wrapping by rejoining orphan continuation lines."""
     widths = _line_widths(lines)
     out: list[str] = []
     buffer: str | None = None
     prev_len = 0
-    applied = False
     index = 0
     total = len(lines)
 
@@ -261,10 +266,16 @@ def _rejoin_wrapped_lines(lines: list[str]) -> tuple[list[str], bool]:
             lines, index, len(continuation), width
         )
         if a_is_full and b_is_remainder:
-            separator = "" if " " not in buffer.strip() else " "
+            # Greedy wrapping only breaks *inside* a token when that token alone
+            # overruns the width, and it then fills the piece to the width
+            # exactly. So a space-less buffer is a broken long word (rejoin with
+            # no separator) only if it reached the width; a short space-less
+            # line -- a URL or DOI on its own printed line -- is a whole token
+            # and must keep the space, which the content gate cannot see.
+            broken_token = " " not in buffer.strip() and prev_len >= width
+            separator = "" if broken_token else " "
             buffer = buffer.rstrip() + separator + continuation
             prev_len = len(continuation)
-            applied = True
         else:
             out.append(buffer)
             buffer = line.rstrip()
@@ -273,7 +284,7 @@ def _rejoin_wrapped_lines(lines: list[str]) -> tuple[list[str], bool]:
 
     if buffer is not None:
         out.append(buffer)
-    return out, applied
+    return out
 
 
 def _dehyphenate_lines(lines: list[str]) -> tuple[list[str], list[HyphenDecision]]:
@@ -305,9 +316,12 @@ def _dehyphenate_lines(lines: list[str]) -> tuple[list[str], list[HyphenDecision
                     base = line.rstrip()
                     merged = base + first_token if keep else base[:-1] + first_token
                     result[index] = merged
+                    # Keep the continuation line's own indentation; only the
+                    # pulled-up syllable leaves it.
+                    indent = nxt[: len(nxt) - len(nxt.lstrip())]
                     rest = rest.lstrip()
                     if rest:
-                        result[index + 1] = rest
+                        result[index + 1] = indent + rest
                     else:
                         del result[index + 1]
                     decisions.append(
@@ -336,15 +350,11 @@ def repair_text(text: str) -> tuple[str, RepairAudit]:
     lines = text.split("\n")
     widths = [w for w in _line_widths(lines) if w is not None]
 
-    rejoined, rejoin_applied = _rejoin_wrapped_lines(lines)
+    rejoined = _rejoin_wrapped_lines(lines)
     final_lines, decisions = _dehyphenate_lines(rejoined)
 
     audit = RepairAudit(
         hyphen_decisions=decisions,
         page_width_estimates=sorted(set(widths)),
-        rejoin_applied=rejoin_applied,
     )
-    audit.long_lines = [
-        line for line in final_lines if _is_wrappable(line) and len(line) > 100
-    ]
     return "\n".join(final_lines), audit
