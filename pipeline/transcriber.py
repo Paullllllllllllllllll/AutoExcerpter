@@ -73,7 +73,6 @@ class ItemTranscriber:
         input_type: str,
         base_output_dir: Path,
         summary_context: str | None = None,
-        resume_mode: str = "skip",
         completed_page_indices: set[int] | None = None,
         prior_transcription_results: list[dict[str, Any]] | None = None,
         prior_summary_results: list[dict[str, Any]] | None = None,
@@ -89,7 +88,6 @@ class ItemTranscriber:
         self.name = (
             self.input_path.stem if input_type == "pdf" else self.input_path.name
         )
-        self.resume_mode = resume_mode
         self.completed_page_indices = completed_page_indices or set()
         # Working-log data already parsed by ResumeChecker during the resume
         # check, threaded in so process_item need not re-read the same files.

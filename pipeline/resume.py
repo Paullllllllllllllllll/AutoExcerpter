@@ -424,12 +424,13 @@ def _input_changed_since_log(header: dict[str, Any] | None) -> bool:
     """Whether the input file changed since the working log's header was written.
 
     Compares the header's ``file_provenance`` against the input file currently
-    on disk using only CHEAP ``os.stat`` fields (byte size, then mtime) — the
-    whole file is never re-hashed on resume. A changed input under the same name
-    would otherwise let page-level reuse splice two documents into one chimeric
-    output. Returns False (current behavior preserved) when the header predates
-    the ``file_provenance`` field, carries no cheap size/mtime field, or the
-    recorded source file cannot be stat'd (a mismatch cannot be proven).
+    on disk using only the CHEAP ``os.stat`` byte size — the whole file is
+    never re-hashed on resume, and the writer deliberately records size only
+    (mtime would false-positive on copies). A changed input under the same
+    name would otherwise let page-level reuse splice two documents into one
+    chimeric output. Returns False (current behavior preserved) when the
+    header predates the ``file_provenance`` field, carries no size field, or
+    the recorded source file cannot be stat'd (a mismatch cannot be proven).
     """
     if not isinstance(header, dict):
         return False
@@ -451,13 +452,7 @@ def _input_changed_since_log(header: dict[str, Any] | None) -> bool:
         return False
 
     stored_size = provenance.get("size")
-    if stored_size is None:
-        stored_size = provenance.get("file_size")
-    if isinstance(stored_size, int) and stored_size != stat.st_size:
-        return True
-
-    stored_mtime = provenance.get("mtime")
-    return isinstance(stored_mtime, (int, float)) and stored_mtime != stat.st_mtime
+    return isinstance(stored_size, int) and stored_size != stat.st_size
 
 
 def _folder_changed_since_log(folder: Path, provenance: dict[str, Any]) -> bool:

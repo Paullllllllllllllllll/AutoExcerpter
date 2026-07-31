@@ -60,7 +60,12 @@ def resolve_summary_context(
     # 1. File-specific context
     if input_file is not None:
         input_file = Path(input_file).resolve()
-        file_specific = input_file.with_name(f"{input_file.stem}{CONTEXT_SUFFIX}")
+        # Mirror ItemSpec.output_stem: for an image folder keep the FULL
+        # directory name. Path.stem would collapse "photos.2023" to "photos",
+        # skipping the folder's own context file (or colliding with a sibling
+        # "photos.pdf"'s context).
+        base_name = input_file.name if input_file.is_dir() else input_file.stem
+        file_specific = input_file.with_name(f"{base_name}{CONTEXT_SUFFIX}")
         if file_specific.exists():
             content = _read_and_validate_context(file_specific, size_threshold)
             if content:

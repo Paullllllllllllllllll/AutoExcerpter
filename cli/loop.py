@@ -99,7 +99,6 @@ def _process_single_item(
             item_spec.kind,
             base_output_dir,
             summary_context=summary_context,
-            resume_mode=resume_mode,
             completed_page_indices=completed_page_indices,
             prior_transcription_results=prior_transcription_results,
             prior_summary_results=prior_summary_results,
