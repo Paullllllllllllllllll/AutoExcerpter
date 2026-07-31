@@ -37,7 +37,10 @@ def write_transcription_to_text(
     # (classification keys on exists() and st_size > 0).
     tmp_path = output_path.with_name(output_path.name + ".tmp")
     try:
-        with tmp_path.open("w", encoding="utf-8") as file_handle:
+        # newline="\n" disables platform newline translation: a transcription
+        # containing a literal "\r\n" would otherwise be written as "\r\r\n"
+        # on Windows.
+        with tmp_path.open("w", encoding="utf-8", newline="\n") as file_handle:
             file_handle.write(f"# Transcription of: {document_name}\n")
             file_handle.write(f"# Source Path: {source_path}\n")
             file_handle.write(f"# Type: {item_type}\n")

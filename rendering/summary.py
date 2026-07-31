@@ -125,6 +125,13 @@ def _page_information(summary_data: dict[str, Any]) -> dict[str, Any]:
             page_types = [page_types]
         elif not isinstance(page_types, list) or not page_types:
             page_types = ["content"]
+        else:
+            # Drop non-string debris (e.g. dicts from a corrupt or reused
+            # log): downstream set(page_types) membership checks would raise
+            # TypeError on unhashable entries and kill the whole render.
+            page_types = [pt for pt in page_types if isinstance(pt, str)] or [
+                "content"
+            ]
 
         is_spread = bool(page_info.get("is_two_page_spread", False))
         page_end = page_info.get("page_number_integer_end")

@@ -91,7 +91,10 @@ class TestOmmlSanitizeBranchReachable:
 
         assert len(seen) == 1
         xml = paragraph._p.xml
-        assert "oMathPara" in xml
+        # Inline math (the default) must land as bare m:oMath, not the
+        # block-level m:oMathPara display wrapper.
+        assert "oMath" in xml
+        assert "oMathPara" not in xml
         assert "Cambria Math" not in xml
         assert paragraph.runs == []
 
@@ -103,7 +106,8 @@ class TestOmmlSanitizeBranchReachable:
             add_math_to_paragraph(paragraph, "x^2")
 
         xml = paragraph._p.xml
-        assert "oMathPara" in xml
+        assert "oMath" in xml
+        assert "oMathPara" not in xml
         assert "Cambria Math" not in xml
         assert paragraph.runs == []
 

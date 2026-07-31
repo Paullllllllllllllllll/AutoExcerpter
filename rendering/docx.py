@@ -139,13 +139,27 @@ def parse_latex_in_text(text: str) -> list[tuple[str, str]]:
         # outside the range). Half-open interval overlap test.
         return any(start < d_end and d_start < end for d_start, d_end in display_ranges)
 
-    for match in re.finditer(inline_pattern, protected_text, re.DOTALL):
-        if not overlaps_display_range(
-            match.start(), match.end()
-        ) and not _is_currency_span(match.group(1)):
+    inline_re = re.compile(inline_pattern, re.DOTALL)
+    pos = 0
+    while (inline_match := inline_re.search(protected_text, pos)) is not None:
+        if overlaps_display_range(inline_match.start(), inline_match.end()):
+            pos = inline_match.end()
+        elif _is_currency_span(inline_match.group(1)):
+            # Do not consume the whole rejected span: with an odd dollar count
+            # ("$5 ... $x$") the closing "$" of the currency capture is the
+            # OPENING "$" of a genuine formula. Resume just past the opening
+            # currency "$" so later dollars can still pair as math.
+            pos = inline_match.start() + 1
+        else:
             temp_segments.append(
-                (match.group(1), "latex_inline", match.start(), match.end())
+                (
+                    inline_match.group(1),
+                    "latex_inline",
+                    inline_match.start(),
+                    inline_match.end(),
+                )
             )
+            pos = inline_match.end()
 
     # Sort all segments by position
     temp_segments.sort(key=lambda x: x[2])
@@ -545,16 +559,36 @@ def _ensure_omml_namespace(omml_markup: str) -> str:
     return omml_markup
 
 
-def add_math_to_paragraph(paragraph: Any, latex_code: str) -> None:
+def _wrap_omml(omml_markup: str, display: bool) -> str:
+    """Wrap OMML in a block-level ``m:oMathPara`` only for display formulas.
+
+    Per ECMA-376 (Part 1, 22.1.2.78) ``m:oMathPara`` is a *math paragraph*:
+    display-mode math rendered on its own line with its own justification.
+    Inline formulas must be bare ``m:oMath`` children of ``w:p`` interleaved
+    with the surrounding runs, or Word breaks the sentence around a centered
+    equation. ``_ensure_omml_namespace`` guarantees the bare markup already
+    carries the required ``xmlns:m`` declaration.
+    """
+    if display:
+        return f'<m:oMathPara xmlns:m="{MATH_NAMESPACE}">{omml_markup}</m:oMathPara>'
+    return omml_markup
+
+
+def add_math_to_paragraph(
+    paragraph: Any, latex_code: str, display: bool = False
+) -> None:
     """Add a mathematical formula to a paragraph using OMML for native Word equation
-    rendering."""
+    rendering.
+
+    Args:
+        display: True for ``$$...$$`` display math (block-level, own line);
+            False for ``$...$`` inline math flowing with the text.
+    """
     try:
         mathml = latex_to_mathml(latex_code)
         omml_markup = _ensure_omml_namespace(mathml2omml.convert(mathml))
 
-        omml_para = (
-            f'<m:oMathPara xmlns:m="{MATH_NAMESPACE}">{omml_markup}</m:oMathPara>'
-        )
+        omml_para = _wrap_omml(omml_markup, display)
 
         try:
             omml_element = parse_xml(omml_para)
@@ -567,10 +601,7 @@ def add_math_to_paragraph(paragraph: Any, latex_code: str) -> None:
                 "XML parsing failed, attempting to sanitize OMML: %s", parse_error
             )
             sanitized_omml = sanitize_omml_xml(omml_markup)
-            sanitized_para = (
-                f'<m:oMathPara xmlns:m="{MATH_NAMESPACE}">'
-                f"{sanitized_omml}</m:oMathPara>"
-            )
+            sanitized_para = _wrap_omml(sanitized_omml, display)
             omml_element = parse_xml(sanitized_para)
 
         paragraph._p.append(omml_element)
@@ -587,10 +618,7 @@ def add_math_to_paragraph(paragraph: Any, latex_code: str) -> None:
                 mathml = latex_to_mathml(simplified_latex)
                 omml_markup = _ensure_omml_namespace(mathml2omml.convert(mathml))
 
-                omml_para = (
-                    f'<m:oMathPara xmlns:m="{MATH_NAMESPACE}">'
-                    f"{omml_markup}</m:oMathPara>"
-                )
+                omml_para = _wrap_omml(omml_markup, display)
                 omml_element = parse_xml(omml_para)
                 paragraph._p.append(omml_element)
                 logger.info("Successfully converted simplified LaTeX")
@@ -613,7 +641,9 @@ def add_formatted_text_to_paragraph(paragraph: Any, text: str) -> None:
 
     for content, segment_type in segments:
         if segment_type in ("latex_display", "latex_inline"):
-            add_math_to_paragraph(paragraph, content)
+            add_math_to_paragraph(
+                paragraph, content, display=segment_type == "latex_display"
+            )
         else:
             # Render Markdown **bold** / *italic* as run formatting (matching the
             # Markdown writer) instead of leaking literal asterisks into the DOCX.
