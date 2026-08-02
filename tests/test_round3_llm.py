@@ -315,11 +315,14 @@ class TestFlushDegradedPersistence:
         sync.assert_called_once()
         save.assert_called_once_with(force=True)
 
-    def test_healthy_ledger_does_not_write_private_state(self) -> None:
+    def test_healthy_ledger_also_writes_private_state(self) -> None:
+        """Own usage is persisted even when the ledger stayed healthy, so a
+        later run with the shared budget disabled seeds from a current
+        same-day baseline instead of a stale one."""
         tr, sync, save = self._make_tracker(degraded=False)
         tr.flush()
         sync.assert_called_once()
-        save.assert_not_called()
+        save.assert_called_once_with(force=True)
 
 
 # ============================================================================

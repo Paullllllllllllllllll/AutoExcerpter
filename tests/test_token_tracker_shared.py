@@ -99,8 +99,12 @@ class TestEnabledPersistence:
         # Combined view (only this tool present) equals our own usage.
         assert t.get_tokens_used_today() == 1234
         assert t.get_own_tokens_used_today() == 1234
-        # The private state file is NOT used as persistence while enabled.
-        assert not state_file.exists()
+        # The private state file is written at flush even while enabled (own
+        # usage only), so a later standalone run seeds from a current
+        # same-day baseline.
+        assert state_file.exists()
+        data = json.loads(state_file.read_text(encoding="utf-8"))
+        assert data["tokens_used"] == 1234
 
     def test_stats_expose_breakdown(self, tmp_path: Path) -> None:
         ledger_dir = tmp_path / "ledger"

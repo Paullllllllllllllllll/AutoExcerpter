@@ -564,8 +564,9 @@ class DailyTokenTracker:
         comfortably exceeds the ledger's OS file-lock timeout
         (``shared_ledger._LOCK_TIMEOUT_S`` = 5.0 s), so an in-flight merge
         holding the lock does not cause the final delta to be dropped. The
-        private state file is not written while the ledger is the active
-        persistence.
+        private state file is also written on exit (it records OWN usage
+        only), so a later run with the shared budget disabled still seeds
+        from a current same-day baseline instead of a stale one.
         """
         if self._shared_enabled:
             for _ in range(300):
@@ -576,16 +577,15 @@ class DailyTokenTracker:
                 time.sleep(0.02)
             with contextlib.suppress(Exception):
                 self.sync_ledger_now()
-            # If the shared ledger stayed degraded through the final sync, this
-            # run's own usage would otherwise be discarded: the private state
-            # file is not written while the ledger is the active persistence,
-            # yet the degraded deltas never reached it. Persist own usage to
-            # the private file now so the next run seeds from a correct
-            # baseline instead of a stale one and the daily cap is not
-            # overshot across restarts.
+            # Always persist OWN usage to the private state file on exit:
+            # while the ledger is healthy the file is otherwise never written
+            # during the run, so a later run with the shared budget DISABLED
+            # would seed from a stale (or zero) baseline and could spend the
+            # daily cap twice. Safe in both directions -- the file records
+            # own usage only, and re-enabling the shared budget seeds with
+            # max semantics, so nothing is double-counted.
             with self._lock:
-                if self._ledger_degraded:
-                    self._save_state(force=True)
+                self._save_state(force=True)
             return
         with self._lock:
             if self._pending_save:
