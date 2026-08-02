@@ -564,9 +564,10 @@ class LLMClientBase:
         """Wait for rate limiter capacity if rate limiter is configured.
 
         The wait is abort-aware: after a cooperative abort the limiter
-        returns early instead of sleeping out the remaining window (the
-        pre-attempt abort check in ``_invoke_with_retry`` then prevents
-        the API call).
+        returns early instead of sleeping out the remaining window. Its
+        contract is that the caller must not then fire the call, so
+        ``_invoke_with_retry`` re-checks the abort event both before and
+        after this wait.
         """
         if self.rate_limiter is not None:
             self.rate_limiter.wait_for_capacity(should_abort=abort_requested)
@@ -1187,8 +1188,16 @@ class LLMClientBase:
                 raise RuntimeError(
                     f"Abort requested; skipping API call for {context_label}"
                 )
+            # Outside the try: the limiter's wait can return early on abort
+            # with the contract that the caller must not fire the call, and a
+            # raise from inside the try would be classified (and possibly
+            # retried) as an API error.
+            self._wait_for_rate_limit()
+            if _ABORT_EVENT.is_set():
+                raise RuntimeError(
+                    f"Abort requested; skipping API call for {context_label}"
+                )
             try:
-                self._wait_for_rate_limit()
                 response = structured_model.invoke(messages, **invoke_kwargs)
                 return response
             except Exception as e:

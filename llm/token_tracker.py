@@ -661,6 +661,10 @@ class DailyTokenTracker:
         leaves the tracker in standalone mode with the unsynced deltas preserved
         so a transient failure self-heals and the full accumulated amount
         replays on a later sync.
+
+        The snapshot also carries the budget day it was taken on: a rollover
+        that lands mid-sync abandons the sync rather than mixing the two days'
+        accounting (see the two date guards below).
         """
         if not self._shared_enabled:
             return
@@ -674,12 +678,19 @@ class DailyTokenTracker:
             seed_total = self._init_own_total
             seed_buckets = dict(self._init_own_buckets)
             deltas = dict(self._unsynced_deltas)
+            sync_date = self._current_date
             self._last_ledger_sync_monotonic = time.monotonic()
 
         try:
             if ledger is None:
                 with self._lock:
                     self._ledger_degraded = True
+                return
+
+            # A day rollover between the snapshot and the ledger call would
+            # push yesterday's deltas into the fresh day's ledger; abandon this
+            # sync (the deltas stay queued and the next sync runs clean).
+            if self._get_current_date_str() != sync_date:
                 return
 
             snapshot: UsageSnapshot | None
@@ -705,6 +716,13 @@ class DailyTokenTracker:
                     pushed = deltas
 
             with self._lock:
+                if self._current_date != sync_date:
+                    # The rollover fired while the ledger call was in flight:
+                    # it zeroed the mirrors and requested a re-seed. Writing
+                    # the stale snapshot back would repopulate yesterday's
+                    # totals, subtract pushed deltas from the fresh day's
+                    # queue, and re-latch ``_seeded`` against that request.
+                    return
                 if snapshot is None:
                     # Degraded: keep the unsynced deltas so the full accumulated
                     # amount is pushed once the ledger recovers.
@@ -831,6 +849,14 @@ class DailyTokenTracker:
                     self._unsynced_deltas.get(bucket, 0) + tokens
                 )
                 do_ledger_sync = self._due_for_ledger_sync_locked(force=False)
+                if self._ledger_degraded:
+                    # Degraded mode enforces from the private counter, so it
+                    # must persist like standalone mode -- otherwise only the
+                    # atexit flush writes the file and a hard kill lets the
+                    # next run double-spend. The file records own usage only
+                    # and re-enabling seeds with max semantics, so nothing is
+                    # double-counted.
+                    self._save_state()
             else:
                 # Debounced private-file write (unchanged standalone behaviour).
                 self._save_state()
