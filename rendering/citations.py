@@ -991,12 +991,26 @@ class CitationManager:
             match = re.search(pattern, citation_text, re.IGNORECASE)
             if match:
                 doi = match.group(1).rstrip(".,;")
-                # A parenthesized citation ("(10.1234/abc)") leaves an unmatched
-                # trailing ")" that 404s; DOIs with internal parens
-                # (10.1016/S0140-6736(00)…) must keep theirs.
-                while doi.endswith(")") and doi.count("(") < doi.count(")"):
-                    doi = doi[:-1]
-                return doi.rstrip(".,;")
+                # A bracketed citation ("(10.1234/abc)", "[doi:10.1234/abc]",
+                # "<https://doi.org/10.1234/abc>") leaves an unmatched trailing
+                # ")"/"]"/">" that 404s; DOIs with internal balanced pairs
+                # (10.1016/S0140-6736(00)…, Wiley's …<873::AID>…) must keep
+                # theirs. Iterate to a fixpoint so mixed tails like ")]" and
+                # re-exposed ".,;" debris are fully stripped.
+                changed = True
+                while changed:
+                    changed = False
+                    for open_ch, close_ch in (("(", ")"), ("[", "]"), ("<", ">")):
+                        while doi.endswith(close_ch) and doi.count(open_ch) < doi.count(
+                            close_ch
+                        ):
+                            doi = doi[:-1]
+                            changed = True
+                    stripped = doi.rstrip(".,;")
+                    if stripped != doi:
+                        doi = stripped
+                        changed = True
+                return doi
 
         return None
 

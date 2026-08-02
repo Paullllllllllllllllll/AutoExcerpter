@@ -143,7 +143,12 @@ def parse_latex_in_text(text: str) -> list[tuple[str, str]]:
     pos = 0
     while (inline_match := inline_re.search(protected_text, pos)) is not None:
         if overlaps_display_range(inline_match.start(), inline_match.end()):
-            pos = inline_match.end()
+            # Do not consume the whole rejected span: when the candidate opens
+            # at a currency "$" before a $$...$$ block, its closing "$" is the
+            # OPENING "$" of the first genuine formula after the block. Resume
+            # just past the candidate's opening "$" (mirroring the currency
+            # branch below) so later dollars keep pairing correctly.
+            pos = inline_match.start() + 1
         elif _is_currency_span(
             # Judge the span on its restored text: the escaped-dollar
             # placeholder contains "_", a math indicator, so a price span

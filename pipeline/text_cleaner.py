@@ -366,7 +366,10 @@ def balance_dollar_signs(text: str) -> str:
                 result_lines.append(line)
                 continue
 
-            if after and not after.endswith("$"):
+            # A trailing escaped "\$" is a literal dollar, not a closing
+            # delimiter: route it to the close-at-line-end branch instead of
+            # deleting the genuine opener as an "orphan $ at end".
+            if after and (not after.endswith("$") or after.endswith("\\$")):
                 # Add closing $ at end of meaningful content
                 # Find end of math-like content (before punctuation/whitespace)
                 end_pos = len(line)
