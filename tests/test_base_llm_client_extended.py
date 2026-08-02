@@ -479,20 +479,21 @@ class TestGetStructuredChatModel:
         assert result is structured
 
     @patch("llm.base.get_model_capabilities")
-    def test_anthropic_binds_invoke_kwargs(self, mock_caps) -> None:
-        """Resolved invoke kwargs are bound onto the model before wrapping.
+    def test_anthropic_copies_invoke_kwargs_onto_model(self, mock_caps) -> None:
+        """Resolved invoke kwargs are copied onto the model's own fields.
 
-        Regression: with_structured_output(include_raw=True) returns a
-        RunnableMap|parser that drops call-time kwargs, so max_tokens /
-        temperature / extended-thinking config must be bound onto the inner
-        model to actually reach the API.
+        Regression: model.bind() does NOT survive with_structured_output --
+        RunnableBinding resolves the method on the underlying model via
+        __getattr__ and discards the bound kwargs -- so max_tokens /
+        temperature / thinking config must be copied onto the model's own
+        pydantic fields (model_copy) to actually reach the API.
         """
         mock_caps.return_value = {"structured_output": True}
         base_model = MagicMock()
-        bound = MagicMock()
+        copied = MagicMock()
         structured = MagicMock()
-        base_model.bind.return_value = bound
-        bound.with_structured_output.return_value = structured
+        base_model.model_copy.return_value = copied
+        copied.with_structured_output.return_value = structured
 
         client = _make_client(
             provider="anthropic",
@@ -502,22 +503,23 @@ class TestGetStructuredChatModel:
         invoke_kwargs = {"max_tokens": 4096, "thinking": {"type": "enabled"}}
         result = client._get_structured_chat_model(invoke_kwargs)
 
-        base_model.bind.assert_called_once_with(**invoke_kwargs)
+        base_model.model_copy.assert_called_once_with(update=invoke_kwargs)
+        base_model.bind.assert_not_called()
         base_model.with_structured_output.assert_not_called()
-        bound.with_structured_output.assert_called_once_with(
+        copied.with_structured_output.assert_called_once_with(
             {"type": "object", "properties": {}, "title": "structured_output"},
             method="json_schema",
             include_raw=True,
         )
         assert result is structured
 
-    def test_openrouter_binds_invoke_kwargs(self) -> None:
-        """OpenRouter structured path also binds invoke kwargs onto the model."""
+    def test_openrouter_copies_invoke_kwargs_onto_model(self) -> None:
+        """OpenRouter structured path also copies invoke kwargs onto the model."""
         base_model = MagicMock()
-        bound = MagicMock()
+        copied = MagicMock()
         structured = MagicMock()
-        base_model.bind.return_value = bound
-        bound.with_structured_output.return_value = structured
+        base_model.model_copy.return_value = copied
+        copied.with_structured_output.return_value = structured
 
         client = _make_client(
             provider="openrouter",
@@ -526,16 +528,17 @@ class TestGetStructuredChatModel:
         )
         result = client._get_structured_chat_model({"max_tokens": 2048})
 
-        base_model.bind.assert_called_once_with(max_tokens=2048)
-        bound.with_structured_output.assert_called_once_with(
+        base_model.model_copy.assert_called_once_with(update={"max_tokens": 2048})
+        base_model.bind.assert_not_called()
+        copied.with_structured_output.assert_called_once_with(
             {"type": "object", "properties": {}, "title": "structured_output"},
             include_raw=True,
         )
         assert result is structured
 
     @patch("llm.base.get_model_capabilities")
-    def test_anthropic_empty_kwargs_does_not_bind(self, mock_caps) -> None:
-        """No invoke kwargs leaves the model unbound (unchanged behavior)."""
+    def test_anthropic_empty_kwargs_does_not_copy(self, mock_caps) -> None:
+        """No invoke kwargs leaves the model uncopied (unchanged behavior)."""
         mock_caps.return_value = {"structured_output": True}
         base_model = MagicMock()
         client = _make_client(
@@ -544,6 +547,7 @@ class TestGetStructuredChatModel:
             _output_schema={"schema": {"type": "object", "properties": {}}},
         )
         client._get_structured_chat_model({})
+        base_model.model_copy.assert_not_called()
         base_model.bind.assert_not_called()
         base_model.with_structured_output.assert_called_once()
 

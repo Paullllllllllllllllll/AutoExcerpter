@@ -791,7 +791,11 @@ class TranscriptionManager(LLMClientBase):
         # page as failed (and repairs it) rather than logging it as completed
         # and running a paid summary call on placeholder text.
         transcription = self._parse_transcription_from_text(raw_text, image_name)
-        if self._transcription_is_recoverable(raw_text):
+        # Plain-text mode has no schema, so _transcription_is_recoverable
+        # (which requires a JSON object) can never pass; the loop only
+        # exhausts here after a sentinel `continue`, so the parsed text is a
+        # legitimate placeholder, not a failure.
+        if self.is_plain_text_mode or self._transcription_is_recoverable(raw_text):
             return {
                 "image": image_name,
                 "sequence_number": sequence_number,

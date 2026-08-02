@@ -12,18 +12,14 @@ Architecture:
 3. detect_capabilities() walks the registry and returns a typed ProviderCapabilities.
 4. Adding a new model requires a single line in _MODEL_REGISTRY.
 
-This replaces the previous scattered per-provider _get_model_capabilities() functions
-and the MODEL_CAPABILITIES dict in llm_client.py.
-
 LangChain Integration:
 ======================
 LangChain does NOT automatically handle capability guarding (e.g., it will pass
 temperature to reasoning models that don't support it, causing API errors).
 
 The capabilities detected here are used by:
-1. Provider classes — to set ``disabled_params`` for unsupported parameters
-2. base_llm_client.py — to guard invocation kwargs
-3. transcribe_api.py — to verify multimodal support
+1. llm/base.py — to guard invocation kwargs
+2. llm/transcription.py — to verify multimodal support
 """
 
 from __future__ import annotations
@@ -574,6 +570,7 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
             is_reasoning_model=True,
             supports_reasoning_effort=True,
             uses_adaptive_thinking=True,
+            supports_temperature=False,
             supports_top_p=False,
             max_context_tokens=1000000,
             max_output_tokens=128000,
@@ -587,6 +584,7 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
             is_reasoning_model=True,
             supports_reasoning_effort=True,
             uses_adaptive_thinking=True,
+            supports_temperature=False,
             supports_top_p=False,
             max_context_tokens=1000000,
             max_output_tokens=128000,
@@ -600,6 +598,7 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
             is_reasoning_model=True,
             supports_reasoning_effort=True,
             uses_adaptive_thinking=True,
+            supports_temperature=False,
             supports_top_p=False,
             max_context_tokens=1000000,
             max_output_tokens=128000,
@@ -613,6 +612,7 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
             is_reasoning_model=True,
             supports_reasoning_effort=True,
             uses_adaptive_thinking=True,
+            supports_temperature=False,
             supports_top_p=False,
             max_context_tokens=1000000,
             max_output_tokens=128000,
@@ -626,6 +626,7 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
             is_reasoning_model=True,
             supports_reasoning_effort=True,
             uses_adaptive_thinking=True,
+            supports_temperature=False,
             supports_top_p=False,
             max_context_tokens=1000000,
             max_output_tokens=128000,
@@ -639,6 +640,7 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
             is_reasoning_model=True,
             supports_reasoning_effort=True,
             uses_adaptive_thinking=True,
+            supports_temperature=False,
             supports_top_p=False,
             max_context_tokens=1000000,
             max_output_tokens=128000,

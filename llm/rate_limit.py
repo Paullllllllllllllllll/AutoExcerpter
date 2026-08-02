@@ -39,6 +39,7 @@ from __future__ import annotations
 import threading
 import time
 from collections import deque
+from collections.abc import Callable
 from typing import Any
 
 from config.constants import (
@@ -100,12 +101,19 @@ class RateLimiter:
         self.error_multiplier = 1.0
         self.max_error_multiplier = MAX_ERROR_MULTIPLIER
 
-    def wait_for_capacity(self) -> float:
+    def wait_for_capacity(
+        self, should_abort: Callable[[], bool] | None = None
+    ) -> float:
         """
         Wait until there's capacity to make a request under all rate limits.
 
         This method blocks until all rate limit windows have capacity, then
         records the request timestamp.
+
+        Args:
+            should_abort: Optional predicate polled between sleep slices; when
+                it returns True the wait is abandoned early WITHOUT recording
+                a request (the caller must not fire the API call).
 
         Returns:
             Total time waited in seconds
@@ -160,6 +168,12 @@ class RateLimiter:
                     total_wait = time.time() - wait_start
                     self.total_wait_time += total_wait
                     return total_wait
+
+            # Abandon the wait on cooperative abort: a post-interrupt worker
+            # must not sit out a (potentially minutes-long) window before its
+            # caller can notice the abort.
+            if should_abort is not None and should_abort():
+                return time.time() - wait_start
 
             # Sleep out the computed wait (bounded below by MIN_SLEEP_TIME so
             # the loop never spins, and above by MAX_SLEEP_TIME so a long wait

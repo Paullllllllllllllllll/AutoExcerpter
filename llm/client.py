@@ -86,7 +86,7 @@ def get_model_capabilities(model_name: str) -> dict[str, bool]:
     """Return a dict of capability flags for the given model.
 
     Thin wrapper around ``detect_capabilities()`` that returns a flat
-    ``dict[str, bool]`` consumed by ``base_llm_client``, ``transcribe_api``,
+    ``dict[str, bool]`` consumed by ``llm/base.py``, ``llm/transcription.py``,
     and the test suite.
     """
     caps = detect_capabilities(model_name)

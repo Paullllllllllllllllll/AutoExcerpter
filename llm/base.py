@@ -173,10 +173,24 @@ _ANTHROPIC_ADAPTIVE_EFFORT: dict[str, str] = {
 
 _GOOGLE_EFFORT_TO_BUDGET: dict[str, int] = {
     "none": 0,
+    "minimal": 512,
     "low": 1024,
     "medium": 4096,
     "high": 8192,
     "xhigh": 16384,
+}
+
+# Gemini 3+ replaces the numeric thinking_budget with discrete thinking_level
+# values (minimal/low/medium/high per the installed langchain-google-genai
+# docs, which deprecate thinking_budget for Gemini 3+); "none" stays absent so
+# no thinking parameter is sent, mirroring the budget path.
+_GOOGLE_EFFORT_TO_LEVEL: dict[str, str] = {
+    "minimal": "minimal",
+    "low": "low",
+    "medium": "medium",
+    "high": "high",
+    "xhigh": "high",
+    "max": "high",
 }
 
 
@@ -547,9 +561,15 @@ class LLMClientBase:
         return get_service_tier(api_type)
 
     def _wait_for_rate_limit(self) -> None:
-        """Wait for rate limiter capacity if rate limiter is configured."""
+        """Wait for rate limiter capacity if rate limiter is configured.
+
+        The wait is abort-aware: after a cooperative abort the limiter
+        returns early instead of sleeping out the remaining window (the
+        pre-attempt abort check in ``_invoke_with_retry`` then prevents
+        the API call).
+        """
         if self.rate_limiter is not None:
-            self.rate_limiter.wait_for_capacity()
+            self.rate_limiter.wait_for_capacity(should_abort=abort_requested)
 
     def _report_success(self) -> None:
         """Report successful request to rate limiter and update stats."""
@@ -589,8 +609,9 @@ class LLMClientBase:
         Tries a chain of extraction strategies in order:
         1. LangChain AIMessage
         2. SDK ``output_text`` attribute
-        3. Dict-style ``output_text`` key
-        4. Nested ``output`` list reconstruction
+        3. ``with_structured_output(include_raw=True)`` wrapper dict
+        4. Dict-style ``output_text`` key
+        5. Nested ``output`` list reconstruction
 
         Args:
             data: Response data from LLM API.
@@ -666,7 +687,18 @@ class LLMClientBase:
         """
 
         def _bind(model: Any) -> Any:
-            return model.bind(**invoke_kwargs) if invoke_kwargs else model
+            # bind() does NOT survive with_structured_output: RunnableBinding
+            # defines no with_structured_output of its own, so langchain-core
+            # resolves the attribute on the UNDERLYING model via __getattr__
+            # and the bound kwargs are silently discarded. Copy the resolved
+            # kwargs onto the model's own pydantic fields instead (every key
+            # produced by _build_invoke_kwargs on these paths -- max_tokens,
+            # temperature, thinking, output_config -- is a real field);
+            # langchain-anthropic then merges output_config.effort with the
+            # wrapper's output_config.format.
+            if not invoke_kwargs:
+                return model
+            return model.model_copy(update=invoke_kwargs)
 
         if self.provider == "openai":
             return self.chat_model
@@ -1147,6 +1179,14 @@ class LLMClientBase:
         # Loop exits only via ``return`` (success) or ``raise`` (terminal), so
         # there is no fall-through path after the ``while``.
         while True:
+            # Cooperative abort BEFORE the attempt: without this, a worker
+            # blocked in the rate-limiter wait after Ctrl+C would sit out the
+            # full window and then still fire a fresh API call on a
+            # non-daemon executor thread the interpreter joins at exit.
+            if _ABORT_EVENT.is_set():
+                raise RuntimeError(
+                    f"Abort requested; skipping API call for {context_label}"
+                )
             try:
                 self._wait_for_rate_limit()
                 response = structured_model.invoke(messages, **invoke_kwargs)
@@ -1380,21 +1420,34 @@ class LLMClientBase:
                                 f"{self.model_name}: budget_tokens={budget}"
                             )
 
-        # Google-specific: thinking mode (Gemini 2.5+, 3.x)
+        # Google-specific: thinking mode. Gemini 3+ takes discrete
+        # thinking_level values (thinking_budget is deprecated there); the
+        # 2.5 family keeps the numeric thinking_budget knob.
         elif self.provider == "google" and capabilities.get("thinking", False):
             if "reasoning" in self.model_config:
                 reasoning_cfg = self.model_config["reasoning"]
                 if isinstance(reasoning_cfg, dict) and "effort" in reasoning_cfg:
                     effort = reasoning_cfg["effort"]
-                    budget = _GOOGLE_EFFORT_TO_BUDGET.get(effort)
-                    if budget is not None and budget > 0:
-                        invoke_kwargs["thinking_config"] = {
-                            "thinking_budget": budget,
-                        }
-                        logger.debug(
-                            f"Added Google thinking for "
-                            f"{self.model_name}: thinking_budget={budget}"
-                        )
+                    if "gemini-3" in self.model_name.lower():
+                        level = _GOOGLE_EFFORT_TO_LEVEL.get(effort)
+                        if level is not None:
+                            invoke_kwargs["thinking_config"] = {
+                                "thinking_level": level,
+                            }
+                            logger.debug(
+                                f"Added Google thinking for "
+                                f"{self.model_name}: thinking_level={level}"
+                            )
+                    else:
+                        budget = _GOOGLE_EFFORT_TO_BUDGET.get(effort)
+                        if budget is not None and budget > 0:
+                            invoke_kwargs["thinking_config"] = {
+                                "thinking_budget": budget,
+                            }
+                            logger.debug(
+                                f"Added Google thinking for "
+                                f"{self.model_name}: thinking_budget={budget}"
+                            )
 
         elif "reasoning" in self.model_config:
             logger.debug(
@@ -1425,7 +1478,8 @@ class LLMClientBase:
         # thinking is active, since those paths reject an explicit temperature.
         temperature = self.model_config.get("temperature")
         reasoning_active = any(
-            key in invoke_kwargs for key in ("reasoning", "thinking", "thinking_config")
+            key in invoke_kwargs
+            for key in ("reasoning", "thinking", "thinking_config", "output_config")
         )
         if (
             temperature is not None
