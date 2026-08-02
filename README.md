@@ -1,4 +1,4 @@
-# AutoExcerpter v2.3.3
+# AutoExcerpter v2.3.4
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -212,7 +212,7 @@ System Properties.
 
 On a fresh clone the application runs immediately using the scrubbed
 `*.example.yaml` templates that ship with the repository. Each missing real
-config triggers one informational log line pointing you to the example file.
+config triggers one warning log line pointing you to the example file.
 To customize, copy the relevant example and edit it:
 
 ```bash
@@ -781,7 +781,7 @@ AutoExcerpter/
 │   └── errors.py                    # Domain exceptions
 ├── scripts/repair_layout/           # Deterministic line-break repair utility
 ├── context/summary/general.txt      # Default summarization topics (gitignored)
-├── tests/                           # Test suite (1,760 tests)
+├── tests/                           # Test suite (1,967 tests)
 ├── LICENSE                          # MIT license
 ├── pyproject.toml                   # Project metadata and dependencies
 └── uv.lock                          # Pinned dependency lockfile
@@ -844,6 +844,26 @@ a single baseline commit at v1.0.0 on 25 April 2026; version numbers before
 v1.0.0 do not exist.
 
 ## Changelog
+
+- **v2.3.4** (2 August 2026) -- Fourth maintenance sweep round, bug fixes
+  only. The Anthropic/OpenRouter structured-output paths now copy resolved
+  invocation kwargs onto the model itself (`model_copy`) instead of
+  `bind()`, whose kwargs `with_structured_output` silently discarded, so
+  `max_tokens`, thinking config, and reasoning effort actually reach the
+  API again; configuring both reasoning effort and temperature on an
+  adaptive-thinking Claude no longer sends the rejected combination, and
+  Gemini 3+ models take `thinking_level` instead of the deprecated
+  `thinking_budget`. Post-interrupt workers abandon rate-limit waits
+  instead of firing one last API call; plain-text sentinel exhaustion is a
+  placeholder success, not a spurious failure. The text cleaner keeps
+  spaced postfix currency (`100 $`) and digits-only bracket pairs; failed
+  and blank pages keep their physical position in summaries; escaped
+  dollars inside price spans no longer flip them to math; malformed
+  OpenAlex payloads and NaN ledger debris are tolerated; the summary
+  service tier inherits the transcription tier as documented; missing-
+  config notices are visible warnings; the exit hook is disarmed after
+  dry-run JSON; and the layout-repair tool now de-hyphenates to a
+  fixpoint. 1,967 tests pass; ruff and mypy clean.
 
 - **v2.3.3** (31 July 2026) -- Third and final maintenance sweep round, bug
   fixes only. Inline formulas now render as bare `m:oMath` interleaved with
