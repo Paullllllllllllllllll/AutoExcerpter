@@ -131,9 +131,15 @@ def _extract_sequence_number(image_path: Path) -> int:
 class _PayloadSourceBase:
     """Shared provider-config resolution and provenance plumbing."""
 
-    def __init__(self, source_path: Path, provider: str, model_name: str) -> None:
+    def __init__(
+        self, source_path: Path, provider: str | None, model_name: str | None
+    ) -> None:
         self.source_path = source_path
-        self.model_type = detect_model_type(provider.lower(), model_name.lower())
+        # model.yaml supports ``provider: null`` (the provider is then resolved
+        # from the model name downstream); tolerate it here the same way
+        # instead of crashing on ``None.lower()`` before any page is processed.
+        model_name = model_name or ""
+        self.model_type = detect_model_type(provider or "", model_name)
         section_name = get_image_config_section_name(self.model_type)
         full_img_cfg = get_config_loader().get_image_processing_config()
         self.img_cfg: dict[str, Any] = full_img_cfg.get(section_name, {})
@@ -197,8 +203,8 @@ class PdfPayloadSource(_PayloadSourceBase):
     def __init__(
         self,
         pdf_path: Path,
-        provider: str = "openai",
-        model_name: str = "",
+        provider: str | None = "openai",
+        model_name: str | None = "",
     ) -> None:
         super().__init__(pdf_path, provider, model_name)
         # Clamp to >= 1 so a 0/negative config cannot produce a degenerate
@@ -335,8 +341,8 @@ class FolderPayloadSource(_PayloadSourceBase):
     def __init__(
         self,
         folder_path: Path,
-        provider: str = "openai",
-        model_name: str = "",
+        provider: str | None = "openai",
+        model_name: str | None = "",
     ) -> None:
         super().__init__(folder_path, provider, model_name)
         self.image_paths: list[Path] = get_image_paths_from_folder(folder_path)

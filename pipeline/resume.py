@@ -210,9 +210,21 @@ class ResumeChecker:
         # Count ALL logged page entries (successful and errored). An error page
         # was attempted and logged, so it counts as accounted-for; only pages
         # that never reached the log at all (e.g. deferred by a token-budget
-        # stall) constitute a shortfall.
+        # stall) constitute a shortfall. Count UNIQUE page indices: duplicate
+        # entries for one index (legacy logs, unforeseen double-appends) must
+        # not mask a genuinely missing page by inflating the raw entry count.
         logged_results = _results_from_entries(log_entries)
-        logged_count = len(logged_results) if logged_results else 0
+        logged_count = (
+            len(
+                {
+                    r["original_input_order_index"]
+                    for r in logged_results
+                    if isinstance(r.get("original_input_order_index"), int)
+                }
+            )
+            if logged_results
+            else 0
+        )
 
         # Completeness gate: outputs may exist yet be missing pages (a stalled
         # token budget can write complete-looking outputs). If the log proves a

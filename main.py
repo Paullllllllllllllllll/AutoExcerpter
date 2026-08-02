@@ -427,6 +427,21 @@ def _run_processing_loop(
     )
 
 
+def _print_json_line(obj: dict[str, Any]) -> None:
+    """Print one JSON object line on stdout, surviving legacy console codepages.
+
+    Piped stdout on Windows defaults to a legacy codepage (e.g. cp1252) when
+    ``PYTHONUTF8`` is unset, so a path or item name outside that codepage made
+    the ``ensure_ascii=False`` print raise ``UnicodeEncodeError`` — and the
+    one allowed ``--json`` line was silently never emitted. Fall back to
+    ASCII-escaped JSON (lossless ``\\uXXXX`` escapes, still the same object).
+    """
+    try:
+        print(json.dumps(obj, ensure_ascii=False))
+    except UnicodeEncodeError:
+        print(json.dumps(obj, ensure_ascii=True))
+
+
 def _emit_json_summary(
     processed: int,
     failed: int,
@@ -469,7 +484,7 @@ def _emit_json_summary(
     if pool_buckets:
         summary["per_key_pool_caps_enabled"] = stats.get("per_key_pool_caps_enabled")
         summary["pool_buckets"] = pool_buckets
-    print(json.dumps(summary, ensure_ascii=False))
+    _print_json_line(summary)
 
 
 def _warn_incomplete_items(
@@ -551,15 +566,12 @@ def _run_dry_run(
             print_info(f"Plan: {skip_line}")
 
     if emit_json:
-        print(
-            json.dumps(
-                {
-                    "dry_run": True,
-                    "to_process": plan,
-                    "skipped": [s.item_name for s in skipped_items],
-                },
-                ensure_ascii=False,
-            )
+        _print_json_line(
+            {
+                "dry_run": True,
+                "to_process": plan,
+                "skipped": [s.item_name for s in skipped_items],
+            }
         )
         # The one allowed JSON object is out; disarm the exit hook so a
         # later interrupt cannot emit a second, contradictory summary.
@@ -646,6 +658,13 @@ def main() -> int:
         args
     )
 
+    # Refuse to silently overwrite when two items share an output target. Run
+    # BEFORE resume filtering: if one colliding item's outputs already exist,
+    # resume would classify the OTHER as COMPLETE off those foreign outputs and
+    # drop it from items_to_process, hiding the collision entirely (and leaving
+    # one document's "output" holding another document's text).
+    _guard_duplicate_outputs(selected_items, base_output_dir, emit_json, dry_run)
+
     items_to_process, item_resume_map, resume_mode, skipped_items = (
         _apply_resume_filtering(
             selected_items,
@@ -657,9 +676,6 @@ def main() -> int:
     )
 
     if dry_run:
-        # Run the duplicate-output guard in dry-run too: the plan must reveal
-        # a collision the real run would abort on, not hide it.
-        _guard_duplicate_outputs(items_to_process, base_output_dir, emit_json, dry_run)
         _run_dry_run(items_to_process, item_resume_map, skipped_items, emit_json)
         return 0
 
@@ -675,9 +691,6 @@ def main() -> int:
         if emit_json:
             _emit_json_summary(0, 0, skipped_count, 0, [], dry_run=dry_run)
         return 0
-
-    # Refuse to silently overwrite when two items share an output target.
-    _guard_duplicate_outputs(items_to_process, base_output_dir, emit_json, dry_run)
 
     # Prompt for summary context in interactive mode
     if not config.CLI_MODE and config.SUMMARIZE and not summary_context:
