@@ -144,7 +144,12 @@ def parse_latex_in_text(text: str) -> list[tuple[str, str]]:
     while (inline_match := inline_re.search(protected_text, pos)) is not None:
         if overlaps_display_range(inline_match.start(), inline_match.end()):
             pos = inline_match.end()
-        elif _is_currency_span(inline_match.group(1)):
+        elif _is_currency_span(
+            # Judge the span on its restored text: the escaped-dollar
+            # placeholder contains "_", a math indicator, so a price span
+            # holding "\$" would otherwise be misread as inline math.
+            inline_match.group(1).replace(ESCAPED_DOLLAR_PLACEHOLDER, "$")
+        ):
             # Do not consume the whole rejected span: with an odd dollar count
             # ("$5 ... $x$") the closing "$" of the currency capture is the
             # OPENING "$" of a genuine formula. Resume just past the opening

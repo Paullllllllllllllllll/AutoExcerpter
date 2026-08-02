@@ -25,15 +25,6 @@ logger = setup_logger(__name__)
 # Constants for page number adjustment
 MIN_SEQUENCE_LENGTH_FOR_ANCHOR = 2
 
-# Section types that get full bullet-point summaries (and need per-section anchoring)
-SUMMARY_SECTION_TYPES = {
-    "content",
-    "preface",
-    "abstract",
-    "appendix",
-    "figures_tables_sources",
-}
-
 
 def _coerce_page_number(value: Any) -> int | None:
     """Coerce a model-reported page number to ``int`` or ``None``.
@@ -384,6 +375,15 @@ class PageNumberProcessor:
         for section in priority_order:
             if section in page_types:
                 return section
+        # Failed ("other") and blank pages are unnumbered placeholders; fold
+        # them into the content flow instead of minting singleton
+        # pseudo-sections, which the section-median sort would relocate to
+        # the end of the document -- the summary renders their placeholder
+        # "in place" only if they keep their physical position. Real unknown
+        # sections (e.g. a numbered "toc") keep their own pseudo-section so
+        # the content anchor cannot renumber them.
+        if page_types and all(pt in ("other", "blank") for pt in page_types):
+            return "content"
         return page_types[0] if page_types else "content"
 
     def _find_section_anchor(

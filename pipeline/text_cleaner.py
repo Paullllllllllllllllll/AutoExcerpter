@@ -347,7 +347,10 @@ def balance_dollar_signs(text: str) -> str:
             # whitespace and a digit (prefix currency, e.g. "$3" or "$ 30").
             # Leave such lines untouched so real currency is not mangled into
             # "$$" or shifted onto trailing punctuation.
-            before_is_digit = pos > 0 and line[pos - 1].isdigit()
+            # Look through intervening whitespace so the European postfix
+            # style "100 $" is recognized as currency, not an orphan "$".
+            before = line[:pos].rstrip()
+            before_is_digit = bool(before) and before[-1].isdigit()
             after_stripped = line[pos + 1 :].lstrip()
             after_is_currency = bool(after_stripped) and after_stripped[0].isdigit()
             if before_is_digit or after_is_currency:
@@ -472,6 +475,10 @@ def _looks_like_math(content: str) -> bool:
     """
     stripped = content.strip()
     if not stripped:
+        return False
+    # A digits-only pair ("\[42\]") is an escaped citation marker or
+    # editorial page number, not a display formula; keep it literal.
+    if stripped.isdigit():
         return False
     if len(stripped) == 1 and stripped.isalnum():
         return True

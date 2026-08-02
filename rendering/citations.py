@@ -363,9 +363,6 @@ API_POLITE_DELAY = 0.1  # Delay between API calls to be polite
 RATE_LIMIT_MAX_SLEEP = 30  # seconds
 
 # Constants for citation matching
-MIN_AUTHOR_LENGTH = 3
-MIN_TITLE_LENGTH = 10
-MIN_YEAR_LENGTH = 4
 # Minimum fraction of candidate title words that must appear in the citation
 # for an OpenAlex link to be considered (strict linking; see decision 9). The
 # config value ``citation.match_title_overlap`` overrides this at runtime.
@@ -395,6 +392,8 @@ class Citation:
     url: str | None = None
     unnumbered: bool = False
     partial: bool = False
+    # Raw texts absorbed by merges; never rendered, kept as a debugger-visible
+    # trace of what each surviving citation swallowed.
     variants: list[str] = field(default_factory=list)
     # Structured discriminators / comparison material (populated in __post_init__)
     year: int | None = None
@@ -1051,8 +1050,11 @@ class CitationManager:
                     logger.debug("OpenAlex request URL: %s", response.url)
 
                 if response.status_code == 200:
-                    result: dict[str, Any] = response.json()
-                    return result
+                    # Guard the shape: a proxy, captive portal, or API change
+                    # can return 200 with a non-object JSON body; treat it as
+                    # a miss instead of crashing the enrichment run.
+                    result = response.json()
+                    return result if isinstance(result, dict) else None
                 elif response.status_code == 404:
                     # 404 is expected when resource not found
                     return None
@@ -1234,6 +1236,8 @@ class CitationManager:
 
         results = data.get("results") or []
         for candidate in results:
+            if not isinstance(candidate, dict):
+                continue
             if self._verify_citation_match(citation_text, candidate):
                 return self._extract_metadata_from_response(candidate)
 
@@ -1344,7 +1348,9 @@ class CitationManager:
             return True
 
         # Corroborating signal 2: candidate author surname present in citation.
-        for authorship in work_data.get("authorships", []):
+        # A JSON null for "authorships" defeats the .get default; coerce.
+        authorships = work_data.get("authorships")
+        for authorship in authorships if isinstance(authorships, list) else []:
             author = (
                 authorship.get("author", {}) if isinstance(authorship, dict) else {}
             )
@@ -1359,11 +1365,14 @@ class CitationManager:
         self, work_data: dict[str, Any]
     ) -> dict[str, Any]:
         """Extract relevant metadata from OpenAlex API response."""
+        # Tolerate malformed payloads throughout: any field may arrive as a
+        # JSON null or with an unexpected type without crashing the run.
+        raw_doi = work_data.get("doi")
         metadata: dict[str, Any] = {
             "title": work_data.get("title"),
             "doi": (
-                work_data.get("doi", "").replace("https://doi.org/", "")
-                if work_data.get("doi")
+                raw_doi.replace("https://doi.org/", "")
+                if isinstance(raw_doi, str) and raw_doi
                 else None
             ),
             "publication_year": work_data.get("publication_year"),
@@ -1373,17 +1382,21 @@ class CitationManager:
         }
 
         # Extract authors
-        authorships = work_data.get("authorships", [])
+        authorships = work_data.get("authorships")
+        if not isinstance(authorships, list):
+            authorships = []
         for authorship in authorships[:MAX_AUTHORS_TO_EXTRACT]:
+            if not isinstance(authorship, dict):
+                continue
             author = authorship.get("author", {})
-            if author.get("display_name"):
+            if isinstance(author, dict) and author.get("display_name"):
                 metadata["authors"].append(author["display_name"])
 
         # Extract venue
-        primary_location = work_data.get("primary_location", {})
-        if primary_location:
-            source = primary_location.get("source", {})
-            if source:
+        primary_location = work_data.get("primary_location")
+        if isinstance(primary_location, dict):
+            source = primary_location.get("source")
+            if isinstance(source, dict):
                 metadata["venue"] = source.get("display_name")
 
         return metadata

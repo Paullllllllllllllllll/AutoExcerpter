@@ -331,6 +331,11 @@ def _dehyphenate_lines(lines: list[str]) -> tuple[list[str], list[HyphenDecision
                             context=merged[-60:],
                         )
                     )
+                    # Re-examine the same line: a word split across three or
+                    # more printed lines ("Manage-\nment-\nsystem") still ends
+                    # with a hyphen after the first merge. Terminates because
+                    # every merge consumes a token from the following line.
+                    continue
         index += 1
 
     return result, decisions
