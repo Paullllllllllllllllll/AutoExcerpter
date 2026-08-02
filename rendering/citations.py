@@ -182,27 +182,28 @@ def _extract_year(text: str) -> int | None:
 def _extract_volume(text: str) -> int | None:
     """Return the volume number in *text* (``Vol. 3``, ``Bd. 2``, ``t. II``), or
     None. Handles English/German/French designators and Roman numerals."""
-    match = _VOLUME_RE.search(text)
-    if not match:
-        return None
-    captured = match.group(1) or match.group(2)
-    if captured is None:
-        return None
-    if captured.isdigit():
-        arabic = int(captured)
-        if 1500 <= arabic <= 2099:
-            # A "volume" in the plausible publication-year window is almost
-            # always a year following an English word that doubles as a German
-            # designator ("The Band 1968 Story"); a spurious volume would
-            # poison the dedup key and veto legitimate merges.
-            return None
-        return arabic
-    value = _roman_to_int(captured)
-    if value is not None and value > MAX_ROMAN_VOLUME:
-        # An implausibly large Roman "volume" is an ordinary word that happens
-        # to be well-formed Roman ("dix"), not a designator.
-        return None
-    return value
+    # Scan every match: an implausible first hit is discarded, not treated as
+    # the answer, so a real designator later in the string is still found.
+    for match in _VOLUME_RE.finditer(text):
+        captured = match.group(1) or match.group(2)
+        if captured is None:
+            continue
+        if captured.isdigit():
+            arabic = int(captured)
+            if 1500 <= arabic <= 2099:
+                # A "volume" in the plausible publication-year window is almost
+                # always a year following an English word that doubles as a
+                # German designator ("The Band 1968 Story"); a spurious volume
+                # would poison the dedup key and veto legitimate merges.
+                continue
+            return arabic
+        value = _roman_to_int(captured)
+        if value is None or value > MAX_ROMAN_VOLUME:
+            # An implausibly large Roman "volume" is an ordinary word that
+            # happens to be well-formed Roman ("dix"), not a designator.
+            continue
+        return value
+    return None
 
 
 def _title_spans(text: str) -> list[str]:
@@ -661,6 +662,15 @@ class CitationManager:
         for partial in partials:
             block = blocks[(partial.author, partial.year)]
             partial_tokens = _token_set(partial.comparison_text)
+            if not partial_tokens:
+                # An empty token set (bare URL, bracket-only stub) is a subset
+                # of every full reference, so containment is zero evidence.
+                logger.info(
+                    "Dropping partial citation (no comparison tokens): %s",
+                    partial.raw_text,
+                )
+                self.citations.pop(partial.normalized_key, None)
+                continue
             candidates = [
                 full
                 for full in block
@@ -981,7 +991,12 @@ class CitationManager:
             match = re.search(pattern, citation_text, re.IGNORECASE)
             if match:
                 doi = match.group(1).rstrip(".,;")
-                return doi
+                # A parenthesized citation ("(10.1234/abc)") leaves an unmatched
+                # trailing ")" that 404s; DOIs with internal parens
+                # (10.1016/S0140-6736(00)…) must keep theirs.
+                while doi.endswith(")") and doi.count("(") < doi.count(")"):
+                    doi = doi[:-1]
+                return doi.rstrip(".,;")
 
         return None
 
@@ -1305,7 +1320,9 @@ class CitationManager:
         title-only match assigns wrong DOIs to look-alike titles).
         """
         raw_title = work_data.get("title") or work_data.get("display_name") or ""
-        if not raw_title:
+        if not isinstance(raw_title, str) or not raw_title:
+            # A truthy non-string title (a JSON number) would raise inside
+            # _fold and abort enrichment for the whole document.
             return False
 
         citation_folded = _fold(citation_text)
@@ -1376,7 +1393,14 @@ class CitationManager:
                 else None
             ),
             "publication_year": work_data.get("publication_year"),
-            "url": work_data.get("doi") or work_data.get("id"),
+            "url": next(
+                (
+                    value
+                    for value in (work_data.get("doi"), work_data.get("id"))
+                    if isinstance(value, str) and value
+                ),
+                None,
+            ),
             "authors": [],
             "venue": None,
         }

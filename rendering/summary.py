@@ -261,7 +261,7 @@ def collapse_internal_newlines(text: str) -> str:
     numbered-reference structure and land raw inside DOCX runs; flattening them
     at render time keeps each item a single logical line.
     """
-    return re.sub(r"\s*\n\s*", " ", text)
+    return re.sub(r"\s*[\r\n]+\s*", " ", text)
 
 
 def _string_bullets(bullet_points: Any) -> list[str]:

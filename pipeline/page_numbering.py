@@ -96,7 +96,12 @@ class PageNumberProcessor:
             elif isinstance(raw_page_types, str):
                 page_types = [raw_page_types]
             elif isinstance(raw_page_types, list) and raw_page_types:
-                page_types = raw_page_types
+                # Drop non-string debris (e.g. dicts from a corrupt or reused
+                # log): such an entry becomes the primary section type and then
+                # raises TypeError (unhashable) as a dict key in the sort below.
+                page_types = [pt for pt in raw_page_types if isinstance(pt, str)] or [
+                    "content"
+                ]
             else:
                 page_types = ["content"]
 

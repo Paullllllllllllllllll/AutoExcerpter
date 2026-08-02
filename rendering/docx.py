@@ -654,21 +654,24 @@ def add_formatted_text_to_paragraph(paragraph: Any, text: str) -> None:
             # Markdown writer) instead of leaking literal asterisks into the DOCX.
             for kind, piece in parse_markdown_emphasis(content):
                 run = paragraph.add_run(sanitize_for_xml(piece))
-                if kind == "bold":
+                if kind in ("bold", "bold_italic"):
                     run.bold = True
-                elif kind == "italic":
+                if kind in ("italic", "bold_italic"):
                     run.italic = True
 
 
 # The italic alternative requires non-space flanking characters, as CommonMark
 # does: "a * b * c" is literal prose, not emphasis. Bold (**) is unchanged.
 _MARKDOWN_EMPHASIS_PATTERN = re.compile(
-    r"\*\*(?P<bold>[^*]+)\*\*|\*(?P<italic>[^*\s](?:[^*]*[^*\s])?)\*"
+    r"\*\*\*(?P<bold_italic>[^*]+)\*\*\*"
+    r"|\*\*(?P<bold>[^*]+)\*\*"
+    r"|\*(?P<italic>[^*\s](?:[^*]*[^*\s])?)\*"
 )
 
 
 def parse_markdown_emphasis(text: str) -> list[tuple[str, str]]:
-    """Split text into ('text' | 'bold' | 'italic', content) segments.
+    """Split text into ('text' | 'bold' | 'italic' | 'bold_italic', content)
+    segments.
 
     Citation strings extracted by the LLM occasionally carry Markdown emphasis
     (e.g. ``*The American Economic Review, 87*(2)``). The Markdown writer
@@ -679,7 +682,9 @@ def parse_markdown_emphasis(text: str) -> list[tuple[str, str]]:
     for match in _MARKDOWN_EMPHASIS_PATTERN.finditer(text):
         if match.start() > last_end:
             segments.append(("text", text[last_end : match.start()]))
-        if match.group("bold") is not None:
+        if match.group("bold_italic") is not None:
+            segments.append(("bold_italic", match.group("bold_italic")))
+        elif match.group("bold") is not None:
             segments.append(("bold", match.group("bold")))
         else:
             segments.append(("italic", match.group("italic")))
@@ -692,7 +697,8 @@ def parse_markdown_emphasis(text: str) -> list[tuple[str, str]]:
 def strip_markdown_emphasis(text: str) -> str:
     """Remove Markdown emphasis markers, keeping the emphasized text."""
     return _MARKDOWN_EMPHASIS_PATTERN.sub(
-        lambda m: m.group("bold") or m.group("italic"), text
+        lambda m: m.group("bold_italic") or m.group("bold") or m.group("italic"),
+        text,
     )
 
 
@@ -1051,9 +1057,9 @@ def create_docx_summary(
                 for kind, content in parse_markdown_emphasis(citation_text):
                     text_run = ref_paragraph.add_run(content)
                     text_run.font.size = Pt(REF_FONT_PT)
-                    if kind == "italic":
+                    if kind in ("italic", "bold_italic"):
                         text_run.italic = True
-                    elif kind == "bold":
+                    if kind in ("bold", "bold_italic"):
                         text_run.bold = True
 
             if page_range_str:

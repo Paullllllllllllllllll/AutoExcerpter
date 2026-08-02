@@ -168,7 +168,7 @@ def create_markdown_summary(
     # mid-write never leaves a truncated .md that resume trusts as COMPLETE.
     tmp_path = output_path.with_name(output_path.name + ".tmp")
     try:
-        tmp_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        tmp_path.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
         os.replace(tmp_path, output_path)
     except OSError:
         with contextlib.suppress(OSError):
