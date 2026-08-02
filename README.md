@@ -1,4 +1,4 @@
-# AutoExcerpter v2.3.5
+# AutoExcerpter v2.3.6
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -780,7 +780,7 @@ AutoExcerpter/
 │   └── errors.py                    # Domain exceptions
 ├── scripts/repair_layout/           # Deterministic line-break repair utility
 ├── context/summary/general.txt      # Default summarization topics (gitignored)
-├── tests/                           # Test suite (2,046 tests)
+├── tests/                           # Test suite (2,076 tests)
 ├── LICENSE                          # MIT license
 ├── pyproject.toml                   # Project metadata and dependencies
 └── uv.lock                          # Pinned dependency lockfile
@@ -843,6 +843,31 @@ a single baseline commit at v1.0.0 on 25 April 2026; version numbers before
 v1.0.0 do not exist.
 
 ## Changelog
+
+- **v2.3.6** (2 August 2026) -- Sixth maintenance sweep round, bug fixes
+  and hardening only. A currency dollar before a `$$...$$` display block
+  no longer desynchronizes inline-math pairing in the DOCX writer (prose
+  rendered as equations, real formulas degraded to literal text), and a
+  trailing escaped `\$` no longer makes the dollar balancer delete a
+  genuine math opener. Payload sources tolerate `provider: null` from
+  model.yaml instead of crashing every item before the first page; the
+  resume shortfall gate counts unique page indices so duplicate log
+  entries cannot mask a genuinely missing page; and the duplicate-output
+  guard runs before resume filtering, so a same-stem sibling can no
+  longer be misclassified complete off another document's outputs. The
+  `--json` summary line survives a legacy-codepage stdout by falling
+  back to ASCII-escaped JSON (a successful run previously emitted no
+  JSON and exited 1 on a non-cp1252 path). A bare
+  `transcription_model:`/`summary_model:` header in model.yaml yields
+  empty config instead of crashing each page after the paid
+  transcription call, the pre-run overview survives a partially-nulled
+  concurrency.yaml, and the interactive ALL sentinel is honored inside
+  comma lists. The repair tool sniffs transcription headers on raw
+  bytes so legacy-encoded files surface as reported read failures
+  instead of silent exclusions, and its image-block scan is bounded so
+  a deviant opener cannot swallow the rest of a file; DOI extraction
+  strips unbalanced trailing brackets and angle quotes. 2,076 tests
+  pass; ruff and mypy clean.
 
 - **v2.3.5** (2 August 2026) -- Fifth maintenance sweep round, bug fixes
   and hardening only. The transcription working log now records each paid
