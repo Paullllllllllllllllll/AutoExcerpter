@@ -56,7 +56,7 @@ class TestGermanFrenchVolumeDesignators:
         assert Citation(raw_text="Smith (2020). *W*, vol. 3. CUP.").volume == 3
 
     def test_author_initial_before_year_is_not_a_volume(self) -> None:
-        """"Smith, T. 1990. Title." must not read the year as a tome number."""
+        """ "Smith, T. 1990. Title." must not read the year as a tome number."""
         assert Citation(raw_text="Smith, T. 1990. The Wealth. CUP.").volume is None
 
     def test_ordinary_words_do_not_false_positive(self) -> None:

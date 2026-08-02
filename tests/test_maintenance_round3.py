@@ -125,9 +125,7 @@ class TestPageTypesDebrisTolerated:
         }
 
     def test_dict_entry_does_not_raise(self) -> None:
-        data = prepare_summary_data(
-            [self._result([{"bad": True}])], CitationManager()
-        )
+        data = prepare_summary_data([self._result([{"bad": True}])], CitationManager())
         # The malformed entry degrades to the "content" default; the page
         # still renders with its bullet intact.
         assert len(data.page_render_items) == 1
@@ -238,7 +236,7 @@ class TestAnthropicAdaptiveThinking:
 
     @patch("llm.base.get_model_capabilities", return_value=_ADAPTIVE_CAPS)
     def test_adaptive_model_effort_none_sends_nothing(self, _: Any) -> None:
-        """"none" mirrors the budget path: no reasoning parameter at all."""
+        """ "none" mirrors the budget path: no reasoning parameter at all."""
         client = _make_client(
             provider="anthropic",
             model_name="claude-fable-5",

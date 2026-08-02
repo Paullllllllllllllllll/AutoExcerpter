@@ -67,7 +67,7 @@ class TestPoliteDelayOnMiss:
 
 
 class TestAbbreviatedYearRange:
-    """"Sraffa, P. 1951-73" must keep its year (previously stripped)."""
+    """ "Sraffa, P. 1951-73" must keep its year (previously stripped)."""
 
     def test_abbreviated_range_year_survives(self) -> None:
         assert _extract_year("Sraffa, P. 1951-73. Works. Cambridge.") == 1951
@@ -258,9 +258,7 @@ class TestFolderRenameDetected:
 
     @staticmethod
     def _names_hash(names: list[str]) -> str:
-        return hashlib.sha256(
-            "\n".join(sorted(names)).encode("utf-8")
-        ).hexdigest()
+        return hashlib.sha256("\n".join(sorted(names)).encode("utf-8")).hexdigest()
 
     def test_rename_flagged_as_changed(self, tmp_path: Path) -> None:
         folder = tmp_path / "scans"
@@ -302,9 +300,7 @@ class TestAbortEvent:
         request_abort()
         try:
             assert abort_requested() is True
-            result = transcriber._process_single_page(
-                0, source, [], [], 1, [0]
-            )
+            result = transcriber._process_single_page(0, source, [], [], 1, [0])
         finally:
             clear_abort()
         assert result is None
