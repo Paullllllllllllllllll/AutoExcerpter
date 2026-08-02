@@ -103,6 +103,11 @@ class ItemTranscriber:
         # Guards the shared processed-page counter against lost-update races
         # between worker threads (a bare ``+= 1`` is not atomic).
         self._count_lock = threading.Lock()
+        # Working-log appends that FAILED on the hot page path (transcription
+        # or summary entry). A failed append means a paid page exists only in
+        # memory, so the item must not be reported complete; counted under
+        # _count_lock and folded into the item verdict in _run_processing.
+        self._log_append_failures = 0
 
         self.base_output_dir = base_output_dir
         self.output_txt_path = self.base_output_dir / f"{self.name}.txt"
@@ -459,6 +464,26 @@ class ItemTranscriber:
             stamp_b.get("provider"), stamp_b.get("key_env"), stamp_b.get("model")
         )
 
+    def _note_log_append_failure(self, log_path: Path) -> None:
+        """Record (loudly) that a hot-path working-log append failed.
+
+        Mirrors the pass-1 re-append treatment in ``_reload_completed_pages``:
+        a page that never reached the log exists nowhere on disk, so a later
+        resume cannot recover it. Counted under ``_count_lock`` because worker
+        threads share the counter.
+        """
+        with self._count_lock:
+            self._log_append_failures = getattr(self, "_log_append_failures", 0) + 1
+            failures = self._log_append_failures
+        logger.error(
+            "Item %s: failed to append an entry to %s (%d hot-path append "
+            "failure(s) so far); that page is not recoverable from the working "
+            "log on a later resume.",
+            getattr(self, "name", "<unknown>"),
+            log_path,
+            failures,
+        )
+
     def _process_single_page(
         self,
         original_input_order_index: int,
@@ -515,6 +540,9 @@ class ItemTranscriber:
                 return None
 
         image_name = f"page index {original_input_order_index}"
+        # Set once the (paid) transcription entry is safely on disk; read by the
+        # except handler below, which must not log a SECOND entry for this index.
+        transcription_logged = False
         try:
             image_name = source.image_name(original_input_order_index)
 
@@ -548,14 +576,25 @@ class ItemTranscriber:
                 raw_text = transcription_result.get("transcription", "")
                 transcription_result["transcription"] = clean_transcription(raw_text)
 
+            # Persist the PAID transcription BEFORE the summary call. The
+            # transcription text is final here (cleaning ran above, and
+            # _summarize_transcription only reads the entry), so a hard crash
+            # during the summary call now lands in the SUPPORTED summary-only
+            # resume state -- the logged transcription is reused and
+            # resume.py's regeneration path (_regenerate_one) rebuilds just the
+            # missing summary -- instead of losing an already-paid page.
+            transcription_logged = append_to_log(self.log_path, transcription_result)
+            if not transcription_logged:
+                self._note_log_append_failure(self.log_path)
+
             summary_result = self._summarize_transcription(
                 transcription_result, original_input_order_index, image_name
             )
             if summary_result is not None:
-                append_to_log(self.summary_log_path, summary_result)
+                if not append_to_log(self.summary_log_path, summary_result):
+                    self._note_log_append_failure(self.summary_log_path)
                 summary_results.append(summary_result)
 
-            append_to_log(self.log_path, transcription_result)
             # Lock-guarded increment + read: worker threads otherwise lose
             # updates on a bare ``+= 1`` (read-modify-write is not atomic).
             with self._count_lock:
@@ -609,7 +648,15 @@ class ItemTranscriber:
             # normal failure path: without these, the page is present in the
             # in-memory .txt but absent from the log (so resume disagrees) and
             # silently missing from the DOCX/MD summaries.
-            append_to_log(self.log_path, error_result)
+            #
+            # When the transcription entry is ALREADY on disk (the crash struck
+            # during or after the summary call), do not append a second entry
+            # for this index: the index would then be both in
+            # completed_page_indices and a log_has_failures trigger, and
+            # _eligible_prior_entries would admit both entries, duplicating the
+            # page on every later resume.
+            if not transcription_logged:
+                append_to_log(self.log_path, error_result)
             try:
                 summary_result = self._summarize_transcription(
                     error_result, original_input_order_index, image_name
@@ -620,9 +667,22 @@ class ItemTranscriber:
                 )
                 summary_result = None
             if summary_result is not None:
+                if transcription_logged:
+                    # The transcription entry is error-free on disk, so the
+                    # page's failure signal has to live on the SUMMARY entry;
+                    # otherwise AE-2 would classify the item COMPLETE and the
+                    # placeholder would ship as the final summary. With the
+                    # marker, resume regenerates exactly this summary from the
+                    # logged transcription.
+                    summary_result["error"] = str(e)
                 append_to_log(self.summary_log_path, summary_result)
                 summary_results.append(summary_result)
-            transcription_results.append(error_result)
+            # With the transcription already logged, the page's on-disk state is
+            # "transcribed, summary pending": mirror that in memory so the .txt
+            # carries the real transcription rather than the crash placeholder.
+            transcription_results.append(
+                transcription_result if transcription_logged else error_result
+            )
             with self._count_lock:
                 processed_count_ref[0] += 1
             return error_result
@@ -809,17 +869,31 @@ class ItemTranscriber:
         input is dropped). Reads only the in-memory snapshot taken before the
         log was truncated, falling back to a disk read when no snapshot exists
         (direct calls outside process_item).
+
+        Duplicate indices (logs written by an older version, or any unforeseen
+        double-append path) are collapsed to ONE entry per index, preferring the
+        error-free one: re-appending both would duplicate the page in the .txt
+        and in the summaries on every later resume. The result is ordered by
+        index; consumers bucket and sort by index anyway.
         """
         prior_results = self._prior_transcription_results or (
             load_transcription_results_from_log(self.log_path) or []
         )
-        return [
-            entry
-            for entry in prior_results
-            if isinstance(entry.get("original_input_order_index"), int)
-            and entry["original_input_order_index"] in self.completed_page_indices
-            and entry["original_input_order_index"] < self.total_items_to_transcribe
-        ]
+        by_index: dict[int, dict[str, Any]] = {}
+        for entry in prior_results:
+            idx = entry.get("original_input_order_index")
+            if not isinstance(idx, int):
+                continue
+            if idx not in self.completed_page_indices:
+                continue
+            if idx >= self.total_items_to_transcribe:
+                continue
+            existing = by_index.get(idx)
+            # Never replace an error-free entry; an errored one loses to any
+            # error-free duplicate regardless of log order.
+            if existing is None or ("error" in existing and "error" not in entry):
+                by_index[idx] = entry
+        return [by_index[idx] for idx in sorted(by_index)]
 
     def _regenerate_one(
         self,
@@ -1553,25 +1627,30 @@ class ItemTranscriber:
             }
 
             # Item verdict: a budget-deferred page, any failed page
-            # (transcription or summary), or a failed summary-file render means
-            # the item is NOT complete, so the caller counts it failed and the
-            # run exits non-zero.
+            # (transcription or summary), a failed summary-file render, or a
+            # working-log append that never reached disk means the item is NOT
+            # complete, so the caller counts it failed and the run exits
+            # non-zero.
+            log_append_failures = getattr(self, "_log_append_failures", 0)
             item_success = (
                 pages_deferred == 0
                 and final_failure_count == 0
                 and summary_failure_count == 0
                 and summary_render_ok
                 and txt_write_ok
+                and log_append_failures == 0
             )
             if not item_success:
                 logger.error(
                     "Item %s finished incomplete: %d deferred page(s), %d failed "
-                    "transcription page(s), %d failed summary page(s), summary "
-                    "files rendered ok: %s, transcription .txt written ok: %s",
+                    "transcription page(s), %d failed summary page(s), %d failed "
+                    "working-log append(s), summary files rendered ok: %s, "
+                    "transcription .txt written ok: %s",
                     self.name,
                     pages_deferred,
                     final_failure_count,
                     summary_failure_count,
+                    log_append_failures,
                     summary_render_ok,
                     txt_write_ok,
                 )

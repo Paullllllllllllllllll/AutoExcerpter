@@ -65,8 +65,12 @@ def _close_log_handle(log_path: Path) -> None:
         existing = _LOG_HANDLES.pop(key, None)
     if existing is None:
         return
-    handle, _lock = existing
-    with contextlib.suppress(OSError):
+    handle, lock = existing
+    # Close under the PER-HANDLE lock: a finalize landing while a worker holds
+    # that lock would otherwise close the file mid-write and tear (lose) an
+    # already-paid page entry. Lock ordering matches append_to_log — the guard
+    # is released before the per-handle lock is taken — so no deadlock.
+    with lock, contextlib.suppress(OSError):
         handle.close()
 
 
@@ -177,7 +181,19 @@ def append_to_log(log_path: Path, entry: dict[str, Any]) -> bool:
             # pages. One flush per page is negligible next to the API call.
             log_file.flush()
         return True
-    except (OSError, TypeError, ValueError) as exc:
+    except ValueError as exc:
+        # "I/O operation on closed file": the cached handle was finalized
+        # between acquisition and the write. The entry may be an already-paid
+        # page, so it must still reach disk — retry through the one-shot path
+        # instead of dropping it.
+        logger.debug(
+            "Cached handle for %s was closed mid-append (%s); "
+            "retrying via the one-shot path.",
+            log_path,
+            exc,
+        )
+        return _append_one_shot(log_path, entry)
+    except (OSError, TypeError) as exc:
         logger.warning("Failed to write to log file %s: %s", log_path, exc)
         return False
 
