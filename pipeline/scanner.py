@@ -121,12 +121,11 @@ def _build_image_folder_items(image_folders: dict[Path, list[Path]]) -> list[Ite
     for folder_path, images in image_folders.items():
         if not images:
             continue
-        sorted_images = sorted(images, key=lambda target: target.name)
         image_items.append(
             ItemSpec(
                 kind="image_folder",
                 path=folder_path,
-                image_count=len(sorted_images),
+                image_count=len(images),
             )
         )
     return image_items

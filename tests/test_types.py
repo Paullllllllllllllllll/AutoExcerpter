@@ -1,4 +1,4 @@
-"""Tests for split type modules (llm.types, pipeline.types, config.types)."""
+"""Tests for the split type modules (llm.types, pipeline.types)."""
 
 from __future__ import annotations
 
@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 
-from config.types import ConcurrencyConfig
 from llm.types import (
     CustomEndpointCapabilities,
     PageInformation,
@@ -142,72 +141,6 @@ class TestSummaryResult:
 
         assert result["page"] == 1
         assert result["page_information"]["page_number_integer"] == 1
-
-
-class TestConcurrencyConfig:
-    """Tests for ConcurrencyConfig dataclass."""
-
-    def test_default_values(self) -> None:
-        """ConcurrencyConfig has sensible defaults."""
-        config = ConcurrencyConfig()
-
-        assert config.image_processing_limit == 24
-        assert config.transcription_limit == 150
-        assert config.summary_limit == 150
-        assert config.transcription_service_tier == "flex"
-        assert config.summary_service_tier == "flex"
-
-    def test_custom_values(self) -> None:
-        """ConcurrencyConfig accepts custom values."""
-        config = ConcurrencyConfig(
-            image_processing_limit=16,
-            transcription_limit=100,
-            summary_limit=50,
-            transcription_service_tier="default",
-            summary_service_tier="default",
-        )
-
-        assert config.image_processing_limit == 16
-        assert config.transcription_limit == 100
-
-    def test_from_dict(self) -> None:
-        """ConcurrencyConfig can be created from dictionary."""
-        config_dict = {
-            "image_processing": {
-                "concurrency_limit": 32,
-            },
-            "api_requests": {
-                "transcription": {
-                    "concurrency_limit": 200,
-                    "service_tier": "default",
-                },
-                "summary": {
-                    "concurrency_limit": 100,
-                    "service_tier": "flex",
-                },
-            },
-        }
-
-        config = ConcurrencyConfig.from_dict(config_dict)
-
-        assert config.image_processing_limit == 32
-        assert config.transcription_limit == 200
-        assert config.transcription_service_tier == "default"
-
-    def test_from_dict_with_missing_keys(self) -> None:
-        """ConcurrencyConfig.from_dict handles missing keys."""
-        config = ConcurrencyConfig.from_dict({})
-
-        # Should use defaults
-        assert config.image_processing_limit == 24
-        assert config.transcription_limit == 150
-
-    def test_frozen(self) -> None:
-        """ConcurrencyConfig is immutable."""
-        config = ConcurrencyConfig()
-
-        with pytest.raises(AttributeError):
-            config.image_processing_limit = 100  # type: ignore
 
 
 class TestCustomEndpointCapabilities:

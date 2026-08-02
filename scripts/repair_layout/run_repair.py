@@ -28,6 +28,21 @@ _LONG_LINE_AUDIT_THRESHOLD = 110
 _BOM = "\ufeff"
 
 
+def _positive_int(value: str) -> int:
+    """Argparse type for ``--limit``: only a positive count truncates usefully.
+
+    ``--limit 0`` (or a negative one) sliced the target list empty, so the run
+    repaired nothing yet still wrote its reports and exited 0.
+    """
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be an integer") from exc
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be > 0")
+    return parsed
+
+
 def find_targets(root: Path) -> list[Path]:
     """Return transcription .txt files under root, by their header marker."""
     targets: list[Path] = []
@@ -255,7 +270,7 @@ def main() -> int:
     parser.add_argument("--root", required=True, type=Path)
     parser.add_argument("--backup-dir", type=Path, default=None)
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument("--limit", type=_positive_int, default=None)
     parser.add_argument("--skip-backup", action="store_true")
     args = parser.parse_args()
 

@@ -44,6 +44,16 @@ def _fmt_int(value: Any) -> str:
         return str(value)
 
 
+def _as_dict(value: Any) -> dict[str, Any]:
+    """Return *value* when it is a mapping, else an empty dict.
+
+    A hand-edited model.yaml can leave a section header with no body
+    (``transcription_model:``), which YAML parses as ``None``; the overview
+    then crashed on ``None.get`` before any work started.
+    """
+    return value if isinstance(value, dict) else {}
+
+
 def prompt_for_item_selection(
     items: collections.abc.Sequence[ItemSpec],
 ) -> list[ItemSpec]:
@@ -152,8 +162,8 @@ def _display_processing_summary(
     print_separator()
 
     # Transcription model
-    trans_model = model_config.get("transcription_model", {})
-    trans_provider = trans_model.get("provider", "openai").upper()
+    trans_model = _as_dict(model_config.get("transcription_model"))
+    trans_provider = str(trans_model.get("provider") or "openai").upper()
     trans_model_name = trans_model.get("name", "gpt-5-mini")
     trans_temp = trans_model.get("temperature")
     trans_max_tokens = trans_model.get("max_output_tokens", 16384)
@@ -165,13 +175,13 @@ def _display_processing_summary(
     print_dim(f"      - Max output tokens: {_fmt_int(trans_max_tokens)}")
 
     # Reasoning configuration
-    trans_reasoning = trans_model.get("reasoning", {})
+    trans_reasoning = _as_dict(trans_model.get("reasoning"))
     if trans_reasoning:
         effort = trans_reasoning.get("effort", "medium")
         print_dim(f"      - Reasoning effort: {effort}")
 
     # Text verbosity (OpenAI GPT-5 specific)
-    trans_text = trans_model.get("text", {})
+    trans_text = _as_dict(trans_model.get("text"))
     if trans_text:
         verbosity = trans_text.get("verbosity", "medium")
         print_dim(f"      - Text verbosity: {verbosity}")
@@ -179,8 +189,8 @@ def _display_processing_summary(
     # Summary model (if enabled)
     if config.SUMMARIZE:
         print()
-        sum_model = model_config.get("summary_model", {})
-        sum_provider = sum_model.get("provider", "openai").upper()
+        sum_model = _as_dict(model_config.get("summary_model"))
+        sum_provider = str(sum_model.get("provider") or "openai").upper()
         sum_model_name = sum_model.get("name", "gpt-5-mini")
         sum_temp = sum_model.get("temperature")
         sum_max_tokens = sum_model.get("max_output_tokens", 16384)
@@ -192,13 +202,13 @@ def _display_processing_summary(
         print_dim(f"      - Max output tokens: {_fmt_int(sum_max_tokens)}")
 
         # Reasoning configuration
-        sum_reasoning = sum_model.get("reasoning", {})
+        sum_reasoning = _as_dict(sum_model.get("reasoning"))
         if sum_reasoning:
             effort = sum_reasoning.get("effort", "medium")
             print_dim(f"      - Reasoning effort: {effort}")
 
         # Text verbosity
-        sum_text = sum_model.get("text", {})
+        sum_text = _as_dict(sum_model.get("text"))
         if sum_text:
             verbosity = sum_text.get("verbosity", "low")
             print_dim(f"      - Text verbosity: {verbosity}")

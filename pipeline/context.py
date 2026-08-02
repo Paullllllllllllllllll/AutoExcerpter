@@ -35,7 +35,8 @@ def resolve_summary_context(
     """Resolve summarization context using hierarchical fallback.
 
     Searches for context in this order:
-    1. File-specific: <filename>_summary_context.txt in the same directory as input_file
+    1. File-specific: <filename>_summary_context.txt beside input_file, i.e. in
+       its parent directory (for an image-folder input, next to the folder)
     2. Folder-specific: <parent_folder_name>_summary_context.txt in grandparent
        directory
     3. General fallback: context/summary/general.txt

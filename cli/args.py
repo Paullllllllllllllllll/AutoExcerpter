@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import math
+import os
 from pathlib import Path
 from typing import Any
 
@@ -374,28 +375,55 @@ def _parse_execution_mode(
         select_pattern = args.select
         summary_context = args.context
 
-        # Resolve relative paths to absolute
-        if not input_path_arg.is_absolute():
-            input_path_arg = Path.cwd() / input_path_arg
-        if not base_output_dir.is_absolute():
-            base_output_dir = Path.cwd() / base_output_dir
+        # Expand "~" and resolve relative paths to absolute. A bare
+        # ``Path.cwd() / p`` guard left "~/pdfs" as a literal "~" directory
+        # under the CWD and kept drive-relative "D:books" drive-relative;
+        # os.path.abspath handles both correctly on Windows.
+        input_path_arg = Path(os.path.abspath(os.path.expanduser(str(input_path_arg))))
+        base_output_dir = Path(
+            os.path.abspath(os.path.expanduser(str(base_output_dir)))
+        )
 
         logger.info(f"CLI Mode: Input={input_path_arg}, Output={base_output_dir}")
         if summary_context:
             logger.info(f"CLI Mode: Summary context={summary_context}")
     else:
         # Interactive mode: use --input/--output (config defaults) and --context.
+        # A blank value is not a usable path: Path("") is Path("."), so the
+        # shipped app.example.yaml (input_folder_path: '') would silently scan
+        # the whole current working directory and write its output there.
+        # Reject it here, as the CLI branch rejects a missing path.
+        if not str(args.input).strip():
+            raise ValueError(
+                "No input path configured. Set input_folder_path in"
+                " config/defaults/app.yaml (copy app.example.yaml)"
+                " or pass --input."
+            )
+        if not str(args.output).strip():
+            if config.INPUT_PATHS_IS_OUTPUT_PATH:
+                # Documented fallback (app.example.yaml): with
+                # input_paths_is_output_path, outputs are written next to each
+                # input item and output_folder_path may stay blank; use the
+                # input folder as the nominal base directory.
+                args.output = str(args.input)
+            else:
+                raise ValueError(
+                    "No output path configured. Set output_folder_path in"
+                    " config/defaults/app.yaml (copy app.example.yaml)"
+                    " or pass --output."
+                )
+
         input_path_arg = Path(args.input)
         base_output_dir = Path(args.output)
         process_all = False
         select_pattern = None
         summary_context = getattr(args, "context", None)
 
-        # Resolve relative paths to absolute exactly as the CLI branch does.
-        if not input_path_arg.is_absolute():
-            input_path_arg = Path.cwd() / input_path_arg
-        if not base_output_dir.is_absolute():
-            base_output_dir = Path.cwd() / base_output_dir
+        # Expand and absolutize exactly as the CLI branch does.
+        input_path_arg = Path(os.path.abspath(os.path.expanduser(str(input_path_arg))))
+        base_output_dir = Path(
+            os.path.abspath(os.path.expanduser(str(base_output_dir)))
+        )
 
     return (
         input_path_arg,
