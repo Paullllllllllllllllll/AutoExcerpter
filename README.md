@@ -1,4 +1,4 @@
-# AutoExcerpter v2.3.4
+# AutoExcerpter v2.3.5
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -732,7 +732,6 @@ AutoExcerpter/
 │   ├── constants.py                 # Hardcoded defaults
 │   ├── logger.py                    # Logging setup
 │   ├── state.py                     # State-directory resolution
-│   ├── types.py                     # Config type definitions
 │   └── defaults/                    # YAML configs (tracked *.example.yaml
 │       │                            #   templates; real *.yaml are gitignored)
 │       ├── app.example.yaml
@@ -781,7 +780,7 @@ AutoExcerpter/
 │   └── errors.py                    # Domain exceptions
 ├── scripts/repair_layout/           # Deterministic line-break repair utility
 ├── context/summary/general.txt      # Default summarization topics (gitignored)
-├── tests/                           # Test suite (1,967 tests)
+├── tests/                           # Test suite (2,046 tests)
 ├── LICENSE                          # MIT license
 ├── pyproject.toml                   # Project metadata and dependencies
 └── uv.lock                          # Pinned dependency lockfile
@@ -844,6 +843,34 @@ a single baseline commit at v1.0.0 on 25 April 2026; version numbers before
 v1.0.0 do not exist.
 
 ## Changelog
+
+- **v2.3.5** (2 August 2026) -- Fifth maintenance sweep round, bug fixes
+  and hardening only. The transcription working log now records each paid
+  page BEFORE the summary call, so a hard crash mid-summary resumes as a
+  summary-only regeneration instead of re-buying the transcription; a
+  finalize racing an in-flight append no longer silently loses a page
+  entry (the close takes the per-handle write lock and a closed-handle
+  append retries through the one-shot path); duplicate log entries for
+  one index collapse to the error-free one on resume; and a failed
+  hot-path log append now fails the item loudly instead of reporting
+  success. An abort arriving during a rate-limit wait no longer fires one
+  more API call; a day rollover during an in-flight ledger sync no longer
+  leaks the old day's deltas into the new day's shared ledger; and
+  degraded-ledger runs persist their own usage as they go, so a hard kill
+  cannot double-spend the daily budget. Citation enrichment tolerates
+  non-string OpenAlex titles and DOI/id fields, drops evidence-free
+  partial-citation merges, strips unbalanced trailing parentheses from
+  DOIs, and scans past year-lookalike volume hits; lone carriage returns
+  are collapsed in summaries, the Markdown writer pins LF line endings,
+  triple-asterisk emphasis renders as bold italic, and non-string
+  page-type debris no longer crashes page numbering. CLI paths expand
+  `~` and drive-relative forms, a blank interactive input errors with a
+  configuration pointer instead of scanning the whole working directory,
+  clamped or invalid config values (concurrency, timeout, DPI, rate
+  limits) produce one visible warning naming the key, the pre-run
+  overview survives a partially-nulled model config, and the
+  production-dead `config/types.py` is removed. 2,046 tests pass; ruff
+  and mypy clean.
 
 - **v2.3.4** (2 August 2026) -- Fourth maintenance sweep round, bug fixes
   only. The Anthropic/OpenRouter structured-output paths now copy resolved
