@@ -51,11 +51,6 @@ ERROR_BASE_PENALTY_SECONDS = 0.5
 TITLE_HEADING_LEVEL = 0
 PAGE_HEADING_LEVEL = 1
 REFERENCES_HEADING_LEVEL = 2
-# Semantic heading levels used by the DOCX writer: section headings ("Document
-# Structure", "Consolidated References") map to Word's Heading 1, per-page item
-# headings ("Page 12") map to Heading 2.
-SECTION_HEADING_LEVEL = 1
-PAGE_ITEM_HEADING_LEVEL = 2
 
 # --- Page setup (centimeters, A4) ---
 PAGE_WIDTH_CM = 21.0
@@ -111,9 +106,6 @@ LOG_FORMAT_VERSION = 2
 # ============================================================================
 # Transcription Markers
 # ============================================================================
-EMPTY_PAGE_MARKER = "[empty page]"
-NO_TRANSCRIPTION_MARKER = "[no transcription possible]"
-
 # Substrings that identify a blank / untranscribable page regardless of the
 # exact wrapper the transcription layer emits. The transcription layer produces
 # forms such as "[<img>: no transcribable text — ...]" and
@@ -265,8 +257,6 @@ __all__ = [
     # Working-log format
     "LOG_FORMAT_VERSION",
     # Transcription markers
-    "EMPTY_PAGE_MARKER",
-    "NO_TRANSCRIPTION_MARKER",
     "BLANK_PAGE_SENTINELS",
     "is_blank_transcription",
     # Model provider prefixes

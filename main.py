@@ -561,6 +561,9 @@ def _run_dry_run(
                 ensure_ascii=False,
             )
         )
+        # The one allowed JSON object is out; disarm the exit hook so a
+        # later interrupt cannot emit a second, contradictory summary.
+        set_exit_hook(None)
 
 
 def _guard_duplicate_outputs(

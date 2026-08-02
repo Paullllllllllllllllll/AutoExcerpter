@@ -467,9 +467,12 @@ def prompt_selection(
                     elif part.isdigit():
                         index = int(part) - 1
                         if not (0 <= index < len(items)):
+                            # The menu shows one extra entry (len + 1 = ALL)
+                            # when allow_all is set; the message must match.
+                            max_choice = len(items) + 1 if allow_all else len(items)
                             raise ValueError(
                                 f"Selection {part} is out of range."
-                                f" Must be between 1 and {len(items)}."
+                                f" Must be between 1 and {max_choice}."
                             )
                         selected_indices.add(index)
                         if not allow_multiple:

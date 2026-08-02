@@ -99,7 +99,9 @@ def _load_yaml_app_config() -> dict[str, Any]:
 
     if not app_config_path.exists():
         if example_path.exists():
-            logger.info(
+            # WARNING, not INFO: the console handler discards records below
+            # WARNING, so an INFO notice would never reach the user.
+            logger.warning(
                 f"Config '{app_config_path.name}' not found; using bundled "
                 f"defaults from '{example_path.name}'. Copy it to "
                 f"'{app_config_path.name}' and edit it to set your own values."
@@ -113,7 +115,7 @@ def _load_yaml_app_config() -> dict[str, Any]:
     data = _read_app_yaml(app_config_path)
     if data is None:
         if baseline:
-            logger.info(
+            logger.warning(
                 f"Config '{app_config_path.name}' failed to load; using bundled "
                 f"defaults from '{example_path.name}'."
             )

@@ -73,7 +73,12 @@ def get_transcription_concurrency() -> int:
 
 
 def get_service_tier(api_type: str = "transcription") -> str:
-    """Get OpenAI service tier for the specified API type."""
+    """Get OpenAI service tier for the specified API type.
+
+    A phase without its own ``service_tier`` falls back to the transcription
+    tier (the behavior documented in ``concurrency.example.yaml`` and shown
+    by the pre-run overview), then to ``"flex"``.
+    """
     tier: Any = _get_config_value(
         "get_concurrency_config",
         ["api_requests", api_type, "service_tier"],
@@ -82,6 +87,8 @@ def get_service_tier(api_type: str = "transcription") -> str:
     )
     if isinstance(tier, str) and tier:
         return tier
+    if api_type != "transcription":
+        return get_service_tier("transcription")
     return "flex"
 
 

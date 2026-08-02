@@ -152,7 +152,9 @@ class ConfigLoader:
 
         if not config_path.exists():
             if example_path.exists():
-                logger.info(
+                # WARNING, not INFO: the console handler discards records
+                # below WARNING, so an INFO notice would never reach the user.
+                logger.warning(
                     f"Config '{filename}' not found; using bundled defaults from "
                     f"'{example_filename}'. Copy it to '{filename}' and edit it "
                     "to set your own values."
@@ -173,7 +175,7 @@ class ConfigLoader:
         # back to the bundled example so a corrupt user file does not wipe out
         # all defaults.
         if example_path.exists():
-            logger.info(
+            logger.warning(
                 f"Config '{filename}' failed to load; using bundled defaults "
                 f"from '{example_filename}'."
             )
