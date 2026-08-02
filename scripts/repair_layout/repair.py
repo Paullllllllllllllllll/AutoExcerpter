@@ -219,7 +219,18 @@ def _rejoin_wrapped_lines(lines: list[str]) -> list[str]:
                 out.append(buffer)
                 buffer = None
             block = [line]
-            while not line.rstrip().endswith("]") and index + 1 < total:
+            # Bound the block scan: a deviant opener that never closes with
+            # "]" (e.g. a plain markdown image "![alt](fig.png)") must not
+            # swallow the rest of the file into the passthrough block. Stop
+            # extending at a blank line, a structural passthrough line (page
+            # markers, headings), or a new image opener.
+            while (
+                not line.rstrip().endswith("]")
+                and index + 1 < total
+                and lines[index + 1].strip()
+                and not is_passthrough_line(lines[index + 1])
+                and not _opens_image_block(lines[index + 1])
+            ):
                 index += 1
                 line = lines[index]
                 block.append(line)

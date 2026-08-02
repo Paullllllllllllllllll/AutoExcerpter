@@ -465,6 +465,12 @@ def prompt_selection(
 
                     # Handle single numbers
                     elif part.isdigit():
+                        if allow_all and int(part) == len(items) + 1:
+                            # The menu's extra ALL entry is a valid selection
+                            # inside a comma list too (the out-of-range message
+                            # below already presents it as in-range).
+                            selected_indices.update(range(len(items)))
+                            continue
                         index = int(part) - 1
                         if not (0 <= index < len(items)):
                             # The menu shows one extra entry (len + 1 = ALL)

@@ -521,7 +521,11 @@ class LLMClientBase:
         try:
             config_loader = get_config_loader()
             model_cfg = config_loader.get_model_config()
-            config_dict: dict[str, Any] = model_cfg.get(config_key, {})
+            # ``or {}``: a bare ``transcription_model:`` / ``summary_model:``
+            # header in model.yaml parses as None, which ``.get(key, {})``
+            # returns as-is (the key IS present) and which would crash every
+            # ``self.model_config.get(...)`` downstream.
+            config_dict: dict[str, Any] = model_cfg.get(config_key) or {}
 
             if config_dict:
                 logger.debug(

@@ -40,8 +40,11 @@ summary_output:
 # Set these to your local paths, e.g.:
 #   input_folder_path: 'C:\path\to\your\PDFs'
 #   output_folder_path: ''   # empty = write next to each input file
+#                            # (requires input_paths_is_output_path: true)
 input_folder_path: ''
-output_folder_path: ''  # Empty = use input_folder_path as output location
+output_folder_path: ''  # Empty = write next to inputs; valid only while
+                        # input_paths_is_output_path is true, otherwise a path
+                        # is required
 input_paths_is_output_path: true  # true = write outputs next to each input file
 
 # =============================================================================

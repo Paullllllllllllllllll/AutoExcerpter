@@ -222,20 +222,20 @@ def _display_processing_summary(
 
     # API requests. Summaries run inline within the transcription workers and
     # share their concurrency, so only the transcription phase is reported here.
-    api_requests = concurrency_config.get("api_requests", {})
-    trans_api = api_requests.get("transcription", {})
+    api_requests = _as_dict(concurrency_config.get("api_requests"))
+    trans_api = _as_dict(api_requests.get("transcription"))
     trans_concurrency = trans_api.get("concurrency_limit", DEFAULT_CONCURRENT_REQUESTS)
     trans_service_tier = trans_api.get("service_tier", "flex")
     print_info(f"    • Transcription API: {trans_concurrency} concurrent requests")
     print_dim(f"      - Service tier: {trans_service_tier}")
 
     if config.SUMMARIZE:
-        sum_api = api_requests.get("summary", {})
+        sum_api = _as_dict(api_requests.get("summary"))
         sum_service_tier = sum_api.get("service_tier", trans_service_tier)
         print_dim(f"      - Summary service tier: {sum_service_tier}")
 
     # Retry configuration
-    retry_config = concurrency_config.get("retry", {})
+    retry_config = _as_dict(concurrency_config.get("retry"))
     max_attempts = retry_config.get("max_attempts", 5)
     print_dim(f"      - Max retry attempts: {max_attempts}")
 

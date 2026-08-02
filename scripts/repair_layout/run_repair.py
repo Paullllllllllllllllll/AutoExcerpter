@@ -44,17 +44,28 @@ def _positive_int(value: str) -> int:
 
 
 def find_targets(root: Path) -> list[Path]:
-    """Return transcription .txt files under root, by their header marker."""
+    """Return transcription .txt files under root, by their header marker.
+
+    The header is sniffed on raw BYTES (the marker is ASCII), so a
+    transcription saved with a legacy encoding is still recognized as a
+    target; its UTF-8 decode failure then surfaces through ``process_file``
+    into the reported ``read_failures`` channel instead of being silently
+    excluded here (a partial run must never be silent).
+    """
+    marker = HEADER_MARKER.encode("ascii")
+    bom = _BOM.encode("utf-8")
     targets: list[Path] = []
     for path in sorted(root.rglob("*.txt")):
         if "backup" in {part.lower() for part in path.parts}:
             continue
         try:
-            with open(path, encoding="utf-8", newline="") as handle:
+            with open(path, "rb") as handle:
                 head = handle.read(256)
-        except (OSError, UnicodeDecodeError):
+        except OSError:
             continue
-        if head.lstrip(_BOM).startswith(HEADER_MARKER):
+        while head.startswith(bom):
+            head = head[len(bom) :]
+        if head.startswith(marker):
             targets.append(path)
     return targets
 
