@@ -1,4 +1,4 @@
-# AutoExcerpter v2.3.6
+# AutoExcerpter v2.3.7
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -843,6 +843,10 @@ a single baseline commit at v1.0.0 on 25 April 2026; version numbers before
 v1.0.0 do not exist.
 
 ## Changelog
+
+- **v2.3.7** (4 August 2026) -- Security hygiene from the weekly sweep: the
+  ignore rules now cover every `.env*` spelling, so a local environment file
+  cannot be staged by accident. No runtime change.
 
 - **v2.3.6** (2 August 2026) -- Sixth maintenance sweep round, bug fixes
   and hardening only. A currency dollar before a `$$...$$` display block
