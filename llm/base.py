@@ -148,6 +148,169 @@ if not isinstance(_JITTER, dict):
 JITTER_MIN = _cfg_float(_JITTER.get("min", 0.5), 0.5)
 JITTER_MAX = _cfg_float(_JITTER.get("max", 1.0), 1.0)
 
+
+class CallDeadlineExceeded(RuntimeError):
+    """Raised when a call's wall-clock deadline passed before a fresh attempt.
+
+    Distinct from the re-raised provider exception that ends a ladder whose
+    deadline expired *after* an attempt failed: this one fires BEFORE a new
+    attempt starts, so no further API call is made. Subclasses
+    :class:`RuntimeError` (never ``BaseException``) so the pipeline's
+    ``except Exception`` handlers degrade the page to an error entry that
+    ``--resume`` re-runs, instead of tearing down the whole run.
+    """
+
+
+# Exception class NAMES that denote a request timeout even when no httpx
+# timeout sits in the ``__cause__`` chain (e.g. a bare openai
+# ``APITimeoutError``, or an SDK that re-raises its own timeout type).
+_TIMEOUT_CLASS_NAMES: frozenset[str] = frozenset(
+    {
+        "APITimeoutError",
+        "APIConnectionTimeoutError",
+        "ConnectTimeout",
+        "ReadTimeout",
+        "WriteTimeout",
+        "PoolTimeout",
+        "TimeoutException",
+        "DeadlineExceeded",
+        "ServerTimeoutError",
+    }
+)
+
+
+def _is_timeout_error(exc: BaseException) -> bool:
+    """Return True when the exception is (or wraps) a request timeout.
+
+    Deliberately narrower than :func:`_is_connection_error`: a connection
+    failure is cheap and unbilled, whereas a read timeout has already burned a
+    billed server-side generation whose usage payload never reaches us.
+    Timeouts therefore get their own, smaller retry budget.
+
+    Walks the ``__cause__``/``__context__`` chain (bounded and cycle-safe via a
+    ``seen`` set of object ids) looking for an ``httpx.TimeoutException`` or a
+    builtin ``TimeoutError``; the class-NAME table above covers SDK timeout
+    types raised without an httpx cause. ``httpx`` is imported lazily so the
+    module keeps importing even where it is unavailable.
+    """
+    try:
+        import httpx
+    except ImportError:  # pragma: no cover - httpx is a hard runtime dependency
+        return isinstance(exc, TimeoutError)
+
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        if isinstance(current, httpx.TimeoutException | TimeoutError):
+            return True
+        if type(current).__name__ in _TIMEOUT_CLASS_NAMES:
+            return True
+        seen.add(id(current))
+        current = current.__cause__ or current.__context__
+    return False
+
+
+def _is_connection_error(exc: BaseException) -> bool:
+    """Return True when the exception is (or wraps) a transport-level failure.
+
+    Provider SDKs wrap the underlying ``httpx`` transport error before it
+    reaches the retry loop (the openai and anthropic SDKs raise
+    ``APIConnectionError from httpx.ConnectError``), so checking only the
+    top-level exception type misses them. Walks the ``__cause__``/
+    ``__context__`` chain (bounded, cycle-safe) looking for
+    ``httpx.ConnectError`` or ``httpx.TimeoutException``. Callers must run
+    :func:`_is_timeout_error` first: timeouts also match here but belong in the
+    smaller timeout budget.
+    """
+    try:
+        import httpx
+    except ImportError:  # pragma: no cover - httpx is a hard runtime dependency
+        return isinstance(exc, ConnectionError)
+
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        if isinstance(current, httpx.ConnectError | httpx.TimeoutException):
+            return True
+        seen.add(id(current))
+        current = current.__cause__ or current.__context__
+    return False
+
+
+def _resolve_timeout_attempts(cfg: dict[str, Any]) -> int:
+    """Resolve ``retry.timeout_attempts`` from *cfg*, clamped to the ladder.
+
+    A timed-out request is billed server-side but returns no usage payload, so
+    every timeout retry is untracked overshoot; this budget is therefore
+    smaller than the general attempt budget and is clamped to
+    ``[1, max_attempts]`` (a value above the total attempt count would be
+    meaningless). Defaults to 3 when absent or malformed.
+    """
+    max_attempts = DEFAULT_MAX_RETRIES + 1
+    return max(1, min(_cfg_int(cfg.get("timeout_attempts", 3), 3), max_attempts))
+
+
+def _resolve_call_timeout(cfg: dict[str, Any]) -> float:
+    """Resolve ``retry.call_timeout`` from *cfg*; ``0.0`` means disabled.
+
+    The value bounds the wall clock of ONE ``_invoke_with_retry`` call across
+    all of its attempts (per CALL, not per page: an item that also runs an
+    inline summary may take up to twice this). Accepted values:
+
+    - absent or ``"auto"`` — ``api_timeout * timeout_attempts + 300`` s, the
+      backoff headroom above the timeout budget's own bound. It also catches
+      mixed-classification ladders (alternating timeouts, connection failures
+      and 429 backoffs) that the timeout budget alone would not bound.
+    - ``None``, ``False`` (YAML 1.1 parses a bare ``off`` as boolean false),
+      ``0``, a negative number, or ``"off"``/``"none"``/``"disabled"`` —
+      disabled, restoring the unbounded ladder.
+    - any positive number, or a numeric string — that many seconds.
+    - an unrecognised string falls back to ``auto``; any other type, and any
+      exception while resolving, disables the ceiling.
+    """
+
+    def _auto() -> float:
+        try:
+            api_timeout = float(get_api_timeout())
+        except Exception:
+            api_timeout = 900.0
+        return api_timeout * _resolve_timeout_attempts(cfg) + 300.0
+
+    try:
+        raw = cfg.get("call_timeout", "auto")
+        if raw is None:
+            return 0.0
+        # bool must precede the numeric branch: isinstance(False, int) is True.
+        if isinstance(raw, bool):
+            return _auto() if raw else 0.0
+        if isinstance(raw, int | float):
+            return float(raw) if raw > 0 else 0.0
+        if isinstance(raw, str):
+            text = raw.strip().lower()
+            if text in ("off", "none", "disabled"):
+                return 0.0
+            if text == "auto":
+                return _auto()
+            try:
+                value = float(text)
+            except ValueError:
+                logger.debug("Unrecognised retry.call_timeout %r; using auto", raw)
+                return _auto()
+            return value if value > 0 else 0.0
+        return 0.0
+    except Exception as exc:
+        logger.warning(f"Error resolving retry.call_timeout: {exc}. Disabling.")
+        return 0.0
+
+
+# Retry budget reserved for timeout-class failures specifically (see
+# _resolve_timeout_attempts). Connection failures keep the full ladder.
+TIMEOUT_ATTEMPTS = _resolve_timeout_attempts(_RETRY_CONFIG)
+
+# Wall-clock ceiling (seconds) for one _invoke_with_retry call across every
+# attempt; 0.0 disables it. See _resolve_call_timeout for the value table.
+CALL_TIMEOUT_S = _resolve_call_timeout(_RETRY_CONFIG)
+
 _ANTHROPIC_EFFORT_TO_BUDGET: dict[str, int] = {
     "none": 0,
     "low": 2048,
@@ -416,6 +579,13 @@ class LLMClientBase:
     # bypassing ``__init__``) fall back to legacy attempts-only behavior; the
     # real horizon is assigned from MAX_ELAPSED_S in ``__init__``.
     max_elapsed: float = 0.0
+    # Retry budget reserved for timeout-class failures; 0 means "no separate
+    # budget" so instances built via ``__new__`` keep the full-ladder behavior.
+    # ``__init__`` assigns TIMEOUT_ATTEMPTS.
+    timeout_attempts: int = 0
+    # Wall-clock ceiling (seconds) for one _invoke_with_retry call across all
+    # attempts; 0.0 disables it. ``__init__`` assigns CALL_TIMEOUT_S.
+    call_deadline_s: float = 0.0
     chat_model: BaseChatModel
     successful_requests: int
     failed_requests: int
@@ -460,6 +630,9 @@ class LLMClientBase:
         self.max_retries = max_retries
         # Time-based retry horizon from concurrency.yaml (0 = disabled/legacy).
         self.max_elapsed = MAX_ELAPSED_S
+        # Timeout-specific retry budget and per-call wall-clock ceiling.
+        self.timeout_attempts = TIMEOUT_ATTEMPTS
+        self.call_deadline_s = CALL_TIMEOUT_S
 
         # Create LLM configuration — SDK retries disabled; handled by _invoke_with_retry
         llm_config = LLMConfig(
@@ -1003,10 +1176,22 @@ class LLMClientBase:
     def _classify_error(exc: Exception) -> tuple[bool, str]:
         """Classify an exception as retryable or terminal.
 
+        Order matters and is deliberately NOT status-first: timeout detection
+        runs before the connection check (a timeout is billed, a connection
+        failure is not), and both run before the HTTP status checks so that a
+        gateway timeout carrying a 5xx status (504, 524) lands in the small
+        timeout budget rather than the full server-error budget.
+
         Returns:
             ``(is_retryable, error_type)`` where *error_type* is one of
-            ``"rate_limit"``, ``"server_error"``, ``"timeout"``, or ``"other"``.
+            ``"rate_limit"``, ``"server_error"``, ``"timeout"``,
+            ``"connection"``, or ``"other"``.
         """
+        if _is_timeout_error(exc):
+            return True, "timeout"
+        if _is_connection_error(exc):
+            return True, "connection"
+
         # Check for an HTTP status code on the exception. Providers expose it
         # under different attribute names: OpenAI/Anthropic use ``status_code``;
         # google.genai ``APIError`` carries the numeric HTTP status on ``code``
@@ -1031,7 +1216,7 @@ class LLMClientBase:
         if "timeout" in exc_str or "timed out" in exc_str:
             return True, "timeout"
         if "connection" in exc_str or "connect" in exc_str:
-            return True, "timeout"
+            return True, "connection"
         if "rate" in exc_str and "limit" in exc_str:
             return True, "rate_limit"
         # Google quota exhaustion surfaces as a "RESOURCE_EXHAUSTED" status or a
@@ -1064,8 +1249,8 @@ class LLMClientBase:
 
         Args:
             attempt: Zero-based attempt number.
-            error_type: One of ``"rate_limit"``, ``"server_error"``, ``"timeout"``,
-                ``"other"``.
+            error_type: One of ``"rate_limit"``, ``"server_error"``,
+                ``"timeout"``, ``"connection"``, ``"other"``.
 
         Returns:
             Backoff delay in seconds (<= ``BACKOFF_CAP_S``).
@@ -1167,6 +1352,8 @@ class LLMClientBase:
         Raises:
             Exception: Re-raises the last exception after exhausting retries or on
                 non-retryable errors.
+            CallDeadlineExceeded: When ``self.call_deadline_s`` has already
+                passed at the top of the loop, before any further API call.
 
         Retry horizon (precedence): a retryable error is retried while EITHER
         attempts remain (``attempt < self.max_retries``) OR the time window is
@@ -1176,9 +1363,24 @@ class LLMClientBase:
         restores attempts-only behavior. Each sleep is capped at ``BACKOFF_CAP_S``
         and additionally clamped so it never overshoots the remaining window by
         more than one ``BACKOFF_CAP_S``.
+
+        Two hard bounds sit on top of that OR-semantics:
+
+        - ``self.timeout_attempts`` (0 = disabled) caps how many TIMEOUT-class
+          failures one call may absorb. A timed-out request is billed
+          server-side but reports no usage, so its budget is smaller than the
+          general one; connection failures keep the full ladder.
+        - ``self.call_deadline_s`` (0.0 = disabled) is a wall-clock ceiling
+          across all attempts, checked both before starting an attempt and
+          after each failure, and used to clamp the backoff sleep so a large
+          ``Retry-After`` cannot push the next attempt past it. It bounds the
+          LADDER, not a single hung request: an in-flight attempt is still
+          bounded only by the HTTP read timeout.
         """
         first_attempt_start = time.monotonic()
         max_elapsed = self.max_elapsed
+        call_deadline_s = self.call_deadline_s
+        timeout_failures = 0
         attempt = 0
 
         # Loop exits only via ``return`` (success) or ``raise`` (terminal), so
@@ -1192,6 +1394,19 @@ class LLMClientBase:
                 raise RuntimeError(
                     f"Abort requested; skipping API call for {context_label}"
                 )
+            # Wall-clock ceiling BEFORE the attempt: starting a fresh attempt at
+            # ``deadline - 1s`` would overshoot by a full read timeout. Guarded
+            # on the deadline being enabled so the disabled path makes no extra
+            # time.monotonic() call.
+            if call_deadline_s > 0:
+                elapsed_before = time.monotonic() - first_attempt_start
+                if elapsed_before >= call_deadline_s:
+                    raise CallDeadlineExceeded(
+                        f"{context_label} call watchdog: "
+                        f"{elapsed_before:.0f}s elapsed of a "
+                        f"{call_deadline_s:.0f}s ceiling; not starting another "
+                        "attempt."
+                    )
             # Outside the try: the limiter's wait can return early on abort
             # with the contract that the caller must not fire the call, and a
             # raise from inside the try would be classified (and possibly
@@ -1223,12 +1438,41 @@ class LLMClientBase:
                 )
                 self._report_error(is_rate_signal)
 
-                # Continue while attempts remain OR the time window is still open.
                 elapsed = time.monotonic() - first_attempt_start
+
+                # Timeout-specific budget: a timed-out request has already been
+                # billed server-side but reports no usage, so it may not ride
+                # the full ladder that cheap connection failures get.
+                if error_type == "timeout":
+                    timeout_failures += 1
+                    if (
+                        self.timeout_attempts > 0
+                        and timeout_failures >= self.timeout_attempts
+                    ):
+                        logger.error(
+                            f"Request timeout budget exhausted "
+                            f"({timeout_failures}/{self.timeout_attempts}) for "
+                            f"{context_label} after {elapsed:.1f}s; abandoning."
+                        )
+                        raise
+
+                # Continue while attempts remain OR the time window is still open.
                 attempts_left = attempt < self.max_retries
                 window_open = max_elapsed > 0 and elapsed < max_elapsed
                 if not retryable or not (attempts_left or window_open):
                     raise
+
+                # Hard wall-clock bound overriding the attempts-OR-window
+                # semantics above. Reuses the ``elapsed`` computed here rather
+                # than sampling the clock again.
+                if call_deadline_s > 0 and elapsed >= call_deadline_s:
+                    logger.error(
+                        f"{context_label} call watchdog: {elapsed:.0f}s elapsed "
+                        f"across all attempts (ceiling {call_deadline_s:.0f}s); "
+                        "abandoning."
+                    )
+                    raise
+
                 # Cooperative shutdown: after a KeyboardInterrupt the pipeline
                 # sets the abort event; stop retrying immediately rather than
                 # sleeping out the remaining backoff schedule.
@@ -1245,6 +1489,10 @@ class LLMClientBase:
                 if max_elapsed > 0:
                     remaining = max(0.0, max_elapsed - elapsed)
                     backoff = min(backoff, remaining + BACKOFF_CAP_S)
+                # Applied LAST, after the Retry-After floor and the window
+                # clamp, so neither can push the sleep past the call deadline.
+                if call_deadline_s > 0:
+                    backoff = min(backoff, max(0.0, call_deadline_s - elapsed))
                 logger.warning(
                     f"Retryable {error_type} on attempt {attempt + 1} "
                     f"for {context_label}: {type(e).__name__}. "
@@ -1514,20 +1762,28 @@ class LLMClientBase:
 
         Managers are constructed per item, so an earlier version closed the
         chat model's SDK/httpx clients here to avoid leaking connection pools.
-        That was actively harmful: every langchain provider we use hands its
-        ChatModel an httpx client drawn from a process-wide ``@lru_cache``
-        keyed on (base_url, timeout, socket_options) -- see langchain_openai
-        and langchain_anthropic ``_client_utils`` (``_cached_sync_httpx_client``
-        / ``_get_default_httpx_client``). Every manager built for the same
-        provider therefore SHARES one httpx client. Closing it at the end of
-        item 1 poisoned that shared pool, so item 2+ failed instantly with
-        ``APIConnectionError`` ("Connection error."). langchain_google_genai
-        holds a per-instance ``google.genai`` client with no such cache, but
-        it too needs no per-item teardown: the pool is bounded and dies with
-        the process. Hence closing is both unnecessary and dangerous, and this
-        method now only logs at debug level.
+        That was actively harmful for the providers that pass a SCALAR timeout
+        (anthropic, google): langchain hands their ChatModel an httpx client
+        drawn from a process-wide ``@lru_cache`` keyed on (base_url, timeout,
+        socket_options) -- see langchain_anthropic ``_client_utils``. Every
+        manager built for such a provider SHARES one httpx client, so closing
+        it at the end of item 1 poisoned the pool and item 2+ failed instantly
+        with ``APIConnectionError`` ("Connection error.").
+        langchain_google_genai holds a per-instance ``google.genai`` client
+        with no such cache, but it too needs no per-item teardown: the pool is
+        bounded and dies with the process.
+
+        The sharing premise no longer holds for the OpenAI-family providers
+        (openai, openrouter, custom), which now receive a per-phase
+        ``httpx.Timeout`` object. That object is unhashable, so
+        langchain_openai's cache lookup falls back to building an UNCACHED
+        client per manager; those are closed by the openai SDK's client
+        wrapper on garbage collection, and managers are collected per item, so
+        pools do not accumulate. Either way an explicit close here is
+        unnecessary (and dangerous for the shared case), so this method only
+        logs at debug level.
         """
-        logger.debug("close() is a no-op (provider httpx clients are shared)")
+        logger.debug("close() is a no-op (provider httpx clients need no teardown)")
 
 
 # ============================================================================
@@ -1538,7 +1794,10 @@ class LLMClientBase:
 # ``llm/__init__.py``. It remains importable via ``llm.base.LLMClientBase``
 # for testing.
 __all__ = [
+    "CALL_TIMEOUT_S",
     "DEFAULT_MAX_RETRIES",
+    "TIMEOUT_ATTEMPTS",
+    "CallDeadlineExceeded",
     "abort_requested",
     "clear_abort",
     "request_abort",

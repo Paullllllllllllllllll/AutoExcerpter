@@ -36,6 +36,7 @@ from config.logger import setup_logger
 from llm.capabilities import (
     detect_capabilities,
 )
+from llm.http_timeouts import build_httpx_timeout
 
 logger = setup_logger(__name__)
 
@@ -340,6 +341,20 @@ def get_chat_model(config: LLMConfig) -> BaseChatModel:
         raise ValueError(f"Unsupported provider: {provider}")
 
 
+def _apply_per_phase_timeout(kwargs: dict[str, Any]) -> None:
+    """Rewrite a scalar ``timeout`` in *kwargs* as per-phase httpx budgets.
+
+    Only plain numbers are converted, and the number stays the read budget --
+    so a user override injected through ``LLMConfig.extra_kwargs`` is honored.
+    ``None`` (keep the SDK defaults) and an already per-phase
+    :class:`httpx.Timeout` pass through unchanged.
+    """
+    timeout = kwargs.get("timeout")
+    if isinstance(timeout, bool) or not isinstance(timeout, int | float):
+        return
+    kwargs["timeout"] = build_httpx_timeout(timeout)
+
+
 def _create_openai_model(
     api_key: str,
     kwargs: dict[str, Any],
@@ -360,6 +375,9 @@ def _create_openai_model(
         ) from None
 
     kwargs["api_key"] = api_key
+
+    # Per-phase timeout: a scalar would set connect to `timeout` too.
+    _apply_per_phase_timeout(kwargs)
 
     # Add service tier if specified (OpenAI-specific feature)
     if service_tier:
@@ -427,6 +445,9 @@ def _create_openrouter_model(api_key: str, kwargs: dict[str, Any]) -> BaseChatMo
     kwargs["api_key"] = api_key
     kwargs["base_url"] = SUPPORTED_PROVIDERS["openrouter"]["base_url"]
 
+    # Per-phase timeout: a scalar would set connect to `timeout` too.
+    _apply_per_phase_timeout(kwargs)
+
     # OpenRouter recommends including site info in headers
     default_headers = kwargs.get("default_headers", {})
     default_headers.setdefault("HTTP-Referer", "https://github.com/autoexcerpter")
@@ -453,6 +474,9 @@ def _create_custom_model(
 
     kwargs["api_key"] = api_key
     kwargs["base_url"] = base_url
+
+    # Per-phase timeout: a scalar would set connect to `timeout` too.
+    _apply_per_phase_timeout(kwargs)
 
     logger.debug(f"Creating custom endpoint model: {kwargs.get('model')} at {base_url}")
     return ChatOpenAI(**kwargs)

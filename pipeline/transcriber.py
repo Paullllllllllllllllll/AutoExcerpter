@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import concurrent.futures
+import contextlib
 import logging
 import shutil
 import threading
@@ -52,6 +53,74 @@ from rendering.citations import enrich_if_enabled
 from rendering.summary import build_render_context
 
 logger = setup_logger(__name__)
+
+# Seconds between progress-bar heartbeat ticks.
+_HEARTBEAT_INTERVAL_S = 30.0
+
+# Upper bound (seconds) on the join that stop() performs, so teardown never
+# waits out a full heartbeat interval.
+_HEARTBEAT_JOIN_TIMEOUT_S = 5.0
+
+
+class _ProgressHeartbeat:
+    """Keep a tqdm bar visibly alive while nothing is completing.
+
+    The bar advances only when a page future completes, so a run stuck in a
+    long retry ladder is indistinguishable from a dead one. A daemon thread
+    refreshes the bar on a fixed interval and writes the age of the last
+    completion into its postfix.
+    """
+
+    def __init__(self, pbar: Any, interval: float = _HEARTBEAT_INTERVAL_S) -> None:
+        self._pbar = pbar
+        self._interval = interval
+        self._stop_event = threading.Event()
+        self._last_progress: float | None = None
+        self._thread: threading.Thread | None = None
+
+    def mark_progress(self) -> None:
+        """Record a completion. A float assignment is atomic; no lock needed."""
+        self._last_progress = time.monotonic()
+
+    def start(self) -> None:
+        """Start the daemon tick thread (no-op if already running)."""
+        if self._thread is not None:
+            return
+        self._stop_event.clear()
+        thread = threading.Thread(
+            target=self._run, name="progress-heartbeat", daemon=True
+        )
+        self._thread = thread
+        thread.start()
+
+    def stop(self) -> None:
+        """Stop ticking; waits up to the join timeout for the thread.
+
+        A tick already blocked inside ``refresh()`` (tqdm holds a global
+        lock) may finish after this returns; ``_tick``'s exception
+        suppression makes that harmless even against a closed bar.
+        """
+        self._stop_event.set()
+        thread = self._thread
+        self._thread = None
+        if thread is not None:
+            thread.join(timeout=_HEARTBEAT_JOIN_TIMEOUT_S)
+
+    def _run(self) -> None:
+        # Event-based wait: a set() wakes the thread immediately, unlike sleep.
+        while not self._stop_event.wait(self._interval):
+            self._tick()
+
+    def _tick(self) -> None:
+        last = self._last_progress
+        if last is None:
+            postfix = "no page completed yet"
+        else:
+            postfix = f"last page {int(time.monotonic() - last)}s ago"
+        # A cosmetic bar must never take down a run (e.g. a closed bar).
+        with contextlib.suppress(Exception):
+            self._pbar.set_postfix_str(postfix, refresh=False)
+            self._pbar.refresh()
 
 
 class ItemTranscriber:
@@ -1166,15 +1235,21 @@ class ItemTranscriber:
                         )
                         for idx in pending
                     ]
-                    for future in tqdm(
-                        concurrent.futures.as_completed(futures),
-                        total=len(futures),
-                        desc="Processing images",
-                    ):
-                        # _process_single_page handles its own errors; result()
-                        # only re-raises a truly unexpected failure, which we let
-                        # propagate to the finally (deterministic shutdown).
-                        future.result()
+                    with tqdm(total=len(futures), desc="Processing images") as pbar:
+                        heartbeat = _ProgressHeartbeat(pbar)
+                        heartbeat.start()
+                        try:
+                            for future in concurrent.futures.as_completed(futures):
+                                # _process_single_page handles its own errors;
+                                # result() only re-raises a truly unexpected
+                                # failure, which we let propagate to the finally
+                                # (deterministic shutdown).
+                                future.result()
+                                heartbeat.mark_progress()
+                                pbar.update(1)
+                        finally:
+                            # Also covers the KeyboardInterrupt/abort paths.
+                            heartbeat.stop()
 
                     if not self._budget_exhausted.is_set():
                         break

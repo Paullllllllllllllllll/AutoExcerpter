@@ -1,4 +1,4 @@
-# AutoExcerpter v2.3.7
+# AutoExcerpter v2.4.0
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -486,7 +486,10 @@ transcription_model:
 
 ```yaml
 api_requests:
-  api_timeout: 900           # pairs with flex-tier queuing
+  api_timeout: 900           # read budget per attempt; pairs with flex queuing
+  connect_timeout: 10        # per-phase HTTP timeouts (OpenAI-family only)
+  write_timeout: 30
+  pool_timeout: 30
   rate_limits:
     - [10, 1]
     - [600, 60]
@@ -500,12 +503,15 @@ api_requests:
 
 retry:
   max_attempts: 8
+  timeout_attempts: 3        # smaller budget for timeout-class failures
+  call_timeout: auto         # wall-clock ceiling per call across all retries
   max_elapsed: 900           # time-based retry horizon (s); 0 = attempts-only
   backoff_base: 0.5
   backoff_cap: 120           # ceiling (s) on any single wait
   backoff_multipliers:
     rate_limit: 2.0
     timeout: 1.5
+    connection: 1.5
     server_error: 2.0
     other: 2.0
   jitter: { min: 0.5, max: 1.0 }
@@ -518,6 +524,35 @@ retry:
     summary:
       validation_failure: { enabled: true, max_attempts: 3 }
 ```
+
+**HTTP timeouts are per phase** for the OpenAI-family clients
+(openai, openrouter, custom): `api_timeout` is the read budget,
+while `connect_timeout`, `write_timeout`, and `pool_timeout`
+(defaults 10/30/30 s) bound the other phases. A scalar would give
+every phase the full read budget. Anthropic and Google keep a plain
+float -- their LangChain wrappers require it.
+
+**Timeout budget and call watchdog:** `timeout_attempts` (default 3,
+capped at `max_attempts`) reserves a smaller retry budget for
+timeout-class failures, since a timed-out request is billed
+server-side but returns no usage payload; connection errors keep the
+full budget. `call_timeout` is a wall-clock ceiling for ONE API call
+across all retry attempts -- `auto` sets it to
+`api_timeout x timeout_attempts` plus 300 s of backoff headroom
+(3000 s at the defaults), `"off"` or `0` disables it, a number
+sets explicit seconds. It bounds the retry ladder, not a hung
+in-flight attempt; without it the worst case per call is
+`max_attempts x api_timeout` (2 hours). The trade-off: 3000 s can
+abort a slow-but-progressing flex or rate-limit ladder, whose pages
+then degrade to error entries and are re-run by resume at full cost.
+
+**Windows note:** langchain-openai applies a default `SO_KEEPALIVE` +
+`TCP_USER_TIMEOUT` socket profile (~90-120 s dead-peer bound, tunable
+via `LANGCHAIN_OPENAI_TCP_*` env vars), but `TCP_USER_TIMEOUT` is
+unavailable on win32 (keepalive only). On Windows the read timeout and
+the `call_timeout` watchdog are therefore the primary stall detectors
+-- keep `api_timeout` tight (120-300 s) outside the `flex` service
+tier.
 
 **Three retry layers** operate in sequence: (1) API errors
 (rate limits, timeouts, server errors) with exponential backoff
@@ -741,6 +776,7 @@ AutoExcerpter/
 │       └── api_keys.example.yaml
 ├── llm/                             # LLM client layer
 │   ├── client.py                    # Model factory (LLMConfig, get_chat_model)
+│   ├── http_timeouts.py             # Per-phase httpx timeouts (OpenAI family)
 │   ├── base.py                      # Shared retry, token tracking, capability guard
 │   ├── capabilities.py              # Provider/model capability registry
 │   ├── rate_limit.py                # Sliding-window rate limiter
@@ -843,6 +879,24 @@ a single baseline commit at v1.0.0 on 25 April 2026; version numbers before
 v1.0.0 do not exist.
 
 ## Changelog
+
+- **v2.4.0** (13 August 2026) -- Request-stall hardening. The OpenAI-family
+  clients (openai, openrouter, custom) now receive per-phase HTTP timeouts
+  (`connect_timeout`/`write_timeout`/`pool_timeout`, defaults 10/30/30 s)
+  instead of a scalar that silently set the connect timeout to the full
+  900 s read budget; timeout failures get their own smaller retry budget
+  (`retry.timeout_attempts`, default 3) because a timed-out request is
+  billed server-side without a usage payload, while connection errors are
+  now classified separately and keep the full budget with unchanged
+  backoff; a wall-clock call watchdog (`retry.call_timeout`, default
+  `auto` = 3000 s) bounds the retry ladder so one stalled call can no
+  longer park a worker for hours; and the page progress bar gains a
+  heartbeat thread that keeps refreshing with the age of the last
+  completed page, so a stalled run reads as alive-but-stuck instead of
+  frozen. Error classification is now isinstance-based over the exception
+  cause chain rather than substring matching. All new config keys default
+  safely when absent; `httpx` is now an explicit dependency. 2,154 tests
+  pass; ruff and mypy clean.
 
 - **v2.3.7** (4 August 2026) -- Security hygiene from the weekly sweep: the
   ignore rules now cover every `.env*` spelling, so a local environment file

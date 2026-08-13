@@ -89,9 +89,10 @@ wheels = [
 
 [[package]]
 name = "autoexcerpter"
-version = "2.3.7"
+version = "2.4.0"
 source = { editable = "." }
 dependencies = [
+    { name = "httpx" },
     { name = "langchain-anthropic" },
     { name = "langchain-core" },
     { name = "langchain-google-genai" },
@@ -119,6 +120,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "httpx", specifier = ">=0.28.1" },
     { name = "langchain-anthropic", specifier = ">=1.4" },
     { name = "langchain-core", specifier = ">=1.4" },
     { name = "langchain-google-genai", specifier = ">=4.2" },

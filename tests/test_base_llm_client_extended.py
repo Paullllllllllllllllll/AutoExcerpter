@@ -15,7 +15,8 @@ This file complements test_base_llm_client.py by covering:
 - _build_invoke_kwargs() — reasoning, text verbosity, provider-specific keys
 - _report_token_usage() — missing metadata, fallback to input+output tokens
 - _extract_tokens_from_exception() — body.usage, response.json, no-op, never raises
-- _classify_error() — retryable vs terminal errors
+- _classify_error() — retryable vs terminal errors (timeout and connection are
+  separate classes; see tests/test_retry_timeout_budget.py for the full matrix)
 - _calculate_backoff() — uses config multipliers
 - _invoke_with_retry() — retries, token tracking, non-retryable errors
 """
@@ -1461,11 +1462,12 @@ class TestClassifyError:
         assert error_type == "timeout"
 
     def test_connection_error(self) -> None:
-        """Connection error -> retryable timeout."""
+        """Connection error -> retryable connection (its own class since the
+        timeout/connection split; connection failures keep the full ladder)."""
         exc = ConnectionError("Connection refused")
         retryable, error_type = LLMClientBase._classify_error(exc)
         assert retryable is True
-        assert error_type == "timeout"
+        assert error_type == "connection"
 
     def test_overloaded_message(self) -> None:
         """'overloaded' in message -> retryable server_error."""
