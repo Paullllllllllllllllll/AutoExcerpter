@@ -1,4 +1,4 @@
-# AutoExcerpter v2.4.0
+# AutoExcerpter v2.4.1
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -879,6 +879,13 @@ a single baseline commit at v1.0.0 on 25 April 2026; version numbers before
 v1.0.0 do not exist.
 
 ## Changelog
+
+- **v2.4.1** (15 August 2026) -- Security patch for a transitive dependency.
+  The lockfile now pins cryptography 50.0.0, which closes CVE-2026-69247
+  in the 49.x series; the dependency reaches the project through the
+  authentication stack rather than being declared directly, so no
+  `pyproject.toml` constraint changed. The full test suite passes
+  unchanged against the new resolution.
 
 - **v2.4.0** (13 August 2026) -- Request-stall hardening. The OpenAI-family
   clients (openai, openrouter, custom) now receive per-phase HTTP timeouts
