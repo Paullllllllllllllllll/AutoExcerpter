@@ -1099,33 +1099,38 @@ class TestInferenceDocstringMatchesBehavior:
         assert "same" in doc
 
 
-class TestSectionMedianOrdering:
-    """Tests for section-median final ordering."""
+class TestPhysicalScanOrdering:
+    """Pages are emitted in physical scan order, never regrouped by section."""
 
     @pytest.fixture
     def processor(self) -> PageNumberProcessor:
         return PageNumberProcessor()
 
-    def _page(self, original_index: int, page_types: list[str]) -> dict[str, Any]:
+    def _page(
+        self,
+        original_index: int,
+        page_types: list[str],
+        page_number: int | None = None,
+        page_number_type: str = "none",
+    ) -> dict[str, Any]:
         return {
             "original_input_order_index": original_index,
             "page_information": {
-                "page_number_integer": None,
+                "page_number_integer": page_number,
                 "is_two_page_spread": False,
                 "page_number_integer_end": None,
-                "page_number_type": "none",
+                "page_number_type": page_number_type,
                 "page_types": page_types,
             },
             "bullet_points": ["bp"],
         }
 
-    def test_straggler_grouped_with_section(self, processor) -> None:
-        """A straggler page groups with its section, keeping in-section scan order.
+    def test_scattered_section_keeps_physical_position(self, processor) -> None:
+        """An interleaved apparatus page stays where it was scanned.
 
-        Appendix pages sit mostly at indices 10-12 with a single straggler at
-        index 0. The section median (10.5) keeps appendix ordered AFTER content
-        (median 5), even though a min-based rank would wrongly float appendix
-        first. In-section scan order is preserved.
+        A page classified ``appendix`` at index 0 sits before the content run;
+        section grouping would relocate it into the trailing appendix block,
+        displacing every content page. It must render at index 0.
         """
         summary_results = [self._page(0, ["appendix"])]
         summary_results += [self._page(i, ["content"]) for i in range(1, 10)]
@@ -1134,4 +1139,57 @@ class TestSectionMedianOrdering:
         result = processor.adjust_and_sort_page_numbers(summary_results)
 
         order = [r["original_input_order_index"] for r in result]
-        assert order == [1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 10, 11, 12]
+        assert order == list(range(13))
+
+    def test_interleaved_figure_pages_stay_in_place(self, processor) -> None:
+        """Figure pages scattered through the body do not form a leading block."""
+        summary_results = [
+            self._page(i, ["content"], i + 1, "arabic") for i in range(0, 3)
+        ]
+        summary_results.append(self._page(3, ["figures_tables_sources"], 4, "arabic"))
+        summary_results += [
+            self._page(i, ["content"], i + 1, "arabic") for i in range(4, 7)
+        ]
+        summary_results.append(self._page(7, ["figures_tables_sources"], 8, "arabic"))
+
+        result = processor.adjust_and_sort_page_numbers(summary_results)
+
+        order = [r["original_input_order_index"] for r in result]
+        assert order == list(range(8))
+
+    def test_interleaved_figure_page_takes_content_page_number(self, processor) -> None:
+        """A plate between pages 31 and 33 is page 32, not a section of its own.
+
+        Its own pseudo-section would anchor on its (mis-read) number and
+        renumber it into an invented sequence.
+        """
+        summary_results = [
+            self._page(i, ["content"], 29 + i, "arabic") for i in range(0, 3)
+        ]
+        # Model mis-reads the plate's number as 52 and mis-types it as roman.
+        summary_results.append(self._page(3, ["figures_tables_sources"], 52, "roman"))
+        summary_results += [
+            self._page(i, ["content"], 29 + i, "arabic") for i in range(4, 7)
+        ]
+
+        result = processor.adjust_and_sort_page_numbers(summary_results)
+
+        plate = result[3]["page_information"]
+        assert plate["page_number_integer"] == 32
+        assert plate["page_number_type"] == "arabic"
+
+    def test_anchor_numbering_type_overrides_model_type(self, processor) -> None:
+        """A roman-typed page inside an arabic run adopts the anchor's type."""
+        summary_results = [
+            self._page(i, ["content"], 90 + i, "arabic") for i in range(0, 3)
+        ]
+        summary_results.append(self._page(3, ["content"], 11, "roman"))
+        summary_results += [
+            self._page(i, ["content"], 90 + i, "arabic") for i in range(4, 6)
+        ]
+
+        result = processor.adjust_and_sort_page_numbers(summary_results)
+
+        page = result[3]["page_information"]
+        assert page["page_number_integer"] == 93
+        assert page["page_number_type"] == "arabic"

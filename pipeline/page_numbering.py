@@ -5,17 +5,20 @@ documents with mixed Roman numeral (preface) and Arabic (main text) numbering.
 
 The key algorithm is per-section anchor-based adjustment:
 1. Group pages by section type (content, preface, abstract, appendix, etc.)
-
 2. For each section, find the longest consecutive sequence of model-detected page
    numbers
 3. Use that sequence as the anchor and adjust all pages in that section accordingly
 4. Conservatively infer page numbers for isolated unnumbered pages between numbered
    pages
+
+Sections scope page-number anchors only. Pages are always emitted in physical
+scan order: tables, per-chapter bibliographies and part titles are interleaved
+with the running text in real books, so relocating a section tears the document
+apart.
 """
 
 from __future__ import annotations
 
-from statistics import median
 from typing import Any
 
 from config.logger import setup_logger
@@ -375,6 +378,14 @@ class PageNumberProcessor:
         if "content" in page_types:
             return "content"
 
+        # Pure table/figure/source pages carry the printed page number of the
+        # text they sit in -- a plate between pages 31 and 33 is page 32 -- and
+        # they are scattered through the body rather than forming a block. Give
+        # them the content anchor instead of a pseudo-section of their own,
+        # whose anchor would renumber them into a sequence of its own invention.
+        if page_types == ["figures_tables_sources"]:
+            return "content"
+
         # For non-content pages, use priority order
         priority_order = ["preface", "abstract", "appendix", "figures_tables_sources"]
         for section in priority_order:
@@ -382,18 +393,17 @@ class PageNumberProcessor:
                 return section
         # Failed ("other") and blank pages are unnumbered placeholders; fold
         # them into the content flow instead of minting singleton
-        # pseudo-sections, which the section-median sort would relocate to
-        # the end of the document -- the summary renders their placeholder
-        # "in place" only if they keep their physical position. Real unknown
-        # sections (e.g. a numbered "toc") keep their own pseudo-section so
-        # the content anchor cannot renumber them.
+        # pseudo-sections, which would each get their own (absent) anchor and
+        # fall back to a physical-position number. Real unknown sections
+        # (e.g. a numbered "toc") keep their own pseudo-section so the content
+        # anchor cannot renumber them.
         if page_types and all(pt in ("other", "blank") for pt in page_types):
             return "content"
         return page_types[0] if page_types else "content"
 
     def _find_section_anchor(
         self, section_pages: list[dict[str, Any]]
-    ) -> tuple[int | None, int | None]:
+    ) -> tuple[int | None, int | None, str | None]:
         """
         Find the anchor point for a section based on longest consecutive sequence.
 
@@ -402,11 +412,11 @@ class PageNumberProcessor:
                 (sorted by doc order).
 
         Returns:
-            Tuple of (anchor_page_number, anchor_virtual_pos)
-            or (None, None) if no anchor.
+            Tuple of (anchor_page_number, anchor_virtual_pos, anchor_number_type)
+            or (None, None, None) if no anchor.
         """
         if not section_pages:
-            return None, None
+            return None, None, None
 
         # Get only pages with valid page numbers (not unnumbered)
         numbered_pages = [
@@ -417,26 +427,21 @@ class PageNumberProcessor:
         ]
 
         if not numbered_pages:
-            return None, None
+            return None, None, None
 
         # Find longest consecutive sequence
         longest_seq = self.find_longest_consecutive_sequence(numbered_pages)
 
         if longest_seq and len(longest_seq) >= MIN_SEQUENCE_LENGTH_FOR_ANCHOR:
             anchor_item = longest_seq[0]
-            return (
-                anchor_item["model_page_number_int"],
-                anchor_item["virtual_pos"],
-            )
-        elif numbered_pages:
+        else:
             # Fallback to first numbered page
             anchor_item = numbered_pages[0]
-            return (
-                anchor_item["model_page_number_int"],
-                anchor_item["virtual_pos"],
-            )
-
-        return None, None
+        return (
+            anchor_item["model_page_number_int"],
+            anchor_item["virtual_pos"],
+            anchor_item["page_number_type"],
+        )
 
     def adjust_and_sort_page_numbers(
         self, summary_results: list[dict[str, Any]]
@@ -513,12 +518,14 @@ class PageNumberProcessor:
         )
 
         # Find anchor for each section
-        section_anchors: dict[str, tuple[int | None, int | None]] = {}
+        section_anchors: dict[str, tuple[int | None, int | None, str | None]] = {}
         for section, pages in section_groups.items():
             # Sort section pages by document order
             pages.sort(key=lambda x: x["original_input_order_index"])
-            anchor_page, anchor_virtual_pos = self._find_section_anchor(pages)
-            section_anchors[section] = (anchor_page, anchor_virtual_pos)
+            anchor_page, anchor_virtual_pos, anchor_type = self._find_section_anchor(
+                pages
+            )
+            section_anchors[section] = (anchor_page, anchor_virtual_pos, anchor_type)
             if anchor_page is not None:
                 logger.info(
                     f"Section '{section}' anchor: page {anchor_page} "
@@ -560,8 +567,8 @@ class PageNumberProcessor:
             page_info["is_two_page_spread"] = is_spread
 
             # Get section anchor
-            anchor_page, anchor_virtual_pos = section_anchors.get(
-                primary_section, (None, None)
+            anchor_page, anchor_virtual_pos, anchor_type = section_anchors.get(
+                primary_section, (None, None, None)
             )
 
             resolved_page: int | None
@@ -583,9 +590,13 @@ class PageNumberProcessor:
                 else:
                     resolved_page = adjusted_page
                     page_info["page_number_integer"] = adjusted_page
-                    # Preserve original number type (roman/arabic) from model
+                    # The number was derived from the section anchor, so it is
+                    # expressed in the anchor's numbering system. Keeping the
+                    # model's own type would render an arabic-derived number as
+                    # a roman numeral ("Page xciii" between 92 and 94).
+                    resolved_type = anchor_type or page_num_type
                     page_info["page_number_type"] = (
-                        page_num_type if page_num_type != "none" else "arabic"
+                        resolved_type if resolved_type != "none" else "arabic"
                     )
             else:
                 # No anchor available - prefer a model- or inference-set page
@@ -595,11 +606,15 @@ class PageNumberProcessor:
                 model_page = p["model_page_number_int"]
                 if isinstance(model_page, int) and model_page >= 1:
                     resolved_page = model_page
+                    resolved_type = page_num_type
                 else:
+                    # A physical position is an arabic count whatever the model
+                    # reported, so it must not render as a roman numeral.
                     resolved_page = p["virtual_pos"] + 1
+                    resolved_type = "arabic"
                 page_info["page_number_integer"] = resolved_page
                 page_info["page_number_type"] = (
-                    page_num_type if page_num_type != "none" else "arabic"
+                    resolved_type if resolved_type != "none" else "arabic"
                 )
 
             # Record the spread end page (right page) when numbered.
@@ -611,21 +626,11 @@ class PageNumberProcessor:
             # Preserve page_types from the model
             page_info["page_types"] = content_page_types
 
-        # Order sections by the MEDIAN original input index of their pages so a
-        # single misclassified straggler cannot reorder a whole section; break
-        # ties by the section's minimum index. Within a section, keep physical
-        # scan order (original_input_order_index).
-        section_rank: dict[str, tuple[float, int]] = {}
-        for section, pages in section_groups.items():
-            indices = [p["original_input_order_index"] for p in pages]
-            section_rank[section] = (median(indices), min(indices))
-
-        parsed_summaries.sort(
-            key=lambda p: (
-                section_rank[p["primary_section"]],
-                p["original_input_order_index"],
-            )
-        )
+        # Emit strictly in physical scan order. Sections exist to scope page
+        # number anchors, not to reorder the document: apparatus pages (tables,
+        # per-chapter bibliographies, part titles) are interleaved with the
+        # running text in real books, so grouping them displaces the prose.
+        parsed_summaries.sort(key=lambda p: p["original_input_order_index"])
         final_ordered_summaries = [p["data"] for p in parsed_summaries]
 
         # Log final page number distribution for debugging

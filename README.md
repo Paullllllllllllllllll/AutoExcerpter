@@ -1,4 +1,4 @@
-# AutoExcerpter v2.4.1
+# AutoExcerpter v2.5.0
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -73,7 +73,7 @@ bullet-point summaries per page; automatic exclusion of
 non-semantic pages (title pages, blanks, reference lists);
 page-number tracking from document headers/footers, including
 two-page-spread scans rendered as page ranges ("Pages 13-14");
-section-grouped page ordering in the final summary; dual output
+physical scan-order page listing in the final summary; dual output
 (DOCX + Markdown); hierarchical context system for topic-focused
 summarization.
 
@@ -879,6 +879,32 @@ a single baseline commit at v1.0.0 on 25 April 2026; version numbers before
 v1.0.0 do not exist.
 
 ## Changelog
+
+- **v2.5.0** (29 August 2026) -- Summary page ordering and numbering fixes.
+  Pages are now emitted in physical scan order. Previously they were
+  grouped by section type and the sections ordered by their median
+  document position, which assumed each section occupies one contiguous
+  block; in real books tables, plates, part titles and per-chapter
+  bibliographies are interleaved with the running text, so whole blocks
+  were torn out and stacked ahead of the prose (in one 632-page monograph
+  every page moved, the worst by 619 positions, and the summary opened
+  with 66 scattered table pages before reaching page 2). Sections retain
+  their documented role of scoping page-number anchors. A section
+  restricted to a contiguous run has its median inside that run, so it
+  would sort into physical order anyway -- the old sort could therefore
+  only ever differ from physical order in exactly the cases where it was
+  wrong. Pages typed solely `figures_tables_sources` now take the content
+  anchor rather than forming a pseudo-section that renumbered them into a
+  sequence of its own invention (a plate between pages 31 and 33 is page
+  32, not page 52). An anchored page also adopts its anchor's numbering
+  type, since the resolved number is expressed in the anchor's system;
+  keeping the model's own type rendered arabic-derived numbers as roman
+  numerals ("Page xciii" between 92 and 94). The no-anchor fallback to a
+  physical position is likewise always arabic. The summary system prompt
+  additionally now asks for condensed rather than restated bullets while
+  keeping its coverage guarantee explicit, which brought the measured
+  summary-to-page length ratio down from about 62 percent to 32-43
+  percent without dropping content.
 
 - **v2.4.1** (15 August 2026) -- Security patch for a transitive dependency.
   The lockfile now pins cryptography 50.0.0, which closes CVE-2026-69247
