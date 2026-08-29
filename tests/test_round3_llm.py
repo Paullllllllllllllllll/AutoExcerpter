@@ -459,7 +459,12 @@ class TestSummaryComprehensiveness:
             text = f.read()
         assert "{{SCHEMA}}" in text
         assert "{{CONTEXT}}" in text
-        assert "comprehensive" in text.lower()
+        # The prompt asks for condensed bullets, so it must still guarantee
+        # coverage explicitly or the model will start dropping content.
+        lowered = text.lower()
+        assert "completeness matters" in lowered
+        assert "every substantive claim" in lowered
+        assert "never omitted entirely" in lowered
 
     def test_plain_text_prompt_aligned(self) -> None:
         path = (PROMPTS_DIR / "summary_plain_text_prompt.txt").resolve()
