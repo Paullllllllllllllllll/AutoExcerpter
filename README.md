@@ -1,4 +1,4 @@
-# AutoExcerpter v2.5.0
+# AutoExcerpter v2.5.1
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -879,6 +879,26 @@ a single baseline commit at v1.0.0 on 25 April 2026; version numbers before
 v1.0.0 do not exist.
 
 ## Changelog
+
+- **v2.5.1** (29 August 2026) -- Test isolation and diagnostics. The
+  `mock_api_keys` fixture stubbed only `OPENAI_API_KEY`, but the auto
+  key-switcher rewrites the `openai:` mapping in `api_keys.yaml` at
+  runtime, so two client tests resolved whichever key the last real run
+  left active -- reading a live key out of the environment and printing it
+  in assertion output. Every key in the switch ladder is now stubbed, and
+  the two affected tests pin the provider mapping the way their siblings
+  already did. Page numbering gained diagnostics rather than behavior
+  changes: the final-numbering log is a range summary instead of a
+  per-page list that ran to hundreds of entries on a monograph (the full
+  sequence moved to DEBUG), a page voided by an out-of-range anchor now
+  logs why, and `page_number_integer_end` is coerced like the start number
+  so the public return cannot hand back a raw string. The bundled model
+  template now recommends gpt-5.6-terra at high reasoning effort for both
+  stages, on accuracy grounds: a lower effort tier is weakest on tables,
+  footnote apparatus, running heads, and page numbers, which are exactly
+  the inputs page ordering and citation extraction depend on. The template
+  also drops its stale advice to pair the flex service tier's 900 s
+  timeout with the default tier.
 
 - **v2.5.0** (29 August 2026) -- Summary page ordering and numbering fixes.
   Pages are now emitted in physical scan order. Previously they were

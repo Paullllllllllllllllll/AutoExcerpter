@@ -196,7 +196,12 @@ class TestGetApiKey:
 
     def test_uses_env_variable(self, mock_api_keys) -> None:
         """Uses environment variable when no key provided."""
-        result = _get_api_key("openai", None)
+        # Pin the provider mapping: api_keys.yaml is rewritten at runtime by
+        # the key switcher, so an unpinned lookup resolves whichever key the
+        # last real run left active rather than the default env var.
+        with patch("config.loader.get_config_loader") as mock_loader:
+            mock_loader.return_value.get_api_keys_config.return_value = {}
+            result = _get_api_key("openai", None)
         assert result == "test-openai-key"
 
     def test_raises_on_missing_key(self) -> None:
@@ -308,8 +313,13 @@ class TestGetChatModel:
 
     def test_creates_openai_model(self, mock_api_keys) -> None:
         """Creates OpenAI model with correct class."""
-        with patch("langchain_openai.ChatOpenAI") as mock_class:
+        with (
+            patch("langchain_openai.ChatOpenAI") as mock_class,
+            patch("config.loader.get_config_loader") as mock_loader,
+        ):
             mock_class.return_value = MagicMock()
+            # Pin the provider mapping; see test_uses_env_variable.
+            mock_loader.return_value.get_api_keys_config.return_value = {}
 
             config = LLMConfig(model="gpt-5-mini", provider="openai")
             get_chat_model(config)

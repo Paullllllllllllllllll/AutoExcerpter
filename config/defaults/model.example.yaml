@@ -29,11 +29,22 @@
 # Transcription Model
 # =============================================================================
 # Used for OCR/image-to-text conversion
-# Recommended configuration for best processing results: gpt-5.6-luna at
-# reasoning effort high with image_size: original (plus flex service tier and
-# the 900 s timeout in concurrency.yaml).
+# Recommended configuration for best processing results: gpt-5.6-terra at
+# reasoning effort high with image_size: original.
+#
+# terra @ high is recommended for every document, formula-heavy or not.
+# Routing prose-only works to a lower reasoning effort saves little and
+# costs accuracy exactly where transcription is hardest: tables, footnote
+# apparatus, running heads, and page numbers. Those feed page ordering and
+# citation extraction downstream, where an error is expensive to detect
+# and expensive to repair.
+#
+# Service tier: use `default` (concurrency.yaml). `flex` queues, and it
+# only works with a long read timeout; pairing flex's 900 s timeout with
+# the default tier lets a stalled request hang for 15 minutes before the
+# retry ladder notices. Outside flex keep api_timeout at 120-300 s.
 transcription_model:
-  name: "gpt-5.6-luna"
+  name: "gpt-5.6-terra"
   provider: "openai"
   max_output_tokens: 128000
   reasoning:
@@ -51,8 +62,14 @@ transcription_model:
 # Summary Model
 # =============================================================================
 # Used for generating structured summaries from transcriptions
+#
+# terra @ high here too, matching the transcription tier. Summarization
+# decides page classification, page-number reading, and citation
+# extraction; all three feed the rendered summary and are expensive to get
+# wrong. Keep verbosity low -- concision belongs in the prompt, not in
+# starving the model of reasoning.
 summary_model:
-  name: "gpt-5.6-luna"
+  name: "gpt-5.6-terra"
   provider: "openai"
   max_output_tokens: 128000
   reasoning:

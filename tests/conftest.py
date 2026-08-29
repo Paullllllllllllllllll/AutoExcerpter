@@ -292,7 +292,14 @@ def mock_openalex_response() -> dict[str, Any]:
 # ============================================================================
 @pytest.fixture
 def mock_api_keys() -> Generator[None]:
-    """Set up mock API keys for testing."""
+    """Set up mock API keys for testing.
+
+    Every key in the auto-switch ladder is stubbed, not just the first.
+    ``api_keys.yaml`` is rewritten at runtime by the key switcher, so a test
+    that does not pin the provider mapping resolves whichever key the last
+    real run left active; stubbing only OPENAI_API_KEY let a live key be
+    read from the developer's environment and printed in assertion output.
+    """
     with patch.dict(
         os.environ,
         {
@@ -300,8 +307,13 @@ def mock_api_keys() -> Generator[None]:
             "ANTHROPIC_API_KEY": "test-anthropic-key",
             "GOOGLE_API_KEY": "test-google-key",
             "OPENROUTER_API_KEY": "test-openrouter-key",
-            # Alternate key for testing api_keys.yaml provider remapping.
+            # Alternate keys: OPENAI_API_KEY_2 backs the api_keys.yaml
+            # remapping tests; the rest exist so no real key can leak in.
             "OPENAI_API_KEY_2": "test-openai-key-2",
+            "OPENAI_API_KEY_3": "test-openai-key-3",
+            "OPENAI_API_KEY_4": "test-openai-key-4",
+            "OPENAI_API_KEY_5": "test-openai-key-5",
+            "OPENAI_API_KEY_6": "test-openai-key-6",
         },
     ):
         yield

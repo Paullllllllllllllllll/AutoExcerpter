@@ -116,7 +116,11 @@ class PageNumberProcessor:
                 page_number_type = "none"
 
             is_two_page_spread = bool(page_info_obj.get("is_two_page_spread", False))
-            page_number_integer_end = page_info_obj.get("page_number_integer_end")
+            # Coerce like the start number: structured output can yield a
+            # string here too, and this value is part of the public return.
+            page_number_integer_end = _coerce_page_number(
+                page_info_obj.get("page_number_integer_end")
+            )
 
         # Normalize the end page number against the spread flag.
         if is_two_page_spread and isinstance(model_page_num, int):
@@ -583,7 +587,17 @@ class PageNumberProcessor:
                     p["virtual_pos"], anchor_page, anchor_virtual_pos
                 )
                 if adjusted_page < 1:
-                    # Invalid page number - mark as unnumbered
+                    # Invalid page number - mark as unnumbered. Worth a trace:
+                    # an anchor sitting far downstream of a leading section
+                    # blanks that whole section's numbering this way.
+                    logger.debug(
+                        "Page at index %s in section '%s' resolved to %s "
+                        "(< 1) from anchor %s; marking unnumbered",
+                        p["original_input_order_index"],
+                        primary_section,
+                        adjusted_page,
+                        anchor_page,
+                    )
                     resolved_page = None
                     page_info["page_number_integer"] = None
                     page_info["page_number_type"] = "none"
@@ -633,11 +647,21 @@ class PageNumberProcessor:
         parsed_summaries.sort(key=lambda p: p["original_input_order_index"])
         final_ordered_summaries = [p["data"] for p in parsed_summaries]
 
-        # Log final page number distribution for debugging
+        # Summarize the final numbering rather than dumping every page: a
+        # 600-page monograph would otherwise emit one enormous INFO record.
         page_nums = [
             f.get("page_information", {}).get("page_number_integer")
             for f in final_ordered_summaries
         ]
-        logger.info(f"Final page numbers: {page_nums}")
+        numbered = [n for n in page_nums if isinstance(n, int)]
+        logger.info(
+            "Final page numbers: %d page(s), %d numbered (%s-%s), %d unnumbered",
+            len(page_nums),
+            len(numbered),
+            min(numbered) if numbered else "-",
+            max(numbered) if numbered else "-",
+            len(page_nums) - len(numbered),
+        )
+        logger.debug("Final page number sequence: %s", page_nums)
 
         return final_ordered_summaries
