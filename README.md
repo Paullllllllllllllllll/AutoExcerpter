@@ -1,4 +1,4 @@
-# AutoExcerpter v2.5.1
+# AutoExcerpter v2.5.2
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -880,6 +880,14 @@ v1.0.0 do not exist.
 
 ## Changelog
 
+- **v2.5.2** (31 August 2026) -- Lower the default transcription
+  `concurrency_limit` from 80 to 16. Running many requests in parallel
+  raises per-request latency until calls exceed `api_timeout` and pages
+  fail with "Request timed out" rather than being retried. In one
+  measured run, changing only this value, a 27-page item went from 5 of
+  27 pages transcribed at roughly 183s per call to 27 of 27 at roughly
+  17s. A timed-out request is still billed but reports no usage, so that
+  spend never reaches the token accounting.
 - **v2.5.1** (29 August 2026) -- Test isolation and diagnostics. The
   `mock_api_keys` fixture stubbed only `OPENAI_API_KEY`, but the auto
   key-switcher rewrites the `openai:` mapping in `api_keys.yaml` at

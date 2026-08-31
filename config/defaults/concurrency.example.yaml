@@ -52,7 +52,11 @@ api_requests:
   # Transcription Phase
   # ---------------------------------------------------------------------------
   transcription:
-    concurrency_limit: 80  # Parallel API requests (recommended for OpenAI tier 3)
+    # Parallel API requests. Keep this between 12 and 24. Higher values raise
+    # queueing latency until calls exceed api_timeout and pages fail with
+    # "Request timed out". A timed-out request is still billed but reports no
+    # usage, so that spend is never counted.
+    concurrency_limit: 16
 
     # OpenAI service tier: 'default' | 'flex' | 'priority'
     # flex = cheaper but may queue; priority = fastest but expensive
