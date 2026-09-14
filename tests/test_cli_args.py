@@ -633,7 +633,7 @@ class TestConstants:
     def test_reasoning_effort_choices(self) -> None:
         """Regression (AE-3): the CLI accepts the full supported effort set
         documented in model.yaml and handled by llm/base.py, including
-        'none' (GPT-5.2+ default) and 'xhigh'."""
+        'none' (GPT-5.2+ default), 'xhigh', and 'max'."""
         assert REASONING_EFFORT_CHOICES == (
             "none",
             "minimal",
@@ -641,6 +641,7 @@ class TestConstants:
             "medium",
             "high",
             "xhigh",
+            "max",
         )
 
     def test_verbosity_choices(self) -> None:

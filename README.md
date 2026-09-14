@@ -1,4 +1,4 @@
-# AutoExcerpter v2.5.2
+# AutoExcerpter v2.6.0
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -880,6 +880,12 @@ v1.0.0 do not exist.
 
 ## Changelog
 
+- **v2.6.0** (14 September 2026) -- Register `claude-opus-5`,
+  `gemini-3.7-flash`, and `gemini-3.6-flash` in the capability registry
+  with adaptive thinking and no sampler parameters, so requests naming
+  them no longer fall through to the provider defaults and send
+  parameters the models reject; accept `max` as a reasoning-effort level
+  in the CLI, matching the effort maps that already handled it.
 - **v2.5.2** (31 August 2026) -- Lower the default transcription
   `concurrency_limit` from 80 to 16. Running many requests in parallel
   raises per-request latency until calls exceed `api_timeout` and pages

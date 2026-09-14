@@ -16,9 +16,9 @@ logger = setup_logger(__name__)
 
 # Full supported set (mirrors llm/capabilities.py and model.yaml): OpenAI
 # reasoning models accept every level incl. "none" (GPT-5.2+ default) and
-# "xhigh"; the Anthropic/Google effort-to-budget maps in llm/base.py handle
-# "none" and "xhigh" explicitly.
-REASONING_EFFORT_CHOICES = ("none", "minimal", "low", "medium", "high", "xhigh")
+# "xhigh"/"max"; the Anthropic/Google effort-to-budget maps in llm/base.py
+# handle "none", "xhigh", and "max" explicitly.
+REASONING_EFFORT_CHOICES = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
 VERBOSITY_CHOICES = ("low", "medium", "high")
 PROVIDER_CHOICES = ("openai", "anthropic", "google", "openrouter", "custom")
 

@@ -563,6 +563,20 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
     # temperature/top_p/top_k and thinking budget_tokens (HTTP 400 if sent);
     # mirror the opus-4.5/sonnet-4.5 handling (supports_top_p=False).
     (
+        ("claude-opus-5", "claude-opus-5.0"),
+        "claude-opus-5",
+        _ANTHROPIC_BASE,
+        dict(
+            is_reasoning_model=True,
+            supports_reasoning_effort=True,
+            uses_adaptive_thinking=True,
+            supports_temperature=False,
+            supports_top_p=False,
+            max_context_tokens=1000000,
+            max_output_tokens=128000,
+        ),
+    ),
+    (
         ("claude-fable-5", "claude-fable-5.0"),
         "claude-fable-5",
         _ANTHROPIC_BASE,
@@ -737,6 +751,32 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
     # Gemini 3.5 Flash (GA, Developer API 2026-07-09): vision+PDF,
     # media_resolution low/medium/high/ultra_high, 1,048,576 context,
     # 65,536 output, thinking_level minimal/low/medium(default)/high.
+    (
+        ("gemini-3.7-flash", "gemini-3-7-flash"),
+        "gemini-3.7-flash",
+        _GOOGLE_BASE,
+        dict(
+            is_reasoning_model=True,
+            supports_reasoning_effort=True,
+            supports_temperature=False,
+            supports_top_p=False,
+            max_context_tokens=1000000,
+            max_output_tokens=65536,
+        ),
+    ),
+    (
+        ("gemini-3.6-flash", "gemini-3-6-flash"),
+        "gemini-3.6-flash",
+        _GOOGLE_BASE,
+        dict(
+            is_reasoning_model=True,
+            supports_reasoning_effort=True,
+            supports_temperature=False,
+            supports_top_p=False,
+            max_context_tokens=1000000,
+            max_output_tokens=65536,
+        ),
+    ),
     (
         ("gemini-3.5-flash", "gemini-3-5-flash"),
         "gemini-3.5-flash",
