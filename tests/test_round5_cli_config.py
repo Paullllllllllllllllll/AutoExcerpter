@@ -102,7 +102,7 @@ class TestRunExitHook:
     def test_emit_json_summary_disarms_the_hook(self) -> None:
         """Single-emission semantics: emitting clears the hook."""
         import cli.interaction as inter
-        import main as main_module
+        import main.excerpt as main_module
 
         inter.set_exit_hook(lambda: main_module._emit_json_summary(0, 0, 0, 0, []))
         main_module._emit_json_summary(0, 0, 0, 0, [])
@@ -113,7 +113,7 @@ class TestRunExitHook:
 def _run_main_as_script(
     tmp_path: Path, failure: str
 ) -> subprocess.CompletedProcess[str]:
-    """Execute main.py as ``__main__`` with a mid-run failure injected.
+    """Execute main/excerpt.py as ``__main__`` with a mid-run failure injected.
 
     ``cli.args._parse_execution_mode`` is replaced with a raiser, which fires
     inside ``_setup_and_scan`` — i.e. AFTER ``main()`` has armed the exit hook
@@ -136,9 +136,10 @@ def _run_main_as_script(
 
         cli.args._parse_execution_mode = _raise
         sys.argv = [
-            "main.py", "--cli", r"{tmp_path / "in"}", r"{tmp_path / "out"}", "--json"
+            "main/excerpt.py", "--cli", r"{tmp_path / "in"}", r"{tmp_path / "out"}",
+            "--json"
         ]
-        runpy.run_path("main.py", run_name="__main__")
+        runpy.run_path("main/excerpt.py", run_name="__main__")
         """
     )
     return subprocess.run(
@@ -189,7 +190,7 @@ class TestInteractiveDuplicateGuardJson:
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """Regression: only the CLI-mode branch emitted; interactive was silent."""
-        import main as main_module
+        import main.excerpt as main_module
 
         monkeypatch.setattr(app_config, "CLI_MODE", False)
         monkeypatch.setattr(app_config, "INPUT_PATHS_IS_OUTPUT_PATH", False)
@@ -224,7 +225,7 @@ class TestDryRunKey:
     def test_default_summary_is_not_dry_run(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        import main as main_module
+        import main.excerpt as main_module
 
         monkeypatch.setattr(app_config, "DAILY_TOKEN_LIMIT_ENABLED", False)
         main_module._emit_json_summary(1, 0, 0, 1, ["/out/A.txt"])
@@ -235,7 +236,7 @@ class TestDryRunKey:
     def test_flag_is_threaded_through(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        import main as main_module
+        import main.excerpt as main_module
 
         monkeypatch.setattr(app_config, "DAILY_TOKEN_LIMIT_ENABLED", False)
         main_module._emit_json_summary(0, 0, 0, 0, [], dry_run=True)
@@ -254,7 +255,7 @@ class TestDryRunKey:
 
         A consumer could not tell it apart from a real run that did nothing.
         """
-        import main as main_module
+        import main.excerpt as main_module
 
         in_dir = tmp_path / "in"
         out_dir = tmp_path / "out"
@@ -269,7 +270,7 @@ class TestDryRunKey:
             sys,
             "argv",
             [
-                "main.py",
+                "main/excerpt.py",
                 "--cli",
                 str(in_dir),
                 str(out_dir),
@@ -295,7 +296,7 @@ class TestDryRunKey:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """The plan-shaped dry-run line is unchanged and still marked."""
-        import main as main_module
+        import main.excerpt as main_module
 
         in_dir = tmp_path / "in"
         out_dir = tmp_path / "out"
@@ -309,7 +310,14 @@ class TestDryRunKey:
         monkeypatch.setattr(
             sys,
             "argv",
-            ["main.py", "--cli", str(in_dir), str(out_dir), "--json", "--dry-run"],
+            [
+                "main/excerpt.py",
+                "--cli",
+                str(in_dir),
+                str(out_dir),
+                "--json",
+                "--dry-run",
+            ],
         )
 
         assert main_module.main() == 0

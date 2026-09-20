@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "autoexcerpter"
-version = "2.6.0"
+version = "3.0.0"
 description = "Document processing pipeline that transcribes and summarizes PDFs and image collections using vision-enabled LLMs"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -68,6 +68,7 @@ packages = [
     "config",
     "imaging",
     "llm",
+    "main",
     "pipeline",
     "rendering",
 ]
@@ -84,6 +85,7 @@ ignore = ["UP047"]
 
 [tool.ruff.lint.per-file-ignores]
 "cli/interaction.py" = ["E402"]
+"main/excerpt.py" = ["E402"]
 
 [tool.ruff.format]
 quote-style = "double"

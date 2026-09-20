@@ -40,7 +40,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-import main as main_mod
+import main.excerpt as main_mod
 from cli import display
 from config import app as app_config
 from imaging.payload import FolderPayloadSource, _PayloadSourceBase
@@ -181,8 +181,8 @@ class TestGuardRunsBeforeResumeFiltering:
         item_b = ItemSpec(kind="pdf", path=tmp_path / "dirB" / "report.pdf")
 
         monkeypatch.setattr(main_mod, "setup_argparse", lambda: argparse.Namespace())
-        # main.py binds ``from config import app as config``; patching the
-        # app-config module patches the same object main reads.
+        # main/excerpt.py binds ``from config import app as config``; patching
+        # the app-config module patches the same object main.excerpt reads.
         monkeypatch.setattr(app_config, "CLI_MODE", True)
         monkeypatch.setattr(app_config, "INPUT_PATHS_IS_OUTPUT_PATH", False)
         monkeypatch.setattr(

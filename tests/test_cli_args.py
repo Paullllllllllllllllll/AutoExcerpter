@@ -519,7 +519,7 @@ class TestSelectionFlagExclusion:
         from cli.args import setup_argparse
 
         monkeypatch.setattr(config, "CLI_MODE", True)
-        monkeypatch.setattr(sys, "argv", ["main.py", *argv])
+        monkeypatch.setattr(sys, "argv", ["main/excerpt.py", *argv])
         return setup_argparse()
 
     def test_all_with_select_is_rejected(

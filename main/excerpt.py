@@ -18,6 +18,10 @@ import time
 from pathlib import Path
 from typing import Any
 
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
 from cli.args import (
     _apply_app_config_overrides,
     _build_cli_model_overrides,

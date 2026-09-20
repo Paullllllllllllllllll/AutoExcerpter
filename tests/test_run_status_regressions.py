@@ -399,7 +399,7 @@ class TestJsonOutputs:
     ) -> None:
         """Regression: the emitted JSON line reported "outputs": [] even on
         successful runs that wrote output files."""
-        import main as main_module
+        import main.excerpt as main_module
 
         monkeypatch.setattr(app_config, "DAILY_TOKEN_LIMIT_ENABLED", False)
         outputs = ["C:/out/A.txt", "C:/out/A.docx"]
@@ -451,7 +451,7 @@ def _run_main(monkeypatch: pytest.MonkeyPatch, in_dir: Path, out_dir: Path) -> i
     """Invoke main.main() in CLI mode with --resume --json."""
     import sys
 
-    import main as main_module
+    import main.excerpt as main_module
 
     monkeypatch.setattr(app_config, "CLI_MODE", True)
     monkeypatch.setattr(app_config, "INPUT_PATHS_IS_OUTPUT_PATH", False)
@@ -459,7 +459,7 @@ def _run_main(monkeypatch: pytest.MonkeyPatch, in_dir: Path, out_dir: Path) -> i
     monkeypatch.setattr(
         sys,
         "argv",
-        ["main.py", "--cli", str(in_dir), str(out_dir), "--resume", "--json"],
+        ["main/excerpt.py", "--cli", str(in_dir), str(out_dir), "--resume", "--json"],
     )
     return main_module.main()
 
@@ -675,12 +675,12 @@ def _run_main_argv(monkeypatch: pytest.MonkeyPatch, extra_argv: list[str]) -> in
     """Invoke main.main() in CLI mode with an arbitrary argv tail."""
     import sys
 
-    import main as main_module
+    import main.excerpt as main_module
 
     monkeypatch.setattr(app_config, "CLI_MODE", True)
     monkeypatch.setattr(app_config, "INPUT_PATHS_IS_OUTPUT_PATH", False)
     monkeypatch.setattr(app_config, "DAILY_TOKEN_LIMIT_ENABLED", False)
-    monkeypatch.setattr(sys, "argv", ["main.py", "--cli", *extra_argv])
+    monkeypatch.setattr(sys, "argv", ["main/excerpt.py", "--cli", *extra_argv])
     return main_module.main()
 
 
@@ -755,7 +755,7 @@ class TestUnattemptedNotFailed:
         """When the user cancels the token-limit wait before a later item, that
         item is reported as not attempted (not a failure); the run still exits
         non-zero because the requested work did not finish."""
-        import main as main_module
+        import main.excerpt as main_module
 
         in_dir = tmp_path / "in"
         out_dir = tmp_path / "out"

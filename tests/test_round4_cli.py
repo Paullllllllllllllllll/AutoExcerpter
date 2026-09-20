@@ -82,12 +82,12 @@ class TestExitHook:
     def test_non_tty_guard_emits_json(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        import main as main_module
+        import main.excerpt as main_module
 
         monkeypatch.setattr(app_config, "CLI_MODE", False)
         monkeypatch.setattr(app_config, "DAILY_TOKEN_LIMIT_ENABLED", False)
         monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
-        monkeypatch.setattr(sys, "argv", ["main.py", "--json"])
+        monkeypatch.setattr(sys, "argv", ["main/excerpt.py", "--json"])
 
         rc = main_module.main()
         assert rc == 2
@@ -105,7 +105,7 @@ class TestExitHook:
     ) -> None:
         """Typing exit at an interactive prompt still emits the JSON summary."""
         import cli.interaction as inter
-        import main as main_module
+        import main.excerpt as main_module
 
         monkeypatch.setattr(app_config, "DAILY_TOKEN_LIMIT_ENABLED", False)
         inter.set_exit_hook(lambda: main_module._emit_json_summary(0, 0, 0, 0, []))
@@ -205,7 +205,7 @@ class TestDryRunNoSideEffects:
         tmp_path: Path,
         make_pdf: Any,
     ) -> None:
-        import main as main_module
+        import main.excerpt as main_module
 
         pdf = make_pdf("Doc.pdf", num_pages=1)
         out_dir = tmp_path / "outtree" / "sub"  # does not exist yet
@@ -215,7 +215,7 @@ class TestDryRunNoSideEffects:
         monkeypatch.setattr(app_config, "INPUT_PATHS_IS_OUTPUT_PATH", False)
         monkeypatch.setattr(app_config, "DAILY_TOKEN_LIMIT_ENABLED", False)
         monkeypatch.setattr(
-            sys, "argv", ["main.py", str(pdf), str(out_dir), "--dry-run"]
+            sys, "argv", ["main/excerpt.py", str(pdf), str(out_dir), "--dry-run"]
         )
 
         rc = main_module.main()

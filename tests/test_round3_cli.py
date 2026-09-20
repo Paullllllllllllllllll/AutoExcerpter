@@ -172,7 +172,7 @@ class TestJsonOnDecline:
     ) -> None:
         import sys
 
-        import main as main_module
+        import main.excerpt as main_module
 
         item = ItemSpec(kind="pdf", path=Path("/tmp/A.pdf"))
 
@@ -180,7 +180,7 @@ class TestJsonOnDecline:
         monkeypatch.setattr(app_config, "SUMMARIZE", False)
         monkeypatch.setattr(app_config, "DAILY_TOKEN_LIMIT_ENABLED", False)
         monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
-        monkeypatch.setattr(sys, "argv", ["main.py", "--json"])
+        monkeypatch.setattr(sys, "argv", ["main/excerpt.py", "--json"])
         monkeypatch.setattr(
             main_module,
             "_setup_and_scan",
@@ -305,7 +305,7 @@ class TestWarnIncompleteWithReports:
     def test_warning_includes_page_counts(
         self, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        from main import _warn_incomplete_items
+        from main.excerpt import _warn_incomplete_items
 
         reports: dict[str, dict[str, Any] | None] = {
             "Book_A": _report(pages_failed=2, pages_deferred=1)
@@ -325,7 +325,7 @@ class TestDuplicateOutputGuard:
     def test_cli_collision_exits_2_with_json(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        import main as main_module
+        import main.excerpt as main_module
 
         monkeypatch.setattr(app_config, "CLI_MODE", True)
         monkeypatch.setattr(app_config, "INPUT_PATHS_IS_OUTPUT_PATH", False)
@@ -343,7 +343,7 @@ class TestDuplicateOutputGuard:
     def test_interactive_collision_exits_nonzero(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        import main as main_module
+        import main.excerpt as main_module
 
         monkeypatch.setattr(app_config, "CLI_MODE", False)
         monkeypatch.setattr(app_config, "INPUT_PATHS_IS_OUTPUT_PATH", False)
@@ -356,7 +356,7 @@ class TestDuplicateOutputGuard:
         assert exc.value.code != 0
 
     def test_no_collision_passes(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        import main as main_module
+        import main.excerpt as main_module
 
         monkeypatch.setattr(app_config, "CLI_MODE", True)
         monkeypatch.setattr(app_config, "INPUT_PATHS_IS_OUTPUT_PATH", False)

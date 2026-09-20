@@ -161,9 +161,9 @@ def set_exit_hook(hook: Callable[[], None] | None) -> None:
 
     Typing exit/quit/q (or a closed stdin / Ctrl+C) at any interactive prompt
     terminates the process through ``exit_program``, which bypasses the caller's
-    own shutdown path. main.py registers a hook here so a ``--json`` run still
-    emits its machine-readable summary line on those exits. Pass ``None`` to
-    clear a previously registered hook.
+    own shutdown path. main/excerpt.py registers a hook here so a ``--json``
+    run still emits its machine-readable summary line on those exits. Pass
+    ``None`` to clear a previously registered hook.
     """
     global _exit_hook
     _exit_hook = hook

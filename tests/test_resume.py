@@ -6,7 +6,7 @@ Covers:
 - ResumeChecker (skip/overwrite modes, item-level and page-level detection)
 - load_completed_pages (JSON array parsing, incomplete log recovery)
 - load_transcription_results_from_log
-- Integration with main.py's _resolve_item_output_dir, _display_resume_info,
+- Integration with main/excerpt.py's _resolve_item_output_dir, _display_resume_info,
   _parse_execution_mode (cli.args)
 """
 
@@ -731,10 +731,10 @@ class TestParseLogEntries:
 
 
 # ============================================================================
-# Integration: main.py helper function tests
+# Integration: main/excerpt.py helper function tests
 # ============================================================================
 class TestMainIntegration:
-    """Test main.py functions that interact with the resume system."""
+    """Test main/excerpt.py functions that interact with the resume system."""
 
     def test_parse_execution_mode_default_resume(self) -> None:
         """Default resume mode is 'skip'."""
@@ -846,7 +846,7 @@ class TestMainIntegration:
         with patch("cli.args.config") as mock_config:
             mock_config.CLI_MODE = True
             argv = [
-                "main.py",
+                "main/excerpt.py",
                 "--input-path",
                 "in_dir",
                 "--output-path",
@@ -868,7 +868,7 @@ class TestMainIntegration:
 
         with (
             patch("cli.args.config") as mock_config,
-            patch.object(sys, "argv", ["main.py", "--all"]),
+            patch.object(sys, "argv", ["main/excerpt.py", "--all"]),
             pytest.raises(SystemExit),
         ):
             mock_config.CLI_MODE = True
@@ -896,13 +896,13 @@ class TestMainIntegration:
 
     def test_resolve_item_output_dir_colocated(self, tmp_path: Path) -> None:
         """Returns input parent dir when INPUT_PATHS_IS_OUTPUT_PATH is True."""
-        from main import _resolve_item_output_dir
+        from main.excerpt import _resolve_item_output_dir
 
         item = MagicMock()
         item.path = tmp_path / "subdir" / "test.pdf"
         item.path.parent.mkdir(parents=True, exist_ok=True)
 
-        with patch("main.config") as mock_config:
+        with patch("main.excerpt.config") as mock_config:
             mock_config.INPUT_PATHS_IS_OUTPUT_PATH = True
             result = _resolve_item_output_dir(item, tmp_path / "output")
 
@@ -910,13 +910,13 @@ class TestMainIntegration:
 
     def test_resolve_item_output_dir_separate(self, tmp_path: Path) -> None:
         """Returns base_output_dir when INPUT_PATHS_IS_OUTPUT_PATH is False."""
-        from main import _resolve_item_output_dir
+        from main.excerpt import _resolve_item_output_dir
 
         item = MagicMock()
         item.path = tmp_path / "subdir" / "test.pdf"
         base_out = tmp_path / "output"
 
-        with patch("main.config") as mock_config:
+        with patch("main.excerpt.config") as mock_config:
             mock_config.INPUT_PATHS_IS_OUTPUT_PATH = False
             result = _resolve_item_output_dir(item, base_out)
 

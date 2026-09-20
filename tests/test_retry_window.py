@@ -7,8 +7,8 @@ Covers two features:
   retried while EITHER attempts remain OR the window is still open, and stops
   only when BOTH are exhausted. ``self.max_elapsed == 0`` (the class default,
   used by ``__new__``-built test clients) restores attempts-only behavior.
-- ``main._warn_incomplete_items``: a prominent stdout warning naming items that
-  finished incomplete, silent when every item completed.
+- ``main.excerpt._warn_incomplete_items``: a prominent stdout warning naming
+  items that finished incomplete, silent when every item completed.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ import pytest
 
 import llm.base as base_module
 from llm.base import LLMClientBase
-from main import _warn_incomplete_items
+from main.excerpt import _warn_incomplete_items
 
 
 def _make_client(**overrides: object) -> LLMClientBase:

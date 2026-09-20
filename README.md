@@ -1,4 +1,4 @@
-# AutoExcerpter v2.6.0
+# AutoExcerpter v3.0.0
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -245,7 +245,7 @@ uv run mypy .
 Set `cli_mode: false` in `app.yaml` (default) and run:
 
 ```bash
-python main.py
+python main/excerpt.py
 ```
 
 The application scans the input directory and presents a
@@ -282,7 +282,7 @@ run, and the list of files written.
 Set `cli_mode: true` in `app.yaml`.
 
 ```bash
-python main.py <input> <output> [options]
+python main/excerpt.py <input> <output> [options]
 ```
 
 **Core arguments:**
@@ -342,24 +342,24 @@ was used. A completed `--dry-run` instead emits the plan shape
 
 ```bash
 # Single PDF
-python main.py "./docs/paper.pdf" "./output"
+python main/excerpt.py "./docs/paper.pdf" "./output"
 
 # All items in a directory
-python main.py "./docs" "./output" --all
+python main/excerpt.py "./docs" "./output" --all
 
 # Filtered selection with context
-python main.py "./docs" "./output" --select "1-10" \
+python main/excerpt.py "./docs" "./output" --select "1-10" \
   --context "Food History, Wages"
 
 # Per-phase model overrides
-python main.py "./docs" "./output" --all \
+python main/excerpt.py "./docs" "./output" --all \
   --transcription-model "gpt-5.2" \
   --summary-model "gpt-5-mini" \
   --transcription-max-output-tokens 128000
 
 # Shell loop
 for pdf in ./papers/*.pdf; do
-    python main.py "$pdf" "./output"
+    python main/excerpt.py "$pdf" "./output"
 done
 ```
 
@@ -759,7 +759,8 @@ For each processed document (`<name>` is the input file/folder stem):
 
 ```
 AutoExcerpter/
-├── main.py                          # Entry point
+├── main/                             # Entry point package
+│   └── excerpt.py                   # Entry point
 ├── config/                          # Configuration package
 │   ├── app.py                       # App settings (paths, toggles, API keys)
 │   ├── loader.py                    # YAML loader singleton
@@ -880,6 +881,11 @@ v1.0.0 do not exist.
 
 ## Changelog
 
+- **v3.0.0** (20 September 2026) -- Move the CLI entry point from `main.py`
+  at the repo root to `main/excerpt.py`, so invocation is now
+  `python main/excerpt.py`. The old name is removed outright, with no
+  compatibility shim. Scripts and scheduled tasks that call `main.py` must
+  be updated.
 - **v2.6.0** (14 September 2026) -- Register `claude-opus-5`,
   `gemini-3.7-flash`, and `gemini-3.6-flash` in the capability registry
   with adaptive thinking and no sampler parameters, so requests naming

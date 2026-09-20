@@ -376,7 +376,7 @@ class TestDryRunDisarmsExitHook:
     """Only one JSON object may reach stdout in --json dry-run mode."""
 
     def test_exit_hook_cleared_after_json_emission(self) -> None:
-        import main as main_module
+        import main.excerpt as main_module
 
         with patch.object(main_module, "set_exit_hook") as mock_hook:
             main_module._run_dry_run([], {}, [], emit_json=True)
@@ -384,7 +384,7 @@ class TestDryRunDisarmsExitHook:
         mock_hook.assert_called_once_with(None)
 
     def test_exit_hook_untouched_without_json(self) -> None:
-        import main as main_module
+        import main.excerpt as main_module
 
         with patch.object(main_module, "set_exit_hook") as mock_hook:
             main_module._run_dry_run([], {}, [], emit_json=False)

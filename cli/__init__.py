@@ -15,8 +15,8 @@ Public interface:
   ``prompt_continue``, ``exit_program`` (``cli.interaction``).
 
 The presentation helpers in ``cli.display`` and the per-item execution
-helpers in ``cli.loop`` are private to ``main.py`` and are imported from
-their own modules rather than re-exported here.
+helpers in ``cli.loop`` are private to ``main/excerpt.py`` and are imported
+from their own modules rather than re-exported here.
 """
 
 from cli.args import setup_argparse
