@@ -22,6 +22,7 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+import requests
 
 from rendering.citations import (
     Citation,
@@ -29,7 +30,9 @@ from rendering.citations import (
     _extract_volume,
     _extract_year,
     _is_budget_exhausted,
+    _mark_budget_exhausted,
     _reset_budget_state_for_tests,
+    budget_scope_for_key,
 )
 
 
@@ -288,3 +291,98 @@ class TestPolitePoolMailto:
         manager = CitationManager(polite_pool_email="scholar@example.edu")
         params = self._capture_params(manager, "doi")
         assert params["mailto"] == "scholar@example.edu"
+
+
+class TestOpenAlexApiKey:
+    """The API key is sent when configured, omitted otherwise, never logged."""
+
+    _KEY = "test-key-123"
+
+    def test_no_key_by_default(self) -> None:
+        params = TestPolitePoolMailto._capture_params(CitationManager(), "text")
+        assert "api_key" not in params
+
+    def test_non_string_key_is_ignored(self) -> None:
+        # A mocked config attribute must not be sent as a key.
+        assert CitationManager(api_key=MagicMock()).api_key == ""
+
+    @pytest.mark.parametrize("call", ["text", "doi"])
+    def test_configured_key_is_sent(self, call: str) -> None:
+        manager = CitationManager(api_key=f"  {self._KEY} ")
+        params = TestPolitePoolMailto._capture_params(manager, call)
+        assert params["api_key"] == self._KEY
+
+    def test_key_redacted_from_error_logs(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        manager = CitationManager(api_key=self._KEY)
+        error = requests.ConnectionError(
+            f"GET https://api.openalex.org/works?api_key={self._KEY}"
+        )
+        with (
+            patch("rendering.citations.requests.get", side_effect=error),
+            patch("rendering.citations.time.sleep"),
+            caplog.at_level("DEBUG"),
+        ):
+            manager._query_openalex_by_doi("10.1234/abc")
+        assert caplog.text
+        assert self._KEY not in caplog.text
+
+    def test_key_redacted_from_echoed_error_body(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        manager = CitationManager(api_key=self._KEY)
+        resp = MagicMock()
+        resp.status_code = 403
+        resp.json.return_value = {
+            "error": f"bad key {self._KEY}",
+            "url": "?api_key=x%2B",
+        }
+        with (
+            patch("rendering.citations.requests.get", return_value=resp),
+            caplog.at_level("DEBUG"),
+        ):
+            manager._query_openalex_by_doi("10.1234/abc")
+        assert "status 403" in caplog.text
+        assert self._KEY not in caplog.text
+        assert "x%2B" not in caplog.text
+
+
+class TestScopedBudgetLatch:
+    """Keyless and keyed requests have separate daily budgets."""
+
+    def test_keyless_latch_does_not_block_a_key(self) -> None:
+        _mark_budget_exhausted(3600)
+        assert _is_budget_exhausted()
+        assert not _is_budget_exhausted(budget_scope_for_key("key-a"))
+
+    def test_keys_do_not_block_each_other(self) -> None:
+        _mark_budget_exhausted(3600, budget_scope_for_key("key-a"))
+        assert _is_budget_exhausted(budget_scope_for_key("key-a"))
+        assert not _is_budget_exhausted(budget_scope_for_key("key-b"))
+        assert not _is_budget_exhausted()
+
+    def test_latch_keeps_scope_written_by_another_process(self) -> None:
+        from config.state import read_json, resolve_state_file, write_json_atomic
+
+        path = resolve_state_file("openalex_budget.json")
+        _mark_budget_exhausted(3600, budget_scope_for_key("key-a"))
+        other = budget_scope_for_key("key-b")
+        data = read_json(path)
+        data["keyed"][other] = data["keyed"][budget_scope_for_key("key-a")]
+        write_json_atomic(path, data)  # another process latches key-b
+        _mark_budget_exhausted(3600)  # this process latches keyless
+        assert other in read_json(path)["keyed"]
+
+    def test_state_file_holds_fingerprint_not_key(self) -> None:
+        from config.state import read_json, resolve_state_file
+
+        _mark_budget_exhausted(3600, budget_scope_for_key("secret-key-a"))
+        _reset_budget_state_for_tests()
+        raw = resolve_state_file("openalex_budget.json").read_text(encoding="utf-8")
+        assert "secret-key-a" not in raw
+        assert (
+            budget_scope_for_key("secret-key-a")
+            in read_json(resolve_state_file("openalex_budget.json"))["keyed"]
+        )
+        assert _is_budget_exhausted(budget_scope_for_key("secret-key-a"))

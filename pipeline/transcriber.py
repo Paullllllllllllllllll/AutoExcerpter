@@ -1601,6 +1601,7 @@ class ItemTranscriber:
                         render_context = build_render_context(
                             adjusted_summary_results,
                             polite_pool_email=config.CITATION_OPENALEX_EMAIL,
+                            openalex_api_key=config.CITATION_OPENALEX_API_KEY,
                         )
                         enrich_if_enabled(render_context[0])
                     except Exception as e:

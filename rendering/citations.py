@@ -12,6 +12,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from typing import Any
+from urllib.parse import quote
 
 import requests
 
@@ -500,7 +501,9 @@ class CitationManager:
     """Manages citations across a document with deduplication and metadata
     enrichment."""
 
-    def __init__(self, polite_pool_email: str | None = None):
+    def __init__(
+        self, polite_pool_email: str | None = None, api_key: str | None = None
+    ):
         """
         Initialize the citation manager.
 
@@ -509,9 +512,14 @@ class CitationManager:
                 blank (the default), no ``mailto`` parameter is sent at all —
                 honoring the "leave blank to skip" contract in the shipped
                 config rather than announcing a placeholder address.
+            api_key: OpenAlex API key, sent as the ``api_key`` parameter.
+                Blank or non-string values send no key. The key is redacted
+                from every log line this manager writes.
         """
         self.citations: dict[str, Citation] = {}
         self.polite_pool_email = (polite_pool_email or "").strip()
+        self.api_key = api_key.strip() if isinstance(api_key, str) else ""
+        self._budget_scope = budget_scope_for_key(self.api_key)
         self._api_cache: dict[str, dict[str, Any] | None] = {}
         # Memoize the deterministic raw_text -> normalized_key derivation so a
         # repeated mention of the same citation skips the regex/NFKD/MD5
@@ -818,7 +826,7 @@ class CitationManager:
         # Consult the process-wide / cross-run latch up front so the once-only
         # "budget exhausted" message fires even when this manager never issues a
         # request itself (a prior item or run tripped the daily quota).
-        if _is_budget_exhausted():
+        if _is_budget_exhausted(self._budget_scope):
             self._openalex_budget_exhausted = True
 
         lookups_made = 0
@@ -857,7 +865,8 @@ class CitationManager:
                     # only the lookup itself is skipped, and the reason is
                     # logged once (not per citation).
                     budget_out = (
-                        self._openalex_budget_exhausted or _is_budget_exhausted()
+                        self._openalex_budget_exhausted
+                        or _is_budget_exhausted(self._budget_scope)
                     )
                     if budget_out:
                         if not budget_notified:
@@ -1059,7 +1068,7 @@ class CitationManager:
         # Single choke point for both the DOI and text-search paths: if the
         # daily budget is known to be exhausted (this run or a prior run, via
         # the process-wide / cross-run latch), do not spend a request.
-        if _is_budget_exhausted():
+        if _is_budget_exhausted(self._budget_scope):
             self._openalex_budget_exhausted = True
             logger.debug(
                 "OpenAlex daily budget latched as exhausted; skipping request for %s.",
@@ -1076,7 +1085,9 @@ class CitationManager:
 
                 # Log request URL on first attempt if not successful
                 if attempt == 0 and response.status_code != 200:
-                    logger.debug("OpenAlex request URL: %s", response.url)
+                    logger.debug(
+                        "OpenAlex request URL: %s", self._redact(str(response.url))
+                    )
 
                 if response.status_code == 200:
                     # Guard the shape: a proxy, captive portal, or API change
@@ -1100,7 +1111,7 @@ class CitationManager:
                         # latch it process-wide + cross-run so no further items
                         # (this run or the next) re-hammer the API.
                         self._openalex_budget_exhausted = True
-                        _mark_budget_exhausted(retry_after)
+                        _mark_budget_exhausted(retry_after, self._budget_scope)
                         logger.warning(
                             "OpenAlex daily budget exhausted (retryAfter=%ds). "
                             "Disabling OpenAlex enrichment for %.0f minute(s).",
@@ -1186,7 +1197,7 @@ class CitationManager:
                             "OpenAlex API returned status %d for %s: %s",
                             response.status_code,
                             context_description,
-                            error_detail,
+                            self._redact(str(error_detail))[:500],
                         )
                     except Exception:
                         logger.warning(
@@ -1201,7 +1212,7 @@ class CitationManager:
                     context_description,
                     attempt + 1,
                     MAX_API_RETRIES,
-                    str(e),
+                    self._redact(str(e)),
                 )
                 if attempt < MAX_API_RETRIES - 1:
                     time.sleep(API_RETRY_DELAY)
@@ -1209,27 +1220,42 @@ class CitationManager:
                 logger.warning(
                     "Unexpected error querying OpenAlex for %s: %s",
                     context_description,
-                    str(e),
+                    self._redact(str(e)),
                 )
                 return None
 
         return None
 
-    def _polite_pool_params(self) -> dict[str, Any]:
-        """Return the ``mailto`` parameter, or an empty dict when unconfigured.
+    def _request_params(self) -> dict[str, Any]:
+        """Return the ``mailto`` and ``api_key`` parameters that are configured.
 
         OpenAlex treats ``mailto`` as an opt-in courtesy; sending a blank or
         placeholder address is worse than sending none, so an unset email
-        simply omits the parameter.
+        simply omits the parameter. The same holds for an unset API key.
         """
-        if not self.polite_pool_email:
-            return {}
-        return {"mailto": self.polite_pool_email}
+        params: dict[str, Any] = {}
+        if self.polite_pool_email:
+            params["mailto"] = self.polite_pool_email
+        if self.api_key:
+            params["api_key"] = self.api_key
+        return params
+
+    def _redact(self, text: str) -> str:
+        """Replace the API key in *text* (URL, error message, response body).
+
+        Covers the raw key, its URL-encoded form, and any ``api_key=`` query
+        value, so a key echoed back by the server or an intermediary is also
+        masked.
+        """
+        if self.api_key:
+            for form in {self.api_key, quote(self.api_key, safe="")}:
+                text = text.replace(form, "***")
+        return re.sub(r"(api_key=)[^&\s'\"]+", r"\1***", text)
 
     def _query_openalex_by_doi(self, doi: str) -> dict[str, Any] | None:
         """Query OpenAlex API using DOI."""
         url = f"{OPENALEX_API_BASE}/works/https://doi.org/{doi}"
-        params = self._polite_pool_params()
+        params = self._request_params()
 
         data = self._make_openalex_request(url, params, f"DOI {doi}")
         if data:
@@ -1254,7 +1280,7 @@ class CitationManager:
         params: dict[str, Any] = {
             "search": search_query,
             "per-page": SEARCH_RESULTS_PER_PAGE,
-            **self._polite_pool_params(),
+            **self._request_params(),
         }
 
         data = self._make_openalex_request(
@@ -1515,82 +1541,122 @@ def _save_persistent_openalex_cache(cache: dict[str, dict[str, Any]]) -> None:
 # ``exhausted_until`` epoch timestamp guarded by a lock, mirrors it to a state
 # file so a subsequent process honors it too, and is consulted before every
 # OpenAlex request.
+#
+# Each credential has its own daily budget, so the latch is scoped: keyless
+# requests use the scope ``""`` (persisted as the top-level ``exhausted_until``
+# field, the original file format), and keyed requests use a short SHA-256
+# fingerprint of the key (persisted under ``keyed``). The raw key is never
+# stored.
 
 _BUDGET_STATE_FILE = "openalex_budget.json"
+KEYLESS_SCOPE = ""
 
 _budget_lock = threading.Lock()
-_budget_exhausted_until: float | None = None
+_budget_until: dict[str, float] = {}
 _budget_state_loaded: bool = False
 
 
-def _read_budget_state_file() -> float | None:
-    """Read the persisted ``exhausted_until`` timestamp, or None on any failure."""
-    try:
-        from config.state import read_json, resolve_state_file
+def budget_scope_for_key(api_key: str) -> str:
+    """Return the latch scope for *api_key*: a fingerprint, or keyless."""
+    if not api_key:
+        return KEYLESS_SCOPE
+    return "key-" + hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:12]
 
-        path = resolve_state_file(_BUDGET_STATE_FILE)
-        data = read_json(path)
-        value = data.get("exhausted_until")
-        if isinstance(value, (int, float)) and not isinstance(value, bool):
-            return float(value)
-    except Exception as exc:  # pragma: no cover - defensive
-        logger.debug("Could not load OpenAlex budget state: %s", exc)
+
+def _as_timestamp(value: Any) -> float | None:
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
     return None
 
 
-def _persist_budget_state(until: float) -> None:
-    """Persist the ``exhausted_until`` timestamp atomically to the state dir."""
+def _read_budget_state_file() -> dict[str, float]:
+    """Read the persisted per-scope timestamps; empty on any failure."""
+    scopes: dict[str, float] = {}
+    try:
+        from config.state import read_json, resolve_state_file
+
+        data = read_json(resolve_state_file(_BUDGET_STATE_FILE))
+        keyless = _as_timestamp(data.get("exhausted_until"))
+        if keyless is not None:
+            scopes[KEYLESS_SCOPE] = keyless
+        keyed = data.get("keyed")
+        if isinstance(keyed, dict):
+            for scope, value in keyed.items():
+                ts = _as_timestamp(value)
+                if isinstance(scope, str) and scope and ts is not None:
+                    scopes[scope] = ts
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.debug("Could not load OpenAlex budget state: %s", exc)
+    return scopes
+
+
+def _persist_budget_state(scopes: dict[str, float]) -> None:
+    """Persist the per-scope timestamps atomically to the state dir."""
+    payload: dict[str, Any] = {}
+    if KEYLESS_SCOPE in scopes:
+        payload["exhausted_until"] = scopes[KEYLESS_SCOPE]
+    keyed = {s: t for s, t in scopes.items() if s != KEYLESS_SCOPE}
+    if keyed:
+        payload["keyed"] = keyed
     try:
         from config.state import resolve_state_file, write_json_atomic
 
-        path = resolve_state_file(_BUDGET_STATE_FILE)
-        write_json_atomic(path, {"exhausted_until": until})
+        write_json_atomic(resolve_state_file(_BUDGET_STATE_FILE), payload)
     except Exception as exc:  # pragma: no cover - defensive
         logger.debug("Could not save OpenAlex budget state: %s", exc)
 
 
-def _openalex_budget_exhausted_until() -> float | None:
-    """Return the epoch timestamp until which the OpenAlex budget is exhausted.
+def _load_budget_state_locked() -> None:
+    """Load the state file once per process; caller holds ``_budget_lock``."""
+    global _budget_state_loaded
+    if not _budget_state_loaded:
+        _budget_state_loaded = True
+        _budget_until.update(_read_budget_state_file())
+
+
+def _openalex_budget_exhausted_until(scope: str = KEYLESS_SCOPE) -> float | None:
+    """Return the epoch timestamp until which *scope*'s budget is exhausted.
 
     Lazily loads the persisted state file exactly once per process (under the
     lock) so a run started after the quota tripped honors the remaining
     cooldown; subsequent calls read the cached in-memory value.
     """
-    global _budget_exhausted_until, _budget_state_loaded
     with _budget_lock:
-        if not _budget_state_loaded:
-            _budget_state_loaded = True
-            _budget_exhausted_until = _read_budget_state_file()
-        return _budget_exhausted_until
+        _load_budget_state_locked()
+        return _budget_until.get(scope)
 
 
-def _is_budget_exhausted() -> bool:
-    """Return True while the OpenAlex daily budget is latched as exhausted.
+def _is_budget_exhausted(scope: str = KEYLESS_SCOPE) -> bool:
+    """Return True while *scope*'s OpenAlex daily budget is latched as exhausted.
 
     A timestamp at or before the current time is treated as expired (the daily
     quota has reset), so requests are allowed again.
     """
-    until = _openalex_budget_exhausted_until()
+    until = _openalex_budget_exhausted_until(scope)
     return until is not None and until > time.time()
 
 
-def _mark_budget_exhausted(retry_after: float) -> None:
-    """Latch the OpenAlex budget as exhausted for *retry_after* seconds.
+def _mark_budget_exhausted(retry_after: float, scope: str = KEYLESS_SCOPE) -> None:
+    """Latch *scope*'s OpenAlex budget as exhausted for *retry_after* seconds.
 
-    Updates the in-memory state (under the lock) and mirrors it to the state
-    file so a later process in the same daily window also backs off.
+    Updates the in-memory state (under the lock) and mirrors all scopes to the
+    state file so a later process in the same daily window also backs off.
     """
-    global _budget_exhausted_until, _budget_state_loaded
     until = time.time() + retry_after
     with _budget_lock:
-        _budget_state_loaded = True
-        _budget_exhausted_until = until
-    _persist_budget_state(until)
+        _load_budget_state_locked()
+        # Merge with the file as it is now, so a scope latched by another
+        # process since this one loaded the state is kept, and write while
+        # still holding the lock so concurrent threads cannot reorder writes.
+        for other, ts in _read_budget_state_file().items():
+            _budget_until[other] = max(ts, _budget_until.get(other, ts))
+        _budget_until[scope] = until
+        _persist_budget_state(dict(_budget_until))
 
 
 def _reset_budget_state_for_tests() -> None:
     """Clear the in-memory budget latch (test hook only)."""
-    global _budget_exhausted_until, _budget_state_loaded
+    global _budget_state_loaded
     with _budget_lock:
-        _budget_exhausted_until = None
+        _budget_until.clear()
         _budget_state_loaded = False

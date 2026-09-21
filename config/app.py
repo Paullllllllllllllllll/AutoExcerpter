@@ -224,6 +224,17 @@ DELETE_TEMP_WORKING_DIR = _get_bool(_APP_CFG, "delete_temp_working_dir", True)
 # Blank by default: the template documents "leave blank to skip", and a
 # placeholder default would send a fake mailto to OpenAlex.
 CITATION_OPENALEX_EMAIL = _get_str(_CITATION, "openalex_email", "")
+# OpenAlex requires an API key for anything beyond occasional keyless testing.
+# The config names the environment variable that holds the key; the key itself
+# never lives in a config file. An unset or empty variable sends no key.
+CITATION_OPENALEX_API_KEY_ENV = _get_str(
+    _CITATION, "openalex_api_key_env", "OPENALEX_API_KEY"
+)
+CITATION_OPENALEX_API_KEY = (
+    os.environ.get(CITATION_OPENALEX_API_KEY_ENV, "").strip()
+    if CITATION_OPENALEX_API_KEY_ENV
+    else ""
+)
 CITATION_MAX_API_REQUESTS = _get_int(_CITATION, "max_api_requests", 50)
 CITATION_ENABLE_OPENALEX = _get_bool(_CITATION, "enable_openalex_enrichment", True)
 

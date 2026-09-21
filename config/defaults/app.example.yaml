@@ -60,6 +60,7 @@ delete_temp_working_dir: true  # Delete extracted images and temp files after co
 # (DOI, publication year, authors, venue, hyperlinks in DOCX output)
 citation:
   openalex_email: ''  # Your email for polite pool (faster responses); leave blank to skip
+  openalex_api_key_env: OPENALEX_API_KEY  # Env var holding your OpenAlex API key (free at openalex.org); unset = no key
   max_api_requests: 300  # Cap citations looked up per document (each lookup may issue several HTTP calls)
   enable_openalex_enrichment: true  # Set to false to disable API calls (faster summary generation)
 

@@ -51,7 +51,8 @@ def create_markdown_summary(
 
     if citation_manager is None or data is None:
         citation_manager = CitationManager(
-            polite_pool_email=config.CITATION_OPENALEX_EMAIL
+            polite_pool_email=config.CITATION_OPENALEX_EMAIL,
+            api_key=config.CITATION_OPENALEX_API_KEY,
         )
         data = prepare_summary_data(summary_results, citation_manager)
         citation_manager.consolidate()

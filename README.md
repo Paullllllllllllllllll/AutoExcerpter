@@ -1,4 +1,4 @@
-# AutoExcerpter v3.0.0
+# AutoExcerpter v3.1.0
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -418,6 +418,7 @@ delete_temp_working_dir: true
 
 citation:
   openalex_email: ''      # polite pool (optional)
+  openalex_api_key_env: OPENALEX_API_KEY  # env var holding the API key
   max_api_requests: 300
   enable_openalex_enrichment: true
 
@@ -645,8 +646,7 @@ pass each partial stub whose tokens are contained in exactly one full
 reference within its author-year block merges into it (pages union); stubs
 with no full match, or with several ambiguous same-author same-year
 candidates, are dropped rather than guessed, with every merge and drop
-logged. OpenAlex enrichment (free, no key required; set
-`openalex_email` for the faster polite pool) runs exactly once per document and
+logged. OpenAlex enrichment runs exactly once per document and
 is shared by both writers. A candidate links only when title-word overlap
 clears `match_title_overlap` AND a corroborating signal matches (publication
 year within +/-1 of a cited year, or the candidate author surname appears in
@@ -659,6 +659,12 @@ long `retryAfter`), enrichment latches off process-wide and across runs
 (`openalex_budget.json` in the state directory) until the quota window
 passes; remaining citations are still served from the persistent cache, and
 short rate-limit waits are slept through and retried.
+
+OpenAlex requires an API key for anything beyond occasional testing; keys are
+free at openalex.org. Put the key in an environment variable (default
+`OPENALEX_API_KEY`, renamed via `citation.openalex_api_key_env`); it is sent as
+the `api_key` parameter and redacted from logs. Without the variable no key is
+sent. `openalex_email` optionally adds a `mailto` contact address.
 
 ### State Directory
 
@@ -881,6 +887,14 @@ v1.0.0 do not exist.
 
 ## Changelog
 
+- **v3.1.0** (21 September 2026) -- OpenAlex enrichment sends an API key
+  when one is configured, since OpenAlex now requires a key beyond
+  occasional testing. The key comes from the environment variable named by
+  `citation.openalex_api_key_env` (default `OPENALEX_API_KEY`), never from
+  a config file, and is redacted from every log line, including echoed
+  error bodies. The daily-quota latch is now kept per credential: a 429
+  for keyless requests no longer blocks a configured key, and keyed
+  scopes are persisted under a short hash rather than the key itself.
 - **v3.0.0** (20 September 2026) -- Move the CLI entry point from `main.py`
   at the repo root to `main/excerpt.py`, so invocation is now
   `python main/excerpt.py`. The old name is removed outright, with no

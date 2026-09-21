@@ -213,6 +213,14 @@ class TestOpenAlexEmailDefault:
 
         assert ac.CITATION_OPENALEX_EMAIL != "your-email@example.com"
 
+    def test_api_key_env_default(self) -> None:
+        """Without config the key is read from OPENALEX_API_KEY."""
+        from config.app import _get_str
+
+        assert _get_str({}, "openalex_api_key_env", "OPENALEX_API_KEY") == (
+            "OPENALEX_API_KEY"
+        )
+
 
 # ============================================================================
 # _get_str

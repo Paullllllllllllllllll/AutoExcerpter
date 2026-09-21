@@ -503,6 +503,7 @@ def prepare_summary_data(
 def build_render_context(
     summary_results: list[dict[str, Any]],
     polite_pool_email: str | None = None,
+    openalex_api_key: str | None = None,
 ) -> tuple[CitationManager, SummaryData]:
     """Build one enriched-once render context shared by both writers.
 
@@ -514,7 +515,9 @@ def build_render_context(
     """
     from rendering.citations import CitationManager
 
-    citation_manager = CitationManager(polite_pool_email=polite_pool_email)
+    citation_manager = CitationManager(
+        polite_pool_email=polite_pool_email, api_key=openalex_api_key
+    )
     data = prepare_summary_data(summary_results, citation_manager)
     citation_manager.consolidate()
     return citation_manager, data
