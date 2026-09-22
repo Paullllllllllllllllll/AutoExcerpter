@@ -197,7 +197,7 @@ class TestEmptyTokenPartialDropped:
         assert len(manager.citations) == 1
         survivor = next(iter(manager.citations.values()))
         assert survivor.raw_text == self._FULL
-        assert survivor.pages == {1}
+        assert survivor.get_page_range_str() == "p. 1"
 
     def test_legitimate_subset_partial_still_merges(self) -> None:
         """Negative control: an author-year stub still folds into its full."""
@@ -211,7 +211,7 @@ class TestEmptyTokenPartialDropped:
 
         assert len(manager.citations) == 1
         survivor = next(iter(manager.citations.values()))
-        assert survivor.pages == {1, 2}
+        assert survivor.get_page_range_str() == "pp. 1-2"
 
 
 # ---------------------------------------------------------------------------

@@ -9,8 +9,26 @@ from pathlib import Path
 from typing import Any
 
 from config.logger import setup_logger
+from rendering.page_tags import printed_page_numbers
 
 logger = setup_logger(__name__)
+
+
+def page_break_marker(
+    result: dict[str, Any], item_type: str, fallback_index: int
+) -> str:
+    """Return the ``<page_break .../>`` line for a page without a printed number.
+
+    The attribute is ``pdf`` only when the page has a real PDF page index;
+    image-folder pages (and pages whose PDF index is unknown) use ``image``.
+    Both count from 1 in input order.
+    """
+    index = result.get("original_input_order_index")
+    if not isinstance(index, int) or isinstance(index, bool):
+        index = fallback_index
+    has_pdf_index = item_type == "PDF" and result.get("page_index") is not None
+    attribute = "pdf" if has_pdf_index else "image"
+    return f'<page_break {attribute}="{index + 1}"/>\n'
 
 
 def write_transcription_to_text(
@@ -67,6 +85,10 @@ def write_transcription_to_text(
                 # (which would escape past the tmp-file cleanup below).
                 if not isinstance(transcription, str):
                     transcription = str(transcription)
+                # A page without a printed number gets a positional marker so
+                # it stays locatable; numbered pages are written unchanged.
+                if not printed_page_numbers(transcription):
+                    file_handle.write(page_break_marker(result, item_type, index))
                 file_handle.write(transcription)
                 if index < len(transcription_results) - 1:
                     file_handle.write("\n")

@@ -448,7 +448,8 @@ class TestSummaryComprehensiveness:
         schema = self._load_schema()
         desc = schema["schema"]["properties"]["bullet_points"]["description"]
         assert "2-5 concise" not in desc
-        assert "3-10" in desc
+        assert "condense" in desc
+        assert "preferring more bullets" not in desc
         assert "LaTeX" in desc  # existing instruction preserved
         # Page-type applicability sentences preserved.
         assert "table_of_contents" in desc
@@ -465,13 +466,21 @@ class TestSummaryComprehensiveness:
         assert "completeness matters" in lowered
         assert "every substantive claim" in lowered
         assert "never omitted entirely" in lowered
+        assert "reason hard" not in lowered
+        assert "prefer more bullet" not in lowered
+        assert 'page_number_type to "none"' in text
+        assert "![Image:" in text
 
     def test_plain_text_prompt_aligned(self) -> None:
         path = (PROMPTS_DIR / "summary_plain_text_prompt.txt").resolve()
         with open(path, encoding="utf-8") as f:
             text = f.read()
         assert "{{SCHEMA}}" in text
-        assert "comprehensive" in text.lower()
+        lowered = text.lower()
+        assert "condense" in lowered
+        assert "reason hard" not in lowered
+        assert "prefer more bullet" not in lowered
+        assert 'page_number_type to "none"' in text
 
     def test_schema_still_renders_into_prompt(self) -> None:
         schema = self._load_schema()

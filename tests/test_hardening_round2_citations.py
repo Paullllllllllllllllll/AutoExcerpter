@@ -83,7 +83,7 @@ class TestParenthesizedPartials:
         assert len(manager.citations) == 1
         survivor = next(iter(manager.citations.values()))
         assert survivor.raw_text == self._FULL
-        assert survivor.get_sorted_pages() == [5, 7]
+        assert survivor.get_page_range_str() == "pp. 5, 7"
 
 
 class TestParticleAndNonAsciiSurnames:
@@ -106,7 +106,8 @@ class TestParticleAndNonAsciiSurnames:
         manager.consolidate()
 
         assert len(manager.citations) == 1
-        assert next(iter(manager.citations.values())).get_sorted_pages() == [1, 2]
+        survivor = next(iter(manager.citations.values()))
+        assert survivor.get_page_range_str() == "pp. 1-2"
 
     def test_latin_extended_surname_not_mangled(self) -> None:
         """ "Łukasz" keeps its full surname (Ł transliterated, not dropped).

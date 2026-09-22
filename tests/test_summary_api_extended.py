@@ -264,7 +264,8 @@ class TestCreatePlaceholderSummary:
         result = mgr._create_placeholder_summary(5, "API timeout")
 
         assert result["page"] == 5
-        assert result["page_information"]["page_number_integer"] == 5
+        assert result["page_information"]["page_number_integer"] is None
+        assert result["page_information"]["page_number_type"] == "none"
         assert result["page_information"]["page_types"] == ["other"]
         assert "[Error generating summary: API timeout]" in result["bullet_points"]
         assert result["error"] == "API timeout"
@@ -439,8 +440,8 @@ class TestEnsurePageInformationStructure:
         summary: dict[str, Any] = {"bullet_points": ["Some text."]}
         mgr._ensure_page_information_structure(summary, 5)
 
-        assert summary["page_information"]["page_number_integer"] == 5
-        assert summary["page_information"]["page_number_type"] == "arabic"
+        assert summary["page_information"]["page_number_integer"] is None
+        assert summary["page_information"]["page_number_type"] == "none"
         assert summary["page_information"]["page_types"] == ["content"]
 
     def test_non_dict_page_information(self) -> None:
@@ -450,10 +451,11 @@ class TestEnsurePageInformationStructure:
         mgr._ensure_page_information_structure(summary, 3)
 
         assert isinstance(summary["page_information"], dict)
-        assert summary["page_information"]["page_number_integer"] == 3
+        assert summary["page_information"]["page_number_integer"] is None
+        assert summary["page_information"]["page_number_type"] == "none"
 
     def test_missing_page_number_integer(self) -> None:
-        """Fills in missing page_number_integer."""
+        """Fills in a missing page_number_integer with null, not the position."""
         mgr = _make_manager()
         summary: dict[str, Any] = {
             "page_information": {
@@ -463,7 +465,7 @@ class TestEnsurePageInformationStructure:
         }
         mgr._ensure_page_information_structure(summary, 2)
 
-        assert summary["page_information"]["page_number_integer"] == 2
+        assert summary["page_information"]["page_number_integer"] is None
         assert summary["page_information"]["page_number_type"] == "roman"
 
     def test_missing_page_number_type_with_integer(self) -> None:
@@ -487,14 +489,12 @@ class TestEnsurePageInformationStructure:
                 "page_types": ["content"],
             }
         }
-        # Before fixup, page_number_integer is missing, so it gets added,
-        # and page_number_type should be "arabic" since page_number_integer
-        # is now set to page_num
+        # The position is never written as a printed page number, so the
+        # filled-in integer is null and the type "none".
         mgr._ensure_page_information_structure(summary, 7)
 
-        # page_number_integer gets set first, then page_number_type check
-        # sees page_number_integer == 7 (truthy) => "arabic"
-        assert summary["page_information"]["page_number_type"] == "arabic"
+        assert summary["page_information"]["page_number_integer"] is None
+        assert summary["page_information"]["page_number_type"] == "none"
 
     def test_missing_page_types_no_legacy(self) -> None:
         """Missing page_types without legacy page_type defaults to ['content']."""

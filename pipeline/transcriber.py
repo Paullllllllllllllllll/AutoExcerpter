@@ -50,6 +50,7 @@ from rendering import (
     write_transcription_to_text,
 )
 from rendering.citations import enrich_if_enabled
+from rendering.page_tags import printed_page_numbers
 from rendering.summary import build_render_context
 
 logger = setup_logger(__name__)
@@ -60,6 +61,41 @@ _HEARTBEAT_INTERVAL_S = 30.0
 # Upper bound (seconds) on the join that stop() performs, so teardown never
 # waits out a full heartbeat interval.
 _HEARTBEAT_JOIN_TIMEOUT_S = 5.0
+
+
+def _warn_on_page_number_mismatch(
+    summary_data: dict[str, Any], transcription_text: str, image_name: str
+) -> bool:
+    """Warn when the summary's page number disagrees with the page's tags.
+
+    Compares the returned ``page_information.page_number_integer`` with the
+    ``<page_number>`` tags in the page's transcription (Roman numerals
+    converted). A mismatch is an integer not among the tagged values, a null
+    despite tags, or an integer despite no tags. The value is never changed.
+
+    Returns:
+        True when a mismatch was logged.
+    """
+    page_info = summary_data.get("page_information")
+    returned = (
+        page_info.get("page_number_integer") if isinstance(page_info, dict) else None
+    )
+    if isinstance(returned, bool) or not isinstance(returned, int):
+        returned = None
+    tagged = printed_page_numbers(transcription_text)
+
+    if returned is None and not tagged:
+        return False
+    if returned is not None and returned in tagged:
+        return False
+    if returned is None:
+        problem = f"returned no page number, but the page is tagged {tagged}"
+    elif not tagged:
+        problem = f"returned page {returned}, but the page has no <page_number> tag"
+    else:
+        problem = f"returned page {returned}, but the page is tagged {tagged}"
+    logger.warning(f"Summary for {image_name} {problem}; keeping the returned value.")
+    return True
 
 
 class _ProgressHeartbeat:
@@ -418,6 +454,8 @@ class ItemTranscriber:
                 result["api_response"] = summary_payload["api_response"]
             if "schema_retries" in summary_payload:
                 result["schema_retries"] = summary_payload["schema_retries"]
+            if error_message and "error_type" in summary_payload:
+                result["error_type"] = summary_payload["error_type"]
 
         if error_message:
             result["error"] = error_message
@@ -473,18 +511,19 @@ class ItemTranscriber:
         if not config.SUMMARIZE or not self.summary_manager:
             return None
 
+        # page_num_to_use is a position (or a stored "page" value), never a
+        # printed page number: the placeholders below record none, and the
+        # position stays in "page" and original_input_order_index.
         page_num_model = transcription_result.get("page")
-        has_valid, page_num_to_use = self._compute_page_num(
-            page_num_model, original_index
-        )
+        _, page_num_to_use = self._compute_page_num(page_num_model, original_index)
 
         if "error" not in transcription_result:
             transcription_text = transcription_result.get("transcription", "")
 
             if is_blank_transcription(transcription_text):
                 summary_data = self._create_placeholder_summary(
-                    page_num_to_use if has_valid else None,
-                    "arabic" if has_valid else "none",
+                    None,
+                    "none",
                     None,
                     references=None,
                     page_types=["blank"],
@@ -493,14 +532,18 @@ class ItemTranscriber:
                 summary_data = self.summary_manager.generate_summary(
                     transcription_text, page_num_to_use
                 )
+                if isinstance(summary_data, dict) and "error" not in summary_data:
+                    _warn_on_page_number_mismatch(
+                        summary_data, transcription_text, img_name
+                    )
             summary_error = (
                 summary_data.get("error") if isinstance(summary_data, dict) else None
             )
         else:
             error_msg = transcription_result.get("error", "Unknown error")
             summary_data = self._create_placeholder_summary(
-                page_num_to_use if has_valid else None,
-                "arabic" if has_valid else "none",
+                None,
+                "none",
                 [f"[Transcription failed: {error_msg}]"],
                 references=None,
                 page_types=["other"],
@@ -1602,6 +1645,9 @@ class ItemTranscriber:
                             adjusted_summary_results,
                             polite_pool_email=config.CITATION_OPENALEX_EMAIL,
                             openalex_api_key=config.CITATION_OPENALEX_API_KEY,
+                            position_label=(
+                                "pdf" if item_type_str == "PDF" else "image"
+                            ),
                         )
                         enrich_if_enabled(render_context[0])
                     except Exception as e:

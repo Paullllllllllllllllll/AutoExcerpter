@@ -18,9 +18,38 @@ from pipeline.text_cleaner import (
     normalize_math_delimiters,
     normalize_unicode,
     normalize_whitespace,
+    retag_glued_page_numbers,
     should_keep_hyphen,
     wrap_long_lines,
 )
+
+
+class TestRetagGluedPageNumbers:
+    def test_marker_glued_to_sentence_end_becomes_footnote_reference(self) -> None:
+        text = "other diverse things.<page_number>10</page_number>"
+        assert retag_glued_page_numbers(text) == "other diverse things.[^10]"
+
+    def test_marker_glued_to_word(self) -> None:
+        assert retag_glued_page_numbers("cloying<page_number>7</page_number> too") == (
+            "cloying[^7] too"
+        )
+
+    def test_header_and_footer_numbers_stay_tagged(self) -> None:
+        text = (
+            "FIRE · <page_number>89</page_number>\nbody text\n"
+            "<page_number>12</page_number>\nChapter 3 <page_number>45</page_number>"
+        )
+        assert retag_glued_page_numbers(text) == text
+
+    def test_roman_numbers_stay_tagged(self) -> None:
+        text = "Preface<page_number>xvii</page_number>"
+        assert retag_glued_page_numbers(text) == text
+
+    def test_clean_transcription_applies_it(self) -> None:
+        cleaned = clean_transcription("things.<page_number>10</page_number>")
+        assert "<page_number>" not in cleaned
+        assert "[^10]" in cleaned
+
 
 # Full latex_fixing config with all sub-toggles enabled, for pipeline tests.
 _LATEX_ALL_ON = {

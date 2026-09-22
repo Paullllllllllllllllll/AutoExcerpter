@@ -25,7 +25,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from config.accessors import get_api_timeout
 from config.loader import PROMPTS_DIR, SCHEMAS_DIR
 from config.logger import setup_logger
-from llm.base import LLMClientBase
+from llm.base import LLMClientBase, get_response_metadata, inspect_response
 from llm.client import ProviderType, get_provider_for_model
 from llm.prompts import render_prompt_with_schema, strip_markdown_code_block
 from llm.rate_limit import RateLimiter, get_shared_rate_limiter
@@ -179,7 +179,9 @@ class SummaryManager(LLMClientBase):
     ) -> dict[str, Any]:
         """Create a placeholder summary for pages that couldn't be processed.
 
-        Returns a flat structure with all fields at top level.
+        Returns a flat structure with all fields at top level. *page_num* is the
+        page's position and stays in ``page`` only; no printed page number is
+        known, so ``page_information`` records none.
         """
         if page_types is None:
             page_types = ["other"]
@@ -193,10 +195,10 @@ class SummaryManager(LLMClientBase):
         result = {
             "page": page_num,
             "page_information": {
-                "page_number_integer": page_num,
+                "page_number_integer": None,
                 "is_two_page_spread": False,
                 "page_number_integer_end": None,
-                "page_number_type": "arabic",
+                "page_number_type": "none",
                 "page_types": page_types,
             },
             "bullet_points": [bullet_text],
@@ -240,25 +242,34 @@ class SummaryManager(LLMClientBase):
     def _ensure_page_information_structure(
         self, summary_json: dict[str, Any], page_num: int
     ) -> None:
-        """Ensure page_information structure is correct in the summary JSON."""
+        """Ensure page_information structure is correct in the summary JSON.
+
+        Missing fields are filled without inventing a printed page number: the
+        position *page_num* is never written as ``page_number_integer``. A
+        missing ``page_number_type`` becomes ``"arabic"`` only when the model
+        itself returned an integer page number (left unchanged), else ``"none"``.
+        """
         if "page_information" not in summary_json or not isinstance(
             summary_json["page_information"], dict
         ):
             summary_json["page_information"] = {
-                "page_number_integer": page_num,
+                "page_number_integer": None,
                 "is_two_page_spread": False,
                 "page_number_integer_end": None,
-                "page_number_type": "arabic",
+                "page_number_type": "none",
                 "page_types": ["content"],
             }
         else:
             # Ensure all required fields exist
             page_info = summary_json["page_information"]
             if "page_number_integer" not in page_info:
-                page_info["page_number_integer"] = page_num
+                page_info["page_number_integer"] = None
             if "page_number_type" not in page_info:
+                model_int = page_info.get("page_number_integer")
                 page_info["page_number_type"] = (
-                    "arabic" if page_info.get("page_number_integer") else "none"
+                    "arabic"
+                    if isinstance(model_int, int) and not isinstance(model_int, bool)
+                    else "none"
                 )
             if "page_types" not in page_info:
                 page_info["page_types"] = ["content"]
@@ -331,6 +342,23 @@ class SummaryManager(LLMClientBase):
                 # gets its consumed tokens accounted for.
                 self._report_token_usage(response, f"Summary for page {page_num}")
 
+                # A content filter or refusal ends the page at once: a retry
+                # would get the same answer, so skip the empty-content and
+                # schema retries and leave the page failed for a later resume.
+                outcome = inspect_response(response)
+                if outcome.stops_page:
+                    self._report_failure()
+                    logger.warning(
+                        f"Summary for page {page_num} stopped "
+                        f"({outcome.kind}): {outcome.reason or 'no reason given'}"
+                    )
+                    placeholder = self._create_placeholder_summary(
+                        page_num, outcome.message
+                    )
+                    placeholder["error_type"] = outcome.kind
+                    placeholder["provider"] = self.provider
+                    return placeholder
+
                 summary_json_str = self._extract_output_text(response)
                 if not summary_json_str:
                     # An HTTP-200 empty response is transient. Retry a bounded
@@ -394,8 +422,8 @@ class SummaryManager(LLMClientBase):
                         )
                         summary_json = {
                             "page_information": {
-                                "page_number_integer": page_num,
-                                "page_number_type": "arabic",
+                                "page_number_integer": None,
+                                "page_number_type": "none",
                                 "page_types": ["content"],
                             },
                             "bullet_points": [summary_json_str.strip()],
@@ -444,10 +472,9 @@ class SummaryManager(LLMClientBase):
                 if total_schema_retries > 0:
                     result["schema_retries"] = schema_retry_attempts.copy()
 
-                # Add response metadata for logging
-                response_meta = getattr(response, "response_metadata", {})
-                if isinstance(response_meta, dict):
-                    result["api_response"] = response_meta
+                # Add response metadata for logging (unwrapped, so
+                # structured-output calls do not store an empty dict)
+                result["api_response"] = get_response_metadata(response)
 
                 return result
 

@@ -27,7 +27,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from config.loader import PROMPTS_DIR, SCHEMAS_DIR
 from config.logger import setup_logger
 from imaging.payload import PagePayload
-from llm.base import LLMClientBase
+from llm.base import LLMClientBase, inspect_response
 from llm.capabilities import detect_capabilities
 from llm.client import (
     ProviderType,
@@ -564,6 +564,26 @@ class TranscriptionManager(LLMClientBase):
                 # Report token usage BEFORE the emptiness check so an HTTP-200
                 # empty response still gets its consumed tokens accounted for.
                 self._report_token_usage(response, f"Transcription for {image_name}")
+
+                # A content filter or refusal ends the page at once: a retry
+                # would get the same answer, so skip the empty-content and
+                # schema retries and leave the page failed for a later resume.
+                outcome = inspect_response(response)
+                if outcome.stops_page:
+                    self._report_failure()
+                    logger.warning(
+                        f"Transcription for {image_name} stopped "
+                        f"({outcome.kind}): {outcome.reason or 'no reason given'}"
+                    )
+                    return {
+                        "image": image_name,
+                        "sequence_number": sequence_number,
+                        "transcription": f"[transcription error: {outcome.message}]",
+                        "processing_time": round(time.time() - start_time, 2),
+                        "error": outcome.message,
+                        "error_type": outcome.kind,
+                        "provider": self.provider,
+                    }
 
                 raw_text = self._extract_output_text(response)
                 if not raw_text:

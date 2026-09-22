@@ -33,6 +33,8 @@ from dataclasses import dataclass, field
 from pipeline.text_cleaner import should_keep_hyphen
 
 PAGE_MARKER_RE = re.compile(r"<page_number>(.*?)</page_number>")
+# Positional marker written before a page that has no printed number.
+PAGE_BREAK_RE = re.compile(r"^\s*<page_break\b")
 _HYPHEN_END_RE = re.compile(r"([A-Za-z]{2,})-$")
 _LEADING_ALPHA_RE = re.compile(r"[A-Za-z]+")
 
@@ -76,12 +78,13 @@ def is_passthrough_line(line: str) -> bool:
     """Return True for structural lines that must pass through unchanged.
 
     These act as hard boundaries: prose is never merged into or out of them.
-    Covers the metadata header and markdown headings (``#``), page markers,
-    image descriptions, markdown table rows, and display math.
+    Covers the metadata header and markdown headings (``#``), page markers
+    (``<page_number>`` and ``<page_break .../>``), image descriptions, markdown
+    table rows, and display math.
 
-    Page markers are recognized anywhere in the line, not only at its start:
-    ``_page_regions`` splits on ANY line matching ``PAGE_MARKER_RE``, so the
-    closing half of a marker split across lines (``3</page_number>``) and a
+    Page-number markers are recognized anywhere in the line, not only at its
+    start: ``_page_regions`` splits on ANY line matching ``PAGE_MARKER_RE``, so
+    the closing half of a marker split across lines (``3</page_number>``) and a
     trailing inline marker must be boundaries here too, or they would be
     treated as prose and rejoined into the surrounding text.
     """
@@ -89,6 +92,8 @@ def is_passthrough_line(line: str) -> bool:
     if not stripped:
         return False
     if stripped.startswith("#"):
+        return True
+    if PAGE_BREAK_RE.match(stripped):
         return True
     if stripped.startswith("<page") or stripped.startswith("[Page"):
         return True
@@ -140,11 +145,15 @@ def _percentile(sorted_values: list[int], fraction: float) -> int:
 
 
 def _page_regions(lines: list[str]) -> list[tuple[int, int]]:
-    """Return (start, end) spans of lines between page-number markers."""
+    """Return (start, end) spans of lines between page markers.
+
+    Both a ``<page_number>`` tag and a ``<page_break .../>`` line (written
+    before a page without a printed number) end the previous page.
+    """
     regions: list[tuple[int, int]] = []
     start = 0
     for index, line in enumerate(lines):
-        if PAGE_MARKER_RE.search(line):
+        if PAGE_MARKER_RE.search(line) or PAGE_BREAK_RE.match(line):
             if index > start:
                 regions.append((start, index))
             start = index + 1

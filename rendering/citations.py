@@ -8,7 +8,7 @@ import re
 import threading
 import time
 import unicodedata
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from typing import Any
@@ -217,6 +217,118 @@ def _title_spans(text: str) -> list[str]:
     return spans
 
 
+def _markup_title(text: str) -> str:
+    """Return the first italicized or quoted title span in citation order.
+
+    Order matters: in a Chicago-style article citation the quoted article
+    title precedes the italicized journal, and in a book citation the
+    italicized title comes first. Spans shorter than five characters are
+    ignored; returns "" when none is left.
+    """
+    pairs: list[tuple[str, str]] = _TITLE_SPAN_RE.findall(text)
+    for ital, quoted in pairs:
+        span = ital or quoted
+        if len(span) >= 5:
+            return span
+    return ""
+
+
+# The text after an author-year citation's "(Year)." -- "(1994).",
+# "(1994a).", "(1994, May).", a year range "(1886-87).", a reprint
+# "(1976 [1867])." / "([1867] 1976).", or an undated "(n.d.).".
+_APA_TITLE_RE = re.compile(
+    r"\(\s*(?:(?:\[\s*" + _PUB_YEAR + r"\s*\]\s*)?" + _PUB_YEAR + r"[a-z]?"
+    r"(?:\s*[-–]\s*\d{2,4})?(?:\s*\[\s*" + _PUB_YEAR + r"\s*\])?"
+    r"|n\.\s?d\.)(?:,[^)]*)?\s*\)\.?\s+(.+)",
+    re.DOTALL,
+)
+_UNDATED_RE = re.compile(r"\(\s*n\.\s?d\.\s*\)", re.IGNORECASE)
+# Bracketed asides inside an isolated title ("(M. Grant, Trans.)", "[2nd ed.]")
+# and a trailing volume designation (", Vol. IV", "Bd. 2") are not part of the
+# title a work is indexed under.
+# An aside cut open by the sentence end ("(M. Grant, Trans.") runs to the end.
+_TITLE_ASIDE_RE = re.compile(r"\s*(?:\([^)]*(?:\)|$)|\[[^\]]*(?:\]|$))")
+_TITLE_VOLUME_RE = re.compile(
+    r"[\s,;:]+(?:vols?\.?|bd\.|tome|t\.)(?:\s*(?:\d+|[ivxlc]+)\b.*)?$",
+    re.IGNORECASE,
+)
+# Everything up to the first sentence end (a terminal mark before whitespace
+# or the end of the text).
+# A period right after a lone capital letter ("U.S.", "J. R.") is an
+# abbreviation or initial, not a sentence end.
+_SENTENCE_RE = re.compile(r"(.+?)(?:(?:[?!]|(?<!\b[A-Z])\.)(?:\s|$)|$)", re.DOTALL)
+
+
+def _truncate_at_word(text: str, limit: int) -> str:
+    """Cut *text* to at most *limit* characters, ending on a whole word."""
+    if len(text) <= limit:
+        return text
+    head = text[: limit + 1].rsplit(" ", 1)[0]
+    # A single word longer than the limit has no boundary to cut at.
+    return head if len(head) <= limit else text[:limit]
+
+
+def _cited_years(text: str) -> list[int]:
+    """Return every year the citation gives for the work, earliest first.
+
+    A reprint ("1976 [1867]") yields both years; otherwise the single year of
+    :func:`_extract_year`, or none. An undated citation ("(n.d.)") yields none,
+    so a year inside its title ("French cookbooks, 1480-1800") is not taken
+    for the publication year.
+    """
+    if _UNDATED_RE.search(text):
+        return []
+    reprint = _REPRINT_RE.search(text)
+    if reprint:
+        return sorted({int(g) for g in reprint.groups() if g})
+    year = _extract_year(text)
+    return [] if year is None else [year]
+
+
+def _looks_like_review(citation_text: str, work_data: dict[str, Any]) -> bool:
+    """Return True for a candidate that is probably a review of the cited work.
+
+    A book review repeats the book's exact title and appears a year or so
+    later, and OpenAlex often lists the reviewed author among its authors, so
+    title, year, and author checks all pass. What gives it away is its form: a
+    journal article of at most two pages. Such a candidate is rejected unless
+    the citation names its journal (then a short article is what was cited).
+    """
+    if work_data.get("type") == "book-review":
+        return True
+    if work_data.get("type") != "article":
+        return False
+    biblio = work_data.get("biblio")
+    if not isinstance(biblio, dict):
+        return False
+    try:
+        first = int(str(biblio.get("first_page")))
+        last = int(str(biblio.get("last_page")))
+    except ValueError:
+        return False
+    if not 0 <= last - first <= 1:
+        return False
+    location = work_data.get("primary_location")
+    source = location.get("source") if isinstance(location, dict) else None
+    journal = source.get("display_name") if isinstance(source, dict) else None
+    return not (isinstance(journal, str) and _fold(journal) in _fold(citation_text))
+
+
+def _publication_year_filter(years: list[int]) -> str:
+    """Return an OpenAlex ``publication_year`` filter for *years* +/-1.
+
+    One year gives a range (``publication_year:2019-2021``); a reprint's two
+    years give an OR list of the explicit values
+    (``publication_year:1866|1867|1868|1975|1976|1977``).
+    """
+    if not years:
+        return ""
+    if len(years) == 1:
+        return f"publication_year:{years[0] - 1}-{years[0] + 1}"
+    window = sorted({y + d for y in years for d in (-1, 0, 1)})
+    return "publication_year:" + "|".join(str(y) for y in window)
+
+
 # Non-name tokens that must never be taken as a surname.
 _SURNAME_STOPWORDS = {"the", "and", "of", "in", "on", "ed", "eds", "trans"}
 # Lowercase nobiliary/name particles that precede the actual surname. When a
@@ -286,44 +398,105 @@ def _jaccard(a: str, b: str) -> float:
 # ============================================================================
 
 
-def _format_page_range(pages: list[int], has_unnumbered: bool = False) -> str:
-    """Format a list of page numbers as a compact range string.
+# A page locator: (namespace, number, inferred). The namespace says what the
+# number counts: a printed arabic or roman page number, or the 1-based position
+# of the scan in the PDF or image folder (for pages without a printed number).
+# ``inferred`` marks a printed-style number that was inferred from the
+# neighbouring pages rather than read from the page; it renders in brackets.
+Locator = tuple[str, int, bool]
+
+PRINTED_ARABIC = "printed-arabic"
+PRINTED_ROMAN = "printed-roman"
+PDF_POSITION = "pdf"
+IMAGE_POSITION = "image"
+# Output order of the locator groups: roman front matter before the arabic
+# body, then the positional namespaces for pages without a printed number.
+LOCATOR_NAMESPACES = (PRINTED_ROMAN, PRINTED_ARABIC, PDF_POSITION, IMAGE_POSITION)
+# Singular and plural label per namespace.
+_NAMESPACE_LABELS = {
+    PRINTED_ROMAN: ("p.", "pp."),
+    PRINTED_ARABIC: ("p.", "pp."),
+    PDF_POSITION: ("PDF p.", "PDF pp."),
+    IMAGE_POSITION: ("Image", "Images"),
+}
+
+
+def _namespace_rank(namespace: str) -> int:
+    """Return the output position of *namespace* (unknown ones go last)."""
+    try:
+        return LOCATOR_NAMESPACES.index(namespace)
+    except ValueError:
+        return len(LOCATOR_NAMESPACES)
+
+
+def _sort_locators(locators: Iterable[Locator]) -> list[Locator]:
+    """Return *locators* deduplicated, grouped by namespace, then by number."""
+    return sorted(
+        set(locators),
+        key=lambda loc: (_namespace_rank(loc[0]), loc[0], loc[1], loc[2]),
+    )
+
+
+def _format_locator_number(namespace: str, number: int, inferred: bool) -> str:
+    """Render one number in its namespace's numerals, bracketed if inferred."""
+    if namespace == PRINTED_ROMAN:
+        from rendering.summary import int_to_roman
+
+        text = int_to_roman(number) or str(number)
+    else:
+        text = str(number)
+    return f"[{text}]" if inferred else text
+
+
+def _format_page_range(locators: Iterable[Locator]) -> str:
+    """Format page locators as compact ranges, one group per namespace.
+
+    Consecutive numbers form a range only within one namespace and with the
+    same inferred status; groups are joined with "; " in the order of
+    ``LOCATOR_NAMESPACES``.
 
     Examples:
-        [1, 2, 3, 5, 7, 8, 9] -> "pp. 1-3, 5, 7-9"
-        [5] -> "p. 5"
-        [] with has_unnumbered=True -> "unnumbered"
-        [5] with has_unnumbered=True -> "pp. 5, unnumbered"
+        printed 1, 2, 3, 5 -> "pp. 1-3, 5"
+        printed 5 -> "p. 5"
+        roman 10-12 -> "pp. x-xii"
+        pdf 12-14 -> "PDF pp. 12-14"
+        inferred 6 -> "p. [6]"
+        printed 5, inferred 6, printed 7 -> "pp. 5, [6], 7"
+        printed 5-7 and pdf 12 -> "pp. 5-7; PDF p. 12"
     """
-    if not pages:
-        return "unnumbered" if has_unnumbered else ""
+    ordered = _sort_locators(locators)
+    if not ordered:
+        return ""
 
-    pages = sorted(set(pages))
-    ranges = []
-    start = pages[0]
-    end = pages[0]
+    groups: list[str] = []
+    for namespace in dict.fromkeys(loc[0] for loc in ordered):
+        members = [loc for loc in ordered if loc[0] == namespace]
+        # One page can be recorded both as inferred and as read; the read
+        # number wins.
+        read = {loc[1] for loc in members if not loc[2]}
+        members = [loc for loc in members if not (loc[2] and loc[1] in read)]
 
-    for page in pages[1:]:
-        if page == end + 1:
-            end = page
-        else:
-            if start == end:
-                ranges.append(str(start))
+        runs: list[tuple[int, int, bool]] = []
+        for _ns, number, inferred in members:
+            if runs and runs[-1][2] == inferred and number == runs[-1][1] + 1:
+                runs[-1] = (runs[-1][0], number, inferred)
             else:
-                ranges.append(f"{start}-{end}")
-            start = end = page
+                runs.append((number, number, inferred))
 
-    if start == end:
-        ranges.append(str(start))
-    else:
-        ranges.append(f"{start}-{end}")
+        parts = []
+        for start, end, inferred in runs:
+            first = _format_locator_number(namespace, start, inferred)
+            if start == end:
+                parts.append(first)
+            else:
+                last = _format_locator_number(namespace, end, inferred)
+                parts.append(f"{first}-{last}")
 
-    if has_unnumbered:
-        ranges.append("unnumbered")
+        singular, plural = _NAMESPACE_LABELS.get(namespace, ("p.", "pp."))
+        label = singular if len(members) == 1 else plural
+        groups.append(f"{label} {', '.join(parts)}")
 
-    single = len(pages) == 1 and not has_unnumbered
-    prefix = "p." if single else "pp."
-    return f"{prefix} {', '.join(ranges)}"
+    return "; ".join(groups)
 
 
 # ============================================================================
@@ -387,12 +560,11 @@ class Citation:
     """
 
     raw_text: str
-    pages: set[int] = field(default_factory=set)
+    locators: set[Locator] = field(default_factory=set)
     normalized_key: str = ""
     metadata: dict[str, Any] | None = None
     doi: str | None = None
     url: str | None = None
-    unnumbered: bool = False
     partial: bool = False
     # Raw texts absorbed by merges; never rendered, kept as a debugger-visible
     # trace of what each surviving citation swallowed.
@@ -481,20 +653,32 @@ class Citation:
         key_material = f"{key_source}|y={self.year}|v={self.volume}"
         return hashlib.md5(key_material.encode("utf-8")).hexdigest()
 
-    def add_page(self, page: int | None) -> None:
-        """Add a page number (or mark unnumbered when *page* is None)."""
-        if page is None:
-            self.unnumbered = True
-        else:
-            self.pages.add(page)
+    def add_page(self, locator: Locator | int | None) -> None:
+        """Record where the citation appears.
 
-    def get_sorted_pages(self) -> list[int]:
-        """Return sorted list of page numbers."""
-        return sorted(self.pages)
+        A bare int is a printed arabic page number read from the page; None
+        records nothing.
+        """
+        normalized = _as_locator(locator)
+        if normalized is not None:
+            self.locators.add(normalized)
+
+    def get_sorted_pages(self) -> list[Locator]:
+        """Return the locators in output order (namespace, then number)."""
+        return _sort_locators(self.locators)
 
     def get_page_range_str(self) -> str:
         """Return a formatted string of page numbers/ranges."""
-        return _format_page_range(self.get_sorted_pages(), self.unnumbered)
+        return _format_page_range(self.locators)
+
+
+def _as_locator(locator: Locator | int | None) -> Locator | None:
+    """Normalize an ``add_page`` argument; a bare int is a printed arabic page."""
+    if locator is None:
+        return None
+    if isinstance(locator, int):
+        return (PRINTED_ARABIC, locator, False)
+    return locator
 
 
 class CitationManager:
@@ -551,7 +735,7 @@ class CitationManager:
     def add_citations(
         self,
         citations: Sequence[str | tuple[str, bool]],
-        page_number: int | None,
+        page_number: Locator | int | None,
     ) -> None:
         """
         Add citations from a page, handling deduplication.
@@ -562,8 +746,9 @@ class CitationManager:
                 reference) or a ``(text, is_partial)`` tuple where
                 ``is_partial`` marks an in-text-only stub (author-year without
                 full bibliographic data).
-            page_number: The page number where these citations appear, or None
-                for an unnumbered page (still recorded; rendered "unnumbered").
+            page_number: Where these citations appear: a :data:`Locator`, a
+                bare int (a printed arabic page number), or None when the
+                position is unknown (the citations are still recorded).
         """
         for item in citations:
             if isinstance(item, tuple):
@@ -610,7 +795,7 @@ class CitationManager:
         years never merge, then within a block merges variants whose
         SequenceMatcher ratio clears ``merge_ratio`` or whose token-set Jaccard
         clears ``merge_jaccard``. Differing volumes never merge. The longest
-        variant becomes canonical; pages/unnumbered union; the first non-null
+        variant becomes canonical; page locators union; the first non-null
         DOI/metadata wins; every merge is logged with both variants.
         """
         from collections import defaultdict
@@ -650,7 +835,7 @@ class CitationManager:
         is its token superset. For each partial:
 
         - exactly one full (non-partial) superset candidate -> merge the
-          partial into it (full raw_text stays canonical; pages/unnumbered
+          partial into it (full raw_text stays canonical; page locators
           union);
         - zero candidates, or more than one (ambiguous) -> drop the partial
           entirely (do not guess), logged at info level.
@@ -728,15 +913,14 @@ class CitationManager:
 
         Unlike :meth:`_merge_into`, the full reference's ``raw_text`` always
         remains canonical regardless of length — a partial stub must never
-        become the displayed citation. Pages/unnumbered union.
+        become the displayed citation. Locators union.
         """
         logger.info(
             "Merging partial citation into full:\n  - full:    %s\n  - partial: %s",
             full.raw_text,
             partial.raw_text,
         )
-        full.pages |= partial.pages
-        full.unnumbered = full.unnumbered or partial.unnumbered
+        full.locators |= partial.locators
 
     def _find_merge_target(
         self, candidate: Citation, survivors: list[Citation]
@@ -789,8 +973,7 @@ class CitationManager:
             survivor.author = _first_author_surname(survivor.raw_text)
             survivor._generate_normalized_key()
 
-        survivor.pages |= other.pages
-        survivor.unnumbered = survivor.unnumbered or other.unnumbered
+        survivor.locators |= other.locators
         # Full wins over partial, exactly as in add_citations: a partial
         # survivor that absorbs a full near-duplicate must stop being partial,
         # or _resolve_partials would later drop the merged citation outright.
@@ -1270,22 +1453,38 @@ class CitationManager:
         Requesting multiple candidates matters because OpenAlex's relevance
         ranking is noisy for long-tail citations: the true match is often
         rank 2-5 rather than rank 1.
+
+        When a title can be isolated, the query is a ``title.search`` filter
+        restricted to the cited year +/-1 (for a reprint, either cited year
+        +/-1). OpenAlex runs its ``search`` parameter against full text, so
+        sending the whole citation (authors, venue, volume, pages) ranks
+        unrelated works first; the title filter finds the cited work at the
+        same cost. Citations without an isolable title keep the free-text
+        search. An empty title-filter result is final: no second query.
         """
-        # Extract key terms for better search
-        search_query = self._extract_search_terms(citation_text)
-        if not search_query or len(search_query) < 10:
-            return None
-
         url = f"{OPENALEX_API_BASE}/works"
-        params: dict[str, Any] = {
-            "search": search_query,
-            "per-page": SEARCH_RESULTS_PER_PAGE,
-            **self._request_params(),
-        }
+        title = self._extract_title(citation_text)
+        params: dict[str, Any]
+        if title:
+            # Commas separate filters and "|" separates OR values, so all
+            # punctuation is dropped from the title before it enters a filter.
+            query = re.sub(r"\s+", " ", re.sub(r"[^\w\s]", " ", title)).strip()
+            query = _truncate_at_word(query, SEARCH_QUERY_MAX_LENGTH)
+            filters = [f"title.search:{query}"]
+            year_filter = _publication_year_filter(_cited_years(citation_text))
+            if year_filter:
+                filters.append(year_filter)
+            params = {"filter": ",".join(filters)}
+            description = f"title search: {query[:50]}"
+        else:
+            search_query = self._extract_search_terms(citation_text)
+            if not search_query or len(search_query) < 10:
+                return None
+            params = {"search": search_query}
+            description = f"search query: {search_query[:50]}"
+        params.update({"per-page": SEARCH_RESULTS_PER_PAGE, **self._request_params()})
 
-        data = self._make_openalex_request(
-            url, params, f"search query: {search_query[:50]}"
-        )
+        data = self._make_openalex_request(url, params, description)
         if not data:
             return None
 
@@ -1293,10 +1492,38 @@ class CitationManager:
         for candidate in results:
             if not isinstance(candidate, dict):
                 continue
+            if _looks_like_review(citation_text, candidate):
+                continue
             if self._verify_citation_match(citation_text, candidate):
                 return self._extract_metadata_from_response(candidate)
 
         return None
+
+    @staticmethod
+    def _extract_title(citation_text: str) -> str:
+        """Return the cited work's title, or "" when none can be isolated.
+
+        In an author-year citation the title follows ``(Year).`` (reprints:
+        ``(1976 [1867]).``); an italicized or quoted title in that position is
+        taken from its markup, a plain one runs to the next sentence end.
+        Taking the position first keeps an italicized journal name from
+        passing for an article's title. Without ``(Year).`` the first
+        italicized, else quoted, span is used. One-word titles are rejected as
+        too unspecific for a title search.
+        """
+        apa = _APA_TITLE_RE.search(citation_text)
+        if apa is None:
+            title = _markup_title(citation_text)
+        else:
+            rest = apa.group(1)
+            if rest.startswith(("*", '"')):
+                title = _markup_title(rest)
+            else:
+                sentence = _SENTENCE_RE.match(rest)
+                title = sentence.group(1) if sentence else ""
+        title = _TITLE_VOLUME_RE.sub("", _TITLE_ASIDE_RE.sub("", title))
+        title = title.strip(" .,;:")
+        return title if len(title.split()) >= 2 else ""
 
     def _extract_search_terms(self, citation_text: str) -> str:
         """Extract key search terms from citation text.
@@ -1308,14 +1535,7 @@ class CitationManager:
         match off the first page of results. When no markup-delimited title
         is present, fall back to the naive cleanup as a last resort.
         """
-        # Extract italicized title (markdown *...*) or quoted title ("...")
-        title = ""
-        ital = re.search(r"\*([^*\n]{5,})\*", citation_text)
-        quoted = re.search(r'"([^"\n]{5,})"', citation_text)
-        if ital:
-            title = ital.group(1)
-        elif quoted:
-            title = quoted.group(1)
+        title = _markup_title(citation_text)
 
         # Extract author surnames: first few Capitalized words (>=3 chars)
         # appearing before the first year or opening parenthesis.
@@ -1374,11 +1594,12 @@ class CitationManager:
 
         # A grossly mismatched known year disqualifies outright: a coincidental
         # author surname must not link a 1950 citation to a 2001 candidate.
+        # A reprint cites two years; the candidate may carry either.
         cand_year = work_data.get("publication_year")
-        cited_year = _extract_year(citation_text)
+        cited_years = _cited_years(citation_text)
         year_diff: int | None = None
-        if isinstance(cand_year, int) and cited_year is not None:
-            year_diff = abs(cand_year - cited_year)
+        if isinstance(cand_year, int) and cited_years:
+            year_diff = min(abs(cand_year - year) for year in cited_years)
         if year_diff is not None and year_diff > 2:
             return False
 

@@ -395,20 +395,24 @@ class TestWriteTranscriptionToText:
 # ============================================================================
 # _format_page_range
 # ============================================================================
+def _printed(*pages: int) -> list[tuple[str, int, bool]]:
+    return [("printed-arabic", page, False) for page in pages]
+
+
 class TestFormatPageRange:
     """Tests for _format_page_range()."""
 
     def test_single_page(self) -> None:
         """Single page uses 'p.' prefix."""
-        assert _format_page_range([5]) == "p. 5"
+        assert _format_page_range(_printed(5)) == "p. 5"
 
     def test_consecutive_pages(self) -> None:
         """Consecutive pages are collapsed into a range."""
-        assert _format_page_range([1, 2, 3]) == "pp. 1-3"
+        assert _format_page_range(_printed(1, 2, 3)) == "pp. 1-3"
 
     def test_mixed_ranges(self) -> None:
         """Mixed consecutive and non-consecutive pages."""
-        result = _format_page_range([1, 2, 3, 5, 7, 8, 9])
+        result = _format_page_range(_printed(1, 2, 3, 5, 7, 8, 9))
         assert result == "pp. 1-3, 5, 7-9"
 
     def test_empty_list(self) -> None:
@@ -417,12 +421,12 @@ class TestFormatPageRange:
 
     def test_unsorted_input(self) -> None:
         """Unsorted input is sorted before formatting."""
-        result = _format_page_range([9, 1, 5, 2, 3])
+        result = _format_page_range(_printed(9, 1, 5, 2, 3))
         assert result == "pp. 1-3, 5, 9"
 
     def test_duplicate_pages_deduplicated(self) -> None:
         """Duplicate page numbers are deduplicated."""
-        result = _format_page_range([1, 1, 2, 2, 3])
+        result = _format_page_range(_printed(1, 1, 2, 2, 3))
         assert result == "pp. 1-3"
 
 

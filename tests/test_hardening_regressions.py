@@ -302,7 +302,7 @@ class TestCitationConsolidatePolicy:
         # Accent folding collapses them without needing the fuzzy pass.
         assert len(manager.citations) == 1
         merged = next(iter(manager.citations.values()))
-        assert merged.pages == {1, 2}
+        assert merged.get_page_range_str() == "pp. 1-2"
 
     def test_fuzzy_variants_merge(self) -> None:
         """Same-author/year abbreviated vs full first name merge via fuzzy pass."""
@@ -318,7 +318,7 @@ class TestCitationConsolidatePolicy:
         manager.consolidate()
         assert len(manager.citations) == 1
         merged = next(iter(manager.citations.values()))
-        assert merged.pages == {1, 2}
+        assert merged.get_page_range_str() == "pp. 1-2"
 
     def test_different_years_never_merge(self) -> None:
         """1985 vs 1987 (same author/title) are different works."""
@@ -341,11 +341,18 @@ class TestCitationConsolidatePolicy:
         assert len(manager.citations) == 2
 
     def test_unnumbered_page_citation_rendered(self) -> None:
-        """A citation only on an unnumbered page renders 'unnumbered'."""
+        """A citation only on an unnumbered page renders its PDF position."""
+        manager = CitationManager()
+        manager.add_citations(["Doe, J. (2001). Untitled."], ("pdf", 4, False))
+        citation = next(iter(manager.citations.values()))
+        assert citation.get_page_range_str() == "PDF p. 4"
+
+    def test_citation_without_locator_is_kept(self) -> None:
+        """A citation whose position is unknown is kept without a locator."""
         manager = CitationManager()
         manager.add_citations(["Doe, J. (2001). Untitled."], None)
         citation = next(iter(manager.citations.values()))
-        assert citation.get_page_range_str() == "unnumbered"
+        assert citation.get_page_range_str() == ""
 
 
 def test_enrichment_counts_every_request_against_cap(

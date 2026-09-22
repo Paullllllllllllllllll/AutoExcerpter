@@ -7,20 +7,20 @@ The text generally uses these formatting conventions (slight deviations are poss
 - Markdown formatting: `*italic*`, `**bold**`, `# Heading 1`, `## Heading 2`, including structural elements.
 - Page numbers: Tagged as `<page_number>9</page_number>` (use these to identify page_number_integer).
 - Footnotes: Formatted as `[^1]: Reference text`.
-- Equations: LaTeX format enclosed in `$$ ... $$`.
-- Images/diagrams: Descriptions in square brackets, e.g., `[Image: diagram of a cell]`.
+- Equations: LaTeX, `$...$` for inline math and `$$...$$` for display equations.
+- Images/diagrams: Descriptions in the form `![Image: diagram of a cell]`.
 
 Key rules:
 - Write every bullet point in the ORIGINAL LANGUAGE of the document itself. Judge that language from the body prose of the transcription, never from author names, place names, titles, or passages quoted in another language. Keep the whole summary in that one language.
 - Do not hallucinate; stick to the input.
-- Enclose mathematical formulas in $$ delimiters.
+- If the text contains no <page_number> tag, set page_number_integer to null and page_number_type to "none"; never take a number from footnotes, section, figure or table numbers.
+- Write mathematical formulas in LaTeX: `$...$` inline, `$$...$$` for display equations.
 - Extract citations from ALL page types in APA style. If a page cites a work only by author and year (in-text citation) without full bibliographic details, set is_partial=true and record only what the page states (e.g. 'Conrad, A. H., & Meyer, J. R. (1957).') — never fabricate bracketed placeholder titles or descriptions. Set is_partial=false only for complete references (bibliography entries, full footnotes).
 - For page_types, select 1-3 classifications that ALL apply (e.g., ["content", "bibliography"] for a page with both prose and references).
 - Bullet points must condense, not restate: scale 4-10 bullets to the page's information density, each typically 15-30 words. Cover every substantive claim, dataset, argument step, and figure — completeness matters — but express each compactly; the bullet block should stay clearly shorter than the page's own text.
-- For pages that are mostly tables, figures, or bibliography, one to three bullets naming what the page contains suffice; the bullet block must never exceed the page's own text length.
+- For pages that are mostly tables or figures, one to three bullets naming what the page contains suffice; the bullet block must never exceed the page's own text length.
 - Provide bullet points for pages with summarizable prose (content, abstract, preface, appendix, figures_tables_sources).
 - Two-page spreads: if the transcription contains two consecutive page numbers or clearly covers two facing pages (a page-spread scan), set is_two_page_spread=true, page_number_integer=left page, page_number_integer_end=right page; otherwise set is_two_page_spread=false and page_number_integer_end=null.
-- Reason hard to extract all data properly.
 - Pay special attention to the following topics during summarization. Content related to these topics should be summarized in greater detail (more and fuller bullets are justified there); passages unrelated to these topics may be summarized more tersely, though never omitted entirely: {{CONTEXT}}
 
 The JSON schema:

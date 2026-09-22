@@ -111,6 +111,11 @@ def _page_information(summary_data: dict[str, Any]) -> dict[str, Any]:
         - is_unnumbered: Boolean flag derived from page_number_type == 'none' or
           null integer
         - is_spread: Boolean flag for two-page-spread scans
+        - inferred: Boolean flag for a number inferred from the neighbouring
+          pages rather than printed on the page (never set when unnumbered)
+
+    A payload without page information is treated as unnumbered: its
+    ``page`` field is a scan position, not a printed number.
     """
     page_info = summary_data.get("page_information", {})
 
@@ -152,16 +157,17 @@ def _page_information(summary_data: dict[str, Any]) -> dict[str, Any]:
             "page_types": page_types,
             "is_unnumbered": is_unnumbered,
             "is_spread": is_spread,
+            "inferred": bool(page_info.get("number_inferred")) and not is_unnumbered,
         }
 
-    page_val = summary_data.get("page", "?")
     return {
-        "page_number_integer": page_val,
+        "page_number_integer": "?",
         "page_number_end": None,
-        "page_number_type": "arabic",
+        "page_number_type": "none",
         "page_types": ["content"],
-        "is_unnumbered": False,
+        "is_unnumbered": True,
         "is_spread": False,
+        "inferred": False,
     }
 
 
@@ -351,6 +357,10 @@ class PageRenderData:
     heading_text: str
     page_number_end: int | None = None
     is_spread: bool = False
+    # 1-based position of the scan in the PDF or image folder.
+    position: int | None = None
+    # The printed-style number was inferred, not read from the page.
+    inferred: bool = False
 
 
 @dataclass
@@ -375,9 +385,22 @@ class SummaryData:
     source_page_count: int = 0
 
 
+def _scan_position(result: dict[str, Any], fallback_positions: dict[int, int]) -> int:
+    """Return the 1-based scan position of *result* in the PDF/image folder.
+
+    Read from ``original_input_order_index``; a result without it falls back to
+    its place in the unfiltered result list.
+    """
+    index = result.get("original_input_order_index")
+    if isinstance(index, int) and not isinstance(index, bool):
+        return index + 1
+    return fallback_positions[id(result)]
+
+
 def prepare_summary_data(
     summary_results: list[dict[str, Any]],
     citation_manager: CitationManager,
+    position_label: str = "pdf",
 ) -> SummaryData:
     """Shared preparation logic for DOCX and Markdown summary writers.
 
@@ -388,10 +411,17 @@ def prepare_summary_data(
         summary_results: Raw summary results from the API.
         citation_manager: A :class:`CitationManager` instance (passed in for
             testability).
+        position_label: ``"pdf"`` or ``"image"``: how a page without a printed
+            number is located (``PDF p. N`` or ``Image N``).
 
     Returns:
         A :class:`SummaryData` instance with all prepared data.
     """
+    from rendering.citations import PRINTED_ARABIC, PRINTED_ROMAN
+
+    fallback_positions = {
+        id(result): position for position, result in enumerate(summary_results, 1)
+    }
     filtered_results = filter_empty_pages(summary_results)
     if len(filtered_results) < len(summary_results):
         logger.info(
@@ -413,6 +443,8 @@ def prepare_summary_data(
         page_num_type = page_info["page_number_type"]
         is_spread = page_info["is_spread"]
         page_types = page_info["page_types"]
+        inferred = page_info["inferred"]
+        position = _scan_position(result, fallback_positions)
         references = _normalize_references(summary_payload.get("references"))
 
         # Collect the integer page number(s) this scan covers (both for spreads).
@@ -423,15 +455,22 @@ def prepare_summary_data(
                 numbered_pages.append(page_end)
 
         if references:
-            # Include citations on unnumbered pages (recorded with page=None and
-            # rendered as "unnumbered") rather than silently discarding them. For
-            # a numbered spread, record the references against both pages; the
-            # citation manager deduplicates per page.
+            # A numbered page (both pages of a spread) is cited by its printed
+            # number, keeping roman numerals roman and inferred numbers marked;
+            # an unnumbered page by its scan position. The citation manager
+            # deduplicates per locator.
             if numbered_pages:
+                namespace = (
+                    PRINTED_ROMAN if page_num_type == "roman" else PRINTED_ARABIC
+                )
                 for pg in numbered_pages:
-                    citation_manager.add_citations(references, pg)
+                    citation_manager.add_citations(
+                        references, (namespace, pg, inferred)
+                    )
             else:
-                citation_manager.add_citations(references, None)
+                citation_manager.add_citations(
+                    references, (position_label, position, False)
+                )
 
         for pg in numbered_pages:
             for pt in _get_structure_types(page_types):
@@ -442,34 +481,16 @@ def prepare_summary_data(
         # empty and the page renders no bullets rather than raising).
         bullet_points = _string_bullets(summary_payload.get("bullet_points"))
 
-        # Track content pages and build render data
-        if _should_render_bullets(page_types):
+        # Track content pages and build render data. A failed page (page_types
+        # typically ["other"], not a bullet-bearing type) is rendered with its
+        # placeholder bullet so the reader sees the coverage gap in place
+        # rather than the page vanishing silently.
+        renders_bullets = _should_render_bullets(page_types)
+        if renders_bullets:
             content_page_count += 1
-            if bullet_points:
-                heading = format_page_heading(
-                    page_number,
-                    page_num_type,
-                    page_types,
-                    page_info["is_unnumbered"],
-                    page_number_end=page_end,
-                    is_spread=is_spread,
-                )
-                page_render_items.append(
-                    PageRenderData(
-                        page_number=page_number,
-                        page_number_type=page_num_type,
-                        page_types=page_types,
-                        is_unnumbered=page_info["is_unnumbered"],
-                        bullet_points=bullet_points,
-                        heading_text=heading,
-                        page_number_end=page_end,
-                        is_spread=is_spread,
-                    )
-                )
-        elif _is_error_result(result, bullet_points) and bullet_points:
-            # A failed page (page_types typically ["other"], not a bullet-bearing
-            # type) is rendered with its placeholder bullet so the reader sees the
-            # coverage gap in place rather than the page vanishing silently.
+        if bullet_points and (
+            renders_bullets or _is_error_result(result, bullet_points)
+        ):
             heading = format_page_heading(
                 page_number,
                 page_num_type,
@@ -477,6 +498,9 @@ def prepare_summary_data(
                 page_info["is_unnumbered"],
                 page_number_end=page_end,
                 is_spread=is_spread,
+                position=position,
+                position_label=position_label,
+                inferred=inferred,
             )
             page_render_items.append(
                 PageRenderData(
@@ -488,6 +512,8 @@ def prepare_summary_data(
                     heading_text=heading,
                     page_number_end=page_end,
                     is_spread=is_spread,
+                    position=position,
+                    inferred=inferred,
                 )
             )
 
@@ -504,6 +530,7 @@ def build_render_context(
     summary_results: list[dict[str, Any]],
     polite_pool_email: str | None = None,
     openalex_api_key: str | None = None,
+    position_label: str = "pdf",
 ) -> tuple[CitationManager, SummaryData]:
     """Build one enriched-once render context shared by both writers.
 
@@ -511,14 +538,17 @@ def build_render_context(
     merge, and returns the (not-yet-enriched) manager plus the prepared
     :class:`SummaryData`. The caller runs OpenAlex enrichment exactly once
     (``enrich_if_enabled``) so both the DOCX and Markdown writers render from
-    identical, already-enriched citations.
+    identical, already-enriched citations. ``position_label`` is ``"pdf"`` or
+    ``"image"`` (see :func:`prepare_summary_data`).
     """
     from rendering.citations import CitationManager
 
     citation_manager = CitationManager(
         polite_pool_email=polite_pool_email, api_key=openalex_api_key
     )
-    data = prepare_summary_data(summary_results, citation_manager)
+    data = prepare_summary_data(
+        summary_results, citation_manager, position_label=position_label
+    )
     citation_manager.consolidate()
     return citation_manager, data
 
@@ -535,12 +565,21 @@ def format_page_heading(
     is_unnumbered: bool,
     page_number_end: int | None = None,
     is_spread: bool = False,
+    position: int | None = None,
+    position_label: str = "pdf",
+    inferred: bool = False,
 ) -> str:
     """Format page heading text based on page_types and numbering.
 
     Returns bare heading text (no markdown prefix). Writers add their own
     format-specific prefix (e.g. ``## `` for Markdown). Two-page spreads render
-    a page range ("Pages 12-13" / "Pages xii-xiii") or "[Unnumbered spread]".
+    a page range ("Pages 12-13" / "Pages xii-xiii").
+
+    A page without a printed number is located by its 1-based scan
+    *position*: "[No printed number; PDF p. 7]", or "Image 7" when
+    *position_label* is ``"image"``. A spread is one scan, so an unnumbered
+    spread gets one position: "[No printed numbers; PDF p. 7]". An *inferred*
+    number is bracketed: "Page [6]", "Page [vi]", "Pages [6]-[7]".
     """
     type_prefix = ""
     if "abstract" in page_types and "content" not in page_types:
@@ -552,25 +591,37 @@ def format_page_heading(
     elif "figures_tables_sources" in page_types:
         type_prefix = "[Figures/Tables] "
 
+    if position is None:
+        locator = ""
+    elif position_label == "image":
+        locator = f"; Image {position}"
+    else:
+        locator = f"; PDF p. {position}"
+
+    def number(value: int | str) -> str:
+        if page_number_type == "roman" and isinstance(value, int):
+            text = int_to_roman(value)
+        else:
+            text = str(value)
+        return f"[{text}]" if inferred else text
+
     if is_spread:
         if (
             page_number_type == "none"
             or is_unnumbered
             or not isinstance(page_number, int)
         ):
-            return f"{type_prefix}[Unnumbered spread]"
+            if not locator:
+                return f"{type_prefix}[Unnumbered spread]"
+            return f"{type_prefix}[No printed numbers{locator}]"
         end = page_number_end if isinstance(page_number_end, int) else page_number + 1
-        if page_number_type == "roman":
-            return f"{type_prefix}Pages {int_to_roman(page_number)}-{int_to_roman(end)}"
-        return f"{type_prefix}Pages {page_number}-{end}"
+        return f"{type_prefix}Pages {number(page_number)}-{number(end)}"
 
-    if page_number_type == "roman" and isinstance(page_number, int):
-        roman_str = int_to_roman(page_number)
-        return f"{type_prefix}Page {roman_str}"
-    elif page_number_type == "none" or is_unnumbered:
-        return f"{type_prefix}[Unnumbered page]"
-    else:
-        return f"{type_prefix}Page {page_number}"
+    if page_number_type == "none" or is_unnumbered:
+        if not locator:
+            return f"{type_prefix}[Unnumbered page]"
+        return f"{type_prefix}[No printed number{locator}]"
+    return f"{type_prefix}Page {number(page_number)}"
 
 
 def _compact_int_ranges(nums: list[int]) -> list[tuple[int, int]]:

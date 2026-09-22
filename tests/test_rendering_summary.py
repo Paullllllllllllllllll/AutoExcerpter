@@ -337,23 +337,24 @@ class TestPageNumberAndFlags:
         assert result["is_unnumbered"] is False
 
     def test_fallback_to_page_field_only(self) -> None:
-        """Falls back to page field when page_information is missing."""
+        """Without page_information the page is unnumbered, not 'Page 10'."""
         summary = {"page": 10}
 
         result = _page_information(summary)
 
-        assert result["page_number_integer"] == 10
+        # "page" is a scan position, never a printed number.
+        assert result["page_number_integer"] == "?"
+        assert result["is_unnumbered"] is True
         assert result["page_types"] == ["content"]
 
     def test_empty_page_information(self) -> None:
-        """Empty page_information dict falls back to page field."""
+        """An empty page_information dict is treated as unnumbered."""
         summary = {"page_information": {}, "page": 5}
 
         result = _page_information(summary)
 
-        # Empty dict is falsy, so falls back to page field
-        assert result["page_number_integer"] == 5
-        assert result["is_unnumbered"] is False
+        assert result["page_number_integer"] == "?"
+        assert result["is_unnumbered"] is True
 
     def test_fallback_to_page_field(self) -> None:
         """Falls back to 'page' field if page_number missing."""
@@ -564,24 +565,15 @@ class TestPageNumberAndFlagsWithType:
         assert result["page_number_type"] == "arabic"
         assert result["is_unnumbered"] is False
 
-    def test_page_field_fallback_defaults_to_arabic(self) -> None:
-        """Fallback to page field uses arabic type."""
+    def test_page_field_fallback_is_unnumbered(self) -> None:
+        """Fallback to the page field gives type 'none', not arabic."""
         summary = {"page": 10}
 
         result = _page_information(summary)
 
-        assert result["page_number_integer"] == 10
-        assert result["page_number_type"] == "arabic"
-
-    def test_fallback_with_page_field(self) -> None:
-        """Fallback case uses page field value."""
-        summary = {"page": 3}
-
-        result = _page_information(summary)
-
-        # Fallback case returns the page value but marks as arabic type
-        assert result["page_number_integer"] == 3
-        assert result["page_number_type"] == "arabic"
+        assert result["page_number_integer"] == "?"
+        assert result["page_number_type"] == "none"
+        assert result["inferred"] is False
 
     def test_null_page_number_integer(self) -> None:
         """Null page_number_integer is handled as unnumbered."""
@@ -1056,7 +1048,7 @@ class TestPrepareSummaryDataSpread:
 
         citations = list(cm.citations.values())
         assert len(citations) == 1
-        assert citations[0].pages == {12, 13}
+        assert citations[0].get_page_range_str() == "pp. 12-13"
 
         assert data.page_render_items[0].heading_text == "Pages 12-13"
         assert data.page_render_items[0].is_spread is True

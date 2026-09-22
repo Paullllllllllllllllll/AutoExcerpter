@@ -27,6 +27,7 @@ from collections import Counter
 from dataclasses import dataclass
 
 PAGE_MARKER_RE = re.compile(r"<page_number>(.*?)</page_number>")
+PAGE_BREAK_RE = re.compile(r"<page_break\b[^>]*/>")
 
 # Ligatures folded to their ASCII expansion so a benign ligature change does not
 # trip the gate; deliberately narrow (NFKC would also rewrite superscripts).
@@ -54,8 +55,12 @@ def content_signature(text: str) -> str:
 
 
 def page_markers(text: str) -> list[str]:
-    """Return the ordered list of page-number marker inner texts."""
-    return PAGE_MARKER_RE.findall(text)
+    """Return the page-number marker inner texts, then the page-break tags.
+
+    ``<page_break .../>`` tags (pages without a printed number) are returned
+    whole, so a repair that drops one loses a marker and fails the gate.
+    """
+    return PAGE_MARKER_RE.findall(text) + PAGE_BREAK_RE.findall(text)
 
 
 def _alnum_count(text: str) -> int:

@@ -113,7 +113,9 @@ class TestReprintPartialResolution:
         assert len(manager.citations) == 1
         survivor = next(iter(manager.citations.values()))
         assert survivor.year == 1890
-        assert {3, 17} <= survivor.pages
+        assert {("printed-arabic", 3, False), ("printed-arabic", 17, False)} <= (
+            survivor.locators
+        )
 
 
 class TestVolumeYearGuard:

@@ -932,6 +932,26 @@ def wrap_long_lines(text: str, width: int) -> str:
 # ============================================================================
 
 
+# A <page_number> tag directly after a letter or closing punctuation, with no
+# space between: a note reference marker the model mistook for a page number
+# ("things.<page_number>10</page_number>"). Printed page numbers stand apart in
+# the header or footer ("FIRE · <page_number>89</page_number>").
+_GLUED_PAGE_TAG = re.compile(
+    r"(?<=[^\W\d_]|[.,;:!?)\"'’”])<page_number>\s*(\d{1,4})\s*</page_number>"
+)
+
+
+def retag_glued_page_numbers(text: str) -> str:
+    """Rewrite page-number tags glued to a word as footnote references.
+
+    ``things.<page_number>10</page_number>`` becomes ``things.[^10]``, the
+    transcription's footnote-reference format, so the marker neither passes
+    for a printed page number nor suppresses the page's ``<page_break>``
+    locator. Tags set apart by whitespace are left alone.
+    """
+    return _GLUED_PAGE_TAG.sub(r"[^\1]", text)
+
+
 def clean_transcription(text: str, config: dict[str, Any] | None = None) -> str:
     """Run the full text cleaning pipeline on transcription text.
 
@@ -959,6 +979,9 @@ def clean_transcription(text: str, config: dict[str, Any] | None = None) -> str:
     # Check if cleaning is globally enabled
     if not config.get("enabled", True):
         return text
+
+    # 0. A page-number tag glued to a word is a note reference marker
+    text = retag_glued_page_numbers(text)
 
     # 1. Unicode normalization
     if config.get("unicode_normalization", True):

@@ -283,6 +283,8 @@ class PageNumberProcessor:
                     current["model_page_number_int"] = inferred_page
                     current["page_number_type"] = page_type
                     current["is_genuinely_unnumbered"] = False
+                    # No number is printed on this page; rendering brackets it.
+                    current["number_inferred"] = True
                     claimed_pages.add(inferred_page)
                     if current_span == 2:
                         # A spread also occupies the following page slot.
@@ -613,23 +615,33 @@ class PageNumberProcessor:
                         resolved_type if resolved_type != "none" else "arabic"
                     )
             else:
-                # No anchor available - prefer a model- or inference-set page
+                # No anchor available - keep a model- or inference-set page
                 # number (infer_unnumbered_page_numbers writes it into
-                # model_page_number_int) so an inferred page is not discarded;
-                # otherwise fall back to the virtual position (1-indexed).
+                # model_page_number_int) so an inferred page is not discarded.
+                # Without one the page stays unnumbered: its physical position
+                # is kept in original_input_order_index, never passed off as a
+                # printed number.
                 model_page = p["model_page_number_int"]
                 if isinstance(model_page, int) and model_page >= 1:
                     resolved_page = model_page
-                    resolved_type = page_num_type
+                    page_info["page_number_integer"] = resolved_page
+                    page_info["page_number_type"] = (
+                        page_num_type if page_num_type != "none" else "arabic"
+                    )
                 else:
-                    # A physical position is an arabic count whatever the model
-                    # reported, so it must not render as a roman numeral.
-                    resolved_page = p["virtual_pos"] + 1
-                    resolved_type = "arabic"
-                page_info["page_number_integer"] = resolved_page
-                page_info["page_number_type"] = (
-                    resolved_type if resolved_type != "none" else "arabic"
-                )
+                    resolved_page = None
+                    page_info["page_number_integer"] = None
+                    page_info["page_number_type"] = "none"
+
+            # An inferred number was not printed on the page; the flag lets
+            # rendering bracket it. It is meaningless once the page is
+            # unnumbered. A flag already present comes from an earlier pass over
+            # the same (resumed) results and still holds.
+            inferred = p.get("number_inferred") or page_info.get("number_inferred")
+            if resolved_page is not None and inferred:
+                page_info["number_inferred"] = True
+            else:
+                page_info.pop("number_inferred", None)
 
             # Record the spread end page (right page) when numbered.
             if is_spread and resolved_page is not None:

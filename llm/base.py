@@ -32,7 +32,8 @@ import threading
 import time
 from collections import deque
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Literal
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage
@@ -551,6 +552,136 @@ _EXTRACTORS: list[Callable[[Any], str | None]] = [
     _extract_from_dict,
     _extract_from_nested_output,
 ]
+
+
+# ============================================================================
+# Response Status Inspection
+# ============================================================================
+ResponseKind = Literal["ok", "content_filter", "refusal", "max_output_tokens"]
+
+
+@dataclass(frozen=True)
+class ResponseOutcome:
+    """How a model response ended, as read from its status fields.
+
+    ``content_filter`` and ``refusal`` end a page at once (a retry would get the
+    same answer); ``max_output_tokens`` and ``ok`` leave the response to the
+    usual empty-content and schema handling.
+    """
+
+    kind: ResponseKind
+    reason: str | None = None
+
+    @property
+    def stops_page(self) -> bool:
+        """Whether this outcome fails the page without further retries."""
+        return self.kind in ("content_filter", "refusal")
+
+    @property
+    def message(self) -> str:
+        """A human-readable error message including the reason."""
+        label = {
+            "content_filter": "Response stopped by the provider's content filter",
+            "refusal": "Model refused the request",
+            "max_output_tokens": "Response truncated at max_output_tokens",
+            "ok": "Response completed",
+        }[self.kind]
+        return f"{label}: {self.reason}" if self.reason else label
+
+
+_OUTCOME_OK = ResponseOutcome("ok")
+
+
+def _unwrap_raw_response(response: Any) -> Any:
+    """Return the raw message inside a ``with_structured_output`` wrapper dict."""
+    if isinstance(response, dict) and "raw" in response:
+        return response["raw"]
+    return response
+
+
+def get_response_metadata(response: Any) -> dict[str, Any]:
+    """Return the ``response_metadata`` dict of a (possibly wrapped) response.
+
+    Unwraps the ``with_structured_output(include_raw=True)`` dict first, so the
+    metadata of structured-output calls is not lost. Returns ``{}`` when the
+    response carries no metadata dict.
+    """
+    meta = getattr(_unwrap_raw_response(response), "response_metadata", None)
+    return meta if isinstance(meta, dict) else {}
+
+
+def _refusal_text(target: Any) -> str | None:
+    """Return the refusal text of an AIMessage-like response, if any.
+
+    Chat Completions puts it in ``additional_kwargs["refusal"]``; the Responses
+    API puts it in a content block of type ``refusal``. Returns ``""`` for a
+    refusal block without text, ``None`` when there is no refusal.
+    """
+    kwargs = getattr(target, "additional_kwargs", None)
+    if isinstance(kwargs, dict):
+        refusal = kwargs.get("refusal")
+        if isinstance(refusal, str) and refusal.strip():
+            return refusal.strip()
+    content = getattr(target, "content", None)
+    if isinstance(content, list):
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "refusal":
+                text = block.get("refusal")
+                return text.strip() if isinstance(text, str) else ""
+    return None
+
+
+def inspect_response(response: Any) -> ResponseOutcome:
+    """Classify how a LangChain model response ended.
+
+    Reads the status fields of every shape a response arrives in: the
+    ``with_structured_output(include_raw=True)`` dict (its ``raw`` message and a
+    ``parsing_error`` of class ``OpenAIRefusalError``), the Responses API
+    ``status``/``incomplete_details.reason`` in ``response_metadata``, the Chat
+    Completions ``finish_reason``, ``additional_kwargs["refusal"]``, and content
+    blocks of type ``refusal``. Anything else is ``ok``.
+
+    Args:
+        response: Response returned by ``_invoke_with_retry``.
+
+    Returns:
+        The outcome kind and, when known, the reason reported by the provider.
+    """
+    meta = get_response_metadata(response)
+
+    reason: str | None = None
+    if meta.get("status") == "incomplete":
+        details = meta.get("incomplete_details")
+        if isinstance(details, dict) and isinstance(details.get("reason"), str):
+            reason = details["reason"]
+    if reason == "content_filter":
+        return ResponseOutcome(
+            "content_filter", "incomplete_details.reason=content_filter"
+        )
+    if meta.get("finish_reason") == "content_filter":
+        return ResponseOutcome("content_filter", "finish_reason=content_filter")
+
+    # Anthropic reports a refusal as its stop reason.
+    if meta.get("stop_reason") == "refusal":
+        return ResponseOutcome("refusal", "stop_reason=refusal")
+
+    if isinstance(response, dict) and "raw" in response:
+        parsing_error = response.get("parsing_error")
+        if (
+            parsing_error is not None
+            and type(parsing_error).__name__ == "OpenAIRefusalError"
+        ):
+            return ResponseOutcome("refusal", str(parsing_error).strip() or None)
+
+    refusal = _refusal_text(_unwrap_raw_response(response))
+    if refusal is not None:
+        return ResponseOutcome("refusal", refusal or None)
+
+    if reason == "max_output_tokens":
+        return ResponseOutcome(
+            "max_output_tokens", "incomplete_details.reason=max_output_tokens"
+        )
+    return _OUTCOME_OK
 
 
 class LLMClientBase:
@@ -1798,7 +1929,10 @@ __all__ = [
     "DEFAULT_MAX_RETRIES",
     "TIMEOUT_ATTEMPTS",
     "CallDeadlineExceeded",
+    "ResponseOutcome",
     "abort_requested",
     "clear_abort",
+    "get_response_metadata",
+    "inspect_response",
     "request_abort",
 ]

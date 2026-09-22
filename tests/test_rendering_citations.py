@@ -31,7 +31,7 @@ class TestCitation:
 
         assert citation.raw_text == "Smith, J. (2020). Test Paper. Journal, 10, 1-10."
         assert citation.normalized_key != ""
-        assert len(citation.pages) == 0
+        assert len(citation.locators) == 0
 
     def test_normalized_key_generated(self) -> None:
         """Normalized key is automatically generated."""
@@ -73,18 +73,26 @@ class TestCitation:
         citation.add_page(10)
         citation.add_page(5)  # Duplicate
 
-        assert 5 in citation.pages
-        assert 10 in citation.pages
-        assert len(citation.pages) == 2  # No duplicate
+        # A bare int is a printed arabic page number.
+        assert citation.locators == {
+            ("printed-arabic", 5, False),
+            ("printed-arabic", 10, False),
+        }
 
     def test_get_sorted_pages(self) -> None:
-        """Pages are returned sorted."""
+        """Locators are returned by namespace (roman first), then number."""
         citation = Citation(raw_text="Test citation")
         citation.add_page(10)
+        citation.add_page(("pdf", 2, False))
         citation.add_page(5)
-        citation.add_page(15)
+        citation.add_page(("printed-roman", 3, False))
 
-        assert citation.get_sorted_pages() == [5, 10, 15]
+        assert citation.get_sorted_pages() == [
+            ("printed-roman", 3, False),
+            ("printed-arabic", 5, False),
+            ("printed-arabic", 10, False),
+            ("pdf", 2, False),
+        ]
 
     def test_get_page_range_str_empty(self) -> None:
         """Empty pages returns empty string."""
@@ -163,7 +171,7 @@ class TestCitationManager:
 
         assert len(manager.citations) == 1
         citation = list(manager.citations.values())[0]
-        assert citation.pages == {1, 5, 10}
+        assert citation.get_page_range_str() == "pp. 1, 5, 10"
 
     def test_add_citations_skips_empty(self) -> None:
         """Empty citation strings are skipped."""
@@ -816,7 +824,7 @@ class TestPartialCitations:
         survivor = next(iter(manager.citations.values()))
         assert survivor.raw_text == _FULL
         assert survivor.partial is False
-        assert survivor.pages == {7}
+        assert survivor.get_page_range_str() == "p. 7"
 
     def test_full_wins_over_partial_same_key(self) -> None:
         """Same normalized key seen as partial then full ends up non-partial."""
@@ -828,7 +836,7 @@ class TestPartialCitations:
         assert len(manager.citations) == 1
         citation = next(iter(manager.citations.values()))
         assert citation.partial is False
-        assert citation.pages == {1, 2}
+        assert citation.get_page_range_str() == "pp. 1-2"
 
     def test_plain_string_items_default_non_partial(self) -> None:
         """Bare string items are treated as complete (non-partial) references."""
@@ -948,7 +956,7 @@ class TestSharedIdentifierMerge:
         assert len(manager.citations) == 1
         survivor = next(iter(manager.citations.values()))
         assert survivor.doi == "10.5555/shared.work"
-        assert survivor.pages == {1, 2}  # pages unioned
+        assert survivor.get_page_range_str() == "pp. 1-2"  # pages unioned
         assert survivor.raw_text == self._LONG  # longer raw text stays canonical
 
 
@@ -986,4 +994,4 @@ class TestJaccardOnlyMerge:
 
         assert len(manager.citations) == 1
         survivor = next(iter(manager.citations.values()))
-        assert survivor.pages == {1, 2}
+        assert survivor.get_page_range_str() == "pp. 1-2"

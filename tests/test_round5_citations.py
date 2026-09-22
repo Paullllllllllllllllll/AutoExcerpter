@@ -89,7 +89,7 @@ class TestMergedPartialBecomesFull:
         assert len(manager.citations) == 1
         merged = next(iter(manager.citations.values()))
         assert merged.partial is False
-        assert merged.pages == {1, 2}
+        assert merged.get_page_range_str() == "pp. 1-2"
 
     def test_two_partials_stay_partial(self) -> None:
         """Merging two partials leaves the survivor partial (and thus droppable)."""
@@ -276,7 +276,7 @@ class TestPolitePoolMailto:
     def test_blank_email_omits_mailto_on_text_search(self) -> None:
         params = self._capture_params(CitationManager(), "text")
         assert "mailto" not in params
-        assert params.get("search")
+        assert params.get("filter") or params.get("search")
 
     def test_blank_email_omits_mailto_on_doi_lookup(self) -> None:
         params = self._capture_params(CitationManager(), "doi")
