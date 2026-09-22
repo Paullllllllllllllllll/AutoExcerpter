@@ -24,6 +24,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 from cli.args import (
     _apply_app_config_overrides,
+    _build_cli_concurrency_overrides,
     _build_cli_model_overrides,
     _parse_cli_selection,
     _parse_execution_mode,
@@ -147,6 +148,11 @@ def _setup_and_scan(
     if cli_model_overrides:
         get_config_loader().apply_model_overrides(cli_model_overrides)
         logger.info("CLI mode model overrides applied: %s", cli_model_overrides)
+
+    cli_concurrency_overrides = _build_cli_concurrency_overrides(args)
+    if cli_concurrency_overrides:
+        get_config_loader().apply_concurrency_overrides(cli_concurrency_overrides)
+        logger.info("CLI override: service_tier=%s", args.service_tier)
 
     if not config.CLI_MODE:
         from cli.interaction import print_header

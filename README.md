@@ -1,4 +1,4 @@
-# AutoExcerpter v3.2.0
+# AutoExcerpter v3.3.0
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -336,7 +336,9 @@ was used. A completed `--dry-run` instead emits the plan shape
 `--model`, `--reasoning-effort {none,minimal,low,medium,high,xhigh}`,
 `--verbosity {low,medium,high}` (GPT-5 only),
 `--max-output-tokens N`, `--temperature F`,
-`--provider {openai,anthropic,google,openrouter,custom}`
+`--provider {openai,anthropic,google,openrouter,custom}`,
+`--service-tier {auto,default,flex,priority}` (OpenAI only; overrides
+`concurrency.yaml` for both phases for this run)
 
 **Examples:**
 
@@ -916,6 +918,10 @@ v1.0.0 do not exist.
 
 ## Changelog
 
+- **v3.3.0** (22 September 2026) -- A new `--service-tier
+  {auto,default,flex,priority}` flag overrides the configured OpenAI service
+  tier for both the transcription and summary calls of one run, without
+  editing `concurrency.yaml`; per-model capability guards still apply.
 - **v3.2.0** (22 September 2026) -- Pages without a printed page number are
   now locatable: the `.txt` marks them with `<page_break pdf="N"/>`
   (`image="N"` for image folders), summaries head them

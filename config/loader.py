@@ -213,6 +213,18 @@ class ConfigLoader:
         self._model = _deep_merge_dicts(self._model, overrides)
         logger.info("Applied runtime model config overrides")
 
+    def apply_concurrency_overrides(self, overrides: dict[str, Any]) -> None:
+        """Apply runtime overrides to the loaded concurrency configuration.
+
+        Mirrors ``apply_model_overrides``; used by CLI mode to support
+        automation-friendly overrides (e.g. ``--service-tier``) without
+        editing ``config/defaults/concurrency.yaml``.
+        """
+        if not isinstance(overrides, dict) or not overrides:
+            return
+        self._concurrency = _deep_merge_dicts(self._concurrency, overrides)
+        logger.info("Applied runtime concurrency config overrides")
+
     def is_loaded(self) -> bool:
         """Check if configurations have been loaded."""
         return bool(

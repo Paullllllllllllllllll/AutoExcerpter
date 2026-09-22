@@ -12,8 +12,10 @@ import pytest
 from cli.args import (
     PROVIDER_CHOICES,
     REASONING_EFFORT_CHOICES,
+    SERVICE_TIER_CHOICES,
     VERBOSITY_CHOICES,
     _apply_app_config_overrides,
+    _build_cli_concurrency_overrides,
     _build_cli_model_overrides,
     _parse_cli_selection,
     _parse_execution_mode,
@@ -69,6 +71,7 @@ def _make_cli_args(**kwargs: Any) -> argparse.Namespace:
         "provider": None,
         "transcription_provider": None,
         "summary_provider": None,
+        "service_tier": None,
     }
     defaults.update(kwargs)
     return argparse.Namespace(**defaults)
@@ -370,6 +373,67 @@ class TestBuildCliModelOverrides:
             assert result[model_key]["max_output_tokens"] == 16000
             assert result[model_key]["temperature"] == 0.5
             assert result[model_key]["provider"] == "openai"
+
+
+# ============================================================================
+# _build_cli_concurrency_overrides / --service-tier
+# ============================================================================
+
+
+class TestBuildCliConcurrencyOverrides:
+    """Tests for _build_cli_concurrency_overrides() override dict construction."""
+
+    @patch.object(config, "CLI_MODE", True)
+    def test_no_flag_returns_empty(self) -> None:
+        args = _make_cli_args()
+        result = _build_cli_concurrency_overrides(args)
+        assert result == {}
+
+    @patch.object(config, "CLI_MODE", True)
+    def test_service_tier_sets_both_phases(self) -> None:
+        args = _make_cli_args(service_tier="priority")
+        result = _build_cli_concurrency_overrides(args)
+        assert result["api_requests"]["transcription"]["service_tier"] == "priority"
+        assert result["api_requests"]["summary"]["service_tier"] == "priority"
+
+    @patch.object(config, "CLI_MODE", False)
+    def test_service_tier_honored_in_interactive_mode(self) -> None:
+        args = _make_cli_args(service_tier="flex")
+        result = _build_cli_concurrency_overrides(args)
+        assert result["api_requests"]["transcription"]["service_tier"] == "flex"
+        assert result["api_requests"]["summary"]["service_tier"] == "flex"
+
+
+class TestServiceTierArgparse:
+    """Tests for the ``--service-tier`` flag as registered with argparse."""
+
+    def _parse(self, monkeypatch: pytest.MonkeyPatch, argv: list[str]) -> Any:
+        import sys
+
+        from cli.args import setup_argparse
+
+        monkeypatch.setattr(config, "CLI_MODE", True)
+        monkeypatch.setattr(sys, "argv", ["main/excerpt.py", *argv])
+        return setup_argparse()
+
+    @pytest.mark.parametrize("tier", list(SERVICE_TIER_CHOICES))
+    def test_valid_choices_parse(
+        self, monkeypatch: pytest.MonkeyPatch, tier: str
+    ) -> None:
+        args = self._parse(monkeypatch, ["in", "out", "--service-tier", tier])
+        assert args.service_tier == tier
+
+    def test_absent_defaults_to_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        args = self._parse(monkeypatch, ["in", "out"])
+        assert args.service_tier is None
+
+    def test_invalid_value_rejected(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        with pytest.raises(SystemExit) as exc:
+            self._parse(monkeypatch, ["in", "out", "--service-tier", "bogus"])
+        assert exc.value.code == 2
+        assert "invalid choice" in capsys.readouterr().err
 
 
 # ============================================================================

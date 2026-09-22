@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -379,6 +380,97 @@ class TestModelOverrides:
 
         result = loader.get_model_config()
         assert result["transcription_model"]["name"] == "gpt-5-mini"
+
+
+class TestConcurrencyOverrides:
+    """Tests for runtime concurrency (service tier) override application."""
+
+    def test_apply_concurrency_overrides_deep_merge(self) -> None:
+        """apply_concurrency_overrides deep-merges nested dictionaries."""
+        loader = ConfigLoader()
+        loader._concurrency = {
+            "api_requests": {
+                "transcription": {"concurrency_limit": 5, "service_tier": "flex"},
+                "summary": {"concurrency_limit": 5, "service_tier": "flex"},
+            }
+        }
+
+        loader.apply_concurrency_overrides(
+            {
+                "api_requests": {
+                    "transcription": {"service_tier": "priority"},
+                    "summary": {"service_tier": "priority"},
+                }
+            }
+        )
+
+        merged = loader.get_concurrency_config()
+        assert merged["api_requests"]["transcription"]["service_tier"] == "priority"
+        assert merged["api_requests"]["transcription"]["concurrency_limit"] == 5
+        assert merged["api_requests"]["summary"]["service_tier"] == "priority"
+
+    def test_apply_concurrency_overrides_ignores_empty(self) -> None:
+        """apply_concurrency_overrides ignores empty override payloads."""
+        loader = ConfigLoader()
+        loader._concurrency = {
+            "api_requests": {"transcription": {"service_tier": "flex"}}
+        }
+
+        loader.apply_concurrency_overrides({})
+
+        result = loader.get_concurrency_config()
+        assert result["api_requests"]["transcription"]["service_tier"] == "flex"
+
+    def test_service_tier_override_wins_for_both_phases(self, monkeypatch) -> None:
+        """--service-tier's override dict beats configured tiers on both phases.
+
+        Exercises the same path main/excerpt.py drives: build the CLI
+        override dict, apply it via apply_concurrency_overrides, then read
+        it back through config.accessors.get_service_tier as the LLM
+        clients do.
+        """
+        import config.accessors as ch
+        from cli.args import _build_cli_concurrency_overrides
+
+        loader = ConfigLoader()
+        loader._concurrency = {
+            "api_requests": {
+                "transcription": {"service_tier": "flex"},
+                "summary": {"service_tier": "default"},
+            }
+        }
+        monkeypatch.setattr(ch, "get_config_loader", lambda: loader)
+
+        args = argparse.Namespace(service_tier="priority")
+        overrides = _build_cli_concurrency_overrides(args)
+        loader.apply_concurrency_overrides(overrides)
+
+        assert ch.get_service_tier("transcription") == "priority"
+        assert ch.get_service_tier("summary") == "priority"
+
+    def test_absent_service_tier_flag_leaves_config_unchanged(
+        self, monkeypatch
+    ) -> None:
+        """No --service-tier flag: configured per-phase tiers are untouched."""
+        import config.accessors as ch
+        from cli.args import _build_cli_concurrency_overrides
+
+        loader = ConfigLoader()
+        loader._concurrency = {
+            "api_requests": {
+                "transcription": {"service_tier": "flex"},
+                "summary": {"service_tier": "default"},
+            }
+        }
+        monkeypatch.setattr(ch, "get_config_loader", lambda: loader)
+
+        args = argparse.Namespace(service_tier=None)
+        overrides = _build_cli_concurrency_overrides(args)
+        assert overrides == {}
+        loader.apply_concurrency_overrides(overrides)
+
+        assert ch.get_service_tier("transcription") == "flex"
+        assert ch.get_service_tier("summary") == "default"
 
 
 class TestGetConfigLoader:

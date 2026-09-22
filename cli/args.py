@@ -21,6 +21,7 @@ logger = setup_logger(__name__)
 REASONING_EFFORT_CHOICES = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
 VERBOSITY_CHOICES = ("low", "medium", "high")
 PROVIDER_CHOICES = ("openai", "anthropic", "google", "openrouter", "custom")
+SERVICE_TIER_CHOICES = ("auto", "default", "flex", "priority")
 
 
 def _positive_int(value: str) -> int:
@@ -202,6 +203,14 @@ def _add_override_arguments(parser: argparse.ArgumentParser) -> None:
         choices=PROVIDER_CHOICES,
         default=None,
         help="Override summary provider.",
+    )
+    parser.add_argument(
+        "--service-tier",
+        choices=SERVICE_TIER_CHOICES,
+        default=None,
+        help="Override the OpenAI service tier for both transcription and summary"
+        " calls for this run. Overrides api_requests.<phase>.service_tier in"
+        " concurrency.yaml; still subject to per-provider/model capability guards.",
     )
 
 
@@ -587,6 +596,26 @@ def _build_cli_model_overrides(args: argparse.Namespace) -> dict[str, Any]:
         )
     if summary_provider:
         _set_model_override(overrides, "summary_model", ["provider"], summary_provider)
+
+    return overrides
+
+
+def _build_cli_concurrency_overrides(args: argparse.Namespace) -> dict[str, Any]:
+    """Build concurrency.yaml runtime override dict from parsed args.
+
+    Effective in both CLI and interactive mode; returns an empty dict when
+    ``--service-tier`` was not passed. The override applies to both the
+    transcription and summary phases, matching ``--service-tier``'s
+    single-flag, both-phases contract.
+    """
+    overrides: dict[str, Any] = {}
+
+    service_tier = getattr(args, "service_tier", None)
+    if service_tier:
+        overrides["api_requests"] = {
+            "transcription": {"service_tier": service_tier},
+            "summary": {"service_tier": service_tier},
+        }
 
     return overrides
 
