@@ -1,4 +1,4 @@
-# AutoExcerpter v3.1.0
+# AutoExcerpter v3.2.0
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -638,8 +638,12 @@ Configured in `app.yaml` under `citation`. Extracted citations are folded
 together. A conservative fuzzy pass then merges near-identical variants only
 within a `(first-author surname, year)` block, gated by `merge_ratio`
 (SequenceMatcher) or `merge_jaccard` (token-set); differing years or volumes
-never merge, and every merge is logged. Page ranges are consolidated (including
-`unnumbered` pages). The summary schema (`Summary_2_3_0`) additionally flags
+never merge, and every merge is logged. Page ranges are consolidated per
+numbering system and never mixed in one range: printed arabic and roman pages
+(`pp. 12-14`, `pp. x-xii`), pages without a printed number by their PDF page or
+image position (`PDF p. 7`, `Image 7`), and numbers inferred from the
+neighboring pages in brackets (`p. [6]`), e.g. `pp. 5-7; PDF p. 12`. The
+summary schema (`Summary_2_3_0`) additionally flags
 in-text-only citations (`is_partial`): the model records bare author-year
 pointers as-is instead of fabricating placeholder titles, and after the fuzzy
 pass each partial stub whose tokens are contained in exactly one full
@@ -647,7 +651,16 @@ reference within its author-year block merges into it (pages union); stubs
 with no full match, or with several ambiguous same-author same-year
 candidates, are dropped rather than guessed, with every merge and drop
 logged. OpenAlex enrichment runs exactly once per document and
-is shared by both writers. A candidate links only when title-word overlap
+is shared by both writers. When a citation's title can be isolated (the text
+after `(Year).`, or an italicized or quoted title), the lookup filters on
+`title.search` and the cited year +/-1 (either year of a reprint such as
+`1976 [1867]`; no year for `(n.d.)`); OpenAlex's free-text `search` would
+otherwise match authors, venue, and page numbers against full text and rank
+unrelated works first. Bracketed asides and trailing volume numbers are
+dropped from the title. Citations without an isolable title fall back to the
+free-text search. A journal article of at most two pages whose journal the
+citation does not name is skipped as a probable book review, since reviews
+repeat the book's title, year, and often its author. A candidate links only when title-word overlap
 clears `match_title_overlap` AND a corroborating signal matches (publication
 year within +/-1 of a cited year, or the candidate author surname appears in
 the citation) -- preferring no link over a wrong one. Every citation lookup
@@ -747,7 +760,15 @@ For each processed document (`<name>` is the input file/folder stem):
 
 1. **`<name>.txt`** -- verbatim transcription with metadata
    header, LaTeX math, XML-style page tags, and preserved
-   structural elements.
+   structural elements. A page without a printed page number is
+   preceded by a `<page_break pdf="N"/>` line (`image="N"` for
+   image folders), N being its 1-based position in the input.
+   In the summaries such a page is headed
+   `[No printed number; PDF p. N]`, and a number inferred from
+   the neighboring pages is bracketed (`Page [6]`). No output
+   passes a position off as a printed page number. A page-number
+   tag glued to a word (`things.<page_number>10</page_number>`)
+   is a note marker and is rewritten as `things.[^10]`.
 2. **`<name>.docx`** -- formatted Word summary with
    bullet-point extracts, LaTeX converted to native Word
    equations (MathML/OMML), and a consolidated bibliography with
@@ -872,7 +893,15 @@ requests and image processing; process in smaller batches.
 
 **Missing page numbers in summaries** -- verify page numbers are
 visible in the source; check the transcription `.txt` for
-`<page_number>` tags.
+`<page_number>` tags. Pages without a tag are located by position
+(`PDF p. N`) by design.
+
+**Pages failed with `error_type` `content_filter` or `refusal`** --
+OpenAI's content filter can stop pages dense with long verbatim
+quotations from copyrighted texts. Such a page fails after one call,
+without retries, and is recorded as failed in the working log. Repair
+it by rerunning with `--resume` and another provider; the OpenRouter
+model `z-ai/glm-5.3-flash` has handled such pages.
 
 **Further help:** check JSONL logs in `_working_files/`, review
 your provider's status page, or open an issue on the repository.
@@ -887,6 +916,26 @@ v1.0.0 do not exist.
 
 ## Changelog
 
+- **v3.2.0** (22 September 2026) -- Pages without a printed page number are
+  now locatable: the `.txt` marks them with `<page_break pdf="N"/>`
+  (`image="N"` for image folders), summaries head them
+  `[No printed number; PDF p. N]`, and citations carry typed locators that
+  never mix printed arabic, roman, PDF, and image positions in one range
+  (`pp. 5-7; PDF p. 12`); a number inferred between two numbered neighbors
+  renders bracketed (`Page [6]`, `p. [6]`). No code path passes a scan
+  position off as a printed page number any longer, a summary number that
+  disagrees with the page's tags is logged, and a page-number tag glued to a
+  word is rewritten as a footnote reference. A response stopped by a content
+  filter or refused by the model now fails the page after one call with
+  `error_type` `content_filter` or `refusal` instead of running the schema
+  retries, and resume treats it as failed so another provider can repair it.
+  The summary prompts, schema, and transcription schema were aligned: one
+  condensed bullet rule, `$...$` inline and `$$...$$` display math,
+  bibliography pages without bullets, a null page-number rule, and a short
+  layout-only `image_analysis`. OpenAlex text lookups now filter on the
+  isolated title and cited year instead of sending the whole citation to the
+  full-text search, handle reprints and undated citations, and skip probable
+  book reviews.
 - **v3.1.0** (21 September 2026) -- OpenAlex enrichment sends an API key
   when one is configured, since OpenAlex now requires a key beyond
   occasional testing. The key comes from the environment variable named by
