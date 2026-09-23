@@ -51,7 +51,7 @@ SUPPORTED_PROVIDERS: dict[str, dict[str, Any]] = {
         "class": "ChatOpenAI",
         "env_key": "OPENAI_API_KEY",
         # GPT-5.1, GPT-5, GPT-4.1, GPT-4o, GPT-4, o-series (o1, o3, o4)
-        "model_prefixes": ["gpt-5", "gpt-4", "o1", "o3", "o4", "text-"],
+        "model_prefixes": ["gpt-6", "gpt-5", "gpt-4", "o1", "o3", "o4", "text-"],
     },
     "anthropic": {
         "package": "langchain-anthropic",

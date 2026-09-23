@@ -282,6 +282,31 @@ _OPENROUTER_BASE: dict[str, Any] = _non_openai_base(
 # ---------------------------------------------------------------------------
 
 _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]]] = [
+    # ===== OpenAI GPT-6 family (sol/luna GA 2026-09-22) =====
+    # Same profile as GPT-5.6: vision with detail "original" (verified
+    # 23.09.2026 against the live API), 1.05M context, 128k output.
+    (
+        ("gpt-6-sol",),
+        "gpt-6-sol",
+        _OPENAI_REASONING_BASE,
+        dict(
+            supports_text_verbosity=True,
+            supports_original_image_detail=True,
+            max_context_tokens=1050000,
+            max_output_tokens=128000,
+        ),
+    ),
+    (
+        ("gpt-6-luna",),
+        "gpt-6-luna",
+        _OPENAI_REASONING_BASE,
+        dict(
+            supports_text_verbosity=True,
+            supports_original_image_detail=True,
+            max_context_tokens=1050000,
+            max_output_tokens=128000,
+        ),
+    ),
     # ===== OpenAI GPT-5.x family (reasoning + text verbosity) =====
     # GPT-5.6 (GA 2026-07-09). Vision + detail control (original/auto = full input
     # resolution, no patch cap); 1.05M context, 128k output. Specific variant IDs
@@ -562,6 +587,21 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
     # 128k output, high-res vision (2576px). Adaptive thinking + effort replace
     # temperature/top_p/top_k and thinking budget_tokens (HTTP 400 if sent);
     # mirror the opus-4.5/sonnet-4.5 handling (supports_top_p=False).
+    # Opus 5.5 MUST precede the bare "claude-opus-5" prefix.
+    (
+        ("claude-opus-5-5", "claude-opus-5.5"),
+        "claude-opus-5.5",
+        _ANTHROPIC_BASE,
+        dict(
+            is_reasoning_model=True,
+            supports_reasoning_effort=True,
+            uses_adaptive_thinking=True,
+            supports_temperature=False,
+            supports_top_p=False,
+            max_context_tokens=1000000,
+            max_output_tokens=128000,
+        ),
+    ),
     (
         ("claude-opus-5", "claude-opus-5.0"),
         "claude-opus-5",

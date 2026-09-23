@@ -1,4 +1,4 @@
-# AutoExcerpter v3.3.0
+# AutoExcerpter v3.4.0
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -103,6 +103,7 @@ patterns (full structured, plain text, prompt-guided JSON).
 
 | Family | Models | Notes |
 |---|---|---|
+| GPT-6 | gpt-6-sol, gpt-6-luna | Reasoning, verbosity, original image detail, 1.05M ctx |
 | GPT-5.6 | gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna (default) | Reasoning, verbosity, original image detail, 1.05M ctx |
 | GPT-5.5 | gpt-5.5, gpt-5.5-pro | Reasoning, verbosity, 1.05M ctx |
 | GPT-5.4 | gpt-5.4, gpt-5.4-pro, gpt-5.4-mini, gpt-5.4-nano | Reasoning, verbosity |
@@ -118,6 +119,7 @@ patterns (full structured, plain text, prompt-guided JSON).
 | Family | Models | Notes |
 |---|---|---|
 | Claude 5 | claude-fable-5, claude-sonnet-5 | Adaptive thinking, 1M ctx |
+| Claude 5 | claude-opus-5-5, claude-opus-5, claude-fable-5, claude-sonnet-5 | Adaptive thinking, 1M ctx |
 | Claude 4.6-4.8 | claude-opus-4-8, claude-opus-4-7, claude-opus-4-6, claude-sonnet-4-6 | Extended thinking, 1M ctx |
 | Claude 4.5 | claude-opus-4-5, claude-sonnet-4-5, claude-haiku-4-5 | Extended thinking |
 | Claude 4 | claude-opus-4-1, claude-opus-4, claude-sonnet-4 | Extended thinking (opus) |
@@ -918,6 +920,13 @@ v1.0.0 do not exist.
 
 ## Changelog
 
+- **v3.4.0** (23 September 2026) -- Register `gpt-6-sol`, `gpt-6-luna`
+  and `claude-opus-5-5`. Both GPT-6 models take detail `original`, strict
+  structured outputs and reasoning effort up to `max`. The Opus 5.5 entry
+  sits before the `claude-opus-5` prefix, which would otherwise capture it,
+  and uses adaptive thinking. OpenAI provider detection now recognizes the
+  `gpt-6` prefix. The shared ledger (module version 2.1.4) adds
+  `gpt-6-sol` to the large default pool and `gpt-6-luna` to the small one.
 - **v3.3.0** (22 September 2026) -- A new `--service-tier
   {auto,default,flex,priority}` flag overrides the configured OpenAI service
   tier for both the transcription and summary calls of one run, without
