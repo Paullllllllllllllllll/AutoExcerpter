@@ -1,4 +1,4 @@
-# AutoExcerpter v3.4.0
+# AutoExcerpter v3.5.0
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -103,7 +103,7 @@ patterns (full structured, plain text, prompt-guided JSON).
 
 | Family | Models | Notes |
 |---|---|---|
-| GPT-6 | gpt-6-sol, gpt-6-luna | Reasoning, verbosity, original image detail, 1.05M ctx |
+| GPT-6 | gpt-6-astra, gpt-6-sol, gpt-6-luna | Reasoning, verbosity, original image detail, 1.05M ctx |
 | GPT-5.6 | gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna (default) | Reasoning, verbosity, original image detail, 1.05M ctx |
 | GPT-5.5 | gpt-5.5, gpt-5.5-pro | Reasoning, verbosity, 1.05M ctx |
 | GPT-5.4 | gpt-5.4, gpt-5.4-pro, gpt-5.4-mini, gpt-5.4-nano | Reasoning, verbosity |
@@ -920,6 +920,9 @@ v1.0.0 do not exist.
 
 ## Changelog
 
+- **v3.5.0** (23 September 2026) -- Register `gpt-6-astra` with the same
+  profile as the other GPT-6 models: verbosity, image detail `original`,
+  1.05M context and 128k output.
 - **v3.4.0** (23 September 2026) -- Register `gpt-6-sol`, `gpt-6-luna`
   and `claude-opus-5-5`. Both GPT-6 models take detail `original`, strict
   structured outputs and reasoning effort up to `max`. The Opus 5.5 entry

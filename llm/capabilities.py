@@ -282,9 +282,21 @@ _OPENROUTER_BASE: dict[str, Any] = _non_openai_base(
 # ---------------------------------------------------------------------------
 
 _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]]] = [
-    # ===== OpenAI GPT-6 family (sol/luna GA 2026-09-22) =====
+    # ===== OpenAI GPT-6 family (astra; sol/luna GA 2026-09-22) =====
     # Same profile as GPT-5.6: vision with detail "original" (verified
-    # 23.09.2026 against the live API), 1.05M context, 128k output.
+    # 23.09.2026 against the live API for sol/luna), 1.05M context, 128k
+    # output.
+    (
+        ("gpt-6-astra",),
+        "gpt-6-astra",
+        _OPENAI_REASONING_BASE,
+        dict(
+            supports_text_verbosity=True,
+            supports_original_image_detail=True,
+            max_context_tokens=1050000,
+            max_output_tokens=128000,
+        ),
+    ),
     (
         ("gpt-6-sol",),
         "gpt-6-sol",
