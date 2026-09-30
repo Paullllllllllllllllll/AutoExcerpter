@@ -51,10 +51,15 @@ def resolve_image_settings(
     elif provider == "openai":
         detail = request_detail or "auto"
     else:
-        # OpenRouter and custom requests carry no OpenAI detail parameter, so
-        # only the local low/high profile applies; original is never sized for.
+        # OpenRouter and custom requests carry no OpenAI detail parameter, so the
+        # local profile decides. On OpenRouter, original keeps the conservative
+        # 10,000-patch cap (the target model's default detail decides remotely);
+        # custom endpoints fall back to the high profile.
         local = str(result.get("llm_detail", "high") or "high").strip().lower()
-        detail = local if local in ("low", "high", "auto") else "high"
+        allowed: tuple[str, ...] = ("low", "high", "auto", "original")
+        if provider != "openrouter":
+            allowed = ("low", "high", "auto")
+        detail = local if local in allowed else "high"
     strategy = (
         str(cfg.get("render_strategy") or full_cfg.get("render_strategy") or "direct")
         .strip()

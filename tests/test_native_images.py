@@ -501,8 +501,17 @@ def test_non_openai_never_sizes_for_original(provider: str) -> None:
     }[provider]
     cfg = settings(model, provider)
     assert cfg["request_detail"] is None
+    if provider == "openrouter":
+        # No detail is sent; original sizing keeps the conservative cap.
+        assert cfg["resolved_detail"] == "original"
+        assert cfg["cap_policy"] == "openai-original-10k-v1"
+        size, reason = resolve_target_size(
+            4000, 7000, cfg["model_type"], model, cfg["resolved_detail"], cfg
+        )
+        assert math.ceil(size[0] / 32) * math.ceil(size[1] / 32) <= 10000
+        return
     assert cfg["resolved_detail"] != "original"
-    if provider in ("openrouter", "custom"):
+    if provider == "custom":
         assert cfg["cap_policy"] == "profile-v1"
         size, reason = resolve_target_size(
             4000, 7000, cfg["model_type"], model, cfg["resolved_detail"], cfg

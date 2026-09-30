@@ -1,4 +1,4 @@
-# AutoExcerpter v3.6.0
+# AutoExcerpter v3.6.1
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -956,6 +956,11 @@ v1.0.0 do not exist.
 
 ## Changelog
 
+- **v3.6.1** (30 September 2026) -- OpenRouter requests carry no image
+  detail parameter, so a configured `original` detail is sized under the
+  conservative 10,000-patch cap again instead of the `high` box, which
+  matches the target model's own default detail; custom endpoints keep the
+  `high` fallback.
 - **v3.6.0** (30 September 2026) -- Native scan resolution: `target_dpi:
   native` renders each PDF page at the density of its scan image, and payloads
   are sized to each model's documented limits (OpenAI `original` patch caps,
