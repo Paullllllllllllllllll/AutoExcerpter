@@ -476,31 +476,18 @@ def test_fingerprint_resume_and_legacy(
     )
     checker = ResumeChecker("skip", summarize=False)
     with patch("pipeline.resume.get_config_loader", return_value=changed_loader):
-        processed, skipped = checker.filter_items(
-            ["document"], lambda _: tmp_path, lambda name: name
-        )
-        assert not processed and len(skipped) == 1
-        assert "payload_format" in skipped[0].reason
+        # The checker never classifies a settings mismatch as complete: the
+        # item stays partial, and the transcriber's check fails it before its
+        # working log is rewritten, so the run exits non-zero.
+        result = checker.should_skip("document", tmp_path)
+        assert result.state == ProcessingState.PARTIAL
+        assert result.completed_page_indices == {0}
         assert ResumeChecker("overwrite").should_skip("document", tmp_path).state == (
             ProcessingState.NONE
         )
-        # Every page is logged: a summary-only resume sends no images, so the
-        # changed image settings must not block it.
-        complete = {**header, "total_images": 1}
-        log.write_text(
-            json.dumps(complete) + "\n" + json.dumps(entry), encoding="utf-8"
-        )
-        processed, skipped = checker.filter_items(
-            ["document"], lambda _: tmp_path, lambda name: name
-        )
-        assert processed == ["document"] and not skipped
-        log.write_text(json.dumps(header) + "\n" + json.dumps(entry), encoding="utf-8")
     assert any(record.levelname == "ERROR" for record in caplog.records)
     header.pop("file_provenance")
-    log.write_text(json.dumps(header) + "\n" + json.dumps(entry), encoding="utf-8")
-    result = checker.should_skip("document", tmp_path)
-    assert result.state == ProcessingState.PARTIAL
-    assert result.completed_page_indices == {0}
+    verify_image_settings(header, {**current, "payload_format": "png"})
     assert "may mix settings" in caplog.text
 
 
@@ -522,6 +509,17 @@ def test_non_openai_never_sizes_for_original(provider: str) -> None:
         )
         assert size[0] <= 768 and size[1] <= 1536
         assert reason == "profile"
+
+
+@pytest.mark.parametrize("provider", ["openrouter", "custom"])
+def test_non_openai_keeps_local_low_profile(provider: str) -> None:
+    model = "openai/gpt-6-astra" if provider == "openrouter" else "gpt-6-astra"
+    cfg = settings(model, provider, llm_detail="low", low_max_side_px=512)
+    assert cfg["resolved_detail"] == "low"
+    size, reason = resolve_target_size(
+        600, 900, cfg["model_type"], model, cfg["resolved_detail"], cfg
+    )
+    assert max(size) == 512 and reason == "profile"
 
 
 def test_profile_warning_once(

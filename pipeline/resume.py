@@ -268,22 +268,6 @@ class ResumeChecker:
         # the COMPLETE branch still fired, silently keeping stale outputs).
         log_incomplete = log_shortfall or log_has_failures or input_changed
 
-        # Changed image settings matter only while pages remain to transcribe;
-        # summary-only resume reuses the logged text and sends no images.
-        pages_to_transcribe = log_shortfall or transcription_error_count > 0
-        if header is not None and pages_to_transcribe and not self.retranscribe:
-            try:
-                verify_image_settings(header)
-            except ValueError as exc:
-                return ResumeResult(
-                    item_name=item_name,
-                    state=ProcessingState.COMPLETE,
-                    output_dir=output_dir,
-                    existing_outputs=existing,
-                    missing_outputs=missing,
-                    reason=str(exc),
-                )
-
         # Determine state
         if not missing and not log_incomplete:
             return ResumeResult(

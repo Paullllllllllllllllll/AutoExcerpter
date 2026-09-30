@@ -51,8 +51,10 @@ def resolve_image_settings(
     elif provider == "openai":
         detail = request_detail or "auto"
     else:
-        # OpenRouter and custom requests carry no OpenAI detail parameter.
-        detail = "high"
+        # OpenRouter and custom requests carry no OpenAI detail parameter, so
+        # only the local low/high profile applies; original is never sized for.
+        local = str(result.get("llm_detail", "high") or "high").strip().lower()
+        detail = local if local in ("low", "high", "auto") else "high"
     strategy = (
         str(cfg.get("render_strategy") or full_cfg.get("render_strategy") or "direct")
         .strip()

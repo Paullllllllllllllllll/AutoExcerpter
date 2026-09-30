@@ -1524,13 +1524,27 @@ class ItemTranscriber:
             self._detect_resume_model_mismatch()
             # Only pages still to transcribe send images; a summary-only resume
             # reuses logged text, so changed image settings do not matter there.
+            # A mismatch raises before the logs are rewritten, so the item fails
+            # and its working log stays intact.
             pages_remaining = any(
                 idx not in self.completed_page_indices for idx in range(len(source))
             )
             if self._resume_log_header is not None and pages_remaining:
                 verify_image_settings(self._resume_log_header, source.img_cfg)
 
-        # Initialize log file with a header (incl. file-level provenance)
+        # Initialize log file with a header (incl. file-level provenance). When
+        # every page is reused, keep the image provenance those pages were
+        # transcribed with rather than the current settings.
+        file_provenance = source.file_provenance()
+        recorded = (
+            (self._resume_log_header or {}).get("file_provenance")
+            if self.completed_page_indices
+            else None
+        )
+        if isinstance(recorded, dict) and not any(
+            idx not in self.completed_page_indices for idx in range(len(source))
+        ):
+            file_provenance = recorded
         target_dpi = source.target_dpi if isinstance(source, PdfPayloadSource) else None
         actual_concurrency = get_transcription_concurrency()
         self._initialize_log_or_raise(
@@ -1542,7 +1556,7 @@ class ItemTranscriber:
             self.transcription_model,
             target_dpi,
             concurrency_limit=actual_concurrency,
-            file_provenance=source.file_provenance(),
+            file_provenance=file_provenance,
         )
 
         transcription_results: list[dict[str, Any]] = []
