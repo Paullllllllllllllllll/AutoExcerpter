@@ -1,4 +1,4 @@
-# AutoExcerpter v3.5.1
+# AutoExcerpter v3.6.0
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -956,18 +956,23 @@ v1.0.0 do not exist.
 
 ## Changelog
 
-- **v3.6.0** (30 September 2026) -- Add native scan-density rendering,
-  model-specific edge and patch caps in numeric and native runs, optional PNG
-  with a base64 size guard and JPEG fallback, per-page sizing provenance,
-  MIME-aware requests and retries, and a settings fingerprint that rejects mixed
-  preprocessing on resume. OpenAI and Anthropic now default to native JPEG q95;
-  omitted real-file keys inherit these defaults through deep merging. To restore
-  the previous numeric behavior, explicitly set `target_dpi: 300` and
-  `jpeg_quality: 100` for API, Anthropic and Google (custom stays at 150 DPI/q85),
-  OpenAI `original_max_side_px: 6000` and `original_max_pixels: 10240000`,
-  Anthropic `high_max_side_px: 2576`, and the previous detail/resize profile values;
-  keep `image_size` in `model.yaml` consistent and use `--overwrite` for existing
-  logs. Registry caps still apply, including Anthropic's patch budget.
+- **v3.6.0** (30 September 2026) -- Native scan resolution: `target_dpi:
+  native` renders each PDF page at the density of its scan image, and payloads
+  are sized to each model's documented limits (OpenAI `original` patch caps,
+  Anthropic edge and visual-token budgets), in numeric runs too. Optional
+  lossless PNG payloads with a base64 size guard and JPEG fallback, MIME-aware
+  requests and retries, one log line per downscaled page, and per-page image
+  provenance. A settings fingerprint fails a resume whose image settings
+  changed while pages remain to transcribe; summary-only resumes keep the
+  recorded provenance. The top-level `max_pixels_per_page` memory guard now
+  applies to numeric renders, and the unused `get_target_dpi` accessor is
+  gone. The example config is standardized and ships native JPEG at quality
+  95 for OpenAI and Anthropic; real files that omit these keys inherit them
+  through the deep merge. To restore the previous behavior, set `target_dpi:
+  300` and `jpeg_quality: 100` for API, Anthropic and Google (custom stays at
+  150 dpi and quality 85), OpenAI `original_max_side_px: 6000` and
+  `original_max_pixels: 10240000`, Anthropic `high_max_side_px: 2576`, and
+  the previous detail and profile values; the model caps stay in effect.
 - **v3.5.1** (30 September 2026) -- The shared ledger (module version 2.1.5)
   adds `gpt-6-astra` to the large default pool; before, its usage was
   recorded without a pool and escaped the per-key pool caps.
