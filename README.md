@@ -1,4 +1,4 @@
-# AutoExcerpter v3.6.1
+# AutoExcerpter v3.6.2
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -956,6 +956,10 @@ v1.0.0 do not exist.
 
 ## Changelog
 
+- **v3.6.2** (30 September 2026) -- The `max_pixels_per_page` memory guard
+  now checks the integer pixmap size MuPDF allocates rather than the float
+  page size, so a numeric render no longer exceeds the guard by a few
+  thousand pixels.
 - **v3.6.1** (30 September 2026) -- OpenRouter requests carry no image
   detail parameter, so a configured `original` detail is sized under the
   conservative 10,000-patch cap again instead of the `high` box, which

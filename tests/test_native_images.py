@@ -308,7 +308,7 @@ def test_numeric_model_caps_and_native_memory(tmp_path: Path, strategy: str) -> 
         max_pixels=1000000,
         render_strategy=strategy,
     )
-    assert numeric.provenance["width"] * numeric.provenance["height"] <= 1003000
+    assert numeric.provenance["width"] * numeric.provenance["height"] <= 1000000
     assert numeric.provenance["downscale_reason"] == "memory_guard"
 
 
@@ -431,9 +431,10 @@ def test_large_native_ignores_numeric_memory_guard(tmp_path: Path) -> None:
         model_type="openai",
         max_pixels=24000000,
     )
-    assert numeric.provenance["width"] * numeric.provenance["height"] == pytest.approx(
-        24000000, rel=0.001
-    )
+    # The integer pixmap stays inside the guard (it overshot by about 6,600
+    # pixels when the float size was checked).
+    pixels = numeric.provenance["width"] * numeric.provenance["height"]
+    assert 23976000 <= pixels <= 24000000
     assert numeric.provenance["downscale_reason"] == "memory_guard"
 
 

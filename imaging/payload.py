@@ -298,10 +298,17 @@ class PdfPayloadSource(_PayloadSourceBase):
                 self.model_type,
             )
             zoom *= min(scale, 1.0)
-        # Numeric renders only, matching the reference's float memory guard.
+        # Numeric renders only. The pixmap rounds its bounds outward, so the
+        # guard is checked on the integer size MuPDF will allocate.
         pixels = (pt_w * zoom) * (pt_h * zoom)
         if self.max_pixels > 0 and pixels > self.max_pixels:
             zoom *= math.sqrt(self.max_pixels / pixels)
+            while True:
+                box = (rect * fitz.Matrix(zoom, zoom)).irect
+                area = box.width * box.height
+                if area <= self.max_pixels:
+                    break
+                zoom *= math.sqrt(self.max_pixels / area) * 0.9999
         return zoom
 
     def build_payload(self, index: int) -> PagePayload:
