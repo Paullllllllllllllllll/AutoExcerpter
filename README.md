@@ -1,4 +1,4 @@
-# AutoExcerpter v3.5.0
+# AutoExcerpter v3.5.1
 
 AutoExcerpter is a document processing pipeline that transcribes
 and summarizes PDFs and image collections using vision-enabled
@@ -920,6 +920,9 @@ v1.0.0 do not exist.
 
 ## Changelog
 
+- **v3.5.1** (30 September 2026) -- The shared ledger (module version 2.1.5)
+  adds `gpt-6-astra` to the large default pool; before, its usage was
+  recorded without a pool and escaped the per-key pool caps.
 - **v3.5.0** (23 September 2026) -- Register `gpt-6-astra` with the same
   profile as the other GPT-6 models: verbosity, image detail `original`,
   1.05M context and 128k output.
