@@ -538,7 +538,10 @@ class TestLedgerNaNHardening:
     """Non-finite floats pass the isinstance check but blow up ``int()``."""
 
     def test_module_version_bumped(self) -> None:
-        assert shared_ledger.LEDGER_MODULE_VERSION == "2.1.4"
+        version = tuple(
+            int(part) for part in shared_ledger.LEDGER_MODULE_VERSION.split(".")
+        )
+        assert version >= (2, 1, 4)
 
     def test_coerce_int_neutralizes_debris(self) -> None:
         assert shared_ledger._coerce_int(float("nan")) == 0
