@@ -26,9 +26,9 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from config.loader import PROMPTS_DIR, SCHEMAS_DIR
 from config.logger import setup_logger
+from imaging._provider import resolve_request_detail
 from imaging.payload import PagePayload
 from llm.base import LLMClientBase, inspect_response
-from llm.capabilities import detect_capabilities
 from llm.client import (
     ProviderType,
     get_model_capabilities,
@@ -428,36 +428,12 @@ class TranscriptionManager(LLMClientBase):
         ``original`` is configured for a model that does not accept it, logs a
         warning and falls back to ``high`` rather than sending an invalid value.
         """
-        # OpenAI-only: leave anthropic/google/openrouter/custom shapes untouched.
-        if self.provider != "openai":
-            return None
-        image_size = self.model_config.get("image_size")
-        if not image_size:
-            return None
-        detail = str(image_size).strip().lower()
-        if detail not in ("low", "high", "auto", "original"):
-            logger.warning(
-                f"Ignoring unsupported image_size '{image_size}' for "
-                f"{self.model_name}; expected low/high/auto/original."
-            )
-            return None
-        capabilities = detect_capabilities(self.model_name)
-        if not capabilities.supports_image_detail:
-            logger.warning(
-                f"Model '{self.model_name}' does not support the image detail "
-                "parameter; ignoring image_size."
-            )
-            return None
-        if detail == "original" and not capabilities.supports_original_image_detail:
-            logger.warning(
-                f"Model '{self.model_name}' does not support image_size "
-                "'original'; falling back to 'high'."
-            )
-            return "high"
-        return detail
+        return resolve_request_detail(
+            self.model_config, self.provider, self.model_name, logger
+        )
 
     def _build_model_inputs(
-        self, base64_image: str
+        self, base64_image: str, mime_type: str = "image/jpeg"
     ) -> tuple[list[Any], dict[str, Any]]:
         """Build messages and invocation kwargs for the chat model."""
         system_msg = SystemMessage(content=self.system_prompt)
@@ -471,7 +447,7 @@ class TranscriptionManager(LLMClientBase):
                     "type": "image",
                     "source": {
                         "type": "base64",
-                        "media_type": "image/jpeg",
+                        "media_type": mime_type,
                         "data": base64_image,
                     },
                 }
@@ -482,7 +458,7 @@ class TranscriptionManager(LLMClientBase):
                 {
                     "type": "image_url",
                     "image_url": {
-                        "url": f"data:image/jpeg;base64,{base64_image}",
+                        "url": f"data:{mime_type};base64,{base64_image}",
                     },
                 }
             ]
@@ -492,7 +468,7 @@ class TranscriptionManager(LLMClientBase):
             # forwards image_url.detail into the Responses API "input_image"
             # block. Absent detail keeps the request byte-identical to before.
             image_url: dict[str, Any] = {
-                "url": f"data:image/jpeg;base64,{base64_image}",
+                "url": f"data:{mime_type};base64,{base64_image}",
             }
             detail = self._resolve_image_detail()
             if detail is not None:
@@ -538,7 +514,9 @@ class TranscriptionManager(LLMClientBase):
                 attempt_start = time.time()
 
                 # Build messages and invocation kwargs
-                messages, invoke_kwargs = self._build_model_inputs(base64_image)
+                messages, invoke_kwargs = self._build_model_inputs(
+                    base64_image, mime_type=payload.mime_type
+                )
 
                 # Get structured chat model (binds invoke kwargs on the
                 # structured-output paths where invoke-time kwargs are dropped)

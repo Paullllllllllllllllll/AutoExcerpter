@@ -562,7 +562,7 @@ class TestTranscribePayload:
         ):
             mgr.transcribe_payload(payload)
 
-        mock_build.assert_called_with(payload.base64)
+        mock_build.assert_called_with(payload.base64, mime_type=payload.mime_type)
 
     def test_api_error(self) -> None:
         """API error after LangChain retries returns error result."""

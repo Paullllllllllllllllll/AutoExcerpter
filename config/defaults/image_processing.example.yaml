@@ -1,147 +1,90 @@
-# =============================================================================
-# Image Processing Configuration -- EXAMPLE / BUNDLED DEFAULTS
-# =============================================================================
-# This file ships with the repository as a scrubbed template.
-# On a fresh clone it is loaded automatically when image_processing.yaml is absent.
-#
-# To customize: copy this file to image_processing.yaml (same directory) and edit it.
-#   cp config/defaults/image_processing.example.yaml config/defaults/image_processing.yaml
-#
-# Controls image preprocessing before LLM API calls and text post-processing.
-#
-# Each provider has different optimal resizing strategies that affect both
-# quality and token costs. The correct section is auto-selected based on
-# the configured provider and model name.
-#
-# Related config files:
-#   - app.yaml: Application settings and feature toggles
-#   - model.yaml: LLM provider and model settings
-#   - concurrency.yaml: API rate limits and parallelism
-
-# =============================================================================
-# Global Image Processing Settings
-# =============================================================================
-# Resampling algorithm for downscaling: 'bilinear' (fast) or 'lanczos' (quality)
-# BILINEAR is ~2x faster with negligible quality difference for document scans.
+# Image processing defaults. Copy this example to customize a local config.
+# Numeric runs: direct renders to the profile; supersample resizes afterward.
+# Native runs always render directly to the resolved model cap or profile.
+# May be overridden with render_strategy inside a provider section.
+render_strategy: direct
+# Numeric rendering only; 0 disables the memory guard.
+max_pixels_per_page: 24000000
+# Downscaling filter: bilinear (fast) or lanczos (quality).
 resampling_algorithm: bilinear
 
-# PDF render strategy: 'direct' (default) or 'supersample'.
-# - direct: derive the render DPI from the active resize profile so each page
-#   rasterizes straight to (about) its final pixel size. Faster; never renders
-#   above target_dpi. Providers downscale server-side above their caps anyway,
-#   so pixels beyond the cap are wasted.
-# - supersample: legacy behavior -- always render at target_dpi, then downscale.
-# Can be overridden per provider section with a section-level render_strategy.
-render_strategy: direct
+# Registry caps apply in numeric and native modes. Optional original_max_side_px,
+# original_max_pixels (OpenAI), and high_max_side_px (Anthropic) only tighten caps.
+# OpenAI original: 30,000 patches of 32 px for GPT-5.6/GPT-6, otherwise
+# 10,000 patches and a 6,000 px edge. Anthropic: 2,576 px / 4,784 patches
+# of 28 px for high-resolution models; 1,568 px / 1,568 patches otherwise.
 
-# =============================================================================
-# OpenAI API Image Processing
-# =============================================================================
-# Preprocessing for OpenAI models (GPT-5, GPT-4o, o-series, etc.)
-# Uses tiling approach with 512x512 tiles for 'high' detail
-# Token cost: low=85 tokens; high=85 + (170 × number of 512px tiles)
 api_image_processing:
-  target_dpi: 300  # PDF rendering resolution
-  grayscale_conversion: true  # Convert to grayscale (improves OCR)
-  handle_transparency: true   # Flatten alpha channel onto white background
-
-  # Controls fidelity sent to OpenAI Vision API:
-  # - high: uses tiling (170 tokens per 512×512 tile), better for fine details
-  # - low: 512×512 resize, 85 tokens per image, faster/cheaper
-  # - auto: omit parameter, let model decide
-  # Recommended: original (full-resolution input, GPT-5.6 family) for best
-  # results.
+  # Positive render DPI or native (density of the largest page-spanning scan).
+  target_dpi: native
+  # Used by native mode for pages without a usable scan image.
+  native_fallback_dpi: 300
+  # jpeg or lossless png; oversized PNG falls back to JPEG with a warning.
+  payload_format: jpeg
+  # Base64 bytes per image; 0 disables the guard. Oversized JPEG is a page error.
+  max_image_bytes: 50000000
+  grayscale_conversion: true
+  handle_transparency: true
+  jpeg_quality: 95
   llm_detail: original
-
-  jpeg_quality: 100  # JPEG compression (1-100)
-
-  # Resize strategy: 'high' | 'low' | 'auto' | 'none'
+  # auto selects the detail profile; none disables only optional profile sizing.
   resize_profile: high
+  low_max_side_px: 512
+  high_target_box: [768, 1536]
 
-  # Resize parameters
-  low_max_side_px: 512         # Max dimension for 'low' profile
-  high_target_box: [768, 1536] # [width, height] box for 'high' profile (with padding)
-
-  # Full-resolution ('original') detail caps (GPT-5.6 family, image_size: original):
-  # native resolution is preserved but bounded, aspect-preserving, no padding/upscaling.
-  original_max_side_px: 6000     # Cap longest side (px) for 'original' detail
-  original_max_pixels: 10240000  # Cap total pixel budget for 'original' detail
-
-
-# =============================================================================
-# Google Gemini API Image Processing
-# =============================================================================
-# Preprocessing for Google Gemini models (Gemini 3, 2.5, 2.0, 1.5)
-# Google uses 768x768 tiles for token calculation
-# Token counts (Gemini 3): ultra_high=2240, high=1120, medium=560, low=280
-google_image_processing:
-  target_dpi: 300  # PDF rendering resolution
-  grayscale_conversion: true  # Convert to grayscale (improves OCR)
-  handle_transparency: true   # Flatten alpha channel onto white background
-
-  # Controls resolution sent to Google Gemini API (media_resolution enum):
-  # - ultra_high: 2240 tokens - Highest quality (per-part only)
-  # - high: 1120 tokens - Recommended for OCR/dense documents
-  # - medium: 560 tokens - Balanced quality/cost
-  # - low: 280 tokens - Minimal tokens, fast/cheap
-  # - auto: Default (1120 for images, 560 for PDFs)
-  media_resolution: high
-
-  jpeg_quality: 100  # JPEG compression (1-100)
-
-  # Resize strategy: 'high' | 'low' | 'auto' | 'none'
-  # Google's token calculation uses 768x768 tiles, so we optimize for that
-  resize_profile: high
-
-  # Resize parameters
-  low_max_side_px: 512         # Max dimension for 'low' profile
-  high_target_box: [768, 1536] # [width, height] box optimized for 768px tiles
-
-
-# =============================================================================
-# Anthropic Claude API Image Processing
-# =============================================================================
-# Preprocessing for Anthropic Claude models (Claude 4.5, 4, 3.x)
-# Anthropic recommends: long edge ≤ 1568px, ≤ 1.15 megapixels for optimal latency
-# Min 200px on any edge; max 8000×8000px
-# Token calculation: tokens = (width × height) / 750
-# Example: 1568×1568 ≈ 3,276 tokens; 1024×1024 ≈ 1,398 tokens
-# Anthropic auto-resizes images >1568px (increases latency without benefit)
 anthropic_image_processing:
-  target_dpi: 300  # PDF rendering resolution
-  grayscale_conversion: true  # Convert to grayscale (improves OCR)
-  handle_transparency: true   # Flatten alpha channel onto white background
-
-  jpeg_quality: 100  # JPEG compression (1-100)
-
-  # Resize strategy: 'high' | 'low' | 'auto' | 'none'
-  # Unlike OpenAI/Google, Anthropic uses simple max-side capping (no padding)
-  # Best practice: pre-resize to ≤1568px to avoid server-side resizing latency
+  # Positive render DPI or native (density of the largest page-spanning scan).
+  target_dpi: native
+  # Used by native mode for pages without a usable scan image.
+  native_fallback_dpi: 300
+  # jpeg or lossless png; oversized PNG falls back to JPEG with a warning.
+  payload_format: jpeg
+  # Base64 bytes per image; 0 disables the guard. Oversized JPEG is a page error.
+  max_image_bytes: 10000000
+  grayscale_conversion: true
+  handle_transparency: true
+  jpeg_quality: 95
+  # auto selects the detail profile; none disables only optional profile sizing.
   resize_profile: auto
+  low_max_side_px: 512
+  high_target_box: [768, 1536]
 
-  # Resize parameters (Anthropic uses max-side capping, no box fitting)
-  low_max_side_px: 512   # Max dimension for 'low' profile
-  # High-res tier models only (Claude Opus 4.7+/Sonnet 5) ingest up to 2576 px
-  # long edge / 4784 visual tokens; costs ~3x the image tokens of 1568. Older
-  # Claude models are server-side downscaled to 1568 anyway.
-  high_max_side_px: 2576 # Max dimension for 'high' profile (high-res tier)
+google_image_processing:
+  # Positive render DPI or native (density of the largest page-spanning scan).
+  target_dpi: 300
+  # Used by native mode for pages without a usable scan image.
+  native_fallback_dpi: 300
+  # jpeg or lossless png; oversized PNG falls back to JPEG with a warning.
+  payload_format: jpeg
+  # Base64 bytes per image; 0 disables the guard. Oversized JPEG is a page error.
+  max_image_bytes: 20000000
+  grayscale_conversion: true
+  handle_transparency: true
+  jpeg_quality: 95
+  # Server-side image resolution budget; no documented pixel maximum.
+  media_resolution: high
+  # auto selects the detail profile; none disables only optional profile sizing.
+  resize_profile: high
+  low_max_side_px: 512
+  high_target_box: [768, 1536]
 
-
-# =============================================================================
-# Custom Endpoint Image Processing
-# =============================================================================
-# Aggressive preprocessing for self-hosted models with small context windows
-# (e.g., 8,192 tokens). Produces compact images to stay within token budget.
-# Adjust these values based on your endpoint's context window size.
 custom_image_processing:
+  # Positive render DPI or native (density of the largest page-spanning scan).
   target_dpi: 150
+  # Used by native mode for pages without a usable scan image.
+  native_fallback_dpi: 300
+  # jpeg or lossless png; oversized PNG falls back to JPEG with a warning.
+  payload_format: jpeg
+  # Base64 bytes per image; 0 disables the guard. Oversized JPEG is a page error.
+  max_image_bytes: 0
   grayscale_conversion: true
   handle_transparency: true
   jpeg_quality: 85
+  llm_detail: high
+  # auto selects the detail profile; none disables only optional profile sizing.
   resize_profile: low
   low_max_side_px: 768
   high_target_box: [512, 1024]
-
 
 # =============================================================================
 # Text Cleaning Configuration

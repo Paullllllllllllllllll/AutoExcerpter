@@ -236,11 +236,11 @@ class TestContentScaleFactor:
         assert factor > 1.0
 
     def test_anthropic_max_side_factor(self, anthropic_config: dict[str, Any]) -> None:
-        """Anthropic caps the longest side to high_max_side_px."""
+        """Anthropic obeys both its edge limit and patch budget."""
         factor = ImageProcessor.content_scale_factor(
             (2000.0, 3000.0), anthropic_config, "anthropic"
         )
-        assert factor == pytest.approx(1568.0 / 3000.0, rel=1e-6)
+        assert factor == pytest.approx(1344.0 / 3000.0, rel=1e-6)
 
     def test_within_cap_returns_one(self, anthropic_config: dict[str, Any]) -> None:
         """A source already within the cap yields a factor of 1.0."""

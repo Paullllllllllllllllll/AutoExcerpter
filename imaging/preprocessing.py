@@ -9,7 +9,7 @@ Key Features:
 1. **Provider-Specific Preprocessing**: Different resize strategies per provider:
    - OpenAI: Box fitting with padding (768×1536)
    - Google Gemini: Box fitting optimized for 768px tiles
-   - Anthropic Claude: Max-side capping (1568px, no padding)
+   - Anthropic Claude: Model edge and patch budgets, without padding
 
 2. **Configurable Preprocessing**:
    - Grayscale conversion for better OCR
@@ -24,6 +24,7 @@ Key Features:
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from PIL import Image, ImageOps
@@ -38,6 +39,7 @@ from config.constants import (
 from config.loader import get_config_loader
 from config.logger import setup_logger
 from imaging._provider import ModelType
+from imaging.native import model_image_cap, resolve_target_size
 
 logger = setup_logger(__name__)
 
@@ -61,11 +63,16 @@ _RESAMPLING_ALGORITHMS = {
 }
 
 
-def _get_resampling_filter() -> Image.Resampling:
-    """Return the configured resampling filter from image_processing.yaml."""
+def _get_resampling_filter(
+    img_cfg: dict[str, Any] | None = None,
+) -> Image.Resampling:
+    """Use the resolved filter, or read image_processing.yaml for direct callers."""
     try:
-        config_loader = get_config_loader()
-        img_config = config_loader.get_image_processing_config()
+        img_config = (
+            img_cfg
+            if img_cfg is not None and "resampling_algorithm" in img_cfg
+            else get_config_loader().get_image_processing_config()
+        )
         algo = str(img_config.get("resampling_algorithm", "bilinear")).lower()
         return _RESAMPLING_ALGORITHMS.get(algo, Image.Resampling.BILINEAR)
     except Exception:
@@ -114,11 +121,26 @@ class ImageProcessor:
         ):
             detail_norm = "high"
 
-        # Original detail (GPT-5.6 family): cap to max side / max pixels, no
-        # padding. Checked before the resize_profile early-return so an explicit
-        # 'none' cannot leave the full-resolution payload unbounded.
-        if detail_norm == "original":
-            return ImageProcessor._resize_original(image, img_cfg)
+        cap = model_image_cap(
+            model_type, img_cfg.get("model_name", ""), detail_norm, img_cfg
+        )
+        if cap:
+            target = img_cfg.get("_target_size")
+            if target is None:
+                target, _ = resolve_target_size(
+                    *image.size,
+                    model_type,
+                    img_cfg.get("model_name", ""),
+                    detail_norm,
+                    img_cfg,
+                )
+            # Real pixmap rounding can land just beyond a patch boundary.
+            size = min(image.width, target[0]), min(image.height, target[1])
+            return (
+                image
+                if size == image.size
+                else image.resize(size, _get_resampling_filter(img_cfg))
+            )
 
         # Check if resizing is disabled
         resize_profile = (img_cfg.get("resize_profile", "auto") or "auto").lower()
@@ -138,7 +160,9 @@ class ImageProcessor:
             return ImageProcessor._resize_box_fit(image, img_cfg)
 
     @staticmethod
-    def _resize_max_side(image: Image.Image, max_side: int) -> Image.Image:
+    def _resize_max_side(
+        image: Image.Image, max_side: int, img_cfg: dict[str, Any] | None = None
+    ) -> Image.Image:
         """Cap longest side, preserving aspect ratio (shared by low-detail and
         Anthropic)."""
         w, h = image.size
@@ -149,13 +173,13 @@ class ImageProcessor:
 
         scale = max_side / float(longest)
         new_size = (max(1, int(w * scale)), max(1, int(h * scale)))
-        return image.resize(new_size, _get_resampling_filter())
+        return image.resize(new_size, _get_resampling_filter(img_cfg))
 
     @staticmethod
     def _resize_low_detail(image: Image.Image, img_cfg: dict[str, Any]) -> Image.Image:
         """Downscale image to max side length for low detail (all providers)."""
         max_side = int(img_cfg.get("low_max_side_px", DEFAULT_LOW_MAX_SIDE_PX))
-        return ImageProcessor._resize_max_side(image, max_side)
+        return ImageProcessor._resize_max_side(image, max_side, img_cfg)
 
     @staticmethod
     def _resize_box_fit(image: Image.Image, img_cfg: dict[str, Any]) -> Image.Image:
@@ -177,7 +201,9 @@ class ImageProcessor:
         new_width = max(1, int(orig_width * scale))
         new_height = max(1, int(orig_height * scale))
 
-        resized_img = image.resize((new_width, new_height), _get_resampling_filter())
+        resized_img = image.resize(
+            (new_width, new_height), _get_resampling_filter(img_cfg)
+        )
         if image.mode == "L":
             final_img = Image.new("L", (target_width, target_height), 255)
         else:
@@ -229,6 +255,8 @@ class ImageProcessor:
         Google reads ``media_resolution``, Anthropic reads ``resize_profile``,
         everything else reads ``llm_detail``.
         """
+        if "resolved_detail" in img_cfg:
+            return str(img_cfg["resolved_detail"])
         if model_type == "google":
             return str(img_cfg.get("media_resolution", "high") or "high")
         if model_type == "anthropic":
@@ -290,8 +318,22 @@ class ImageProcessor:
         ):
             detail_norm = "high"
 
-        if detail_norm == "original":
-            return ImageProcessor._original_scale(w, h, img_cfg)
+        cap = model_image_cap(
+            model_type, img_cfg.get("model_name", ""), detail_norm, img_cfg
+        )
+        if cap:
+            iw, ih = math.ceil(w - 1e-7), math.ceil(h - 1e-7)
+            size = img_cfg.get("_target_size")
+            if size is None:
+                size, _ = resolve_target_size(
+                    iw,
+                    ih,
+                    model_type,
+                    img_cfg.get("model_name", ""),
+                    detail_norm,
+                    img_cfg,
+                )
+            return min(size[0] / iw, size[1] / ih)
 
         resize_profile = (img_cfg.get("resize_profile", "auto") or "auto").lower()
         if resize_profile == "none":

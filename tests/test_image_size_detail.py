@@ -7,6 +7,7 @@ full-resolution ("original") detail is requested.
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -14,7 +15,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from PIL import Image
 
-from imaging.payload import FolderPayloadSource, _openai_detail_is_original
+from imaging.payload import FolderPayloadSource
 from llm.transcription import TranscriptionManager
 
 
@@ -127,24 +128,6 @@ class TestPayloadOriginalResizeSkip:
     def _patched(self, loader: MagicMock) -> Any:
         return patch("imaging.payload.get_config_loader", return_value=loader)
 
-    def test_helper_true_for_original_on_5_6(self) -> None:
-        """_openai_detail_is_original: True for 'original' on GPT-5.6."""
-        loader = self._loader("gpt-5.6-sol", "original")
-        with self._patched(loader):
-            assert _openai_detail_is_original("gpt-5.6-sol") is True
-
-    def test_helper_false_for_original_on_non_5_6(self) -> None:
-        """Non-5.6 model does not skip resize even with 'original'."""
-        loader = self._loader("gpt-5.4-mini", "original")
-        with self._patched(loader):
-            assert _openai_detail_is_original("gpt-5.4-mini") is False
-
-    def test_helper_false_when_unset(self) -> None:
-        """Unset image_size never skips resize."""
-        loader = self._loader("gpt-5.6-sol", None)
-        with self._patched(loader):
-            assert _openai_detail_is_original("gpt-5.6-sol") is False
-
     def test_resize_skipped_keeps_native_size(self, image_folder: Path) -> None:
         """'original' on GPT-5.6 keeps native dimensions (under the caps)."""
         loader = self._loader("gpt-5.6-sol", "original")
@@ -176,9 +159,9 @@ class TestPayloadOriginalResizeSkip:
             payload = source.build_payload(0)
         width = payload.provenance["width"]
         height = payload.provenance["height"]
-        # Longest side capped at 6000 and total pixels within 10,240,000.
-        assert max(width, height) <= 6000
-        assert width * height <= 10_240_000
+        # GPT-5.6 uses a 30,000-patch budget with a 65,535 px edge.
+        assert max(width, height) <= 65535
+        assert math.ceil(width / 32) * math.ceil(height / 32) <= 30000
         # Aspect ratio preserved (7000:9000 == 7:9), within rounding.
         assert abs((width / height) - (7000 / 9000)) < 0.01
 

@@ -3,12 +3,12 @@
 This module replaces the former disk-based image round-trip: instead of
 rendering every PDF page (or copying every folder image) to
 ``working_dir/images/`` and re-reading the JPEGs at request time, pages are
-rendered/loaded, preprocessed, JPEG-encoded, and base64-encoded fully in
+rendered/loaded, preprocessed, JPEG/PNG-encoded, and base64-encoded fully in
 memory, one page per transcription worker.
 
 Key abstractions:
 
-- ``PagePayload``: immutable per-page unit of work carrying the base64 JPEG,
+- ``PagePayload``: immutable per-page unit of work carrying the base64 image,
   naming/ordering metadata, and an image-provenance record (SHA-256 of the
   exact bytes sent to the API, dimensions, byte size, effective DPI).
 - ``PdfPayloadSource``: lazy page renderer over a single open PyMuPDF
@@ -26,6 +26,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import io
+import math
 import re
 import threading
 from dataclasses import dataclass
@@ -36,46 +37,26 @@ import fitz  # PyMuPDF
 import PIL
 from PIL import Image, ImageOps
 
-from config.constants import (
-    DEFAULT_JPEG_QUALITY,
-    DEFAULT_TARGET_DPI,
-    PDF_DPI_CONVERSION_FACTOR,
-)
+from config.constants import PDF_DPI_CONVERSION_FACTOR
 from config.loader import get_config_loader
 from config.logger import setup_logger
-from imaging._provider import (
-    detect_model_type,
-    get_image_config_section_name,
+from imaging.native import (
+    TargetDpi,
+    encode_payload,
+    format_downscale_log,
+    guarded_payload,
+    image_settings_fingerprint,
+    model_image_cap,
+    native_page_dpi,
+    resolve_target_size,
 )
 from imaging.pdf import get_image_paths_from_folder
 from imaging.preprocessing import ImageProcessor
+from imaging.settings import resolve_image_settings
 
 logger = setup_logger(__name__)
 
 _HASH_CHUNK_SIZE = 1024 * 1024
-
-
-def _openai_detail_is_original(model_name: str) -> bool:
-    """Whether the transcription model wants full-resolution ("original") detail.
-
-    True only when the transcription model config sets ``image_size: original``
-    AND the model actually accepts it (GPT-5.6 family). Used to skip the local
-    box-fit resize so the bytes sent to the API keep their native resolution.
-    Any config/registry hiccup yields False (keep the default resize) and never
-    raises.
-    """
-    try:
-        model_cfg = (
-            get_config_loader().get_model_config().get("transcription_model", {})
-        )
-        image_size = str(model_cfg.get("image_size", "") or "").strip().lower()
-        if image_size != "original":
-            return False
-        from llm.capabilities import detect_capabilities
-
-        return detect_capabilities(model_name).supports_original_image_detail
-    except Exception:
-        return False
 
 
 @dataclass(frozen=True)
@@ -89,6 +70,7 @@ class PagePayload:
     provenance: dict[str, Any]
     source_file: str
     page_index: int | None = None
+    mime_type: str = "image/jpeg"
 
 
 def _sha256_of_file(path: Path) -> str:
@@ -102,11 +84,8 @@ def _sha256_of_file(path: Path) -> str:
 
 def _encode_jpeg(img: Image.Image, jpeg_quality: int) -> tuple[bytes, int, int]:
     """JPEG-encode a preprocessed PIL image, returning (bytes, width, height)."""
-    if img.mode not in ("RGB", "L"):
-        img = img.convert("RGB")
-    buffer = io.BytesIO()
-    img.save(buffer, format="JPEG", quality=jpeg_quality)
-    return buffer.getvalue(), img.width, img.height
+    data, _ = encode_payload(img, "jpeg", jpeg_quality)
+    return data, img.width, img.height
 
 
 def _extract_sequence_number(image_path: Path) -> int:
@@ -131,45 +110,29 @@ def _extract_sequence_number(image_path: Path) -> int:
 class _PayloadSourceBase:
     """Shared provider-config resolution and provenance plumbing."""
 
+    _native_profile_warned = False
+
     def __init__(
         self, source_path: Path, provider: str | None, model_name: str | None
     ) -> None:
         self.source_path = source_path
-        # model.yaml supports ``provider: null`` (the provider is then resolved
-        # from the model name downstream); tolerate it here the same way
-        # instead of crashing on ``None.lower()`` before any page is processed.
-        model_name = model_name or ""
-        self.model_type = detect_model_type(provider or "", model_name)
-        section_name = get_image_config_section_name(self.model_type)
-        full_img_cfg = get_config_loader().get_image_processing_config()
-        self.img_cfg: dict[str, Any] = full_img_cfg.get(section_name, {})
-        # Full-resolution ("original") OpenAI detail: route through the capped
-        # 'original' resize path instead of the 768x1536 box-fit, keeping native
-        # resolution but bounding the longest side / pixel budget so a folio
-        # scan cannot exceed the API's input limits. Grayscale/transparency
-        # handling is untouched.
-        if self.model_type == "openai" and _openai_detail_is_original(model_name):
-            self.img_cfg = {**self.img_cfg, "llm_detail": "original"}
-        self.jpeg_quality = int(self.img_cfg.get("jpeg_quality", DEFAULT_JPEG_QUALITY))
-        # Render strategy: 'direct' (default) derives the PDF render DPI from the
-        # active resize profile so pages rasterize straight to their final size;
-        # 'supersample' restores the legacy render-at-target_dpi-then-downscale.
-        # Honored per provider section, then top-level, then the 'direct' default.
-        render_strategy = (
-            str(
-                self.img_cfg.get("render_strategy")
-                or full_img_cfg.get("render_strategy")
-                or "direct"
+        self.img_cfg, self.model_type, self._config_section_name = (
+            resolve_image_settings(get_config_loader(), provider, model_name)
+        )
+        self.jpeg_quality = int(self.img_cfg["jpeg_quality"])
+        self.render_strategy = str(self.img_cfg["render_strategy"])
+        self.target_dpi: TargetDpi = self.img_cfg["target_dpi"]
+        self.max_pixels = int(self.img_cfg["max_pixels_per_page"])
+        if (
+            self.target_dpi == "native"
+            and self.img_cfg["cap_policy"] == "profile-v1"
+            and not _PayloadSourceBase._native_profile_warned
+        ):
+            logger.warning(
+                "Native resolution is bounded by a resize profile; "
+                "the profile discards native resolution."
             )
-            .strip()
-            .lower()
-        )
-        self.render_strategy = (
-            render_strategy
-            if render_strategy in ("direct", "supersample")
-            else "direct"
-        )
-        self._config_section_name = section_name
+            _PayloadSourceBase._native_profile_warned = True
 
     def _base_file_provenance(self) -> dict[str, Any]:
         return {
@@ -179,7 +142,86 @@ class _PayloadSourceBase:
             "pillow_version": PIL.__version__,
             "image_config_section": self._config_section_name,
             "image_config": dict(self.img_cfg),
+            "model_type": self.model_type,
+            "model_name": self.img_cfg["model_name"],
+            "detail": self.img_cfg["request_detail"],
+            "cap_policy": self.img_cfg["cap_policy"],
+            "image_settings_fingerprint": image_settings_fingerprint(self.img_cfg),
         }
+
+    def _payload_from_pil(
+        self,
+        image: Image.Image,
+        index: int,
+        image_name: str,
+        sequence_number: int,
+        source_file: str,
+        page_index: int | None,
+        provenance: dict[str, Any],
+        img_cfg: dict[str, Any],
+        *,
+        effective_dpi: float | None = None,
+    ) -> PagePayload:
+        """Preprocess, encode and record the exact transmitted payload."""
+        detail = str(img_cfg["resolved_detail"])
+        if "downscale_reason" not in provenance:
+            size, provenance["downscale_reason"] = resolve_target_size(
+                image.width,
+                image.height,
+                self.model_type,
+                img_cfg["model_name"],
+                detail,
+                img_cfg,
+            )
+            img_cfg = {**img_cfg, "_target_size": size}
+        processed = ImageProcessor.preprocess_pil_image(image, img_cfg, self.model_type)
+        data, mime, fallback = guarded_payload(
+            processed,
+            img_cfg["payload_format"],
+            self.jpeg_quality,
+            int(img_cfg["max_image_bytes"]),
+            log=logger,
+        )
+        padded = (
+            model_image_cap(self.model_type, img_cfg["model_name"], detail, img_cfg)
+            is None
+            and self.model_type != "anthropic"
+            and detail != "low"
+            and img_cfg["resize_profile"] != "none"
+        )
+        provenance.update(
+            sha256=hashlib.sha256(data).hexdigest(),
+            width=processed.width,
+            height=processed.height,
+            byte_size=len(data),
+            sent_dpi=(
+                None
+                if padded or provenance["source_dpi_x"] is None
+                else max(provenance["source_dpi_x"], provenance["source_dpi_y"])
+                * processed.width
+                / provenance["source_width"]
+            ),
+            cap_policy=img_cfg["cap_policy"],
+            payload_format=mime.split("/")[1],
+            mime_type=mime,
+            format_fallback=fallback,
+        )
+        if effective_dpi is not None:
+            provenance["effective_dpi"] = effective_dpi
+        if provenance["downscale_reason"] != "none":
+            logger.info(
+                format_downscale_log(index + 1, provenance, img_cfg["model_name"])
+            )
+        return PagePayload(
+            base64=base64.b64encode(data).decode("utf-8"),
+            image_name=image_name,
+            sequence_number=sequence_number,
+            original_input_order_index=index,
+            provenance=provenance,
+            source_file=source_file,
+            page_index=page_index,
+            mime_type=mime,
+        )
 
     def close(self) -> None:  # pragma: no cover - overridden where needed
         """Release any resources held by the source."""
@@ -207,11 +249,6 @@ class PdfPayloadSource(_PayloadSourceBase):
         model_name: str | None = "",
     ) -> None:
         super().__init__(pdf_path, provider, model_name)
-        # Clamp to >= 1 so a 0/negative config cannot produce a degenerate
-        # render matrix.
-        self.target_dpi = max(
-            1, int(self.img_cfg.get("target_dpi", DEFAULT_TARGET_DPI))
-        )
         self._render_lock = threading.Lock()
         self._doc: fitz.Document | None = fitz.open(pdf_path)
         # A password-protected PDF opens and reports a page count, but every
@@ -235,28 +272,37 @@ class PdfPayloadSource(_PayloadSourceBase):
         """Virtual page name; matches the legacy on-disk naming contract."""
         return f"page_{index + 1:04d}.jpg"
 
-    def _render_zoom(self, page: fitz.Page) -> float:
+    def _render_zoom(
+        self, page: fitz.Page, img_cfg: dict[str, Any] | None = None
+    ) -> float:
         """Zoom factor for rasterizing *page*, honoring the render strategy.
 
-        Under ``supersample`` this is always ``target_dpi/72`` (render large,
-        downscale later). Under ``direct`` the zoom is derived from the active
+        Under ``supersample`` this starts at ``target_dpi/72`` (render large,
+        downscale later). The numeric memory guard can reduce either strategy.
+        Under ``direct`` the zoom is derived from the active
         resize profile so the page rasterizes straight to (approximately) its
         final content size; it is clamped at ``target_dpi/72`` so a page is
         never render-upscaled beyond the quality ceiling (box-fit padding and
         any upscale still happen in the post-render pipeline).
         """
+        if self.target_dpi == "native":
+            raise ValueError("Native zoom is resolved per page inside the render lock")
         base_zoom = self.target_dpi / PDF_DPI_CONVERSION_FACTOR
-        if self.render_strategy != "direct":
-            return base_zoom
         rect = page.rect
-        pt_w = float(rect.width)
-        pt_h = float(rect.height)
-        if pt_w <= 0.0 or pt_h <= 0.0:
-            return base_zoom
-        scale = ImageProcessor.content_scale_factor(
-            (pt_w * base_zoom, pt_h * base_zoom), self.img_cfg, self.model_type
-        )
-        return base_zoom * min(scale, 1.0)
+        pt_w, pt_h = float(rect.width), float(rect.height)
+        zoom = base_zoom
+        if self.render_strategy == "direct" and pt_w > 0 and pt_h > 0:
+            scale = ImageProcessor.content_scale_factor(
+                (pt_w * base_zoom, pt_h * base_zoom),
+                img_cfg if img_cfg is not None else self.img_cfg,
+                self.model_type,
+            )
+            zoom *= min(scale, 1.0)
+        # Numeric renders only, matching the reference's float memory guard.
+        pixels = (pt_w * zoom) * (pt_h * zoom)
+        if self.max_pixels > 0 and pixels > self.max_pixels:
+            zoom *= math.sqrt(self.max_pixels / pixels)
+        return zoom
 
     def build_payload(self, index: int) -> PagePayload:
         """Render, preprocess, and encode page *index* (0-based).
@@ -273,7 +319,42 @@ class PdfPayloadSource(_PayloadSourceBase):
             if self._doc is None:
                 raise RuntimeError("PdfPayloadSource is closed")
             page = self._doc[index]
-            zoom = self._render_zoom(page)
+            density = (
+                native_page_dpi(page, int(self.img_cfg["native_fallback_dpi"]))
+                if self.target_dpi == "native"
+                else None
+            )
+            source_dpi = density.dpi if density else float(self.target_dpi)
+            source_width = math.ceil(page.rect.width * source_dpi / 72 - 1e-7)
+            source_height = math.ceil(page.rect.height * source_dpi / 72 - 1e-7)
+            size, reason = resolve_target_size(
+                source_width,
+                source_height,
+                self.model_type,
+                self.img_cfg["model_name"],
+                self.img_cfg["resolved_detail"],
+                self.img_cfg,
+            )
+            img_cfg = {**self.img_cfg, "_target_size": size}
+            if density:
+                zoom = (
+                    source_dpi
+                    / 72
+                    * min(size[0] / source_width, size[1] / source_height)
+                )
+            else:
+                zoom = self._render_zoom(page, img_cfg)
+                if self.max_pixels > 0 and self.max_pixels < size[0] * size[1]:
+                    reason = "memory_guard"
+            provenance = {
+                "source_dpi_x": density.dpi_x if density else source_dpi,
+                "source_dpi_y": density.dpi_y if density else source_dpi,
+                "dpi_source": density.source if density else "numeric",
+                "source_width": source_width,
+                "source_height": source_height,
+                "render_dpi": zoom * 72,
+                "downscale_reason": reason,
+            }
             matrix = fitz.Matrix(zoom, zoom)
             if grayscale_enabled:
                 pix = page.get_pixmap(
@@ -287,25 +368,16 @@ class PdfPayloadSource(_PayloadSourceBase):
                 )
             del pix, page
 
-        pil_img = ImageProcessor.preprocess_pil_image(
-            pil_img, self.img_cfg, self.model_type
-        )
-        jpeg_bytes, width, height = _encode_jpeg(pil_img, self.jpeg_quality)
-
-        return PagePayload(
-            base64=base64.b64encode(jpeg_bytes).decode("utf-8"),
-            image_name=self.image_name(index),
-            sequence_number=index + 1,
-            original_input_order_index=index,
-            provenance={
-                "sha256": hashlib.sha256(jpeg_bytes).hexdigest(),
-                "width": width,
-                "height": height,
-                "byte_size": len(jpeg_bytes),
-                "effective_dpi": round(zoom * PDF_DPI_CONVERSION_FACTOR, 2),
-            },
-            source_file=str(self.source_path),
-            page_index=index,
+        return self._payload_from_pil(
+            pil_img,
+            index,
+            self.image_name(index),
+            index + 1,
+            str(self.source_path),
+            index,
+            provenance,
+            img_cfg,
+            effective_dpi=round(zoom * PDF_DPI_CONVERSION_FACTOR, 2),
         )
 
     def file_provenance(self) -> dict[str, Any]:
@@ -364,28 +436,28 @@ class FolderPayloadSource(_PayloadSourceBase):
             # sideways. exif_transpose returns an independent copy (or None).
             transposed = ImageOps.exif_transpose(img_file)
             oriented = transposed if transposed is not None else img_file
-            pil_img = ImageProcessor.preprocess_pil_image(
-                oriented, self.img_cfg, self.model_type
-            )
-            # Encode inside the with-block: preprocessing may return the same
-            # (unmodified) image object, which is closed when the block exits.
-            jpeg_bytes, width, height = _encode_jpeg(pil_img, self.jpeg_quality)
-
-        return PagePayload(
-            base64=base64.b64encode(jpeg_bytes).decode("utf-8"),
-            image_name=image_path.name,
-            sequence_number=_extract_sequence_number(image_path),
-            original_input_order_index=index,
-            provenance={
-                "sha256": hashlib.sha256(jpeg_bytes).hexdigest(),
-                "width": width,
-                "height": height,
-                "byte_size": len(jpeg_bytes),
+            metadata = img_file.info.get("dpi")
+            provenance = {
+                "source_dpi_x": None,
+                "source_dpi_y": None,
+                "dpi_source": "file",
+                "source_width": oriented.width,
+                "source_height": oriented.height,
+                "render_dpi": None,
+                "file_dpi_metadata": metadata,
                 "source_sha256": hashlib.sha256(source_bytes).hexdigest(),
-            },
-            source_file=str(image_path),
-            page_index=None,
-        )
+            }
+            # Encoding stays inside the with-block; processing can return the input.
+            return self._payload_from_pil(
+                oriented,
+                index,
+                image_path.name,
+                _extract_sequence_number(image_path),
+                str(image_path),
+                None,
+                provenance,
+                self.img_cfg,
+            )
 
     def file_provenance(self) -> dict[str, Any]:
         """Folder-level reproducibility record (per-image hashes live on pages)."""

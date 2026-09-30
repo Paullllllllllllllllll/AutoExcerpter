@@ -9,7 +9,7 @@ Each test targets one fix applied in this round:
 - fix 5: promoting a longer variant to canonical re-derives the survivor's
   comparison_text while leaving its normalized_key (the dict key) untouched.
 - fix 6: sanitize_for_xml strips XML-1.0-illegal codepoints beyond C0/DEL.
-- fix 8: a 0/negative target_dpi config is clamped to >= 1.
+- fix 8: a 0/negative target_dpi config raises a named error.
 """
 
 from __future__ import annotations
@@ -100,10 +100,10 @@ class TestSanitizeForXml:
 
 
 # ---------------------------------------------------------------------------
-# fix 8: target_dpi clamped to >= 1
+# fix 8: target_dpi rejects non-positive values
 # ---------------------------------------------------------------------------
-class TestTargetDpiClamp:
-    def test_zero_dpi_clamped_to_one(
+class TestTargetDpiValidation:
+    def test_zero_dpi_rejected(
         self,
         make_pdf: Any,
         mock_config_loader: MagicMock,
@@ -111,14 +111,13 @@ class TestTargetDpiClamp:
     ) -> None:
         mock_image_processing_config["api_image_processing"]["target_dpi"] = 0
         pdf_path = make_pdf("one.pdf", num_pages=1)
-        with patch(
-            "imaging.payload.get_config_loader", return_value=mock_config_loader
+        with (
+            patch("imaging.payload.get_config_loader", return_value=mock_config_loader),
+            pytest.raises(ValueError, match="target_dpi.*api_image_processing"),
         ):
-            source = PdfPayloadSource(pdf_path)
-            with source:
-                assert source.target_dpi == 1
+            PdfPayloadSource(pdf_path)
 
-    def test_negative_dpi_clamped_to_one(
+    def test_negative_dpi_rejected(
         self,
         make_pdf: Any,
         mock_config_loader: MagicMock,
@@ -126,12 +125,11 @@ class TestTargetDpiClamp:
     ) -> None:
         mock_image_processing_config["api_image_processing"]["target_dpi"] = -50
         pdf_path = make_pdf("one.pdf", num_pages=1)
-        with patch(
-            "imaging.payload.get_config_loader", return_value=mock_config_loader
+        with (
+            patch("imaging.payload.get_config_loader", return_value=mock_config_loader),
+            pytest.raises(ValueError, match="target_dpi.*api_image_processing"),
         ):
-            source = PdfPayloadSource(pdf_path)
-            with source:
-                assert source.target_dpi == 1
+            PdfPayloadSource(pdf_path)
 
 
 # ---------------------------------------------------------------------------

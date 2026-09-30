@@ -53,7 +53,7 @@ class ProviderCapabilities:
         supports_vision: Whether the model can process image inputs
         supports_image_detail: Whether OpenAI-style "detail" parameter is supported
         supports_original_image_detail: Whether "detail": "original" (full input
-            resolution, no patch cap) is accepted (GPT-5.6 family only)
+            resolution with a model patch cap) is accepted
         default_image_detail: Default detail level for images
         supports_media_resolution: Whether Google-style media_resolution is supported
         default_media_resolution: Default resolution for Google
@@ -81,10 +81,13 @@ class ProviderCapabilities:
     # Vision/multimodal
     supports_vision: bool = False
     supports_image_detail: bool = True  # OpenAI-style "detail" parameter
-    supports_original_image_detail: bool = False  # "detail": "original" (GPT-5.6)
+    supports_original_image_detail: bool = False  # "detail": "original"
     default_image_detail: ImageDetail = "high"
     supports_media_resolution: bool = False  # Google-style media_resolution
     default_media_resolution: MediaResolution = "high"
+
+    image_original_patch_cap_30k: bool = False
+    image_high_res_tier: bool = False
 
     # Structured outputs
     supports_structured_output: bool = False
@@ -293,6 +296,7 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
         dict(
             supports_text_verbosity=True,
             supports_original_image_detail=True,
+            image_original_patch_cap_30k=True,
             max_context_tokens=1050000,
             max_output_tokens=128000,
         ),
@@ -304,6 +308,7 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
         dict(
             supports_text_verbosity=True,
             supports_original_image_detail=True,
+            image_original_patch_cap_30k=True,
             max_context_tokens=1050000,
             max_output_tokens=128000,
         ),
@@ -315,14 +320,15 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
         dict(
             supports_text_verbosity=True,
             supports_original_image_detail=True,
+            image_original_patch_cap_30k=True,
             max_context_tokens=1050000,
             max_output_tokens=128000,
         ),
     ),
     # ===== OpenAI GPT-5.x family (reasoning + text verbosity) =====
     # GPT-5.6 (GA 2026-07-09). Vision + detail control (original/auto = full input
-    # resolution, no patch cap); 1.05M context, 128k output. Specific variant IDs
-    # precede the bare "gpt-5.6" alias, which resolves to the flagship "sol".
+    # resolution with a 30,000-patch cap); 1.05M context, 128k output. Specific
+    # variant IDs precede the bare "gpt-5.6" alias, which resolves to "sol".
     (
         ("gpt-5.6-sol",),
         "gpt-5.6-sol",
@@ -330,6 +336,7 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
         dict(
             supports_text_verbosity=True,
             supports_original_image_detail=True,
+            image_original_patch_cap_30k=True,
             max_context_tokens=1050000,
             max_output_tokens=128000,
         ),
@@ -341,6 +348,7 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
         dict(
             supports_text_verbosity=True,
             supports_original_image_detail=True,
+            image_original_patch_cap_30k=True,
             max_context_tokens=1050000,
             max_output_tokens=128000,
         ),
@@ -352,6 +360,7 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
         dict(
             supports_text_verbosity=True,
             supports_original_image_detail=True,
+            image_original_patch_cap_30k=True,
             max_context_tokens=1050000,
             max_output_tokens=128000,
         ),
@@ -364,6 +373,7 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
         dict(
             supports_text_verbosity=True,
             supports_original_image_detail=True,
+            image_original_patch_cap_30k=True,
             max_context_tokens=1050000,
             max_output_tokens=128000,
         ),
@@ -387,6 +397,7 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
         _OPENAI_REASONING_BASE,
         dict(
             supports_text_verbosity=True,
+            supports_original_image_detail=True,
             max_context_tokens=1050000,
             max_output_tokens=128000,
         ),
@@ -397,6 +408,7 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
         _OPENAI_REASONING_BASE,
         dict(
             supports_text_verbosity=True,
+            supports_original_image_detail=True,
             max_context_tokens=1050000,
             max_output_tokens=128000,
         ),
@@ -427,6 +439,7 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
         _OPENAI_REASONING_BASE,
         dict(
             supports_text_verbosity=True,
+            supports_original_image_detail=True,
             max_context_tokens=1050000,
             max_output_tokens=128000,
         ),
@@ -605,6 +618,7 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
         "claude-opus-5.5",
         _ANTHROPIC_BASE,
         dict(
+            image_high_res_tier=True,
             is_reasoning_model=True,
             supports_reasoning_effort=True,
             uses_adaptive_thinking=True,
@@ -619,6 +633,7 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
         "claude-opus-5",
         _ANTHROPIC_BASE,
         dict(
+            image_high_res_tier=True,
             is_reasoning_model=True,
             supports_reasoning_effort=True,
             uses_adaptive_thinking=True,
@@ -633,6 +648,7 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
         "claude-fable-5",
         _ANTHROPIC_BASE,
         dict(
+            image_high_res_tier=True,
             is_reasoning_model=True,
             supports_reasoning_effort=True,
             uses_adaptive_thinking=True,
@@ -647,6 +663,7 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
         "claude-sonnet-5",
         _ANTHROPIC_BASE,
         dict(
+            image_high_res_tier=True,
             is_reasoning_model=True,
             supports_reasoning_effort=True,
             uses_adaptive_thinking=True,
@@ -661,6 +678,7 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
         "claude-opus-4.8",
         _ANTHROPIC_BASE,
         dict(
+            image_high_res_tier=True,
             is_reasoning_model=True,
             supports_reasoning_effort=True,
             uses_adaptive_thinking=True,
@@ -675,6 +693,7 @@ _MODEL_REGISTRY: list[tuple[tuple[str, ...], str, dict[str, Any], dict[str, Any]
         "claude-opus-4.7",
         _ANTHROPIC_BASE,
         dict(
+            image_high_res_tier=True,
             is_reasoning_model=True,
             supports_reasoning_effort=True,
             uses_adaptive_thinking=True,

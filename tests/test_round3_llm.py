@@ -275,17 +275,6 @@ class TestConfigConversionGuards:
         monkeypatch.setattr(accessors, "get_config_loader", lambda: loader)
         assert accessors.get_api_timeout() == DEFAULT_OPENAI_TIMEOUT
 
-    def test_get_target_dpi_malformed_falls_back(self, monkeypatch) -> None:
-        import config.accessors as accessors
-        from config.constants import DEFAULT_TARGET_DPI
-
-        loader = MagicMock()
-        loader.get_image_processing_config.return_value = {
-            "api_image_processing": {"target_dpi": "huge"}
-        }
-        monkeypatch.setattr(accessors, "get_config_loader", lambda: loader)
-        assert accessors.get_target_dpi() == DEFAULT_TARGET_DPI
-
 
 # ============================================================================
 # Fix 5: degraded shared ledger persists own usage at flush

@@ -108,6 +108,7 @@ def pipeline_env(
         transcriber_module, "get_config_loader", lambda: mock_config_loader
     )
     monkeypatch.setattr("imaging.payload.get_config_loader", lambda: mock_config_loader)
+    monkeypatch.setattr("pipeline.resume.get_config_loader", lambda: mock_config_loader)
     monkeypatch.setattr(app_config, "SUMMARIZE", False)
     return mock_manager
 

@@ -12,7 +12,6 @@ from config.constants import DEFAULT_CONCURRENT_REQUESTS as DEFAULT_CONCURRENT_R
 from config.constants import (
     DEFAULT_OPENAI_TIMEOUT,
     DEFAULT_RATE_LIMITS,
-    DEFAULT_TARGET_DPI,
 )
 from config.loader import get_config_loader
 from config.logger import setup_logger
@@ -185,17 +184,6 @@ def get_rate_limits() -> list[tuple[int, int]]:
         return default_limits
 
 
-def get_target_dpi() -> int:
-    """Get target DPI for PDF page extraction."""
-    dpi: Any = _get_config_value(
-        "get_image_processing_config",
-        ["api_image_processing", "target_dpi"],
-        default=None,
-        log_context="target DPI",
-    )
-    return _coerce_int(dpi, DEFAULT_TARGET_DPI, 1, "api_image_processing.target_dpi")
-
-
 # ============================================================================
 # Public API
 # ============================================================================
@@ -205,5 +193,4 @@ __all__ = [
     "get_service_tier",
     "get_api_timeout",
     "get_rate_limits",
-    "get_target_dpi",
 ]

@@ -27,7 +27,10 @@ from pathlib import Path
 from typing import Any
 
 from config.constants import LOG_FORMAT_VERSION, SUPPORTED_IMAGE_EXTENSIONS
+from config.loader import get_config_loader
 from config.logger import setup_logger
+from imaging.native import image_settings_fingerprint
+from imaging.settings import resolve_image_settings
 from pipeline.paths import create_safe_directory_name, create_safe_log_filename
 
 logger = setup_logger(__name__)
@@ -265,6 +268,22 @@ class ResumeChecker:
         # the COMPLETE branch still fired, silently keeping stale outputs).
         log_incomplete = log_shortfall or log_has_failures or input_changed
 
+        # Changed image settings matter only while pages remain to transcribe;
+        # summary-only resume reuses the logged text and sends no images.
+        pages_to_transcribe = log_shortfall or transcription_error_count > 0
+        if header is not None and pages_to_transcribe and not self.retranscribe:
+            try:
+                verify_image_settings(header)
+            except ValueError as exc:
+                return ResumeResult(
+                    item_name=item_name,
+                    state=ProcessingState.COMPLETE,
+                    output_dir=output_dir,
+                    existing_outputs=existing,
+                    missing_outputs=missing,
+                    reason=str(exc),
+                )
+
         # Determine state
         if not missing and not log_incomplete:
             return ResumeResult(
@@ -430,6 +449,36 @@ def _completed_pages_from_entries(
                 completed.add(idx)
 
     return completed if completed else None
+
+
+def verify_image_settings(
+    header: dict[str, Any], current: dict[str, Any] | None = None
+) -> None:
+    """Reject changed preprocessing before any logged pages are reused."""
+    recorded = header.get("file_provenance")
+    if not isinstance(recorded, dict) or not recorded.get("image_settings_fingerprint"):
+        logger.warning("Legacy image settings; resumed pages may mix settings.")
+        return
+    if current is None:
+        loader = get_config_loader()
+        model = loader.get_model_config().get("transcription_model", {})
+        current, _, _ = resolve_image_settings(
+            loader, model.get("provider"), model.get("name")
+        )
+    if recorded["image_settings_fingerprint"] == image_settings_fingerprint(current):
+        return
+    previous = recorded.get("image_config", {})
+    changed = sorted(
+        key
+        for key in previous.keys() | current.keys()
+        if previous.get(key) != current.get(key)
+    )
+    message = (
+        f"Image settings changed: {', '.join(changed)}. "
+        "Skipping file; use --overwrite to replace the existing run."
+    )
+    logger.error(message)
+    raise ValueError(message)
 
 
 def _input_changed_since_log(header: dict[str, Any] | None) -> bool:

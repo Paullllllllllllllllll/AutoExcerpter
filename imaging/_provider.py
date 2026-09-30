@@ -9,11 +9,49 @@ For example, 'google/gemini-2.5-flash' via OpenRouter should use Google config.
 
 from __future__ import annotations
 
-from typing import Literal
+import logging
+from typing import Any, Literal
 
 from config.constants import OPENAI_MODEL_PREFIXES
 
 ModelType = Literal["openai", "google", "anthropic", "custom"]
+
+
+def resolve_request_detail(
+    model_config: dict[str, Any],
+    provider: str | None,
+    model_name: str,
+    log: logging.Logger,
+) -> str | None:
+    """Resolve exactly the OpenAI detail sent by the transcription client."""
+    from llm.capabilities import detect_capabilities
+
+    if provider != "openai":
+        return None
+    image_size = model_config.get("image_size")
+    if not image_size:
+        return None
+    detail = str(image_size).strip().lower()
+    if detail not in ("low", "high", "auto", "original"):
+        log.warning(
+            f"Ignoring unsupported image_size '{image_size}' for "
+            f"{model_name}; expected low/high/auto/original."
+        )
+        return None
+    capabilities = detect_capabilities(model_name)
+    if not capabilities.supports_image_detail:
+        log.warning(
+            f"Model '{model_name}' does not support the image detail "
+            "parameter; ignoring image_size."
+        )
+        return None
+    if detail == "original" and not capabilities.supports_original_image_detail:
+        log.warning(
+            f"Model '{model_name}' does not support image_size "
+            "'original'; falling back to 'high'."
+        )
+        return "high"
+    return detail
 
 
 def detect_model_type(provider: str, model_name: str | None = None) -> ModelType:

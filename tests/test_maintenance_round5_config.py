@@ -9,7 +9,7 @@ One focused regression per verified fix:
    scanning (and writing into) the whole current working directory, which is
    what the shipped ``app.example.yaml`` (``input_folder_path: ''``) produced.
 3. The config accessors repair out-of-range values visibly: a non-positive
-   ``concurrency_limit`` / ``api_timeout`` / ``target_dpi`` is clamped with a
+   ``concurrency_limit`` / ``api_timeout`` is clamped with a
    once-per-process WARNING, an absent key stays silent, and an all-invalid
    ``rate_limits`` list says so instead of quietly restoring the most
    permissive built-in throttle.
@@ -40,7 +40,6 @@ from config.constants import (
     DEFAULT_CONCURRENT_REQUESTS,
     DEFAULT_OPENAI_TIMEOUT,
     DEFAULT_RATE_LIMITS,
-    DEFAULT_TARGET_DPI,
 )
 from pipeline.types import ItemSpec
 
@@ -343,43 +342,6 @@ class TestApiTimeoutClamped:
             timeout = accessors.get_api_timeout()
 
         assert timeout == DEFAULT_OPENAI_TIMEOUT
-        assert [r for r in caplog.records if r.levelno == logging.WARNING] == []
-
-
-class TestTargetDpiClamped:
-    """A zero DPI would render an unusable page image."""
-
-    def test_zero_clamped_to_one_with_warning(
-        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        img_cfg = {"api_image_processing": {"target_dpi": 0}}
-        monkeypatch.setattr(
-            accessors,
-            "get_config_loader",
-            lambda: _loader_with(image_processing=img_cfg),
-        )
-        _propagate(monkeypatch, accessors.logger)
-
-        with caplog.at_level(logging.WARNING, logger=accessors.logger.name):
-            dpi = accessors.get_target_dpi()
-
-        assert dpi == 1
-        assert any(
-            "api_image_processing.target_dpi" in r.getMessage()
-            for r in caplog.records
-            if r.levelno == logging.WARNING
-        )
-
-    def test_absent_dpi_uses_default_silently(
-        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        monkeypatch.setattr(accessors, "get_config_loader", lambda: _loader_with())
-        _propagate(monkeypatch, accessors.logger)
-
-        with caplog.at_level(logging.WARNING, logger=accessors.logger.name):
-            dpi = accessors.get_target_dpi()
-
-        assert dpi == DEFAULT_TARGET_DPI
         assert [r for r in caplog.records if r.levelno == logging.WARNING] == []
 
 

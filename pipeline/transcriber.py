@@ -42,6 +42,7 @@ from pipeline.resume import (
     _results_from_entries,
     load_log_header,
     load_transcription_results_from_log,
+    verify_image_settings,
 )
 from pipeline.text_cleaner import clean_transcription
 from rendering import (
@@ -841,7 +842,7 @@ class ItemTranscriber:
         input_type: str,
         total_images: int,
         model_name: str,
-        extraction_dpi: int | None = None,
+        extraction_dpi: int | str | None = None,
         *,
         concurrency_limit: int | None = None,
         file_provenance: dict[str, Any] | None = None,
@@ -1521,6 +1522,13 @@ class ItemTranscriber:
                 else load_transcription_results_from_log(self.summary_log_path) or []
             )
             self._detect_resume_model_mismatch()
+            # Only pages still to transcribe send images; a summary-only resume
+            # reuses logged text, so changed image settings do not matter there.
+            pages_remaining = any(
+                idx not in self.completed_page_indices for idx in range(len(source))
+            )
+            if self._resume_log_header is not None and pages_remaining:
+                verify_image_settings(self._resume_log_header, source.img_cfg)
 
         # Initialize log file with a header (incl. file-level provenance)
         target_dpi = source.target_dpi if isinstance(source, PdfPayloadSource) else None

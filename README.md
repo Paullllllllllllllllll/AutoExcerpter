@@ -165,16 +165,17 @@ Three capability patterns are available:
 ## How It Works
 
 1. **Scan** the input directory for PDFs and image folders.
-2. **Stream** each page fully in memory: render the PDF page
-   (PyMuPDF) or load the source image on demand in the
-   transcription worker, preprocess (grayscale, transparency
-   handling, resize), and JPEG/base64-encode -- no temporary
-   image files are written to disk. Already-transcribed pages
-   are skipped before rendering when resuming.
-3. **Record provenance**: each log entry carries the SHA-256,
-   dimensions, byte size, and effective DPI of the exact image
-   sent to the API; the log header records the source-file
-   SHA-256, library versions, and the image-config snapshot.
+2. **Stream** each page fully in memory: render the PDF page at
+   its scan density (`target_dpi: native`) or a numeric DPI, or load
+   the source image on demand. Preprocess grayscale and transparency,
+   resize within the model cap or profile, and JPEG/PNG/base64-encode.
+   Native pages render directly to the sent size; already-transcribed
+   pages are skipped before rendering when resuming.
+3. **Record provenance**: each log entry carries the exact payload's
+   SHA-256, dimensions, byte size, source/render/sent DPI, downscale reason,
+   format and MIME type. The header records source identity, library versions,
+   resolved image settings, model, request detail, cap policy and a settings
+   fingerprint. Resume refuses changed settings and warns for legacy logs.
 4. **Transcribe** each page via LangChain with structured JSON
    schema and capability-guarded parameters.
 5. **Summarize** (optional) transcribed text into bullet-point
@@ -403,7 +404,7 @@ cp config/defaults/app.example.yaml config/defaults/app.yaml
 | `app.yaml` | `app.example.yaml` | Paths, feature toggles, citations, daily token limit |
 | `model.yaml` | `model.example.yaml` | LLM provider/model for transcription and summary |
 | `concurrency.yaml` | `concurrency.example.yaml` | Rate limits, retries, parallelism, service tier |
-| `image_processing.yaml` | `image_processing.example.yaml` | DPI, grayscale, resize, JPEG quality, text cleaning |
+| `image_processing.yaml` | `image_processing.example.yaml` | Native/numeric DPI, model caps, JPEG/PNG, size guards, text cleaning |
 | `api_keys.yaml` | `api_keys.example.yaml` | Provider to env-var-name mapping (optional) |
 
 ### Basic Configuration (app.yaml)
@@ -572,28 +573,59 @@ times in-run before the page is failed.
 
 ### Image Processing Configuration (image_processing.yaml)
 
-Provider-specific sections (`api_image_processing`,
-`google_image_processing`, `anthropic_image_processing`,
-`custom_image_processing`) each control:
+Provider-specific sections appear in this order: `api_image_processing`,
+`anthropic_image_processing`, `google_image_processing`, `custom_image_processing`.
+The new settings resolve inside each section; top-level values do not supply them.
+Real files deep-merge over the example, so omitted keys inherit the shipped defaults.
 
 ```yaml
-# Global: 'direct' (default) derives the PDF render DPI from the active resize
-# profile so pages rasterize straight to their final size; 'supersample'
-# restores the legacy render-at-target_dpi-then-downscale path.
-render_strategy: direct
+# Numeric: direct renders to the profile; supersample resizes afterward.
+# Native always renders directly to the resolved model cap or profile.
+render_strategy: direct       # may also be overridden per section
+max_pixels_per_page: 24000000 # numeric rendering only; 0 disables
+resampling_algorithm: bilinear # bilinear | lanczos
 
 api_image_processing:
-  target_dpi: 300
+  target_dpi: native          # positive integer or native
+  native_fallback_dpi: 300    # pages without a usable page-spanning scan
+  payload_format: jpeg       # jpeg | png
+  max_image_bytes: 50000000   # base64 bytes; 0 disables
   grayscale_conversion: true
   handle_transparency: true
-  jpeg_quality: 100
+  jpeg_quality: 95
+  llm_detail: original
   resize_profile: high       # high | low | auto | none
-  llm_detail: original       # high | low | auto | original (GPT-5.6 family)
-  high_target_box: [768, 1536]
   low_max_side_px: 512
-  original_max_side_px: 6000     # caps for 'original' detail
-  original_max_pixels: 10240000
+  high_target_box: [768, 1536]
 ```
+
+OpenAI request detail comes from `transcription_model.image_size` in `model.yaml`.
+Sizing follows the detail actually sent; other providers carry no OpenAI detail
+parameter. With `original`, GPT-5.6/GPT-6 use a 65,535 px edge and 30,000 patches
+of 32 px; GPT-5.4/GPT-5.5 and unflagged original-detail models use 6,000 px and
+10,000 patches. Anthropic high-resolution models use a 2,576 px edge and 4,784
+patches of 28 px; other Claude models use 1,568 px and 1,568 patches. Both the edge
+and patch budgets apply in numeric and native runs. Optional `original_max_side_px`,
+`original_max_pixels` and Anthropic `high_max_side_px` can only tighten these caps.
+
+Native DPI comes from image placement transforms, selecting the densest scan
+covering at least half the page. This preserves rotation, cropping, anisotropic
+scaling and layered scan composites; small figures and born-digital pages use the
+fallback. Image files retain their pixels before sizing and record DPI metadata.
+OpenAI high/auto/low, Google and custom use their resize profiles, with a warning
+once per run when a native profile discards resolution. Native with `resize_profile:
+none` requires a model cap. The 24 MP memory guard applies only to numeric renders.
+
+The example ships native JPEG q95 for OpenAI and Anthropic, with base64 limits of
+50 MB and 10 MB. Google stays at 300 DPI, JPEG q95 and 20 MB; custom stays at
+150 DPI, JPEG q85, a low resize profile and no byte guard. PNG is lossless and
+opt-in: an oversized PNG falls back to JPEG with a warning, while a still-oversized
+JPEG fails that page. Virtual PDF names stay `page_NNNN.jpg` regardless of MIME.
+
+Each downscaled page logs its dimensions, density, reason and cap policy. The log
+header fingerprints all resolved image settings. A mismatch skips the file with an
+ERROR naming changed keys; use `--overwrite` to replace the run. Legacy logs resume
+with a WARNING that their pages may mix settings.
 
 Post-transcription text cleaning:
 
@@ -859,12 +891,12 @@ AutoExcerpter/
 **Maximizing throughput:**
 increase `concurrency_limit` based on provider tier (OpenAI:
 50-150, Anthropic: 5-10); use `service_tier: flex` for batch
-work; use `llm_detail: auto` or `low` for clean documents.
+work; use OpenAI `image_size: auto` or `low` in `model.yaml` for clean documents.
 
 **Reducing cost:**
 use Flex tier (~50% savings); lower `target_dpi` to 200-250 for
-clean scans; disable summarization when not needed; use
-`llm_detail: low`.
+clean scans in numeric mode; disable summarization when not needed; use
+OpenAI `image_size: low` in `model.yaml`.
 
 **Best practices:**
 start with defaults and adjust after reviewing results; test on
@@ -887,13 +919,16 @@ version.
 `service_tier: flex`.
 
 **Timeout errors** -- increase `api_timeout` in
-`concurrency.yaml`; reduce `target_dpi` or use `llm_detail: low`.
+`concurrency.yaml`; select a lower numeric `target_dpi` or OpenAI
+`image_size: low` in `model.yaml`.
 
-**Poor transcription quality** -- increase `target_dpi` (try 400
-or 600); set `llm_detail: high`; ensure source scans are legible.
+**Poor transcription quality** -- use `target_dpi: native` and OpenAI
+`image_size: original` in `model.yaml` to preserve scan detail within model caps.
+For born-digital pages, increase `native_fallback_dpi`; ensure sources are legible.
 
 **Memory errors** -- reduce `concurrency_limit` for both API
-requests and image processing; process in smaller batches.
+requests and image processing; process in smaller batches. Numeric renders
+are bounded by `max_pixels_per_page`; native renders use model caps or profiles.
 
 **Missing page numbers in summaries** -- verify page numbers are
 visible in the source; check the transcription `.txt` for
@@ -904,7 +939,8 @@ visible in the source; check the transcription `.txt` for
 OpenAI's content filter can stop pages dense with long verbatim
 quotations from copyrighted texts. Such a page fails after one call,
 without retries, and is recorded as failed in the working log. Repair
-it by rerunning with `--resume` and another provider; the OpenRouter
+it by rerunning with another provider (use `--overwrite` if the image
+settings fingerprint changes); the OpenRouter
 model `z-ai/glm-5.3-flash` has handled such pages.
 
 **Further help:** check JSONL logs in `_working_files/`, review
@@ -920,6 +956,18 @@ v1.0.0 do not exist.
 
 ## Changelog
 
+- **v3.6.0** (30 September 2026) -- Add native scan-density rendering,
+  model-specific edge and patch caps in numeric and native runs, optional PNG
+  with a base64 size guard and JPEG fallback, per-page sizing provenance,
+  MIME-aware requests and retries, and a settings fingerprint that rejects mixed
+  preprocessing on resume. OpenAI and Anthropic now default to native JPEG q95;
+  omitted real-file keys inherit these defaults through deep merging. To restore
+  the previous numeric behavior, explicitly set `target_dpi: 300` and
+  `jpeg_quality: 100` for API, Anthropic and Google (custom stays at 150 DPI/q85),
+  OpenAI `original_max_side_px: 6000` and `original_max_pixels: 10240000`,
+  Anthropic `high_max_side_px: 2576`, and the previous detail/resize profile values;
+  keep `image_size` in `model.yaml` consistent and use `--overwrite` for existing
+  logs. Registry caps still apply, including Anthropic's patch budget.
 - **v3.5.1** (30 September 2026) -- The shared ledger (module version 2.1.5)
   adds `gpt-6-astra` to the large default pool; before, its usage was
   recorded without a pool and escaped the per-key pool caps.

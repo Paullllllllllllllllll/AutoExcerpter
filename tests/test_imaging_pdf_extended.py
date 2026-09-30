@@ -13,6 +13,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import io
+import math
 from collections.abc import Callable, Generator
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,7 @@ import fitz  # PyMuPDF
 import pytest
 from PIL import Image
 
+from imaging.native import resized_size
 from imaging.payload import PdfPayloadSource
 
 
@@ -29,6 +31,7 @@ def _loader_with(sections: dict[str, Any]) -> MagicMock:
     """Build a mock ConfigLoader returning the given image-processing sections."""
     loader = MagicMock()
     loader.get_image_processing_config.return_value = sections
+    loader.get_model_config.return_value = {}
     return loader
 
 
@@ -243,7 +246,7 @@ class TestRenderStrategy:
     """Target-derived render DPI ('direct') vs legacy ('supersample')."""
 
     def test_anthropic_a4_direct_derives_dpi(self, tmp_path: Path) -> None:
-        """A4 page + Anthropic high profile renders at 300 * 2576 / long-edge-px."""
+        """A4 renders within both Anthropic's edge and patch budget."""
         pdf_path = _sized_pdf(tmp_path / "a4.pdf", 595.0, 842.0)
         loader = _loader_with(
             {
@@ -265,12 +268,17 @@ class TestRenderStrategy:
         with source:
             payload = source.build_payload(0)
 
-        long_edge_px_at_300 = 842.0 * 300.0 / 72.0  # 3508.33
-        expected = 300.0 * 2576.0 / long_edge_px_at_300  # ~220.28
+        size = resized_size(2480, 3509, 2576, 4784)
+        expected = 300.0 * min(size[0] / 2480, size[1] / 3509)
         assert payload.provenance["effective_dpi"] == pytest.approx(expected, abs=1.0)
         assert payload.provenance["effective_dpi"] < 300
         # After render + the (near-no-op) resize, the long edge sits at the cap.
         assert max(payload.provenance["width"], payload.provenance["height"]) <= 2576
+        assert (
+            math.ceil(payload.provenance["width"] / 28)
+            * math.ceil(payload.provenance["height"] / 28)
+            <= 4784
+        )
 
     def test_original_within_caps_renders_at_target_dpi(self, tmp_path: Path) -> None:
         """'original' profile whose target_dpi render fits the caps stays at DPI."""
@@ -291,8 +299,11 @@ class TestRenderStrategy:
                 }
             }
         )
+        loader.get_model_config.return_value = {
+            "transcription_model": {"image_size": "original"}
+        }
         with patch("imaging.payload.get_config_loader", return_value=loader):
-            source = PdfPayloadSource(pdf_path)
+            source = PdfPayloadSource(pdf_path, model_name="gpt-6-astra")
         with source:
             payload = source.build_payload(0)
 

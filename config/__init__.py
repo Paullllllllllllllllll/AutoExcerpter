@@ -21,7 +21,6 @@ from config.accessors import (
     get_api_timeout,
     get_rate_limits,
     get_service_tier,
-    get_target_dpi,
     get_transcription_concurrency,
 )
 from config.loader import (
@@ -46,6 +45,5 @@ __all__ = [
     "get_api_timeout",
     "get_rate_limits",
     "get_service_tier",
-    "get_target_dpi",
     "get_transcription_concurrency",
 ]

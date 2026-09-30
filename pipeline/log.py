@@ -81,7 +81,7 @@ def initialize_log_file(
     input_type: str,
     total_images: int,
     model_name: str,
-    extraction_dpi: int | None = None,
+    extraction_dpi: int | str | None = None,
     concurrency_limit: int | None = None,
     file_provenance: dict[str, Any] | None = None,
     log_type: str = "transcription",

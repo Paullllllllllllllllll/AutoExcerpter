@@ -7,7 +7,6 @@ Covers:
 - get_service_tier: tier present, tier missing, error branch
 - get_api_timeout: missing key, error branch
 - get_rate_limits: valid list, invalid items, empty list, error branch
-- get_target_dpi: normal, missing key, error branch
 """
 
 from __future__ import annotations
@@ -313,51 +312,3 @@ class TestGetRateLimits:
 
         limits = ch.get_rate_limits()
         assert limits == [(50, 1), (1000, 60)]
-
-
-# ============================================================================
-# get_target_dpi
-# ============================================================================
-class TestGetTargetDpi:
-    """Tests for get_target_dpi()."""
-
-    def test_reads_dpi_from_config(self, monkeypatch) -> None:
-        """Returns the configured target DPI."""
-        img_cfg = {"api_image_processing": {"target_dpi": 600}}
-        monkeypatch.setattr(
-            ch, "get_config_loader", lambda: _mock_loader(image_cfg=img_cfg)
-        )
-
-        assert ch.get_target_dpi() == 600
-
-    def test_missing_target_dpi_returns_default(self, monkeypatch) -> None:
-        """Returns 300 when target_dpi is not in config."""
-        img_cfg: dict[str, Any] = {"api_image_processing": {}}
-        monkeypatch.setattr(
-            ch, "get_config_loader", lambda: _mock_loader(image_cfg=img_cfg)
-        )
-
-        assert ch.get_target_dpi() == 300
-
-    def test_missing_section_returns_default(self, monkeypatch) -> None:
-        """Returns 300 when api_image_processing section is missing."""
-        monkeypatch.setattr(ch, "get_config_loader", lambda: _mock_loader(image_cfg={}))
-
-        assert ch.get_target_dpi() == 300
-
-    def test_error_returns_default(self, monkeypatch) -> None:
-        """Returns 300 on exception."""
-        loader = MagicMock()
-        loader.get_image_processing_config.side_effect = RuntimeError("fail")
-        monkeypatch.setattr(ch, "get_config_loader", lambda: loader)
-
-        assert ch.get_target_dpi() == 300
-
-    def test_string_dpi_converted_to_int(self, monkeypatch) -> None:
-        """String DPI values are converted to int."""
-        img_cfg = {"api_image_processing": {"target_dpi": "450"}}
-        monkeypatch.setattr(
-            ch, "get_config_loader", lambda: _mock_loader(image_cfg=img_cfg)
-        )
-
-        assert ch.get_target_dpi() == 450
