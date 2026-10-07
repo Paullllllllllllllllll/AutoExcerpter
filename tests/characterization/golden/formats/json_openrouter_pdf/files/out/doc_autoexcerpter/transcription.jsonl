@@ -75,6 +75,7 @@
     "source_width": 834,
     "width": 834
   },
+  "model": "anthropic/claude-sonnet-4.5",
   "original_input_order_index": 0,
   "page_index": 0,
   "processing_time": "<duration>",
@@ -103,6 +104,7 @@
     "source_width": 834,
     "width": 834
   },
+  "model": "anthropic/claude-sonnet-4.5",
   "original_input_order_index": 1,
   "page_index": 1,
   "processing_time": "<duration>",
@@ -136,6 +138,7 @@
     "source_width": 834,
     "width": 834
   },
+  "model": "anthropic/claude-sonnet-4.5",
   "original_input_order_index": 2,
   "page_index": 2,
   "processing_time": "<duration>",

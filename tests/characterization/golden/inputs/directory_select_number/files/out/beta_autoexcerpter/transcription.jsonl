@@ -76,6 +76,7 @@
     "source_width": 834,
     "width": 834
   },
+  "model": "gpt-5.6-terra",
   "original_input_order_index": 0,
   "page_index": 0,
   "processing_time": "<duration>",
@@ -104,6 +105,7 @@
     "source_width": 834,
     "width": 834
   },
+  "model": "gpt-5.6-terra",
   "original_input_order_index": 1,
   "page_index": 1,
   "processing_time": "<duration>",

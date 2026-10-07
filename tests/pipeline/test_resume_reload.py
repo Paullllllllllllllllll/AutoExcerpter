@@ -4,7 +4,8 @@
 is rewritten with its header and those pages in one atomic replace, and a
 failed rewrite keeps the previous log. ``reload_completed_pages`` admits the
 pages and regenerates summaries only where missing. A working log without the
-image-settings fingerprint is refused before any page is reused.
+image-settings fingerprint is refused before any page is reused; a changed
+image setting is refused, a change of model alone is not.
 """
 
 from __future__ import annotations
@@ -21,7 +22,9 @@ import pytest
 
 import autoexcerpter.pipeline.item as item_module
 import autoexcerpter.pipeline.log as log_mod
+from autoexcerpter.common.native import image_settings_fingerprint
 from autoexcerpter.constants import LOG_FORMAT_VERSION
+from autoexcerpter.imaging.settings import resolve_image_settings
 from autoexcerpter.pipeline.item import (
     ItemProcessor,
     eligible_prior_entries,
@@ -34,6 +37,7 @@ from autoexcerpter.pipeline.resume import (
     ResumeChecker,
     verify_image_settings,
 )
+from autoexcerpter.spec import ImageSpec
 from tests.pipeline.helpers import (
     clean_page_runner,
     content_summary,
@@ -556,3 +560,51 @@ def test_resume_refuses_log_without_fingerprint(
 
     # No logged page was reused and the working log was not rewritten.
     assert log_path.read_bytes() == before
+
+
+def _resolved(provider: str, model: str, **images: Any) -> dict[str, Any]:
+    cfg, _, _ = resolve_image_settings(provider, model, ImageSpec(**images))
+    return cfg
+
+
+def _logged(img_cfg: dict[str, Any]) -> dict[str, Any]:
+    """A log header that recorded *img_cfg* and its fingerprint."""
+    return _fingerprint_header(
+        {
+            "image_config": img_cfg,
+            "image_settings_fingerprint": image_settings_fingerprint(img_cfg),
+        }
+    )
+
+
+def test_model_switch_passes_the_image_check() -> None:
+    recorded = _resolved("openai", "gpt-5.6-terra")
+    current = _resolved("openrouter", "z-ai/glm-5.3-flash")
+    assert image_settings_fingerprint(recorded) != image_settings_fingerprint(current)
+
+    verify_image_settings(_logged(recorded), current)
+
+
+def test_model_switch_with_changed_dpi_stops() -> None:
+    recorded = _resolved("openai", "gpt-5.6-terra")
+    current = _resolved("openrouter", "z-ai/glm-5.3-flash", dpi=200)
+
+    with pytest.raises(ValueError, match=r"Image settings changed: target_dpi\."):
+        verify_image_settings(_logged(recorded), current)
+
+
+def test_same_model_with_changed_detail_stops() -> None:
+    recorded = _resolved("openai", "gpt-5.6-terra")
+    current = _resolved("openai", "gpt-5.6-terra", detail="high")
+
+    with pytest.raises(ValueError, match="Image settings changed: .*llm_detail"):
+        verify_image_settings(_logged(recorded), current)
+
+
+@pytest.mark.parametrize("provenance", _NO_FINGERPRINT)
+def test_model_switch_without_fingerprint_stops(
+    provenance: dict[str, Any] | None,
+) -> None:
+    current = _resolved("openrouter", "z-ai/glm-5.3-flash")
+    with pytest.raises(ValueError, match="image_settings_fingerprint"):
+        verify_image_settings(_fingerprint_header(provenance), current)

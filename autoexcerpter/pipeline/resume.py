@@ -28,7 +28,11 @@ from typing import Any
 
 from autoexcerpter.common.images import IMAGE_EXTENSIONS
 from autoexcerpter.common.jsonl import input_changed, read_header
-from autoexcerpter.common.native import image_settings_fingerprint
+from autoexcerpter.common.native import (
+    MODEL_DERIVED_IMAGE_KEYS,
+    changed_image_settings,
+    image_settings_fingerprint,
+)
 from autoexcerpter.pipeline.log import LOG_FORMAT, PAGE_KEY, WorkingLog, read_log
 from autoexcerpter.pipeline.paths import ItemPaths
 from autoexcerpter.rendering.sqlite import DATABASE_NAME, complete_documents
@@ -346,10 +350,25 @@ class ResumeChecker:
         return log.results if log is not None and log.results else None
 
 
+def _model_derived_keys(
+    previous: dict[str, Any], current: dict[str, Any]
+) -> frozenset[str]:
+    """Keys of the image config computed from the model, for both configs.
+
+    In the OpenAI section ``llm_detail`` is overwritten with the detail the
+    model resolves, so it is model-derived there.
+    """
+    if previous.get("model_type") == current.get("model_type") == "openai":
+        return MODEL_DERIVED_IMAGE_KEYS | {"llm_detail"}
+    return MODEL_DERIVED_IMAGE_KEYS
+
+
 def verify_image_settings(header: dict[str, Any], current: dict[str, Any]) -> None:
     """Reject changed or unrecorded preprocessing before logged pages are reused.
 
-    *current* is the resolved image settings of this run.
+    *current* is the resolved image settings of this run. A change of model
+    alone passes: the model's identity and the keys computed from it are not
+    compared then, while a changed user setting still stops the item.
     """
     recorded = header.get("file_provenance")
     if not isinstance(recorded, dict) or not recorded.get("image_settings_fingerprint"):
@@ -362,12 +381,14 @@ def verify_image_settings(header: dict[str, Any], current: dict[str, Any]) -> No
         raise ValueError(message)
     if recorded["image_settings_fingerprint"] == image_settings_fingerprint(current):
         return
-    previous = recorded.get("image_config", {})
-    changed = sorted(
-        key
-        for key in previous.keys() | current.keys()
-        if previous.get(key) != current.get(key)
+    previous = recorded.get("image_config")
+    if not isinstance(previous, dict):
+        previous = {}
+    changed = changed_image_settings(
+        previous, current, _model_derived_keys(previous, current)
     )
+    if previous and not changed:
+        return
     message = (
         f"Image settings changed: {', '.join(changed)}. "
         "Skipping file; use --force to replace the existing run."

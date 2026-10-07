@@ -189,8 +189,9 @@ class DocumentRecord:
     *summaries* is None when the run did not summarize and *citations* None
     when no summary was rendered. *usage* holds the usage per page index of
     the calls made in this run. Pages in *reused_pages* were transcribed by
-    an earlier run with *reused_model*. *report* holds the page counts and
-    the outputs written.
+    an earlier run with the ``model`` their entry records, else with
+    *reused_model*, the model of that run's log header. *report* holds the
+    page counts and the outputs written.
     """
 
     name: str
@@ -290,8 +291,10 @@ def page_rows(record: DocumentRecord) -> list[dict[str, Any]]:
             "text": entry.get("transcription"),
         }
         if index in record.reused_pages:
-            if record.reused_model is not None:
-                row["model"] = record.reused_model
+            logged = entry.get("model")
+            model = logged if isinstance(logged, str) else record.reused_model
+            if model is not None:
+                row["model"] = model
         else:
             row["model"] = record.transcription_model
             row["usage"] = _usage(record, index, "transcription")

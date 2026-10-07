@@ -77,6 +77,7 @@
     "source_width": 400,
     "width": 768
   },
+  "model": "gemini-2.5-flash-lite",
   "original_input_order_index": 0,
   "processing_time": "<duration>",
   "provider": "google",
@@ -105,6 +106,7 @@
     "source_width": 400,
     "width": 768
   },
+  "model": "gemini-2.5-flash-lite",
   "original_input_order_index": 1,
   "processing_time": "<duration>",
   "provider": "google",
@@ -138,6 +140,7 @@
     "source_width": 400,
     "width": 768
   },
+  "model": "gemini-2.5-flash-lite",
   "original_input_order_index": 2,
   "processing_time": "<duration>",
   "provider": "google",

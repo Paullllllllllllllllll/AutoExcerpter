@@ -160,7 +160,7 @@ def resolve_target_size(
         )
         size = resized_size(src_w, src_h, side, cap.patches, cap.patch_px, pixels)
         reason = "model_cap"
-    elif img_cfg.get("resize_profile") == "none":
+    elif img_cfg.get("resize_profile") == "none" or detail == "original":
         return (src_w, src_h), "none"
     else:
         if detail == "low":
@@ -239,6 +239,38 @@ def image_settings_fingerprint(settings: dict[str, Any]) -> str:
         allow_nan=False,
     )
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+# The keys of a resolved image config that name the model.
+MODEL_IDENTITY_KEYS = frozenset({"model_name", "provider", "model_type"})
+# The keys computed from the model and its capabilities rather than from the
+# user's image options.
+MODEL_DERIVED_IMAGE_KEYS = frozenset(
+    {
+        "request_detail",
+        "resolved_detail",
+        "cap_policy",
+        "image_original_patch_cap_30k",
+        "image_high_res_tier",
+    }
+)
+
+
+def changed_image_settings(
+    recorded: dict[str, Any],
+    current: dict[str, Any],
+    derived: frozenset[str] = MODEL_DERIVED_IMAGE_KEYS,
+) -> list[str]:
+    """Return the sorted keys whose values differ between two image configs.
+
+    With the same model every key is compared. When a key of
+    ``MODEL_IDENTITY_KEYS`` differs, the identity keys and *derived* are
+    skipped, so a change of model alone returns no key.
+    """
+    keys = recorded.keys() | current.keys()
+    if any(recorded.get(key) != current.get(key) for key in MODEL_IDENTITY_KEYS):
+        keys -= MODEL_IDENTITY_KEYS | derived
+    return sorted(key for key in keys if recorded.get(key) != current.get(key))
 
 
 def format_downscale_log(page: int, provenance: dict[str, Any], model: str) -> str:

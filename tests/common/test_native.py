@@ -11,6 +11,8 @@ import pytest
 from PIL import Image
 
 from autoexcerpter.common.native import (
+    MODEL_DERIVED_IMAGE_KEYS,
+    changed_image_settings,
     encode_payload,
     format_downscale_log,
     guarded_payload,
@@ -208,6 +210,51 @@ def test_fingerprint_ignores_key_order() -> None:
     assert image_settings_fingerprint(settings) != image_settings_fingerprint(
         {**settings, "jpeg_quality": 90}
     )
+
+
+_RECORDED = {
+    "model_name": "model-a",
+    "provider": "openai",
+    "model_type": "openai",
+    "request_detail": "original",
+    "resolved_detail": "original",
+    "cap_policy": "openai-original-30k-v1",
+    "image_original_patch_cap_30k": True,
+    "image_high_res_tier": False,
+    "target_dpi": "native",
+    "jpeg_quality": 95,
+}
+_SWITCHED = {
+    **_RECORDED,
+    "model_name": "vendor/model-b",
+    "provider": "openrouter",
+    "request_detail": None,
+    "cap_policy": "openai-original-10k-v1",
+    "image_original_patch_cap_30k": False,
+}
+
+
+def test_changed_image_settings_skips_the_model_on_a_model_switch() -> None:
+    assert changed_image_settings(_RECORDED, _SWITCHED) == []
+    assert changed_image_settings(_RECORDED, {**_SWITCHED, "target_dpi": 200}) == [
+        "target_dpi"
+    ]
+
+
+def test_changed_image_settings_compares_every_key_for_the_same_model() -> None:
+    current = {**_RECORDED, "resolved_detail": "high", "jpeg_quality": 80}
+    assert changed_image_settings(_RECORDED, current) == [
+        "jpeg_quality",
+        "resolved_detail",
+    ]
+
+
+def test_changed_image_settings_takes_extra_derived_keys() -> None:
+    switched = {**_SWITCHED, "llm_detail": "high"}
+    recorded = {**_RECORDED, "llm_detail": "original"}
+    assert changed_image_settings(recorded, switched) == ["llm_detail"]
+    derived = MODEL_DERIVED_IMAGE_KEYS | {"llm_detail"}
+    assert changed_image_settings(recorded, switched, derived) == []
 
 
 def test_downscale_log_names_sizes_and_policy() -> None:

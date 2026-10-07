@@ -226,6 +226,7 @@ class ItemProcessor:
             transcribe_manager=managers.transcription,
             summary_manager=managers.summary if job.summarize else None,
             transcription_provider=job.transcription.provider,
+            transcription_model=job.transcription.name,
         )
 
         self.stop = threading.Event()
@@ -333,13 +334,14 @@ class ItemProcessor:
             self._prior_summaries = self.resume.summary_results
         else:
             self._prior_summaries = load_results(self.paths.summary_log) or []
-        self._detect_resume_model_mismatch()
         # A summary-only resume reuses logged text, so changed image settings
         # matter only when pages remain to transcribe.
-        if self._log_header is not None and self._pages_remaining(source):
+        pages_remaining = self._pages_remaining(source)
+        if self._log_header is not None and pages_remaining:
             verify_image_settings(self._log_header, source.img_cfg)
+        self._detect_resume_model_mismatch(pages_remaining)
 
-    def _detect_resume_model_mismatch(self) -> None:
+    def _detect_resume_model_mismatch(self, pages_remaining: bool) -> None:
         """Warn and record when reused transcriptions came from another model."""
         header = self._log_header
         if header is None:
@@ -348,10 +350,18 @@ class ItemProcessor:
         logged_model = header.get("model_name") if isinstance(header, dict) else None
         current = self.job.transcription.name
         if logged_model and logged_model != current:
-            note = (
-                "Summary-only resume: reusing transcriptions from model "
-                f"'{logged_model}'; current transcription model is '{current}'."
-            )
+            if pages_remaining:
+                note = (
+                    "Resume with another model: reusing transcriptions from "
+                    f"model '{logged_model}'; the remaining pages are "
+                    f"transcribed with '{current}'."
+                )
+            else:
+                note = (
+                    "Summary-only resume: reusing transcriptions from model "
+                    f"'{logged_model}'; current transcription model is "
+                    f"'{current}'."
+                )
             self.events.warning(note)
             self._metadata_notes.append(note)
 

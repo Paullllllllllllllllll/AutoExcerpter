@@ -156,8 +156,9 @@ class PageRunner:
 
     *summary_manager* is None when the run does not summarize. *executor*
     renders the page images; None uses the loop's default executor.
-    ``page_usage`` maps each page index run here to the usage of its model
-    calls, per role.
+    *transcription_model*, when set, is stored as ``model`` in each new
+    transcription entry. ``page_usage`` maps each page index run here to the
+    usage of its model calls, per role.
     """
 
     def __init__(
@@ -168,6 +169,7 @@ class PageRunner:
         transcribe_manager: Transcriber,
         summary_manager: Summarizer | None,
         transcription_provider: str | None,
+        transcription_model: str | None = None,
         executor: concurrent.futures.Executor | None = None,
     ) -> None:
         self.item_name = item_name
@@ -175,6 +177,7 @@ class PageRunner:
         self.transcribe_manager = transcribe_manager
         self.summary_manager = summary_manager
         self.transcription_provider = transcription_provider
+        self.transcription_model = transcription_model
         self.executor = executor
         # Working-log appends that failed on the page path. Such a page exists
         # only in memory, so the item must not be reported complete.
@@ -328,6 +331,7 @@ class PageRunner:
                 "transcription": f"[CRITICAL ERROR] Unhandled in task: {e}",
                 "error": str(e),
                 "original_input_order_index": index,
+                **self._model_field(),
             }
             # Keep the working log and the summaries consistent with the normal
             # failure path. When the transcription entry is already on disk,
@@ -379,10 +383,12 @@ class PageRunner:
                 "error": str(e),
                 "error_type": "preprocessing_failure",
                 "provider": self.transcription_provider,
+                **self._model_field(),
                 "original_input_order_index": index,
             }
         result = {
             **(await self.transcribe_manager.transcribe_payload(payload)),
+            **self._model_field(),
             "original_input_order_index": index,
             "source_file": payload.source_file,
             "image_provenance": payload.provenance,
@@ -390,6 +396,12 @@ class PageRunner:
         if payload.page_index is not None:
             result["page_index"] = payload.page_index
         return result
+
+    def _model_field(self) -> dict[str, str]:
+        """The ``model`` entry of a new transcription record, if known."""
+        if self.transcription_model is None:
+            return {}
+        return {"model": self.transcription_model}
 
 
 def _status(transcription_result: dict[str, Any]) -> str:

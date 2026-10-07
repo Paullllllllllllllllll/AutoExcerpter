@@ -160,6 +160,16 @@ class TestResizeForDetail:
         assert max(w, h) <= 2000
         assert w * h <= 1_000_000
 
+    @pytest.mark.parametrize("model_type", ["google", "custom"])
+    def test_original_without_cap_keeps_rendered_size(
+        self, openai_config: dict[str, Any], model_type: str
+    ) -> None:
+        """Without a model cap, 'original' neither fits the box nor pads."""
+        image = Image.new("RGB", (2000, 3500))
+        result = resize_for_detail(image, "original", openai_config, model_type)
+
+        assert result is image
+
 
 class TestResizeHelpers:
     """The box-fit and max-side resize helpers and the resampling filter."""
@@ -259,6 +269,12 @@ class TestContentScaleFactor:
         }
         factor = content_scale_factor((7000.0, 9000.0), cfg, "openai")
         assert 0 < factor < 1
+
+    @pytest.mark.parametrize("size", [(200.0, 300.0), (5000.0, 7000.0)])
+    def test_original_without_cap_returns_one(self, size: tuple[float, float]) -> None:
+        """'original' without a model cap keeps the rendered size."""
+        cfg = {"media_resolution": "original", "high_target_box": [768, 1536]}
+        assert content_scale_factor(size, cfg, "google") == 1.0
 
 
 class TestPreprocessImage:
@@ -517,6 +533,34 @@ class TestPageSources:
             2,
             sum(p.stat().st_size for p in tmp_path.iterdir()),
         )
+
+    def test_original_without_cap_sends_the_rendered_size(self, tmp_path: Path) -> None:
+        """A PDF page at 'original' detail and no cap is neither boxed nor padded."""
+        pdf = _make_pdf(tmp_path / "doc.pdf", 1)
+        cfg = _settings(
+            target_dpi=300, resize_profile="high", resolved_detail="original"
+        )
+        with PdfPageSource(pdf, cfg, "google") as source:
+            payload = source.build_payload(0)
+
+        provenance = payload.provenance
+        assert (provenance["width"], provenance["height"]) == (600, 900)
+        assert provenance["downscale_reason"] == "none"
+        assert provenance["sent_dpi"] == pytest.approx(300.0)
+
+    def test_original_without_cap_keeps_the_byte_guard(self, tmp_path: Path) -> None:
+        pdf = _make_pdf(tmp_path / "doc.pdf", 1)
+        cfg = _settings(
+            target_dpi=300,
+            resize_profile="high",
+            resolved_detail="original",
+            max_image_bytes=100,
+        )
+        with (
+            PdfPageSource(pdf, cfg, "google") as source,
+            pytest.raises(ValueError, match="max_image_bytes"),
+        ):
+            source.build_payload(0)
 
 
 class TestStreaming:

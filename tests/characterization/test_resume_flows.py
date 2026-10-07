@@ -9,14 +9,17 @@ path on a three-page PDF unless a test says otherwise.
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import json
+import sqlite3
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+from autoexcerpter.rendering.sqlite import DATABASE_NAME
 from tests.characterization.adapter import RunResult, item_paths, run_tool
 from tests.characterization.fakes import (
     SUMMARY,
@@ -408,6 +411,91 @@ def test_changed_image_setting(runner: Runner, pdf: Path, start: str) -> None:
     assert second.calls() == []
     assert folder_bytes(runner.output_dir) == before
     runner.check(f"image_setting_changed_{start}/run2", second)
+
+
+# ============================================================================
+# (7b) A rerun of the failed page with another transcription model
+# ============================================================================
+FIRST_MODEL = "gpt-5.6-terra"
+SWITCHED = {
+    "transcription_provider": "openrouter",
+    "transcription_model": "z-ai/glm-5.3-flash",
+}
+
+
+def page_models(output_dir: Path) -> dict[int, str | None]:
+    """Return the ``pages.model`` of each page in the output database."""
+    with contextlib.closing(sqlite3.connect(output_dir / DATABASE_NAME)) as db:
+        rows = db.execute("SELECT page_index, model FROM pages").fetchall()
+    return dict(rows)
+
+
+def strip_page_models(log_path: Path) -> None:
+    """Rewrite a working log as a log without per-page models."""
+    entries = [json.loads(line) for line in log_path.read_text("utf-8").splitlines()]
+    for entry in entries:
+        entry.pop("model", None)
+    log_path.write_text(
+        "".join(json.dumps(entry) + "\n" for entry in entries),
+        encoding="utf-8",
+        newline="\n",
+    )
+
+
+def test_model_switch_on_resume_proceeds_and_warns(runner: Runner, pdf: Path) -> None:
+    first = failed_first_run(runner, pdf)
+    assert first.exit_code == 1, first.stderr
+
+    second = runner.run(pdf, **SWITCHED)
+
+    assert second.exit_code == 0, second.stderr
+    assert_counts(second, total=1, complete=1, failed=0, skipped=0)
+    assert pages(second, TRANSCRIPTION) == [FAILED_PAGE]
+    assert "Resume with another model" in second.stderr
+    assert "Image settings changed" not in second.stderr
+    transcript = (runner.output_dir / DOC.transcription).read_text(encoding="utf-8")
+    assert "Resume with another model" in transcript
+    assert page_models(runner.output_dir) == {
+        0: FIRST_MODEL,
+        1: SWITCHED["transcription_model"],
+        2: FIRST_MODEL,
+    }
+
+
+@pytest.mark.parametrize("switch", [False, True], ids=["same_model", "switched"])
+def test_log_without_page_models_keeps_resuming(
+    runner: Runner, pdf: Path, switch: bool
+) -> None:
+    first = failed_first_run(runner, pdf)
+    assert first.exit_code == 1, first.stderr
+    strip_page_models(runner.output_dir / DOC.transcription_log)
+
+    second = runner.run(pdf, **(SWITCHED if switch else {}))
+
+    assert second.exit_code == 0, second.stderr
+    assert pages(second, TRANSCRIPTION) == [FAILED_PAGE]
+    resumed = SWITCHED["transcription_model"] if switch else FIRST_MODEL
+    # Reused pages fall back to the model of the log header.
+    assert page_models(runner.output_dir) == {
+        0: FIRST_MODEL,
+        1: resumed,
+        2: FIRST_MODEL,
+    }
+
+
+def test_model_switch_with_changed_image_setting_stops(
+    runner: Runner, pdf: Path
+) -> None:
+    first = failed_first_run(runner, pdf)
+    assert first.exit_code == 1, first.stderr
+    before = folder_bytes(runner.output_dir)
+
+    second = runner.run(pdf, jpeg_quality=CHANGED_JPEG_QUALITY, **SWITCHED)
+
+    assert second.exit_code == 1, second.stderr
+    assert "Image settings changed: jpeg_quality." in second.stderr
+    assert second.calls() == []
+    assert folder_bytes(runner.output_dir) == before
 
 
 # ============================================================================

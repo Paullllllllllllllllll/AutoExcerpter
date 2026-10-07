@@ -233,8 +233,9 @@ def resize_for_detail(
 ) -> Image.Image:
     """Resize *image* to the model cap or, without a cap, the resize profile.
 
-    Without a cap, ``low`` caps the longest side at ``low_max_side_px`` and
-    every other detail fits the image into ``high_target_box`` with padding.
+    Without a cap, ``low`` caps the longest side at ``low_max_side_px``,
+    ``original`` keeps the rendered size, and every other detail fits the
+    image into ``high_target_box`` with padding.
     """
     detail = _normalized_detail(detail)
     model_name = img_cfg.get("model_name", "")
@@ -254,6 +255,8 @@ def resize_for_detail(
     if detail == "low":
         max_side = int(img_cfg.get("low_max_side_px", DEFAULT_LOW_MAX_SIDE_PX))
         return _resize_max_side(image, max_side, img_cfg)
+    if detail == "original":
+        return image
     return _resize_box_fit(image, img_cfg)
 
 
@@ -264,8 +267,9 @@ def content_scale_factor(
 ) -> float:
     """Scale ``resize_for_detail`` would apply to a source of *src_size* pixels.
 
-    Box padding is ignored. The box-fit profile can return more than 1.0;
-    callers that must not upscale clamp the result.
+    Box padding is ignored. ``original`` without a model cap returns 1.0.
+    The box-fit profile can return more than 1.0; callers that must not
+    upscale clamp the result.
     """
     width, height = src_size
     if width <= 0 or height <= 0:
@@ -287,6 +291,8 @@ def content_scale_factor(
         max_side = int(img_cfg.get("low_max_side_px", DEFAULT_LOW_MAX_SIDE_PX))
         longest = max(width, height)
         return 1.0 if longest <= max_side else max_side / float(longest)
+    if detail == "original":
+        return 1.0
     box_width, box_height = _target_box(img_cfg)
     return min(box_width / width, box_height / height)
 
@@ -410,7 +416,7 @@ class PageSource:
         padded = (
             model_image_cap(self.model_type, model_name, detail, img_cfg) is None
             and self.model_type != "anthropic"
-            and detail != "low"
+            and detail not in ("low", "original")
             and img_cfg.get("resize_profile") != "none"
         )
         source_dpi = provenance["source_dpi_x"]
