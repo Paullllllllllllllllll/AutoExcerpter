@@ -1,0 +1,46 @@
+[
+  {
+    "constructor": "ChatOpenAI",
+    "kwargs": {
+      "api_key": "<env:OPENROUTER_API_KEY>",
+      "base_url": "https://openrouter.ai/api/v1",
+      "default_headers": {
+        "HTTP-Referer": "https://github.com/autoexcerpter",
+        "X-Title": "AutoExcerpter"
+      },
+      "max_retries": 0,
+      "model": "anthropic/claude-sonnet-4.5",
+      "timeout": {
+        "httpx.Timeout": {
+          "connect": 10.0,
+          "pool": 30.0,
+          "read": 900.0,
+          "write": 30.0
+        }
+      }
+    },
+    "role": "transcription"
+  },
+  {
+    "constructor": "ChatOpenAI",
+    "kwargs": {
+      "api_key": "<env:OPENROUTER_API_KEY>",
+      "base_url": "https://openrouter.ai/api/v1",
+      "default_headers": {
+        "HTTP-Referer": "https://github.com/autoexcerpter",
+        "X-Title": "AutoExcerpter"
+      },
+      "max_retries": 0,
+      "model": "anthropic/claude-sonnet-4.5",
+      "timeout": {
+        "httpx.Timeout": {
+          "connect": 10.0,
+          "pool": 30.0,
+          "read": 900.0,
+          "write": 30.0
+        }
+      }
+    },
+    "role": "summary"
+  }
+]

@@ -1,0 +1,38 @@
+[
+  {
+    "constructor": "ChatOpenAI",
+    "kwargs": {
+      "api_key": "<env:AE_FAKE_CUSTOM_KEY>",
+      "base_url": "https://fake-endpoint.invalid/v1/",
+      "max_retries": 0,
+      "model": "org/fake-model",
+      "timeout": {
+        "httpx.Timeout": {
+          "connect": 10.0,
+          "pool": 30.0,
+          "read": 900.0,
+          "write": 30.0
+        }
+      }
+    },
+    "role": "transcription"
+  },
+  {
+    "constructor": "ChatOpenAI",
+    "kwargs": {
+      "api_key": "<env:AE_FAKE_CUSTOM_KEY>",
+      "base_url": "https://fake-endpoint.invalid/v1/",
+      "max_retries": 0,
+      "model": "org/fake-model",
+      "timeout": {
+        "httpx.Timeout": {
+          "connect": 10.0,
+          "pool": 30.0,
+          "read": 900.0,
+          "write": 30.0
+        }
+      }
+    },
+    "role": "summary"
+  }
+]

@@ -1,0 +1,474 @@
+{
+  "calls": [
+    {
+      "attempt": 1,
+      "bound": {},
+      "kwargs": {
+        "max_output_tokens": 8192,
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 1455,
+            "digest": "ef8e49d8ec141a07"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "height": 1536,
+              "mime": "image/jpeg",
+              "type": "image_url",
+              "width": 768
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "gemini-2.5-flash-lite",
+      "page": 0,
+      "provider": "google",
+      "role": "transcription",
+      "structured": null
+    },
+    {
+      "attempt": 1,
+      "bound": {},
+      "kwargs": {
+        "max_output_tokens": 8192,
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 7259,
+            "digest": "66e28711e28a8ca4"
+          },
+          "type": "system"
+        },
+        {
+          "text": {
+            "chars": 295,
+            "digest": "077b66f2675d3228"
+          },
+          "type": "human"
+        }
+      ],
+      "model": "gemini-2.5-flash-lite",
+      "page": 0,
+      "provider": "google",
+      "role": "summary",
+      "structured": null
+    },
+    {
+      "attempt": 2,
+      "bound": {},
+      "kwargs": {
+        "max_output_tokens": 8192,
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 7259,
+            "digest": "66e28711e28a8ca4"
+          },
+          "type": "system"
+        },
+        {
+          "text": {
+            "chars": 295,
+            "digest": "077b66f2675d3228"
+          },
+          "type": "human"
+        }
+      ],
+      "model": "gemini-2.5-flash-lite",
+      "page": 0,
+      "provider": "google",
+      "role": "summary",
+      "structured": null
+    },
+    {
+      "attempt": 3,
+      "bound": {},
+      "kwargs": {
+        "max_output_tokens": 8192,
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 7259,
+            "digest": "66e28711e28a8ca4"
+          },
+          "type": "system"
+        },
+        {
+          "text": {
+            "chars": 295,
+            "digest": "077b66f2675d3228"
+          },
+          "type": "human"
+        }
+      ],
+      "model": "gemini-2.5-flash-lite",
+      "page": 0,
+      "provider": "google",
+      "role": "summary",
+      "structured": null
+    },
+    {
+      "attempt": 4,
+      "bound": {},
+      "kwargs": {
+        "max_output_tokens": 8192,
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 7259,
+            "digest": "66e28711e28a8ca4"
+          },
+          "type": "system"
+        },
+        {
+          "text": {
+            "chars": 295,
+            "digest": "077b66f2675d3228"
+          },
+          "type": "human"
+        }
+      ],
+      "model": "gemini-2.5-flash-lite",
+      "page": 0,
+      "provider": "google",
+      "role": "summary",
+      "structured": null
+    },
+    {
+      "attempt": 1,
+      "bound": {},
+      "kwargs": {
+        "max_output_tokens": 8192,
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 1455,
+            "digest": "ef8e49d8ec141a07"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "height": 1536,
+              "mime": "image/jpeg",
+              "type": "image_url",
+              "width": 768
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "gemini-2.5-flash-lite",
+      "page": 1,
+      "provider": "google",
+      "role": "transcription",
+      "structured": null
+    },
+    {
+      "attempt": 1,
+      "bound": {},
+      "kwargs": {
+        "max_output_tokens": 8192,
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 7259,
+            "digest": "66e28711e28a8ca4"
+          },
+          "type": "system"
+        },
+        {
+          "text": {
+            "chars": 544,
+            "digest": "7b77a0cc8a85c403"
+          },
+          "type": "human"
+        }
+      ],
+      "model": "gemini-2.5-flash-lite",
+      "page": 1,
+      "provider": "google",
+      "role": "summary",
+      "structured": null
+    },
+    {
+      "attempt": 2,
+      "bound": {},
+      "kwargs": {
+        "max_output_tokens": 8192,
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 7259,
+            "digest": "66e28711e28a8ca4"
+          },
+          "type": "system"
+        },
+        {
+          "text": {
+            "chars": 544,
+            "digest": "7b77a0cc8a85c403"
+          },
+          "type": "human"
+        }
+      ],
+      "model": "gemini-2.5-flash-lite",
+      "page": 1,
+      "provider": "google",
+      "role": "summary",
+      "structured": null
+    },
+    {
+      "attempt": 3,
+      "bound": {},
+      "kwargs": {
+        "max_output_tokens": 8192,
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 7259,
+            "digest": "66e28711e28a8ca4"
+          },
+          "type": "system"
+        },
+        {
+          "text": {
+            "chars": 544,
+            "digest": "7b77a0cc8a85c403"
+          },
+          "type": "human"
+        }
+      ],
+      "model": "gemini-2.5-flash-lite",
+      "page": 1,
+      "provider": "google",
+      "role": "summary",
+      "structured": null
+    },
+    {
+      "attempt": 4,
+      "bound": {},
+      "kwargs": {
+        "max_output_tokens": 8192,
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 7259,
+            "digest": "66e28711e28a8ca4"
+          },
+          "type": "system"
+        },
+        {
+          "text": {
+            "chars": 544,
+            "digest": "7b77a0cc8a85c403"
+          },
+          "type": "human"
+        }
+      ],
+      "model": "gemini-2.5-flash-lite",
+      "page": 1,
+      "provider": "google",
+      "role": "summary",
+      "structured": null
+    },
+    {
+      "attempt": 1,
+      "bound": {},
+      "kwargs": {
+        "max_output_tokens": 8192,
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 1455,
+            "digest": "ef8e49d8ec141a07"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "height": 1536,
+              "mime": "image/jpeg",
+              "type": "image_url",
+              "width": 768
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "gemini-2.5-flash-lite",
+      "page": 2,
+      "provider": "google",
+      "role": "transcription",
+      "structured": null
+    },
+    {
+      "attempt": 1,
+      "bound": {},
+      "kwargs": {
+        "max_output_tokens": 8192,
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 7259,
+            "digest": "66e28711e28a8ca4"
+          },
+          "type": "system"
+        },
+        {
+          "text": {
+            "chars": 250,
+            "digest": "029878f966dd8a51"
+          },
+          "type": "human"
+        }
+      ],
+      "model": "gemini-2.5-flash-lite",
+      "page": 2,
+      "provider": "google",
+      "role": "summary",
+      "structured": null
+    },
+    {
+      "attempt": 2,
+      "bound": {},
+      "kwargs": {
+        "max_output_tokens": 8192,
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 7259,
+            "digest": "66e28711e28a8ca4"
+          },
+          "type": "system"
+        },
+        {
+          "text": {
+            "chars": 250,
+            "digest": "029878f966dd8a51"
+          },
+          "type": "human"
+        }
+      ],
+      "model": "gemini-2.5-flash-lite",
+      "page": 2,
+      "provider": "google",
+      "role": "summary",
+      "structured": null
+    },
+    {
+      "attempt": 3,
+      "bound": {},
+      "kwargs": {
+        "max_output_tokens": 8192,
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 7259,
+            "digest": "66e28711e28a8ca4"
+          },
+          "type": "system"
+        },
+        {
+          "text": {
+            "chars": 250,
+            "digest": "029878f966dd8a51"
+          },
+          "type": "human"
+        }
+      ],
+      "model": "gemini-2.5-flash-lite",
+      "page": 2,
+      "provider": "google",
+      "role": "summary",
+      "structured": null
+    },
+    {
+      "attempt": 4,
+      "bound": {},
+      "kwargs": {
+        "max_output_tokens": 8192,
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 7259,
+            "digest": "66e28711e28a8ca4"
+          },
+          "type": "system"
+        },
+        {
+          "text": {
+            "chars": 250,
+            "digest": "029878f966dd8a51"
+          },
+          "type": "human"
+        }
+      ],
+      "model": "gemini-2.5-flash-lite",
+      "page": 2,
+      "provider": "google",
+      "role": "summary",
+      "structured": null
+    }
+  ],
+  "models": [
+    {
+      "constructor": "ChatGoogleGenerativeAI",
+      "kwargs": {
+        "google_api_key": "<env:GOOGLE_API_KEY>",
+        "max_retries": 0,
+        "model": "gemini-2.5-flash-lite",
+        "timeout": 900
+      },
+      "role": "summary"
+    },
+    {
+      "constructor": "ChatGoogleGenerativeAI",
+      "kwargs": {
+        "google_api_key": "<env:GOOGLE_API_KEY>",
+        "max_retries": 0,
+        "model": "gemini-2.5-flash-lite",
+        "timeout": 900
+      },
+      "role": "transcription"
+    }
+  ],
+  "openalex": []
+}

@@ -1,0 +1,17 @@
+{
+  "status": 200,
+  "body": {
+    "id": "https://openalex.org/W1000000001",
+    "doi": "https://doi.org/10.1006/exeh.2001.0775",
+    "title": "The Great Divergence in European Wages and Prices from the Middle Ages to the First World War",
+    "display_name": "The Great Divergence in European Wages and Prices from the Middle Ages to the First World War",
+    "publication_year": 2001,
+    "type": "article",
+    "authorships": [
+      {"author": {"id": "https://openalex.org/A1000000001", "display_name": "Robert C. Allen"}}
+    ],
+    "primary_location": {
+      "source": {"id": "https://openalex.org/S1000000001", "display_name": "Explorations in Economic History"}
+    }
+  }
+}

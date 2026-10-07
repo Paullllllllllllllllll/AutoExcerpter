@@ -1,0 +1,98 @@
+# AutoExcerpter settings: machine values and optional run defaults.
+#
+# Copy this file to config/settings.yaml (gitignored) and edit the copy.
+# Every key is optional; a missing key keeps the value shown here.
+# Run with --settings FILE to read another file.
+
+# Environment-variable NAMES that hold each provider's API key (never the key).
+api_keys:
+  openai: OPENAI_API_KEY
+  anthropic: ANTHROPIC_API_KEY
+  google: GOOGLE_API_KEY
+  openrouter: OPENROUTER_API_KEY
+
+# Named OpenAI-compatible endpoints, selected with --endpoint NAME.
+endpoints: {}
+#  example:
+#    base_url: https://your-endpoint.example.com/v1/
+#    api_key_env: YOUR_ENDPOINT_API_KEY
+#    supports_vision: true   # the model accepts images
+#    supports_schema: false  # the API enforces JSON schemas
+
+# HTTP timeouts in seconds. request is the read timeout; 900 s suits the
+# OpenAI flex tier, which may queue requests.
+timeouts:
+  request: 900
+  connect: 10
+  write: 30
+  pool: 30
+
+# Rate limits per provider as [max_requests, window_seconds].
+rate_limits:
+  - [10, 1]
+  - [600, 60]
+  - [600, 3600]
+
+# Retries of failed API calls: wait = backoff_base * multiplier^n + jitter,
+# capped at backoff_cap seconds (a server's Retry-After included).
+retry:
+  max_attempts: 8  # every call, the first included
+  backoff_base: 0.5
+  backoff_cap: 120
+  backoff_multipliers:
+    rate_limit: 2.0
+    timeout: 1.5
+    connection: 1.5
+    server_error: 2.0
+    other: 2.0
+    validation: 1.5
+  jitter:
+    min: 0.5
+    max: 1.0
+  # Retries driven by the model output: invalid JSON (validation_failure) or
+  # a flag the model sets.
+  schema_retries:
+    transcription:
+      validation_failure:
+        enabled: true
+        max_attempts: 3
+        backoff_base: 0.5
+        backoff_multiplier: 1.5
+      no_transcribable_text:
+        enabled: false
+        max_attempts: 0
+        backoff_base: 0.1
+        backoff_multiplier: 1.5
+      transcription_not_possible:
+        enabled: true
+        max_attempts: 3
+        backoff_base: 0.1
+        backoff_multiplier: 1.5
+    summary:
+      validation_failure:
+        enabled: true
+        max_attempts: 3
+        backoff_base: 0.5
+        backoff_multiplier: 1.5
+
+# Folder of the OpenAlex cache; '' means .autoexcerpter in the home folder.
+state_dir: ''
+
+# OpenAlex citation lookups.
+openalex:
+  email: ''  # contact address for the polite pool; '' sends none
+  api_key_env: OPENALEX_API_KEY  # variable holding the key; unset sends none
+  max_requests: 300  # citations looked up per document
+
+# Run defaults keyed by option name (flags override them), for example:
+# defaults:
+#   model: gpt-5.6-terra
+#   reasoning_effort: high
+#   summary_verbosity: low
+#   service_tier: flex
+#   transcription_format: md  # X_transcription.md; txt writes X_transcription.txt
+#   formats: [summary-md, summary-docx, sqlite]  # sqlite: autoexcerpter.sqlite
+#   concurrency: 16
+#   # Summary context for items without a sidecar: topics or a text file.
+#   # A context default would override the sidecars, like --context.
+#   fallback_context: path/to/summary_topics.txt

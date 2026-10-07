@@ -1,0 +1,346 @@
+{
+  "calls": [
+    {
+      "attempt": 1,
+      "bound": {},
+      "kwargs": {
+        "max_output_tokens": 128000,
+        "reasoning": {
+          "effort": "high"
+        },
+        "service_tier": "flex",
+        "text": {
+          "format": {
+            "digest": "3f51c29d92d00a90",
+            "name": "markdown_transcription_schema",
+            "properties": [
+              "image_analysis",
+              "no_transcribable_text",
+              "transcription",
+              "transcription_not_possible"
+            ],
+            "strict": true,
+            "type": "json_schema"
+          },
+          "verbosity": "medium"
+        }
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 4157,
+            "digest": "0fdf86688a8d19a5"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "detail": "original",
+              "height": 600,
+              "mime": "image/jpeg",
+              "type": "image_url",
+              "width": 400
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "gpt-5.6-terra",
+      "page": 0,
+      "provider": "openai",
+      "role": "transcription",
+      "structured": null
+    },
+    {
+      "attempt": 1,
+      "bound": {},
+      "kwargs": {
+        "max_output_tokens": 128000,
+        "reasoning": {
+          "effort": "high"
+        },
+        "service_tier": "flex",
+        "text": {
+          "format": {
+            "digest": "12f10d914c0830f8",
+            "name": "article_page_summary",
+            "properties": [
+              "bullet_points",
+              "page_information",
+              "references"
+            ],
+            "strict": true,
+            "type": "json_schema"
+          },
+          "verbosity": "low"
+        }
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 7680,
+            "digest": "19d077973451ec81"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "chars": 295,
+              "digest": "077b66f2675d3228",
+              "type": "text"
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "gpt-5.6-terra",
+      "page": 0,
+      "provider": "openai",
+      "role": "summary",
+      "structured": null
+    },
+    {
+      "attempt": 1,
+      "bound": {},
+      "kwargs": {
+        "max_output_tokens": 128000,
+        "reasoning": {
+          "effort": "high"
+        },
+        "service_tier": "flex",
+        "text": {
+          "format": {
+            "digest": "3f51c29d92d00a90",
+            "name": "markdown_transcription_schema",
+            "properties": [
+              "image_analysis",
+              "no_transcribable_text",
+              "transcription",
+              "transcription_not_possible"
+            ],
+            "strict": true,
+            "type": "json_schema"
+          },
+          "verbosity": "medium"
+        }
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 4157,
+            "digest": "0fdf86688a8d19a5"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "detail": "original",
+              "height": 600,
+              "mime": "image/jpeg",
+              "type": "image_url",
+              "width": 400
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "gpt-5.6-terra",
+      "page": 1,
+      "provider": "openai",
+      "role": "transcription",
+      "structured": null
+    },
+    {
+      "attempt": 1,
+      "bound": {},
+      "kwargs": {
+        "max_output_tokens": 128000,
+        "reasoning": {
+          "effort": "high"
+        },
+        "service_tier": "flex",
+        "text": {
+          "format": {
+            "digest": "12f10d914c0830f8",
+            "name": "article_page_summary",
+            "properties": [
+              "bullet_points",
+              "page_information",
+              "references"
+            ],
+            "strict": true,
+            "type": "json_schema"
+          },
+          "verbosity": "low"
+        }
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 7680,
+            "digest": "19d077973451ec81"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "chars": 544,
+              "digest": "7b77a0cc8a85c403",
+              "type": "text"
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "gpt-5.6-terra",
+      "page": 1,
+      "provider": "openai",
+      "role": "summary",
+      "structured": null
+    },
+    {
+      "attempt": 1,
+      "bound": {},
+      "kwargs": {
+        "max_output_tokens": 128000,
+        "reasoning": {
+          "effort": "high"
+        },
+        "service_tier": "flex",
+        "text": {
+          "format": {
+            "digest": "3f51c29d92d00a90",
+            "name": "markdown_transcription_schema",
+            "properties": [
+              "image_analysis",
+              "no_transcribable_text",
+              "transcription",
+              "transcription_not_possible"
+            ],
+            "strict": true,
+            "type": "json_schema"
+          },
+          "verbosity": "medium"
+        }
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 4157,
+            "digest": "0fdf86688a8d19a5"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "detail": "original",
+              "height": 600,
+              "mime": "image/jpeg",
+              "type": "image_url",
+              "width": 400
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "gpt-5.6-terra",
+      "page": 2,
+      "provider": "openai",
+      "role": "transcription",
+      "structured": null
+    },
+    {
+      "attempt": 1,
+      "bound": {},
+      "kwargs": {
+        "max_output_tokens": 128000,
+        "reasoning": {
+          "effort": "high"
+        },
+        "service_tier": "flex",
+        "text": {
+          "format": {
+            "digest": "12f10d914c0830f8",
+            "name": "article_page_summary",
+            "properties": [
+              "bullet_points",
+              "page_information",
+              "references"
+            ],
+            "strict": true,
+            "type": "json_schema"
+          },
+          "verbosity": "low"
+        }
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 7680,
+            "digest": "19d077973451ec81"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "chars": 250,
+              "digest": "029878f966dd8a51",
+              "type": "text"
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "gpt-5.6-terra",
+      "page": 2,
+      "provider": "openai",
+      "role": "summary",
+      "structured": null
+    }
+  ],
+  "models": [
+    {
+      "constructor": "ChatOpenAI",
+      "kwargs": {
+        "api_key": "<env:OPENAI_API_KEY>",
+        "max_retries": 0,
+        "model": "gpt-5.6-terra",
+        "timeout": {
+          "httpx.Timeout": {
+            "connect": 10.0,
+            "pool": 30.0,
+            "read": 900.0,
+            "write": 30.0
+          }
+        },
+        "use_responses_api": true
+      },
+      "role": "summary"
+    },
+    {
+      "constructor": "ChatOpenAI",
+      "kwargs": {
+        "api_key": "<env:OPENAI_API_KEY>",
+        "max_retries": 0,
+        "model": "gpt-5.6-terra",
+        "timeout": {
+          "httpx.Timeout": {
+            "connect": 10.0,
+            "pool": 30.0,
+            "read": 900.0,
+            "write": 30.0
+          }
+        },
+        "use_responses_api": true
+      },
+      "role": "transcription"
+    }
+  ],
+  "openalex": []
+}

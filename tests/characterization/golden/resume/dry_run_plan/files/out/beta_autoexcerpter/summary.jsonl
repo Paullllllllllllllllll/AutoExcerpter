@@ -1,0 +1,96 @@
+{
+  "_format_version": 2,
+  "configuration": {
+    "api_timeout_seconds": 900,
+    "concurrent_requests": 16,
+    "extraction_dpi": "N/A",
+    "model_name": "gpt-5.6-terra",
+    "service_tier": "flex"
+  },
+  "input_item_name": "beta",
+  "input_item_path": "<tmp>/in/tree/beta.pdf",
+  "input_type": "PDF",
+  "log_type": "summary",
+  "model_name": "gpt-5.6-terra",
+  "processing_start_time": "<datetime>",
+  "total_images": 3
+}
+{
+  "api_response": {
+    "model_name": "gpt-5.6-terra",
+    "status": "completed"
+  },
+  "bullet_points": [
+    "The preface introduces new research on the *material culture* of eating in early modern Europe between 1500 and 1800.",
+    "It frames the chapters around prices, wages and diets and follows Braudel's long-run view of material life."
+  ],
+  "image_filename": "page_0001.jpg",
+  "original_input_order_index": 0,
+  "page": 1,
+  "page_information": {
+    "is_two_page_spread": false,
+    "page_number_integer": 11,
+    "page_number_integer_end": null,
+    "page_number_type": "roman",
+    "page_types": [
+      "preface"
+    ]
+  },
+  "processing_time": "<duration>",
+  "provider": "openai",
+  "references": [
+    {
+      "citation": "Braudel (1979)",
+      "is_partial": true
+    }
+  ]
+}
+{
+  "bullet_points": [
+    "[Transcription failed: Model refused the request: I cannot help with this page.]"
+  ],
+  "image_filename": "page_0002.jpg",
+  "original_input_order_index": 1,
+  "page": 2,
+  "page_information": {
+    "is_two_page_spread": false,
+    "page_number_integer": null,
+    "page_number_integer_end": null,
+    "page_number_type": "none",
+    "page_types": [
+      "other"
+    ]
+  },
+  "references": null
+}
+{
+  "api_response": {
+    "model_name": "gpt-5.6-terra",
+    "status": "completed"
+  },
+  "bullet_points": null,
+  "image_filename": "page_0003.jpg",
+  "original_input_order_index": 2,
+  "page": 3,
+  "page_information": {
+    "is_two_page_spread": false,
+    "page_number_integer": null,
+    "page_number_integer_end": null,
+    "page_number_type": "none",
+    "page_types": [
+      "bibliography"
+    ]
+  },
+  "processing_time": "<duration>",
+  "provider": "openai",
+  "references": [
+    {
+      "citation": "Allen, R. C. (2001). The great divergence in European wages and prices from the Middle Ages to the First World War. *Explorations in Economic History, 38*(4), 411-447.",
+      "is_partial": false
+    },
+    {
+      "citation": "Montanari, M. (1994). *The Culture of Food*. Oxford: Blackwell.",
+      "is_partial": false
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+[
+  {
+    "constructor": "ChatAnthropic",
+    "kwargs": {
+      "api_key": "<env:ANTHROPIC_API_KEY>",
+      "max_retries": 0,
+      "model": "claude-sonnet-4-5",
+      "timeout": 900
+    },
+    "role": "transcription"
+  },
+  {
+    "constructor": "ChatAnthropic",
+    "kwargs": {
+      "api_key": "<env:ANTHROPIC_API_KEY>",
+      "max_retries": 0,
+      "model": "claude-sonnet-4-5",
+      "timeout": 900
+    },
+    "role": "summary"
+  }
+]

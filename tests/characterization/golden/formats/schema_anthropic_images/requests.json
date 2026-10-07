@@ -1,0 +1,357 @@
+{
+  "calls": [
+    {
+      "attempt": 1,
+      "bound": {
+        "max_tokens": 64000,
+        "thinking": {
+          "budget_tokens": 8192,
+          "type": "enabled"
+        }
+      },
+      "kwargs": {
+        "max_tokens": 64000,
+        "thinking": {
+          "budget_tokens": 8192,
+          "type": "enabled"
+        }
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 4157,
+            "digest": "0fdf86688a8d19a5"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "height": 600,
+              "mime": "image/jpeg",
+              "source_type": "base64",
+              "type": "image",
+              "width": 400
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "claude-sonnet-4-5",
+      "page": 0,
+      "provider": "anthropic",
+      "role": "transcription",
+      "structured": {
+        "include_raw": true,
+        "method": "json_schema",
+        "schema": {
+          "digest": "317b2a7619ba7dfc",
+          "properties": [
+            "image_analysis",
+            "no_transcribable_text",
+            "transcription",
+            "transcription_not_possible"
+          ],
+          "title": "markdown_transcription_schema",
+          "type": "object"
+        },
+        "schema_title": "markdown_transcription_schema"
+      }
+    },
+    {
+      "attempt": 1,
+      "bound": {
+        "max_tokens": 64000,
+        "thinking": {
+          "budget_tokens": 8192,
+          "type": "enabled"
+        }
+      },
+      "kwargs": {
+        "max_tokens": 64000,
+        "thinking": {
+          "budget_tokens": 8192,
+          "type": "enabled"
+        }
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 7680,
+            "digest": "19d077973451ec81"
+          },
+          "type": "system"
+        },
+        {
+          "text": {
+            "chars": 295,
+            "digest": "077b66f2675d3228"
+          },
+          "type": "human"
+        }
+      ],
+      "model": "claude-sonnet-4-5",
+      "page": 0,
+      "provider": "anthropic",
+      "role": "summary",
+      "structured": {
+        "include_raw": true,
+        "method": "json_schema",
+        "schema": {
+          "digest": "9e6a570caf9d7153",
+          "properties": [
+            "bullet_points",
+            "page_information",
+            "references"
+          ],
+          "title": "Article Page Summary",
+          "type": "object"
+        },
+        "schema_title": "Article Page Summary"
+      }
+    },
+    {
+      "attempt": 1,
+      "bound": {
+        "max_tokens": 64000,
+        "thinking": {
+          "budget_tokens": 8192,
+          "type": "enabled"
+        }
+      },
+      "kwargs": {
+        "max_tokens": 64000,
+        "thinking": {
+          "budget_tokens": 8192,
+          "type": "enabled"
+        }
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 4157,
+            "digest": "0fdf86688a8d19a5"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "height": 600,
+              "mime": "image/jpeg",
+              "source_type": "base64",
+              "type": "image",
+              "width": 400
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "claude-sonnet-4-5",
+      "page": 1,
+      "provider": "anthropic",
+      "role": "transcription",
+      "structured": {
+        "include_raw": true,
+        "method": "json_schema",
+        "schema": {
+          "digest": "317b2a7619ba7dfc",
+          "properties": [
+            "image_analysis",
+            "no_transcribable_text",
+            "transcription",
+            "transcription_not_possible"
+          ],
+          "title": "markdown_transcription_schema",
+          "type": "object"
+        },
+        "schema_title": "markdown_transcription_schema"
+      }
+    },
+    {
+      "attempt": 1,
+      "bound": {
+        "max_tokens": 64000,
+        "thinking": {
+          "budget_tokens": 8192,
+          "type": "enabled"
+        }
+      },
+      "kwargs": {
+        "max_tokens": 64000,
+        "thinking": {
+          "budget_tokens": 8192,
+          "type": "enabled"
+        }
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 7680,
+            "digest": "19d077973451ec81"
+          },
+          "type": "system"
+        },
+        {
+          "text": {
+            "chars": 544,
+            "digest": "7b77a0cc8a85c403"
+          },
+          "type": "human"
+        }
+      ],
+      "model": "claude-sonnet-4-5",
+      "page": 1,
+      "provider": "anthropic",
+      "role": "summary",
+      "structured": {
+        "include_raw": true,
+        "method": "json_schema",
+        "schema": {
+          "digest": "9e6a570caf9d7153",
+          "properties": [
+            "bullet_points",
+            "page_information",
+            "references"
+          ],
+          "title": "Article Page Summary",
+          "type": "object"
+        },
+        "schema_title": "Article Page Summary"
+      }
+    },
+    {
+      "attempt": 1,
+      "bound": {
+        "max_tokens": 64000,
+        "thinking": {
+          "budget_tokens": 8192,
+          "type": "enabled"
+        }
+      },
+      "kwargs": {
+        "max_tokens": 64000,
+        "thinking": {
+          "budget_tokens": 8192,
+          "type": "enabled"
+        }
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 4157,
+            "digest": "0fdf86688a8d19a5"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "height": 600,
+              "mime": "image/jpeg",
+              "source_type": "base64",
+              "type": "image",
+              "width": 400
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "claude-sonnet-4-5",
+      "page": 2,
+      "provider": "anthropic",
+      "role": "transcription",
+      "structured": {
+        "include_raw": true,
+        "method": "json_schema",
+        "schema": {
+          "digest": "317b2a7619ba7dfc",
+          "properties": [
+            "image_analysis",
+            "no_transcribable_text",
+            "transcription",
+            "transcription_not_possible"
+          ],
+          "title": "markdown_transcription_schema",
+          "type": "object"
+        },
+        "schema_title": "markdown_transcription_schema"
+      }
+    },
+    {
+      "attempt": 1,
+      "bound": {
+        "max_tokens": 64000,
+        "thinking": {
+          "budget_tokens": 8192,
+          "type": "enabled"
+        }
+      },
+      "kwargs": {
+        "max_tokens": 64000,
+        "thinking": {
+          "budget_tokens": 8192,
+          "type": "enabled"
+        }
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 7680,
+            "digest": "19d077973451ec81"
+          },
+          "type": "system"
+        },
+        {
+          "text": {
+            "chars": 250,
+            "digest": "029878f966dd8a51"
+          },
+          "type": "human"
+        }
+      ],
+      "model": "claude-sonnet-4-5",
+      "page": 2,
+      "provider": "anthropic",
+      "role": "summary",
+      "structured": {
+        "include_raw": true,
+        "method": "json_schema",
+        "schema": {
+          "digest": "9e6a570caf9d7153",
+          "properties": [
+            "bullet_points",
+            "page_information",
+            "references"
+          ],
+          "title": "Article Page Summary",
+          "type": "object"
+        },
+        "schema_title": "Article Page Summary"
+      }
+    }
+  ],
+  "models": [
+    {
+      "constructor": "ChatAnthropic",
+      "kwargs": {
+        "api_key": "<env:ANTHROPIC_API_KEY>",
+        "max_retries": 0,
+        "model": "claude-sonnet-4-5",
+        "timeout": 900
+      },
+      "role": "summary"
+    },
+    {
+      "constructor": "ChatAnthropic",
+      "kwargs": {
+        "api_key": "<env:ANTHROPIC_API_KEY>",
+        "max_retries": 0,
+        "model": "claude-sonnet-4-5",
+        "timeout": 900
+      },
+      "role": "transcription"
+    }
+  ],
+  "openalex": []
+}

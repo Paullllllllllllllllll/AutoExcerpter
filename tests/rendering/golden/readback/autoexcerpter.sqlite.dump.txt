@@ -1,0 +1,561 @@
+## citations
+{
+  "document": "rich",
+  "doi": null,
+  "metadata": null,
+  "pages": "pp. 1-2, 10",
+  "partial": 0,
+  "position": 1,
+  "text": "Allen, R. C. (2001). The great divergence in European wages and prices. *Explorations in Economic History*, 38(4), 411-447. doi:10.1006/exeh.2001.0775",
+  "url": null
+}
+{
+  "document": "rich",
+  "doi": null,
+  "metadata": null,
+  "pages": "p. 10",
+  "partial": 0,
+  "position": 2,
+  "text": "Braudel, F. (1979). Civilisation matérielle, économie et capitalisme. Paris: Armand Colin.",
+  "url": null
+}
+{
+  "document": "rich",
+  "doi": null,
+  "metadata": null,
+  "pages": "p. 10",
+  "partial": 0,
+  "position": 3,
+  "text": "Clark, G. (2005). The condition of the working class in England. Retrieved from https://example.org/clark-2005",
+  "url": null
+}
+{
+  "document": "rich",
+  "doi": null,
+  "metadata": null,
+  "pages": "p. 10; PDF p. 4",
+  "partial": 0,
+  "position": 4,
+  "text": "Dvořák, A. (1890). Ceny obilí v Čechách. Praha: Šimáček.",
+  "url": null
+}
+{
+  "document": "rich",
+  "doi": "10.1016/S0140-6736(00)12345-6",
+  "metadata": {
+    "doi": "10.1016/S0140-6736(00)12345-6",
+    "publication_year": 2000,
+    "url": "https://doi.org/10.1016/S0140-6736(00)12345-6"
+  },
+  "pages": "p. 1",
+  "partial": 0,
+  "position": 5,
+  "text": "Lancet, T. (2000). A controlled trial of rationing. The Lancet, 355.",
+  "url": "https://doi.org/10.1016/S0140-6736(00)12345-6"
+}
+{
+  "document": "rich",
+  "doi": null,
+  "metadata": null,
+  "pages": "pp. 4-5, 10",
+  "partial": 0,
+  "position": 6,
+  "text": "Müller, J., & Østergaard, K. (1998). Über die Preise in Zürich. Basel.",
+  "url": null
+}
+## documents
+{
+  "complete": 1,
+  "hash": "<sha256>",
+  "kind": "pdf",
+  "name": "rich",
+  "outputs": [
+    "rich_summary.md"
+  ],
+  "pages_deferred": null,
+  "pages_failed": 1,
+  "pages_ok": 8,
+  "pages_total": 9,
+  "path": "<tmp>/rich.pdf",
+  "settings_fingerprint": "811b682f8cd6ae0ff3b1e443be14aa5a97ab0c3f913128e9e92b39035587ea5a",
+  "spec": {
+    "input.path": {
+      "source": "flag",
+      "value": "rich.pdf"
+    },
+    "summary_model.model": {
+      "source": "settings",
+      "value": "gpt-5-mini"
+    }
+  },
+  "summary_failures": null,
+  "summary_model": "gpt-5-mini",
+  "tool_version": "<version>",
+  "transcription_model": "gpt-5-mini",
+  "updated_at": "<datetime>"
+}
+## pages
+{
+  "document": "rich",
+  "error": null,
+  "error_type": null,
+  "image": "page_0001.jpg",
+  "model": "gpt-5-mini",
+  "page_index": 0,
+  "pdf_page_index": 0,
+  "status": "ok",
+  "text": "<page_number>iii</page_number>\nPREFACE\nThe author thanks Ø.",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "reasoning_tokens": 0,
+    "total_tokens": 100
+  }
+}
+{
+  "document": "rich",
+  "error": null,
+  "error_type": null,
+  "image": "page_0002.jpg",
+  "model": "gpt-5-mini",
+  "page_index": 1,
+  "pdf_page_index": 1,
+  "status": "ok",
+  "text": "<page_number>1</page_number>\nWages rose from $3 to $5; $x^2$.",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "reasoning_tokens": 0,
+    "total_tokens": 200
+  }
+}
+{
+  "document": "rich",
+  "error": null,
+  "error_type": null,
+  "image": "page_0003.jpg",
+  "model": "gpt-5-mini",
+  "page_index": 2,
+  "pdf_page_index": 2,
+  "status": "ok",
+  "text": "<page_number>2</page_number>\n$$\\frac{p}{q}$$ as printed.",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "reasoning_tokens": 0,
+    "total_tokens": 300
+  }
+}
+{
+  "document": "rich",
+  "error": null,
+  "error_type": null,
+  "image": "page_0004.jpg",
+  "model": "gpt-5-mini",
+  "page_index": 3,
+  "pdf_page_index": 3,
+  "status": "ok",
+  "text": "An unnumbered leaf without a folio.",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "reasoning_tokens": 0,
+    "total_tokens": 400
+  }
+}
+{
+  "document": "rich",
+  "error": null,
+  "error_type": null,
+  "image": "page_0005.jpg",
+  "model": "gpt-5-mini",
+  "page_index": 4,
+  "pdf_page_index": 4,
+  "status": "ok",
+  "text": "<page_number>4</page_number> Left.\n<page_number>5</page_number>",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "reasoning_tokens": 0,
+    "total_tokens": 500
+  }
+}
+{
+  "document": "rich",
+  "error": null,
+  "error_type": null,
+  "image": "page_0006.jpg",
+  "model": "gpt-5-mini",
+  "page_index": 5,
+  "pdf_page_index": 5,
+  "status": "ok",
+  "text": "[empty page]",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "reasoning_tokens": 0,
+    "total_tokens": 600
+  }
+}
+{
+  "document": "rich",
+  "error": "Rate limit exceeded",
+  "error_type": "api",
+  "image": "page_0007.jpg",
+  "model": "gpt-5-mini",
+  "page_index": 6,
+  "pdf_page_index": 6,
+  "status": "failed",
+  "text": "[Transcription error: rate limit]",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "reasoning_tokens": 0,
+    "total_tokens": 700
+  }
+}
+{
+  "document": "rich",
+  "error": null,
+  "error_type": null,
+  "image": "page_0008.jpg",
+  "model": "gpt-5-mini",
+  "page_index": 7,
+  "pdf_page_index": 7,
+  "status": "ok",
+  "text": "<page_number>10</page_number>\nBIBLIOGRAPHY",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "reasoning_tokens": 0,
+    "total_tokens": 800
+  }
+}
+{
+  "document": "rich",
+  "error": null,
+  "error_type": null,
+  "image": "page_0009.jpg",
+  "model": "gpt-5-mini",
+  "page_index": 8,
+  "pdf_page_index": 8,
+  "status": "ok",
+  "text": "<page_number>11</page_number>\nTable 3. Prices.",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "reasoning_tokens": 0,
+    "total_tokens": 900
+  }
+}
+## summaries
+{
+  "bullet_points": [
+    "**Bold claim** with *italic aside* and ***both at once***.",
+    "A product a * b * c stays literal.",
+    "A bullet split\n   across two lines."
+  ],
+  "document": "rich",
+  "error": null,
+  "model": "gpt-5-mini",
+  "page_index": 0,
+  "page_information": {
+    "is_two_page_spread": false,
+    "page_number_integer": 3,
+    "page_number_integer_end": null,
+    "page_number_type": "roman",
+    "page_types": [
+      "preface"
+    ]
+  },
+  "page_references": null,
+  "status": "ok",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "reasoning_tokens": 0,
+    "total_tokens": 10
+  }
+}
+{
+  "bullet_points": [
+    "Fraction $\\frac{a}{b}$ inline.",
+    "Sum $\\sum_{i=1}^{n} x_i$ inline.",
+    "Scripts $x_{t}^{2}$ inline.",
+    "Matrix $\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}$ inline.",
+    "Aligned $\\begin{aligned} a &= b \\\\ c &= d \\end{aligned}$ inline.",
+    "Unconvertible $\\frac{a}{$ inline.",
+    "Wages rose from $3 to $5 per week, and bread cost $0.25.",
+    "A fee of \\$10 and the ratio $\\frac{w}{p}$ at a price of $5."
+  ],
+  "document": "rich",
+  "error": null,
+  "model": "gpt-5-mini",
+  "page_index": 1,
+  "page_information": {
+    "is_two_page_spread": false,
+    "page_number_integer": 1,
+    "page_number_integer_end": null,
+    "page_number_type": "arabic",
+    "page_types": [
+      "content"
+    ]
+  },
+  "page_references": [
+    {
+      "citation": "Allen, R. C. (2001). The great divergence in European wages and prices. *Explorations in Economic History*, 38(4), 411-447. doi:10.1006/exeh.2001.0775",
+      "is_partial": false
+    },
+    {
+      "citation": "Lancet, T. (2000). A controlled trial of rationing. The Lancet, 355.",
+      "is_partial": false
+    }
+  ],
+  "status": "ok",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "reasoning_tokens": 0,
+    "total_tokens": 20
+  }
+}
+{
+  "bullet_points": [
+    "Fraction $$\\frac{p}{q}$$ display.",
+    "Sum $$\\sum_{k=0}^{\\infty} r^k$$ display.",
+    "Scripts $$y_{i,t}^{-1}$$ display.",
+    "Matrix $$\\begin{pmatrix} 1 & 0 \\\\ 0 & 1 \\end{pmatrix}$$ display.",
+    "Aligned $$\\begin{aligned} w &= p \\cdot q \\\\ v &= w - c \\end{aligned}$$ display.",
+    "Unconvertible $$x^$$ display.",
+    "Inline $z^2$ beside display $$z_0$$ in one bullet."
+  ],
+  "document": "rich",
+  "error": null,
+  "model": "gpt-5-mini",
+  "page_index": 2,
+  "page_information": {
+    "is_two_page_spread": false,
+    "page_number_integer": 2,
+    "page_number_integer_end": null,
+    "page_number_type": "arabic",
+    "page_types": [
+      "content"
+    ]
+  },
+  "page_references": [
+    {
+      "citation": "Allen (2001)",
+      "is_partial": true
+    }
+  ],
+  "status": "ok",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "reasoning_tokens": 0,
+    "total_tokens": 30
+  }
+}
+{
+  "bullet_points": [
+    "An unnumbered page cites a Czech source."
+  ],
+  "document": "rich",
+  "error": null,
+  "model": "gpt-5-mini",
+  "page_index": 3,
+  "page_information": {
+    "is_two_page_spread": false,
+    "page_number_integer": null,
+    "page_number_integer_end": null,
+    "page_number_type": "none",
+    "page_types": [
+      "content"
+    ]
+  },
+  "page_references": [
+    {
+      "citation": "Dvořák, A. (1890). Ceny obilí v Čechách. Praha: Šimáček.",
+      "is_partial": false
+    }
+  ],
+  "status": "ok",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "reasoning_tokens": 0,
+    "total_tokens": 40
+  }
+}
+{
+  "bullet_points": [
+    "A two-page spread on Zürich prices."
+  ],
+  "document": "rich",
+  "error": null,
+  "model": "gpt-5-mini",
+  "page_index": 4,
+  "page_information": {
+    "is_two_page_spread": true,
+    "page_number_integer": 4,
+    "page_number_integer_end": 5,
+    "page_number_type": "arabic",
+    "page_types": [
+      "content"
+    ]
+  },
+  "page_references": [
+    {
+      "citation": "Müller, J., & Østergaard, K. (1998). Über die Preise in Zürich. Basel.",
+      "is_partial": false
+    }
+  ],
+  "status": "ok",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "reasoning_tokens": 0,
+    "total_tokens": 50
+  }
+}
+{
+  "bullet_points": [
+    "[Empty page]"
+  ],
+  "document": "rich",
+  "error": null,
+  "model": "gpt-5-mini",
+  "page_index": 5,
+  "page_information": {
+    "is_two_page_spread": false,
+    "page_number_integer": null,
+    "page_number_integer_end": null,
+    "page_number_type": "none",
+    "page_types": [
+      "blank"
+    ]
+  },
+  "page_references": null,
+  "status": "ok",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "reasoning_tokens": 0,
+    "total_tokens": 60
+  }
+}
+{
+  "bullet_points": [
+    "[Error generating summary: Rate limit exceeded]"
+  ],
+  "document": "rich",
+  "error": "Rate limit exceeded",
+  "model": "gpt-5-mini",
+  "page_index": 6,
+  "page_information": {
+    "is_two_page_spread": false,
+    "page_number_integer": null,
+    "page_number_integer_end": null,
+    "page_number_type": "none",
+    "page_types": [
+      "other"
+    ]
+  },
+  "page_references": null,
+  "status": "failed",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "reasoning_tokens": 0,
+    "total_tokens": 70
+  }
+}
+{
+  "bullet_points": [],
+  "document": "rich",
+  "error": null,
+  "model": "gpt-5-mini",
+  "page_index": 7,
+  "page_information": {
+    "is_two_page_spread": false,
+    "page_number_integer": 10,
+    "page_number_integer_end": null,
+    "page_number_type": "arabic",
+    "page_types": [
+      "bibliography"
+    ]
+  },
+  "page_references": [
+    {
+      "citation": "Allen, R. C. (2001). The great divergence in European wages and prices. *Explorations in Economic History*, 38(4), 411-447. doi:10.1006/exeh.2001.0775",
+      "is_partial": false
+    },
+    {
+      "citation": "Clark, G. (2005). The condition of the working class in England. Retrieved from https://example.org/clark-2005",
+      "is_partial": false
+    },
+    {
+      "citation": "Braudel, F. (1979). Civilisation matérielle, économie et capitalisme. Paris: Armand Colin.",
+      "is_partial": false
+    },
+    {
+      "citation": "Müller, J., & Østergaard, K. (1998). Über die Preise in Zürich. Basel.",
+      "is_partial": false
+    },
+    {
+      "citation": "Dvořák, A. (1890). Ceny obilí v Čechách. Praha: Šimáček.",
+      "is_partial": false
+    }
+  ],
+  "status": "ok",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "reasoning_tokens": 0,
+    "total_tokens": 80
+  }
+}
+{
+  "bullet_points": [
+    "Table 3 lists grain prices in $ and £."
+  ],
+  "document": "rich",
+  "error": null,
+  "model": "gpt-5-mini",
+  "page_index": 8,
+  "page_information": {
+    "is_two_page_spread": false,
+    "page_number_integer": "11\u000b",
+    "page_number_integer_end": null,
+    "page_number_type": "arabic",
+    "page_types": [
+      "figures_tables_sources"
+    ]
+  },
+  "page_references": null,
+  "status": "ok",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "reasoning_tokens": 0,
+    "total_tokens": 90
+  }
+}

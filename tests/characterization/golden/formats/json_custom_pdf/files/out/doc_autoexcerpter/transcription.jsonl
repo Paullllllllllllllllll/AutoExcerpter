@@ -1,0 +1,147 @@
+{
+  "_format_version": 2,
+  "configuration": {
+    "api_timeout_seconds": 900,
+    "concurrent_requests": 16,
+    "extraction_dpi": 150,
+    "model_name": "org/fake-model",
+    "service_tier": "N/A"
+  },
+  "file_provenance": {
+    "cap_policy": "profile-v1",
+    "detail": null,
+    "image_config": {
+      "cap_policy": "profile-v1",
+      "grayscale_conversion": true,
+      "handle_transparency": true,
+      "high_target_box": [
+        512,
+        1024
+      ],
+      "image_high_res_tier": false,
+      "image_original_patch_cap_30k": false,
+      "jpeg_quality": 85,
+      "llm_detail": "high",
+      "low_max_side_px": 768,
+      "max_image_bytes": 0,
+      "max_pixels_per_page": 24000000,
+      "model_name": "org/fake-model",
+      "model_type": "custom",
+      "native_fallback_dpi": 300,
+      "payload_format": "jpeg",
+      "provider": "custom",
+      "render_strategy": "direct",
+      "request_detail": null,
+      "resampling_algorithm": "bilinear",
+      "resize_profile": "low",
+      "resolved_detail": "high",
+      "target_dpi": 150
+    },
+    "image_config_section": "custom_image_processing",
+    "image_settings_fingerprint": "827c157ee41b8278aa553940c196597e381da4da87f59bc7340071e21b92a1a5",
+    "model_name": "org/fake-model",
+    "model_type": "custom",
+    "pillow_version": "<version>",
+    "pymupdf_version": "<version>",
+    "size": "<bytes>",
+    "source_file": "<tmp>/in/doc.pdf",
+    "source_sha256": "<sha256>",
+    "target_dpi": 150
+  },
+  "input_item_name": "doc",
+  "input_item_path": "<tmp>/in/doc.pdf",
+  "input_type": "PDF",
+  "log_type": "transcription",
+  "model_name": "org/fake-model",
+  "processing_start_time": "<datetime>",
+  "total_images": 3
+}
+{
+  "image": "page_0001.jpg",
+  "image_provenance": {
+    "byte_size": "<bytes>",
+    "cap_policy": "profile-v1",
+    "downscale_reason": "none",
+    "dpi_source": "numeric",
+    "effective_dpi": 150.0,
+    "format_fallback": false,
+    "height": 1024,
+    "mime_type": "image/jpeg",
+    "payload_format": "jpeg",
+    "render_dpi": 150.0,
+    "sent_dpi": null,
+    "source_dpi_x": 150.0,
+    "source_dpi_y": 150.0,
+    "source_height": 625,
+    "source_width": 417,
+    "width": 512
+  },
+  "original_input_order_index": 0,
+  "page_index": 0,
+  "processing_time": "<duration>",
+  "provider": "custom",
+  "sequence_number": 1,
+  "source_file": "<tmp>/in/doc.pdf",
+  "transcription": "# Preface\n\nThis volume brings together **new research** on the *material\nculture* of eating in early modern Europe. Its chapters trace how\nprices, wages and diets changed between 1500 and 1800.[^1]\n\n[^1]: See Braudel (1979) for the classic statement of this view.\n\n<page_number>xi</page_number>\n"
+}
+{
+  "image": "page_0002.jpg",
+  "image_provenance": {
+    "byte_size": "<bytes>",
+    "cap_policy": "profile-v1",
+    "downscale_reason": "none",
+    "dpi_source": "numeric",
+    "effective_dpi": 150.0,
+    "format_fallback": false,
+    "height": 1024,
+    "mime_type": "image/jpeg",
+    "payload_format": "jpeg",
+    "render_dpi": 150.0,
+    "sent_dpi": null,
+    "source_dpi_x": 150.0,
+    "source_dpi_y": 150.0,
+    "source_height": 625,
+    "source_width": 417,
+    "width": 512
+  },
+  "original_input_order_index": 1,
+  "page_index": 1,
+  "processing_time": "<duration>",
+  "provider": "custom",
+  "schema_retries": {
+    "no_transcribable_text": 0,
+    "transcription_not_possible": 0,
+    "validation_failure": 1
+  },
+  "sequence_number": 2,
+  "source_file": "<tmp>/in/doc.pdf",
+  "transcription": "## The Price of Bread\n\nBread prices rose faster than wages after 1550, and the economic burden fell on urban households.[^2] The real wage index\nis defined as $w_t / p_t$.\n\n![Image: line chart of bread prices and day wages in Antwerp, 1500-1800; prices rise steeply after 1550 while wages stay flat]\n\n[^2]: Allen, R. C. (2001). The great divergence in European wages and prices from the Middle Ages to the First World War. *Explorations in Economic History, 38*(4), 411-447. https://doi.org/10.1006/exeh.2001.0775\n\n<page_number>1</page_number>\n"
+}
+{
+  "image": "page_0003.jpg",
+  "image_provenance": {
+    "byte_size": "<bytes>",
+    "cap_policy": "profile-v1",
+    "downscale_reason": "none",
+    "dpi_source": "numeric",
+    "effective_dpi": 150.0,
+    "format_fallback": false,
+    "height": 1024,
+    "mime_type": "image/jpeg",
+    "payload_format": "jpeg",
+    "render_dpi": 150.0,
+    "sent_dpi": null,
+    "source_dpi_x": 150.0,
+    "source_dpi_y": 150.0,
+    "source_height": 625,
+    "source_width": 417,
+    "width": 512
+  },
+  "original_input_order_index": 2,
+  "page_index": 2,
+  "processing_time": "<duration>",
+  "provider": "custom",
+  "sequence_number": 3,
+  "source_file": "<tmp>/in/doc.pdf",
+  "transcription": "## Bibliography\n\nAllen, R. C. (2001). The great divergence in European wages and prices from the Middle Ages to the First World War. *Explorations in Economic History, 38*(4), 411-447.\n\nMontanari, M. (1994). *The Culture of Food*. Oxford: Blackwell.\n"
+}

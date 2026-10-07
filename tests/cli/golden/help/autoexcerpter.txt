@@ -1,0 +1,13 @@
+usage: autoexcerpter [-h] COMMAND ...
+
+Transcribe and summarize PDFs and image folders.
+
+options:
+  -h, --help  show this help message and exit
+
+commands:
+  COMMAND
+    run       transcribe and summarize documents
+    ui        guided run in an interactive terminal
+
+Run 'autoexcerpter <command> --help' for the options of a command.

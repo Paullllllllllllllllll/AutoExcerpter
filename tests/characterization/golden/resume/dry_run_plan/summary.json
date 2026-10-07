@@ -1,0 +1,191 @@
+{
+  "exit_code": 0,
+  "json_line": {
+    "dry_run": true,
+    "skipped": [
+      "gamma"
+    ],
+    "spec": {
+      "citations.openalex": {
+        "source": "flag",
+        "value": false
+      },
+      "images.detail": {
+        "source": "default",
+        "value": null
+      },
+      "images.dpi": {
+        "source": "default",
+        "value": null
+      },
+      "images.format": {
+        "source": "default",
+        "value": null
+      },
+      "images.grayscale": {
+        "source": "default",
+        "value": null
+      },
+      "images.jpeg_quality": {
+        "source": "default",
+        "value": null
+      },
+      "input.all": {
+        "source": "flag",
+        "value": true
+      },
+      "input.path": {
+        "source": "flag",
+        "value": "<tmp>/in/tree"
+      },
+      "input.select": {
+        "source": "flag",
+        "value": null
+      },
+      "output.directory": {
+        "source": "flag",
+        "value": "<tmp>/out"
+      },
+      "output.formats": {
+        "source": "flag",
+        "value": [
+          "summary-md",
+          "summary-docx",
+          "sqlite"
+        ]
+      },
+      "output.keep_working_files": {
+        "source": "flag",
+        "value": false
+      },
+      "output.transcription_format": {
+        "source": "default",
+        "value": "md"
+      },
+      "run.concurrency": {
+        "source": "default",
+        "value": 16
+      },
+      "run.dry_run": {
+        "source": "flag",
+        "value": true
+      },
+      "run.force": {
+        "source": "default",
+        "value": false
+      },
+      "run.json": {
+        "source": "flag",
+        "value": true
+      },
+      "run.retranscribe": {
+        "source": "default",
+        "value": false
+      },
+      "summary.context": {
+        "source": "default",
+        "value": null
+      },
+      "summary.enabled": {
+        "source": "flag",
+        "value": true
+      },
+      "summary.fallback_context": {
+        "source": "default",
+        "value": null
+      },
+      "summary_model.endpoint": {
+        "source": "default",
+        "value": null
+      },
+      "summary_model.max_output_tokens": {
+        "source": "default",
+        "value": null
+      },
+      "summary_model.model": {
+        "source": "flag",
+        "value": "gpt-5.6-terra"
+      },
+      "summary_model.provider": {
+        "source": "flag",
+        "value": "openai"
+      },
+      "summary_model.reasoning_effort": {
+        "source": "default",
+        "value": "high"
+      },
+      "summary_model.response_format": {
+        "source": "default",
+        "value": null
+      },
+      "summary_model.service_tier": {
+        "source": "default",
+        "value": "flex"
+      },
+      "summary_model.temperature": {
+        "source": "default",
+        "value": 1.0
+      },
+      "summary_model.top_p": {
+        "source": "default",
+        "value": null
+      },
+      "summary_model.verbosity": {
+        "source": "default",
+        "value": "low"
+      },
+      "transcription_model.endpoint": {
+        "source": "default",
+        "value": null
+      },
+      "transcription_model.max_output_tokens": {
+        "source": "default",
+        "value": null
+      },
+      "transcription_model.model": {
+        "source": "flag",
+        "value": "gpt-5.6-terra"
+      },
+      "transcription_model.provider": {
+        "source": "flag",
+        "value": "openai"
+      },
+      "transcription_model.reasoning_effort": {
+        "source": "default",
+        "value": "high"
+      },
+      "transcription_model.response_format": {
+        "source": "default",
+        "value": null
+      },
+      "transcription_model.service_tier": {
+        "source": "default",
+        "value": "flex"
+      },
+      "transcription_model.temperature": {
+        "source": "default",
+        "value": 1.0
+      },
+      "transcription_model.top_p": {
+        "source": "default",
+        "value": null
+      },
+      "transcription_model.verbosity": {
+        "source": "default",
+        "value": "medium"
+      }
+    },
+    "to_process": [
+      {
+        "completed_pages": 0,
+        "name": "alpha",
+        "state": "none"
+      },
+      {
+        "completed_pages": 2,
+        "name": "beta",
+        "state": "partial"
+      }
+    ]
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "exit_code": 1,
+  "json_line": {
+    "dry_run": false,
+    "items_complete": 0,
+    "items_failed": 1,
+    "items_skipped": 0,
+    "items_total": 1,
+    "outputs": [
+      "<tmp>/out/doc_transcription.md",
+      "<tmp>/out/doc_summary.docx",
+      "<tmp>/out/doc_summary.md",
+      "<tmp>/out/autoexcerpter.sqlite"
+    ],
+    "usage": {
+      "summary": {
+        "cached_tokens": 0,
+        "input_tokens": 1800,
+        "output_tokens": 500,
+        "reasoning_tokens": 0,
+        "total_tokens": 2300
+      },
+      "total": {
+        "cached_tokens": 0,
+        "input_tokens": 6300,
+        "output_tokens": 1700,
+        "reasoning_tokens": 0,
+        "total_tokens": 8000
+      },
+      "transcription": {
+        "cached_tokens": 0,
+        "input_tokens": 4500,
+        "output_tokens": 1200,
+        "reasoning_tokens": 0,
+        "total_tokens": 5700
+      }
+    }
+  }
+}

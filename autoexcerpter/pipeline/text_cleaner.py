@@ -1,0 +1,768 @@
+"""Text cleaning utilities for post-processing transcription output.
+
+This module provides configurable text cleaning for OCR/transcription outputs.
+It performs conservative cleanup while preserving semantic and typographic
+content.
+
+Processing stages (all configurable):
+1. Unicode normalization - NFC, remove control chars, soft hyphens, BOMs
+2. LaTeX formula fixing - balance delimiters, close braces, fix common issues
+3. Hyphenation merging - rejoin words split at line breaks
+4. Whitespace normalization - collapse spaces, limit blank lines, expand tabs
+
+The switches are code constants (:data:`TEXT_CLEANING`).
+
+Usage:
+    >>> from autoexcerpter.pipeline.text_cleaner import clean_transcription
+    >>> cleaned_text = clean_transcription(raw_text)
+"""
+
+from __future__ import annotations
+
+import copy
+import re
+import unicodedata
+from collections.abc import Callable, Mapping
+from typing import Any
+
+# High-plane icon glyphs sometimes seen in OCR output, mapped to a bullet.
+AEGEAN_ICON_CODEPOINTS = {
+    0x10101,  # AEGEAN WORD SEPARATOR DOT
+    0x10102,  # AEGEAN CHECK MARK
+    0x10103,
+    0x10104,
+    0x10105,
+}
+
+DROP_CHARS = {
+    "\u00ad",  # SOFT HYPHEN
+    "\u200b",  # ZERO WIDTH SPACE
+    "\u200c",  # ZERO WIDTH NON-JOINER
+    "\u200d",  # ZERO WIDTH JOINER
+    "\ufeff",  # BOM / ZERO WIDTH NO-BREAK SPACE
+    "\u2060",  # WORD JOINER
+}
+
+# Lazily populated translation table for normalize_unicode: None deletes a
+# codepoint, a string substitutes it, absent codepoints pass through. The
+# companion set records every codepoint already evaluated, so each distinct
+# codepoint is categorized at most once across all calls.
+_UNICODE_TABLE: dict[int, str | None] = {
+    **{cp: "\u2022" for cp in AEGEAN_ICON_CODEPOINTS},
+    **{ord(ch): None for ch in DROP_CHARS},
+}
+_UNICODE_SEEN: set[int] = set(_UNICODE_TABLE)
+
+# Common LaTeX command typos from OCR
+LATEX_COMMAND_FIXES = [
+    (r"\\frac\s*\{", r"\\frac{"),
+    (r"\\sqrt\s*\{", r"\\sqrt{"),
+    (r"\\sum\s*_", r"\\sum_"),
+    (r"\\int\s*_", r"\\int_"),
+    (r"\\prod\s*_", r"\\prod_"),
+    (r"\\lim\s*_", r"\\lim_"),
+    (r"\\mathrm\s*\{", r"\\mathrm{"),
+    (r"\\mathbf\s*\{", r"\\mathbf{"),
+    (r"\\mathit\s*\{", r"\\mathit{"),
+    (r"\\text\s*\{", r"\\text{"),
+]
+
+_HYPHEN_PATTERN = re.compile(r"(\w{3,})-\n(\w{2,})")
+
+# Characters that make the tail of a lone "$" read as unclosed inline math
+# rather than as prose containing a bare currency symbol.
+_INLINE_MATH_CHARS = frozenset("\\=^_{+")
+
+# Collapse runs of 3+ internal spaces (between non-space chars) to two spaces.
+_COLLAPSE_SPACES_PATTERN = re.compile(r"(?<=\S) {3,}(?=\S)")
+
+# `\left`/`\right` as delimiter commands (not \leftarrow, \rightarrow, etc.):
+# the trailing negative lookahead excludes command names that merely start
+# with "left"/"right".
+_LEFT_CMD = re.compile(r"\\left(?![a-zA-Z])")
+_RIGHT_CMD = re.compile(r"\\right(?![a-zA-Z])")
+
+# Display math blocks and math spans used for scoped, in-block LaTeX repairs.
+_DISPLAY_BLOCK = re.compile(r"\$\$(.*?)\$\$", re.DOTALL)
+_MATH_SPAN = re.compile(r"\$\$.*?\$\$|\$.*?\$", re.DOTALL)
+_ENV_BEGIN = re.compile(r"\\begin\{[^}]*\}")
+_ENV_END = re.compile(r"\\end\{[^}]*\}")
+
+# Single-token HTML sub/superscript, optionally wrapped in markdown emphasis
+# asterisks (e.g. "*A*<sub>m</sub>", "x<sup>2</sup>"). The leading lookbehind
+# keeps the base token off the tail of a longer word; the `</\2>` backreference
+# requires a matching closing tag. Kept deliberately narrow: 1-3 alphanumerics.
+_HTML_SUBSUP = re.compile(
+    r"(?<![A-Za-z0-9])\*?([A-Za-z0-9]{1,3})\*?<(sub|sup)>([A-Za-z0-9]{1,3})</\2>"
+)
+
+# Prefixes that are almost always genuinely hyphenated. Following the
+# conservative "keep the hyphen when unsure" policy, a line-break hyphen whose
+# left fragment is one of these is preserved (for example "co-ordinating",
+# "self-evident") rather than merged. The set is deliberately small and
+# high-precision: common word-initial syllables such as "con", "pre" or "de"
+# are excluded because line-break hyphenation of ordinary words (for example
+# "concep-tion") far outnumbers genuine compounds starting that way.
+HYPHEN_KEEP_PREFIXES = frozenset(
+    {
+        "co",
+        "self",
+        "non",
+        "anti",
+        "pseudo",
+        "quasi",
+        "semi",
+        "multi",
+        "cross",
+        "well",
+        "ill",
+        "half",
+        "vice",
+        "all",
+        "neo",
+    }
+)
+
+
+TEXT_CLEANING: Mapping[str, Any] = {
+    "enabled": True,
+    "unicode_normalization": True,
+    "latex_fixing": {
+        "enabled": True,
+        "balance_dollar_signs": True,
+        "close_unclosed_braces": True,
+        "fix_common_commands": True,
+        "normalize_math_delimiters": True,
+        "balance_left_right": True,
+        "convert_html_subsup": True,
+    },
+    "merge_hyphenation": True,
+    "whitespace_normalization": {
+        "enabled": True,
+        "collapse_internal_spaces": True,
+        "max_blank_lines": 2,
+        "tab_size": 4,
+    },
+}
+
+
+def get_text_cleaning_config() -> dict[str, Any]:
+    """Return a copy of the text cleaning switches."""
+    return copy.deepcopy(dict(TEXT_CLEANING))
+
+
+def normalize_unicode(text: str) -> str:
+    """Normalize Unicode and remove spurious control characters.
+
+    Steps:
+    - NFC normalization (compose accented characters)
+    - Map high-plane icon glyphs to bullet character
+    - Drop soft hyphens, zero-width spaces, BOMs
+    - Remove control/format/surrogate/unassigned chars (except newline/tab)
+
+    Args:
+        text: Input text to normalize.
+
+    Returns:
+        Unicode-normalized text with control characters removed.
+    """
+    if not text:
+        return text
+
+    text = unicodedata.normalize("NFC", text)
+
+    seen = _UNICODE_SEEN
+    table = _UNICODE_TABLE
+    distinct = set(text)
+    for ch in distinct:
+        cp = ord(ch)
+        if cp in seen:
+            continue
+        # Publish the table entry before marking the codepoint as seen: in the
+        # reverse order a concurrent worker could find the codepoint in
+        # ``seen`` while its table entry is still missing.
+        if cp not in (9, 10) and unicodedata.category(ch).startswith("C"):
+            table[cp] = None
+        seen.add(cp)
+
+    # Most prose pages contain no remapped codepoint; skip the translate.
+    if any(ord(ch) in table for ch in distinct):
+        return text.translate(table)
+    return text
+
+
+def _count_unescaped(text: str, char: str) -> int:
+    """Count unescaped occurrences of a character."""
+    count = 0
+    i = 0
+    while i < len(text):
+        if text[i] == "\\" and i + 1 < len(text) and text[i + 1] == char:
+            i += 2
+            continue
+        if text[i] == char:
+            count += 1
+        i += 1
+    return count
+
+
+def _find_unmatched_braces(text: str) -> tuple[int, int]:
+    """Find counts of unmatched opening and closing braces.
+
+    Returns:
+        Tuple of (unmatched_open, unmatched_close) counts.
+    """
+    depth = 0
+    unmatched_close = 0
+
+    i = 0
+    while i < len(text):
+        if text[i] == "\\" and i + 1 < len(text) and text[i + 1] in "{}":
+            i += 2
+            continue
+
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            if depth > 0:
+                depth -= 1
+            else:
+                unmatched_close += 1
+        i += 1
+
+    return depth, unmatched_close  # depth = unmatched_open
+
+
+def _unescaped_dollar_positions(line: str) -> list[int]:
+    """Return the indices of every unescaped ``$`` in ``line``."""
+    positions = []
+    i = 0
+    while i < len(line):
+        if line[i] == "\\" and i + 1 < len(line) and line[i + 1] == "$":
+            i += 2
+            continue
+        if line[i] == "$":
+            positions.append(i)
+        i += 1
+    return positions
+
+
+def _fix_lone_dollar(line: str, pos: int) -> str:
+    """Close or drop the single unescaped ``$`` at ``pos`` when it opens math."""
+    # Currency guard: a digit right before the "$" (postfix, "100$" or
+    # "100 $") or right after it (prefix, "$3" or "$ 30") marks a price, so
+    # the line stays untouched.
+    before = line[:pos].rstrip()
+    before_is_digit = bool(before) and before[-1].isdigit()
+    after_stripped = line[pos + 1 :].lstrip()
+    after_is_currency = bool(after_stripped) and after_stripped[0].isdigit()
+    if before_is_digit or after_is_currency:
+        return line
+    after = line[pos + 1 :].strip()
+
+    # Prose guard: a bare currency symbol in running text ("Prices in $
+    # ranged widely") is unclosed math only when what follows looks like math.
+    if after and not any(ch in _INLINE_MATH_CHARS for ch in after):
+        return line
+
+    # A trailing escaped "\$" is a literal dollar, not a closing delimiter, so
+    # the genuine opener is closed rather than deleted as an orphan.
+    if after and (not after.endswith("$") or after.endswith("\\$")):
+        # Close before trailing punctuation and whitespace.
+        end_pos = len(line)
+        for j in range(len(line) - 1, pos, -1):
+            if line[j] in ".,;:!? \t":
+                end_pos = j
+            else:
+                break
+        return line[:end_pos] + "$" + line[end_pos:]
+    return line[:pos] + line[pos + 1 :]
+
+
+def balance_dollar_signs(text: str) -> str:
+    """Balance unmatched dollar sign delimiters in LaTeX formulas.
+
+    Handles both inline ($...$) and display ($$...$$) math modes.
+    For unbalanced delimiters, attempts to close them at line end or
+    remove orphan delimiters.
+
+    Args:
+        text: Text potentially containing LaTeX formulas.
+
+    Returns:
+        Text with balanced dollar sign delimiters.
+    """
+    if "$" not in text:
+        return text
+
+    result_lines = []
+    for line in text.split("\n"):
+        if "$" in line and _count_unescaped(line, "$") % 2 == 1:
+            positions = _unescaped_dollar_positions(line)
+            if len(positions) == 1:
+                line = _fix_lone_dollar(line, positions[0])
+        result_lines.append(line)
+
+    return "\n".join(result_lines)
+
+
+def close_unclosed_braces(text: str) -> str:
+    """Close unclosed braces in LaTeX commands.
+
+    Scans for common LaTeX commands with unclosed braces and attempts
+    to close them at reasonable positions.
+
+    Args:
+        text: Text with potential unclosed LaTeX braces.
+
+    Returns:
+        Text with braces closed where possible.
+    """
+    if "{" not in text:
+        return text
+
+    lines = text.split("\n")
+    result_lines = []
+
+    for line in lines:
+        if "{" not in line and "}" not in line:
+            result_lines.append(line)
+            continue
+
+        unmatched_open, unmatched_close = _find_unmatched_braces(line)
+
+        if unmatched_open > 0:
+            line = line.rstrip() + "}" * unmatched_open
+
+        if unmatched_close > 0:
+            # Conservative: orphan closing braces are removed only at the
+            # start of the content.
+            stripped = line.lstrip()
+            leading_space = line[: len(line) - len(stripped)]
+
+            removed = 0
+            while stripped.startswith("}") and removed < unmatched_close:
+                stripped = stripped[1:]
+                removed += 1
+
+            line = leading_space + stripped
+
+        result_lines.append(line)
+
+    return "\n".join(result_lines)
+
+
+def fix_common_latex_commands(text: str) -> str:
+    """Fix common OCR errors in LaTeX command syntax.
+
+    Applies regex-based fixes for common issues like:
+    - Spaces between command and opening brace
+    - Spaces before subscripts/superscripts
+
+    Args:
+        text: Text with potential LaTeX command errors.
+
+    Returns:
+        Text with common command syntax errors fixed.
+    """
+    # Every pattern in LATEX_COMMAND_FIXES begins with a literal backslash, so
+    # text without one cannot match any of them.
+    if "\\" not in text:
+        return text
+
+    for pattern, replacement in LATEX_COMMAND_FIXES:
+        text = re.sub(pattern, replacement, text)
+
+    return text
+
+
+# A "\[...\]" pair: display math in LaTeX, an escaped square bracket in
+# Markdown. Only the math reading is converted; see _display_math_or_literal.
+_ESCAPED_BRACKET_PAIR = re.compile(r"\\\[(.+?)\\\]", re.DOTALL)
+
+# Characters that mark the content of a bracket pair as mathematical.
+_MATH_CONTENT_CHARS = frozenset("\\^_=+*/<>")
+
+
+def _looks_like_math(content: str) -> bool:
+    """Return True when bracket-pair content reads as math rather than prose.
+
+    Math is signalled by an operator, a digit, or a bare single-symbol
+    variable. Editorial interpolations ("sic", "illegible", "?") carry none of
+    these and stay literal.
+    """
+    stripped = content.strip()
+    if not stripped:
+        return False
+    # A digits-only pair ("\[42\]") is an escaped citation marker or
+    # editorial page number, not a display formula; keep it literal.
+    if stripped.isdigit():
+        return False
+    if len(stripped) == 1 and stripped.isalnum():
+        return True
+    return any(ch in _MATH_CONTENT_CHARS or ch.isdigit() for ch in stripped)
+
+
+def _display_math_or_literal(match: re.Match[str]) -> str:
+    """Convert a ``\\[...\\]`` pair to ``$$...$$`` only when it is math."""
+    content = match.group(1)
+    if _looks_like_math(content):
+        return f"$${content}$$"
+    return match.group(0)
+
+
+def normalize_math_delimiters(text: str) -> str:
+    """Normalize alternate LaTeX math delimiters to dollar-sign form.
+
+    Maps ``\\(...\\)`` to inline ``$...$``. Bracket pairs are converted to
+    display ``$$...$$`` only when the enclosed content looks like math:
+    ``\\[`` also occurs as a Markdown-escaped square bracket, so editorial
+    interpolations such as ``\\[sic\\]`` or ``\\[illegible\\]`` must survive.
+    Unpaired brackets are left alone.
+
+    Args:
+        text: Text potentially using ``\\(...\\)`` / ``\\[...\\]`` delimiters.
+
+    Returns:
+        Text with math delimiters normalized to dollar-sign form.
+    """
+    if not any(tok in text for tok in ("\\(", "\\)", "\\[", "\\]")):
+        return text
+
+    text = _ESCAPED_BRACKET_PAIR.sub(_display_math_or_literal, text)
+    text = text.replace("\\(", "$").replace("\\)", "$")
+    return text
+
+
+def _apply_outside_math(text: str, transform: Callable[[str], str]) -> str:
+    """Apply ``transform`` only to text outside ``$...$`` / ``$$...$$`` spans.
+
+    Math spans are passed through byte-identically so repairs meant for prose
+    never touch already-delimited math.
+
+    Args:
+        text: Input text possibly containing math spans.
+        transform: Callable mapping a plain-text segment to its replacement.
+
+    Returns:
+        Text with ``transform`` applied to non-math segments only.
+    """
+    result: list[str] = []
+    last = 0
+    for match in _MATH_SPAN.finditer(text):
+        result.append(transform(text[last : match.start()]))
+        result.append(match.group(0))
+        last = match.end()
+    result.append(transform(text[last:]))
+    return "".join(result)
+
+
+def convert_html_subsup(text: str) -> str:
+    """Convert single-token HTML sub/superscripts to inline math.
+
+    Rewrites ``X<sub>y</sub>`` -> ``$X_y$`` and ``X<sup>y</sup>`` -> ``$X^y$``
+    (optionally with markdown emphasis asterisks around the base, e.g.
+    ``*A*<sub>m</sub>``), but only when the pattern appears OUTSIDE existing
+    math delimiters. Scope is intentionally narrow -- 1-3 alphanumeric base and
+    script tokens -- to avoid touching genuine HTML or prose.
+
+    Args:
+        text: Text possibly containing HTML sub/superscript notation.
+
+    Returns:
+        Text with qualifying HTML sub/superscripts rewritten as inline math.
+    """
+    if "<sub>" not in text and "<sup>" not in text:
+        return text
+
+    def _repl(match: re.Match[str]) -> str:
+        base, kind, script = match.group(1), match.group(2), match.group(3)
+        op = "_" if kind == "sub" else "^"
+        return f"${base}{op}{script}$"
+
+    return _apply_outside_math(text, lambda seg: _HTML_SUBSUP.sub(_repl, seg))
+
+
+def balance_left_right(text: str) -> str:
+    """Balance ``\\left``/``\\right`` pairs within each display math block.
+
+    Operates conservatively and only inside a single ``$$...$$`` block: if the
+    block has more ``\\right`` than ``\\left``, the missing openers are added as
+    ``\\left.`` at the block (or enclosing environment) start; the mirror case
+    appends ``\\right.`` at the block end. Blocks whose counts already match --
+    including misordered-but-balanced or nested cases -- are left unchanged, and
+    inline ``$...$`` math is never touched.
+
+    Args:
+        text: Text potentially containing unbalanced ``\\left``/``\\right``.
+
+    Returns:
+        Text with per-block ``\\left``/``\\right`` counts balanced.
+    """
+    if "\\left" not in text and "\\right" not in text:
+        return text
+
+    def _fix_block(match: re.Match[str]) -> str:
+        inner = match.group(1)
+        n_left = len(_LEFT_CMD.findall(inner))
+        n_right = len(_RIGHT_CMD.findall(inner))
+        if n_left == n_right:
+            return match.group(0)  # balanced (or ambiguous) -> leave unchanged
+
+        if n_right > n_left:
+            # Unmatched \right: prepend \left. inside the enclosing environment
+            # (after \begin{...} when present) so the opener stays in scope.
+            prefix = "\\left." * (n_right - n_left)
+            begin = _ENV_BEGIN.search(inner)
+            if begin:
+                inner = inner[: begin.end()] + prefix + inner[begin.end() :]
+            else:
+                inner = prefix + inner
+        else:
+            # Unmatched \left: append \right. before the environment close.
+            suffix = "\\right." * (n_left - n_right)
+            end = _ENV_END.search(inner)
+            if end:
+                inner = inner[: end.start()] + suffix + inner[end.start() :]
+            else:
+                inner = inner + suffix
+
+        return "$$" + inner + "$$"
+
+    return _DISPLAY_BLOCK.sub(_fix_block, text)
+
+
+def fix_latex_formulas(text: str, config: dict[str, Any]) -> str:
+    """Apply all LaTeX fixing operations based on configuration.
+
+    Args:
+        text: Text containing LaTeX formulas.
+        config: LaTeX fixing configuration dict.
+
+    Returns:
+        Text with LaTeX formulas fixed according to config.
+    """
+    if not config.get("enabled", True):
+        return text
+
+    # Unify delimiters first so later steps see canonical $...$ / $$...$$ forms.
+    if config.get("normalize_math_delimiters", True):
+        text = normalize_math_delimiters(text)
+
+    # Convert HTML sub/sup (outside math) before dollar balancing, since it
+    # introduces balanced inline $...$ spans.
+    if config.get("convert_html_subsup", True):
+        text = convert_html_subsup(text)
+
+    if config.get("fix_common_commands", True):
+        text = fix_common_latex_commands(text)
+
+    if config.get("balance_left_right", True):
+        text = balance_left_right(text)
+
+    if config.get("balance_dollar_signs", True):
+        text = balance_dollar_signs(text)
+
+    if config.get("close_unclosed_braces", True):
+        text = close_unclosed_braces(text)
+
+    return text
+
+
+def should_keep_hyphen(left: str, right: str) -> bool:
+    """Decide whether a line-break hyphen is a genuine compound to keep.
+
+    Implements the conservative "keep the hyphen when unsure" policy. The
+    hyphen is kept (the word is treated as a real hyphenated compound) when:
+    the characters adjacent to the hyphen are not both lowercase letters (for
+    example "Jean-Baptiste", "page-42"); or the alphabetic fragment ending at
+    the hyphen is one of ``HYPHEN_KEEP_PREFIXES``. Otherwise the break is
+    treated as wrap/line-break hyphenation and the word should be merged.
+
+    Args:
+        left: The fragment before the hyphen (for example "Manage", "co").
+        right: The continuation fragment after the line break (for example
+            "ment", "ordinating").
+
+    Returns:
+        True to keep the hyphen, False to merge into a single word.
+    """
+    if not left or not right:
+        return True
+    if not (left[-1].isalpha() and right[0].isalpha()):
+        return True
+    if not (left[-1].islower() and right[0].islower()):
+        # Uppercase-adjacent. An all-caps word split mid-word (e.g. "KNOWL-EDGE",
+        # "MAJ-ESTY") is not a compound and should merge; a Title-case pairing
+        # (e.g. "Jean-Baptiste", "18th-Century") is a genuine compound to keep.
+        return not (left.isupper() and right.isupper())
+    match = re.search(r"[A-Za-z]+$", left)
+    prefix_word = match.group(0).lower() if match else left.lower()
+    return prefix_word in HYPHEN_KEEP_PREFIXES
+
+
+def merge_hyphenation(text: str) -> str:
+    """Merge words split across lines with a hyphen.
+
+    Example: "politi-\\nche" -> "politiche"
+
+    Uses the conservative ``should_keep_hyphen`` guard to avoid damaging
+    genuine hyphenated compounds like "Jean-Baptiste" or "co-ordinating",
+    while still merging ordinary line-break hyphenation like "Manage-\\nment".
+
+    Substitution is repeated to a fixpoint: a single pass cannot see the
+    second break of a word split across three or more lines
+    ("encyclo-\\npae-\\ndia"), because the first match consumes the fragment
+    that opens the next one.
+
+    Args:
+        text: Text with potential line-break hyphenation.
+
+    Returns:
+        Text with hyphenated line breaks merged where appropriate.
+    """
+
+    def _replace(match: re.Match[str]) -> str:
+        left, right = match.group(1), match.group(2)
+        if should_keep_hyphen(left, right):
+            return left + "-\n" + right
+        return left + right
+
+    while True:
+        merged = _HYPHEN_PATTERN.sub(_replace, text)
+        if merged == text:
+            return text
+        text = merged
+
+
+def normalize_whitespace(
+    text: str,
+    collapse_internal: bool = True,
+    max_blank_lines: int = 2,
+    tab_size: int = 4,
+) -> str:
+    """Normalize whitespace in text.
+
+    Operations:
+    - Expand tabs to spaces
+    - Strip trailing spaces from lines
+    - Collapse internal runs of spaces (optional)
+    - Limit consecutive blank lines
+
+    Args:
+        text: Input text.
+        collapse_internal: If True, collapse 3+ internal spaces to 2.
+        max_blank_lines: Maximum consecutive blank lines to keep.
+        tab_size: Number of spaces per tab.
+
+    Returns:
+        Whitespace-normalized text.
+    """
+    if not text:
+        return text
+
+    text = text.expandtabs(tab_size)
+
+    lines = text.splitlines()
+    result_lines: list[str] = []
+    blank_run = 0
+
+    for line in lines:
+        line = line.rstrip(" ")
+        if collapse_internal:
+            line = _COLLAPSE_SPACES_PATTERN.sub("  ", line)
+
+        if line.strip() == "":
+            blank_run += 1
+            if blank_run <= max_blank_lines:
+                result_lines.append("")
+        else:
+            blank_run = 0
+            result_lines.append(line)
+
+    return "\n".join(result_lines) + "\n"
+
+
+# A <page_number> tag directly after a letter or closing punctuation, with no
+# space between: a note reference marker the model mistook for a page number
+# ("things.<page_number>10</page_number>"). Printed page numbers stand apart in
+# the header or footer ("FIRE · <page_number>89</page_number>").
+_GLUED_PAGE_TAG = re.compile(
+    r"(?<=[^\W\d_]|[.,;:!?)\"'’”])<page_number>\s*(\d{1,4})\s*</page_number>"
+)
+
+
+def retag_glued_page_numbers(text: str) -> str:
+    """Rewrite page-number tags glued to a word as footnote references.
+
+    ``things.<page_number>10</page_number>`` becomes ``things.[^10]``, the
+    transcription's footnote-reference format, so the marker neither passes
+    for a printed page number nor suppresses the page's ``<page_break>``
+    locator. Tags set apart by whitespace are left alone.
+    """
+    return _GLUED_PAGE_TAG.sub(r"[^\1]", text)
+
+
+def clean_transcription(text: str, config: dict[str, Any] | None = None) -> str:
+    """Run the full text cleaning pipeline on transcription text.
+
+    Applies cleaning stages in order based on configuration:
+    1. Unicode normalization
+    2. LaTeX formula fixing
+    3. Hyphenation merging (optional)
+    4. Whitespace normalization
+
+    Args:
+        text: Raw transcription text to clean.
+        config: Cleaning switches; None takes :data:`TEXT_CLEANING`.
+
+    Returns:
+        Cleaned text.
+    """
+    if not text:
+        return text
+
+    if config is None:
+        config = get_text_cleaning_config()
+
+    if not config.get("enabled", True):
+        return text
+
+    text = retag_glued_page_numbers(text)
+
+    if config.get("unicode_normalization", True):
+        text = normalize_unicode(text)
+
+    latex_config = config.get("latex_fixing", {})
+    if latex_config.get("enabled", True):
+        text = fix_latex_formulas(text, latex_config)
+
+    # Unlike the other stages, merging is off in partial configs that omit
+    # the key.
+    if config.get("merge_hyphenation", False):
+        text = merge_hyphenation(text)
+
+    ws_config = config.get("whitespace_normalization", {})
+    if ws_config.get("enabled", True):
+        text = normalize_whitespace(
+            text,
+            collapse_internal=ws_config.get("collapse_internal_spaces", True),
+            max_blank_lines=ws_config.get("max_blank_lines", 2),
+            tab_size=ws_config.get("tab_size", 4),
+        )
+
+    return text
+
+
+__all__ = [
+    "TEXT_CLEANING",
+    "clean_transcription",
+    "get_text_cleaning_config",
+    "normalize_unicode",
+    "fix_latex_formulas",
+    "normalize_math_delimiters",
+    "convert_html_subsup",
+    "balance_left_right",
+    "merge_hyphenation",
+    "should_keep_hyphen",
+    "normalize_whitespace",
+]

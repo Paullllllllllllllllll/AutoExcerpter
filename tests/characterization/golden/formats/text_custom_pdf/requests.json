@@ -1,0 +1,511 @@
+{
+  "calls": [
+    {
+      "attempt": 1,
+      "bound": {},
+      "kwargs": {
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 1455,
+            "digest": "ef8e49d8ec141a07"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "height": 1024,
+              "mime": "image/jpeg",
+              "type": "image_url",
+              "width": 512
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "org/fake-model",
+      "page": 0,
+      "provider": "custom",
+      "role": "transcription",
+      "structured": null
+    },
+    {
+      "attempt": 1,
+      "bound": {},
+      "kwargs": {
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 7259,
+            "digest": "66e28711e28a8ca4"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "chars": 295,
+              "digest": "077b66f2675d3228",
+              "type": "text"
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "org/fake-model",
+      "page": 0,
+      "provider": "custom",
+      "role": "summary",
+      "structured": null
+    },
+    {
+      "attempt": 2,
+      "bound": {},
+      "kwargs": {
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 7259,
+            "digest": "66e28711e28a8ca4"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "chars": 295,
+              "digest": "077b66f2675d3228",
+              "type": "text"
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "org/fake-model",
+      "page": 0,
+      "provider": "custom",
+      "role": "summary",
+      "structured": null
+    },
+    {
+      "attempt": 3,
+      "bound": {},
+      "kwargs": {
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 7259,
+            "digest": "66e28711e28a8ca4"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "chars": 295,
+              "digest": "077b66f2675d3228",
+              "type": "text"
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "org/fake-model",
+      "page": 0,
+      "provider": "custom",
+      "role": "summary",
+      "structured": null
+    },
+    {
+      "attempt": 4,
+      "bound": {},
+      "kwargs": {
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 7259,
+            "digest": "66e28711e28a8ca4"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "chars": 295,
+              "digest": "077b66f2675d3228",
+              "type": "text"
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "org/fake-model",
+      "page": 0,
+      "provider": "custom",
+      "role": "summary",
+      "structured": null
+    },
+    {
+      "attempt": 1,
+      "bound": {},
+      "kwargs": {
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 1455,
+            "digest": "ef8e49d8ec141a07"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "height": 1024,
+              "mime": "image/jpeg",
+              "type": "image_url",
+              "width": 512
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "org/fake-model",
+      "page": 1,
+      "provider": "custom",
+      "role": "transcription",
+      "structured": null
+    },
+    {
+      "attempt": 1,
+      "bound": {},
+      "kwargs": {
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 7259,
+            "digest": "66e28711e28a8ca4"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "chars": 544,
+              "digest": "7b77a0cc8a85c403",
+              "type": "text"
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "org/fake-model",
+      "page": 1,
+      "provider": "custom",
+      "role": "summary",
+      "structured": null
+    },
+    {
+      "attempt": 2,
+      "bound": {},
+      "kwargs": {
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 7259,
+            "digest": "66e28711e28a8ca4"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "chars": 544,
+              "digest": "7b77a0cc8a85c403",
+              "type": "text"
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "org/fake-model",
+      "page": 1,
+      "provider": "custom",
+      "role": "summary",
+      "structured": null
+    },
+    {
+      "attempt": 3,
+      "bound": {},
+      "kwargs": {
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 7259,
+            "digest": "66e28711e28a8ca4"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "chars": 544,
+              "digest": "7b77a0cc8a85c403",
+              "type": "text"
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "org/fake-model",
+      "page": 1,
+      "provider": "custom",
+      "role": "summary",
+      "structured": null
+    },
+    {
+      "attempt": 4,
+      "bound": {},
+      "kwargs": {
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 7259,
+            "digest": "66e28711e28a8ca4"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "chars": 544,
+              "digest": "7b77a0cc8a85c403",
+              "type": "text"
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "org/fake-model",
+      "page": 1,
+      "provider": "custom",
+      "role": "summary",
+      "structured": null
+    },
+    {
+      "attempt": 1,
+      "bound": {},
+      "kwargs": {
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 1455,
+            "digest": "ef8e49d8ec141a07"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "height": 1024,
+              "mime": "image/jpeg",
+              "type": "image_url",
+              "width": 512
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "org/fake-model",
+      "page": 2,
+      "provider": "custom",
+      "role": "transcription",
+      "structured": null
+    },
+    {
+      "attempt": 1,
+      "bound": {},
+      "kwargs": {
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 7259,
+            "digest": "66e28711e28a8ca4"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "chars": 250,
+              "digest": "029878f966dd8a51",
+              "type": "text"
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "org/fake-model",
+      "page": 2,
+      "provider": "custom",
+      "role": "summary",
+      "structured": null
+    },
+    {
+      "attempt": 2,
+      "bound": {},
+      "kwargs": {
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 7259,
+            "digest": "66e28711e28a8ca4"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "chars": 250,
+              "digest": "029878f966dd8a51",
+              "type": "text"
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "org/fake-model",
+      "page": 2,
+      "provider": "custom",
+      "role": "summary",
+      "structured": null
+    },
+    {
+      "attempt": 3,
+      "bound": {},
+      "kwargs": {
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 7259,
+            "digest": "66e28711e28a8ca4"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "chars": 250,
+              "digest": "029878f966dd8a51",
+              "type": "text"
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "org/fake-model",
+      "page": 2,
+      "provider": "custom",
+      "role": "summary",
+      "structured": null
+    },
+    {
+      "attempt": 4,
+      "bound": {},
+      "kwargs": {
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 7259,
+            "digest": "66e28711e28a8ca4"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "chars": 250,
+              "digest": "029878f966dd8a51",
+              "type": "text"
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "org/fake-model",
+      "page": 2,
+      "provider": "custom",
+      "role": "summary",
+      "structured": null
+    }
+  ],
+  "models": [
+    {
+      "constructor": "ChatOpenAI",
+      "kwargs": {
+        "api_key": "<env:AE_FAKE_CUSTOM_KEY>",
+        "base_url": "https://fake-endpoint.invalid/v1/",
+        "max_retries": 0,
+        "model": "org/fake-model",
+        "timeout": {
+          "httpx.Timeout": {
+            "connect": 10.0,
+            "pool": 30.0,
+            "read": 900.0,
+            "write": 30.0
+          }
+        }
+      },
+      "role": "summary"
+    },
+    {
+      "constructor": "ChatOpenAI",
+      "kwargs": {
+        "api_key": "<env:AE_FAKE_CUSTOM_KEY>",
+        "base_url": "https://fake-endpoint.invalid/v1/",
+        "max_retries": 0,
+        "model": "org/fake-model",
+        "timeout": {
+          "httpx.Timeout": {
+            "connect": 10.0,
+            "pool": 30.0,
+            "read": 900.0,
+            "write": 30.0
+          }
+        }
+      },
+      "role": "transcription"
+    }
+  ],
+  "openalex": []
+}

@@ -1,0 +1,82 @@
+{
+  "_format_version": 2,
+  "configuration": {
+    "api_timeout_seconds": 900,
+    "concurrent_requests": 16,
+    "extraction_dpi": "N/A",
+    "model_name": "gpt-5.6-terra",
+    "service_tier": "flex"
+  },
+  "input_item_name": "beta",
+  "input_item_path": "<tmp>/in/tree/sub/beta.pdf",
+  "input_type": "PDF",
+  "log_type": "summary",
+  "model_name": "gpt-5.6-terra",
+  "processing_start_time": "<datetime>",
+  "total_images": 2
+}
+{
+  "api_response": {
+    "model_name": "gpt-5.6-terra",
+    "status": "completed"
+  },
+  "bullet_points": [
+    "The preface introduces new research on the *material culture* of eating in early modern Europe between 1500 and 1800.",
+    "It frames the chapters around prices, wages and diets and follows Braudel's long-run view of material life."
+  ],
+  "image_filename": "page_0001.jpg",
+  "original_input_order_index": 0,
+  "page": 1,
+  "page_information": {
+    "is_two_page_spread": false,
+    "page_number_integer": 11,
+    "page_number_integer_end": null,
+    "page_number_type": "roman",
+    "page_types": [
+      "preface"
+    ]
+  },
+  "processing_time": "<duration>",
+  "provider": "openai",
+  "references": [
+    {
+      "citation": "Braudel (1979)",
+      "is_partial": true
+    }
+  ]
+}
+{
+  "api_response": {
+    "model_name": "gpt-5.6-terra",
+    "status": "completed"
+  },
+  "bullet_points": [
+    "Bread prices rose faster than wages after 1550, shifting the economic burden onto **urban households**.",
+    "The real wage index is defined as $w_t / p_t$, nominal wages deflated by the bread price.",
+    "A consumer basket weights goods so that $$\\sum_{i=1}^{n} \\omega_i = 1$$ holds in every year."
+  ],
+  "image_filename": "page_0002.jpg",
+  "original_input_order_index": 1,
+  "page": 2,
+  "page_information": {
+    "is_two_page_spread": false,
+    "page_number_integer": 1,
+    "page_number_integer_end": null,
+    "page_number_type": "arabic",
+    "page_types": [
+      "content"
+    ]
+  },
+  "processing_time": "<duration>",
+  "provider": "openai",
+  "references": [
+    {
+      "citation": "Allen, R. C. (2001). The great divergence in European wages and prices from the Middle Ages to the First World War. *Explorations in Economic History, 38*(4), 411-447. https://doi.org/10.1006/exeh.2001.0775",
+      "is_partial": false
+    },
+    {
+      "citation": "Braudel, F. (1979). *Civilisation matérielle, économie et capitalisme, XVe-XVIIIe siècle*. Paris: Armand Colin.",
+      "is_partial": false
+    }
+  ]
+}

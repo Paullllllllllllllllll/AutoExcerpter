@@ -1,0 +1,28 @@
+# Transcription of: rich
+# Source Path: <tmp>/rich.pdf
+# Type: PDF
+# Processed on: <datetime>
+# Total images processed: 9
+# Successfully transcribed: 8
+# Failed items: 1
+# Total processing time for this item: <duration>
+
+<page_number>iii</page_number>
+PREFACE
+The author thanks Ø.
+<page_number>1</page_number>
+Wages rose from $3 to $5; $x^2$.
+<page_number>2</page_number>
+$$\frac{p}{q}$$ as printed.
+<page_break pdf="4"/>
+An unnumbered leaf without a folio.
+<page_number>4</page_number> Left.
+<page_number>5</page_number>
+<page_break pdf="6"/>
+[empty page]
+<page_break pdf="7"/>
+[Transcription error: rate limit]
+<page_number>10</page_number>
+BIBLIOGRAPHY
+<page_number>11</page_number>
+Table 3. Prices.

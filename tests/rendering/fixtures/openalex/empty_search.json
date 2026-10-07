@@ -1,0 +1,7 @@
+{
+  "status": 200,
+  "body": {
+    "meta": {"count": 0, "page": 1, "per_page": 5},
+    "results": []
+  }
+}

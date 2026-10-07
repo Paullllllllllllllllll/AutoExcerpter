@@ -1,0 +1,519 @@
+{
+  "calls": [
+    {
+      "attempt": 1,
+      "bound": {},
+      "kwargs": {
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 1455,
+            "digest": "ef8e49d8ec141a07"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "height": 1250,
+              "mime": "image/jpeg",
+              "type": "image_url",
+              "width": 834
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "anthropic/claude-sonnet-4.5",
+      "page": 0,
+      "provider": "openrouter",
+      "role": "transcription",
+      "structured": null
+    },
+    {
+      "attempt": 1,
+      "bound": {},
+      "kwargs": {
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 7259,
+            "digest": "66e28711e28a8ca4"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "chars": 295,
+              "digest": "077b66f2675d3228",
+              "type": "text"
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "anthropic/claude-sonnet-4.5",
+      "page": 0,
+      "provider": "openrouter",
+      "role": "summary",
+      "structured": null
+    },
+    {
+      "attempt": 2,
+      "bound": {},
+      "kwargs": {
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 7259,
+            "digest": "66e28711e28a8ca4"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "chars": 295,
+              "digest": "077b66f2675d3228",
+              "type": "text"
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "anthropic/claude-sonnet-4.5",
+      "page": 0,
+      "provider": "openrouter",
+      "role": "summary",
+      "structured": null
+    },
+    {
+      "attempt": 3,
+      "bound": {},
+      "kwargs": {
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 7259,
+            "digest": "66e28711e28a8ca4"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "chars": 295,
+              "digest": "077b66f2675d3228",
+              "type": "text"
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "anthropic/claude-sonnet-4.5",
+      "page": 0,
+      "provider": "openrouter",
+      "role": "summary",
+      "structured": null
+    },
+    {
+      "attempt": 4,
+      "bound": {},
+      "kwargs": {
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 7259,
+            "digest": "66e28711e28a8ca4"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "chars": 295,
+              "digest": "077b66f2675d3228",
+              "type": "text"
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "anthropic/claude-sonnet-4.5",
+      "page": 0,
+      "provider": "openrouter",
+      "role": "summary",
+      "structured": null
+    },
+    {
+      "attempt": 1,
+      "bound": {},
+      "kwargs": {
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 1455,
+            "digest": "ef8e49d8ec141a07"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "height": 1250,
+              "mime": "image/jpeg",
+              "type": "image_url",
+              "width": 834
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "anthropic/claude-sonnet-4.5",
+      "page": 1,
+      "provider": "openrouter",
+      "role": "transcription",
+      "structured": null
+    },
+    {
+      "attempt": 1,
+      "bound": {},
+      "kwargs": {
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 7259,
+            "digest": "66e28711e28a8ca4"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "chars": 544,
+              "digest": "7b77a0cc8a85c403",
+              "type": "text"
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "anthropic/claude-sonnet-4.5",
+      "page": 1,
+      "provider": "openrouter",
+      "role": "summary",
+      "structured": null
+    },
+    {
+      "attempt": 2,
+      "bound": {},
+      "kwargs": {
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 7259,
+            "digest": "66e28711e28a8ca4"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "chars": 544,
+              "digest": "7b77a0cc8a85c403",
+              "type": "text"
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "anthropic/claude-sonnet-4.5",
+      "page": 1,
+      "provider": "openrouter",
+      "role": "summary",
+      "structured": null
+    },
+    {
+      "attempt": 3,
+      "bound": {},
+      "kwargs": {
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 7259,
+            "digest": "66e28711e28a8ca4"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "chars": 544,
+              "digest": "7b77a0cc8a85c403",
+              "type": "text"
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "anthropic/claude-sonnet-4.5",
+      "page": 1,
+      "provider": "openrouter",
+      "role": "summary",
+      "structured": null
+    },
+    {
+      "attempt": 4,
+      "bound": {},
+      "kwargs": {
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 7259,
+            "digest": "66e28711e28a8ca4"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "chars": 544,
+              "digest": "7b77a0cc8a85c403",
+              "type": "text"
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "anthropic/claude-sonnet-4.5",
+      "page": 1,
+      "provider": "openrouter",
+      "role": "summary",
+      "structured": null
+    },
+    {
+      "attempt": 1,
+      "bound": {},
+      "kwargs": {
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 1455,
+            "digest": "ef8e49d8ec141a07"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "height": 1250,
+              "mime": "image/jpeg",
+              "type": "image_url",
+              "width": 834
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "anthropic/claude-sonnet-4.5",
+      "page": 2,
+      "provider": "openrouter",
+      "role": "transcription",
+      "structured": null
+    },
+    {
+      "attempt": 1,
+      "bound": {},
+      "kwargs": {
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 7259,
+            "digest": "66e28711e28a8ca4"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "chars": 250,
+              "digest": "029878f966dd8a51",
+              "type": "text"
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "anthropic/claude-sonnet-4.5",
+      "page": 2,
+      "provider": "openrouter",
+      "role": "summary",
+      "structured": null
+    },
+    {
+      "attempt": 2,
+      "bound": {},
+      "kwargs": {
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 7259,
+            "digest": "66e28711e28a8ca4"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "chars": 250,
+              "digest": "029878f966dd8a51",
+              "type": "text"
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "anthropic/claude-sonnet-4.5",
+      "page": 2,
+      "provider": "openrouter",
+      "role": "summary",
+      "structured": null
+    },
+    {
+      "attempt": 3,
+      "bound": {},
+      "kwargs": {
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 7259,
+            "digest": "66e28711e28a8ca4"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "chars": 250,
+              "digest": "029878f966dd8a51",
+              "type": "text"
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "anthropic/claude-sonnet-4.5",
+      "page": 2,
+      "provider": "openrouter",
+      "role": "summary",
+      "structured": null
+    },
+    {
+      "attempt": 4,
+      "bound": {},
+      "kwargs": {
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 7259,
+            "digest": "66e28711e28a8ca4"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "chars": 250,
+              "digest": "029878f966dd8a51",
+              "type": "text"
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "anthropic/claude-sonnet-4.5",
+      "page": 2,
+      "provider": "openrouter",
+      "role": "summary",
+      "structured": null
+    }
+  ],
+  "models": [
+    {
+      "constructor": "ChatOpenAI",
+      "kwargs": {
+        "api_key": "<env:OPENROUTER_API_KEY>",
+        "base_url": "https://openrouter.ai/api/v1",
+        "default_headers": {
+          "HTTP-Referer": "https://github.com/autoexcerpter",
+          "X-Title": "AutoExcerpter"
+        },
+        "max_retries": 0,
+        "model": "anthropic/claude-sonnet-4.5",
+        "timeout": {
+          "httpx.Timeout": {
+            "connect": 10.0,
+            "pool": 30.0,
+            "read": 900.0,
+            "write": 30.0
+          }
+        }
+      },
+      "role": "summary"
+    },
+    {
+      "constructor": "ChatOpenAI",
+      "kwargs": {
+        "api_key": "<env:OPENROUTER_API_KEY>",
+        "base_url": "https://openrouter.ai/api/v1",
+        "default_headers": {
+          "HTTP-Referer": "https://github.com/autoexcerpter",
+          "X-Title": "AutoExcerpter"
+        },
+        "max_retries": 0,
+        "model": "anthropic/claude-sonnet-4.5",
+        "timeout": {
+          "httpx.Timeout": {
+            "connect": 10.0,
+            "pool": 30.0,
+            "read": 900.0,
+            "write": 30.0
+          }
+        }
+      },
+      "role": "transcription"
+    }
+  ],
+  "openalex": []
+}

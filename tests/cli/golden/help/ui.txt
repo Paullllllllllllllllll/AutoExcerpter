@@ -1,0 +1,10 @@
+usage: autoexcerpter ui [-h] [--settings FILE]
+
+Guided run: walks through input, outputs, models and image settings, shows a review screen with
+the equivalent command, then runs. Needs an interactive terminal.
+
+options:
+  -h, --help       show this help message and exit
+
+run control:
+  --settings FILE  alternate settings file; default: config/settings.yaml
