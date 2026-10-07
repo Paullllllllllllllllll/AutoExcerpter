@@ -4,7 +4,7 @@
       "attempt": 1,
       "bound": {},
       "kwargs": {
-        "max_output_tokens": 8192,
+        "max_output_tokens": 65536,
         "response_mime_type": "application/json",
         "response_schema": {
           "digest": "a030229e4164f6e5",
@@ -48,7 +48,7 @@
       "attempt": 1,
       "bound": {},
       "kwargs": {
-        "max_output_tokens": 8192,
+        "max_output_tokens": 65536,
         "response_mime_type": "application/json",
         "response_schema": {
           "digest": "1c4182bebd809632",
@@ -88,7 +88,7 @@
       "attempt": 1,
       "bound": {},
       "kwargs": {
-        "max_output_tokens": 8192,
+        "max_output_tokens": 65536,
         "response_mime_type": "application/json",
         "response_schema": {
           "digest": "a030229e4164f6e5",
@@ -132,7 +132,7 @@
       "attempt": 1,
       "bound": {},
       "kwargs": {
-        "max_output_tokens": 8192,
+        "max_output_tokens": 65536,
         "response_mime_type": "application/json",
         "response_schema": {
           "digest": "1c4182bebd809632",
@@ -172,7 +172,7 @@
       "attempt": 1,
       "bound": {},
       "kwargs": {
-        "max_output_tokens": 8192,
+        "max_output_tokens": 65536,
         "response_mime_type": "application/json",
         "response_schema": {
           "digest": "a030229e4164f6e5",
@@ -216,7 +216,7 @@
       "attempt": 1,
       "bound": {},
       "kwargs": {
-        "max_output_tokens": 8192,
+        "max_output_tokens": 65536,
         "response_mime_type": "application/json",
         "response_schema": {
           "digest": "1c4182bebd809632",

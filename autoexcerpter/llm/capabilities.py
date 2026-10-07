@@ -3,7 +3,9 @@
 Families are matched in order against the lowercased model id; the first
 match wins, so specific prefixes precede general ones. Ids keep their
 ``provider:`` and ``models/`` prefixes, and ``vendor/model`` ids resolve
-through the OpenRouter rules. Unmatched ids get the conservative profile:
+through the OpenRouter rules. The output limits of the GPT-5 chat-latest ids,
+the Gemini 3 image models, gpt-4.1-mini and gemini-2.5-flash-lite are the
+vendors' published maximums. Unmatched ids get the conservative profile:
 no image input and no structured output.
 """
 
@@ -79,6 +81,12 @@ def _gpt5(context: int, **extra: Any) -> _Fields:
         "max_output_tokens": 128000,
         **extra,
     }
+
+
+def _chat_latest(family: str, context: int) -> FamilyRule:
+    """The ``chat-latest`` id of a GPT-5 version: its family, 16,384 output."""
+    fields = {**_gpt5(context), "max_output_tokens": 16384}
+    return FamilyRule(family, fields, (f"{family}-chat-latest",))
 
 
 def _claude(output: int, context: int = 200000, **extra: Any) -> _Fields:
@@ -157,19 +165,23 @@ _GEMINI_TAIL = _last_segment_or("gemini", "google/")
 _LLAMA_TAIL = _last_segment_or("llama", "meta/")
 
 _FAMILIES: tuple[FamilyRule, ...] = (
-    *_same(_GPT56, "gpt-6-astra", "gpt-6-sol", "gpt-6-luna"),
+    *_same(_GPT56, "gpt-6.1-sol", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna"),
     *_same(_GPT56, "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"),
     FamilyRule("gpt-5.6-sol", _GPT56, ("gpt-5.6",)),
     *_same(_gpt5(1050000), "gpt-5.5-pro"),
     *_same(_gpt5(1050000, **_ORIGINAL), "gpt-5.5", "gpt-5.4-pro"),
     *_same(_gpt5(400000), "gpt-5.4-mini", "gpt-5.4-nano"),
     *_same(_gpt5(1050000, **_ORIGINAL), "gpt-5.4"),
+    _chat_latest("gpt-5.3", 400000),
     *_same(_gpt5(400000), "gpt-5.3-codex", "gpt-5.3"),
+    _chat_latest("gpt-5.2", 400000),
     *_same(
         _gpt5(400000, supports_structured_output=False, supports_json_mode=False),
         "gpt-5.2-pro",
     ),
     *_same(_gpt5(400000), "gpt-5.2"),
+    _chat_latest("gpt-5.1", 256000),
+    _chat_latest("gpt-5", 256000),
     *_same(_gpt5(256000), "gpt-5.1", "gpt-5"),
     *_same(_O_SERIES, "o4-mini-deep-research", "o4-mini", "o4"),
     *_same(_O_SERIES, "o3-deep-research", "o3-pro"),
@@ -193,7 +205,11 @@ _FAMILIES: tuple[FamilyRule, ...] = (
     *_same({**_O_SERIES, "supports_structured_output": False}, "o1-pro"),
     *_same(_O_SERIES, "o1"),
     *_same(_GPT4, "gpt-4o"),
-    *_same({**_GPT4, "max_context_tokens": 1000000}, "gpt-4.1-mini", "gpt-4.1-nano"),
+    *_same(
+        {**_GPT4, "max_context_tokens": 1000000, "max_output_tokens": 32768},
+        "gpt-4.1-mini",
+    ),
+    *_same({**_GPT4, "max_context_tokens": 1000000}, "gpt-4.1-nano"),
     *_same(
         {**_GPT4, "max_context_tokens": 1000000, "max_output_tokens": 32768},
         "gpt-4.1",
@@ -229,6 +245,16 @@ _FAMILIES: tuple[FamilyRule, ...] = (
         "claude-3-haiku",
     ),
     *_same(_ANTHROPIC, "claude"),
+    FamilyRule(
+        "gemini-3-pro",
+        {**_gemini(2000000), "max_output_tokens": 32768},
+        ("gemini-3-pro-image",),
+    ),
+    FamilyRule(
+        "gemini-3",
+        {**_gemini(), "max_output_tokens": 32768},
+        ("gemini-3.1-flash-image", "gemini-3-1-flash-image"),
+    ),
     *_dotted(_gemini(**_NO_SAMPLING), "gemini-3.7-flash", "gemini-3.6-flash"),
     *_dotted(
         _gemini(1048576),
@@ -242,7 +268,10 @@ _FAMILIES: tuple[FamilyRule, ...] = (
     FamilyRule("gemini-3-pro", _gemini(2000000), ("gemini-3-pro", "gemini-3.0-pro")),
     *_same(_gemini(), "gemini-3"),
     *_dotted(_gemini(2000000), "gemini-2.5-pro"),
-    *_dotted({**_GOOGLE, "max_context_tokens": 1048576}, "gemini-2.5-flash-lite"),
+    *_dotted(
+        {**_GOOGLE, "max_context_tokens": 1048576, "max_output_tokens": 65536},
+        "gemini-2.5-flash-lite",
+    ),
     *_dotted(_gemini(), "gemini-2.5-flash"),
     *_dotted(_GOOGLE, "gemini-2.0"),
     *_dotted({**_GOOGLE, "max_context_tokens": 2000000}, "gemini-1.5-pro"),

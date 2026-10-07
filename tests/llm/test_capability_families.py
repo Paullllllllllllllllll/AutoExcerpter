@@ -1,7 +1,10 @@
 """The family table reproduces the recorded capability of every model id.
 
 ``data/capability_expectations.json`` was generated once from the static
-registry the family table replaced. It covers every registry prefix, dated
+registry the family table replaced, with these changes: the vendors' output
+limits for the GPT-5 chat-latest ids, the Gemini 3 image models, gpt-4.1-mini
+and gemini-2.5-flash-lite, and the ``gpt-6.1-sol`` family. It covers every
+registry prefix, dated
 variants, and unknown ids: bare, ``provider:``-prefixed, ``vendor/model``
 and ``models/gemini-*``.
 """
