@@ -1,4 +1,4 @@
-# AutoExcerpter v1.0.0
+# AutoExcerpter v1.0.1
 
 AutoExcerpter transcribes PDFs and folders of page images with vision-language
 models, summarizes each page and builds a consolidated bibliography whose entries
@@ -163,7 +163,7 @@ option, for example as `model` or `summary_verbosity`.
 | --- | --- |
 | 0 | every item completed, or nothing was left to do |
 | 1 | an item failed, or no item could be processed (no PDF or image folder found, `--select` matched nothing, an unexpected error) |
-| 2 | usage or configuration error (invalid flags or settings, several items without `--all` or `--select`, two items with one output name in one folder, summaries on without a summary format, an unset API key variable) |
+| 2 | usage or configuration error (invalid flags or settings, several items without `--all` or `--select`, two items with one output name in one folder, a working log in the output folder that belongs to another input of the same name, summaries on without a summary format, an unset API key variable) |
 | 130 | interrupted (Ctrl+C) |
 
 Progress, warnings and errors go to stderr. With `--json`, stdout carries exactly
@@ -371,7 +371,11 @@ note marker and becomes a footnote reference (`things.[^10]`).
 The summary files list the document structure, one section per content page
 headed by its printed page number (or `[No printed number; PDF p. N]`, with an
 inferred number in brackets, `Page [6]`) and the consolidated references with
-their pages. The Markdown file keeps LaTeX math as `$...$` and `$$...$$`; the
+their pages. Page numbers are checked per section (front matter, body,
+appendix) against runs of consecutive detected numbers
+(`pipeline/page_numbering.py`): a misread number inside a run is corrected, while
+an excerpt that skips pages, say from 12 to 30, keeps both runs. The Markdown file
+keeps LaTeX math as `$...$` and `$$...$$`; the
 Word file converts it to native Word equations (`rendering/equations.py`) and
 links references matched in OpenAlex.
 
@@ -417,7 +421,10 @@ warning that `--force` rebuilds it. A logged failure never counts as complete, s
 a rerun retries failed pages. A page stopped by a content filter or refused by
 the model fails after one call (`error_type` `content_filter` or `refusal`) and is
 retried the same way. An input whose size or image set changed since its log was
-written is processed from scratch.
+written is processed from scratch. When an item's working log was written for
+another input of the same name that still exists, as with two `doc.pdf` files
+sharing one `--output` folder, the plan stops with exit 2 before any work; give one
+of them another output folder.
 
 `--force` processes every selected item from scratch. `--retranscribe` keeps
 resume but transcribes logged pages again instead of reusing them. Before logged
