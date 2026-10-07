@@ -1,4 +1,4 @@
-# AutoExcerpter v1.0.1
+# AutoExcerpter v1.0.2
 
 AutoExcerpter transcribes PDFs and folders of page images with vision-language
 models, summarizes each page and builds a consolidated bibliography whose entries
@@ -428,11 +428,14 @@ of them another output folder.
 
 `--force` processes every selected item from scratch. `--retranscribe` keeps
 resume but transcribes logged pages again instead of reusing them. Before logged
-pages are reused while pages remain to transcribe, the run's image settings, model
-included, must match the fingerprint in the log. Otherwise the item fails with the
-changed keys named and a hint to use `--force`; a log without a fingerprint is
-refused the same way. A log of another format version is ignored with a warning,
-so its item starts over.
+pages are reused while pages remain to transcribe, the run's image settings must
+match those recorded in the log. Otherwise the item fails with the changed keys
+named and a hint to use `--force`; a log without a fingerprint is refused the same
+way. Switching the transcription model on resume is allowed: the model and the
+settings derived from it (detail resolution, image cap) are not compared, the run
+warns, and the transcription file notes both models. Each page record and its
+`pages.model` row name the model that transcribed the page. A log of another
+format version is ignored with a warning, so its item starts over.
 
 ## Citations and OpenAlex
 
@@ -521,7 +524,7 @@ work, names the variable and exits with code 2; the UI withholds Run and names
 the variable on the review screen.
 
 **Image settings changed.** A resumed item with pages left to transcribe fails
-when its image settings or model differ from its log. Rerun with the earlier
+when its image settings differ from its log. Rerun with the earlier
 settings, or pass `--force` to start the item over.
 
 **Pages failed with `content_filter` or `refusal`.** A provider's content filter
