@@ -20,8 +20,8 @@ from autoexcerpter.events import (
     RunEvents,
     Waiting,
 )
+from autoexcerpter.output.paths import ItemPaths
 from autoexcerpter.output.store import Classification, ItemState
-from autoexcerpter.pipeline.paths import ItemPaths
 from autoexcerpter.pipeline.types import ItemSpec
 from autoexcerpter.ui.progress import RichProgress, plan_table, summary_table
 from tests.conftest import make_settings, make_spec

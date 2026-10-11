@@ -33,8 +33,7 @@ CODE_DEFAULTS = RunSpec(
     output=OutputSpec(
         directory=None,
         transcription_format="md",
-        formats=("summary-md", "summary-docx", "sqlite"),
-        keep_working_files=False,
+        formats=("summary-md", "summary-docx"),
     ),
     summary=SummarySpec(enabled=True, context=None, fallback_context=None),
     citations=CitationSpec(openalex=True),
@@ -130,13 +129,8 @@ ROWS = [
     _row(
         "formats",
         "--formats",
-        "sqlite,summary-md",
-        sets={"output.formats": ("summary-md", "sqlite")},
-    ),
-    _row(
-        "keep_working_files",
-        "--keep-working-files",
-        sets={"output.keep_working_files": True},
+        "summary-docx,summary-md",
+        sets={"output.formats": ("summary-md", "summary-docx")},
     ),
     _row("summarize", "--no-summarize", sets={"summary.enabled": False}),
     _row(
@@ -406,7 +400,7 @@ COMMAND_LINES: list[tuple[list[str], RunSpec]] = [
             "--summary-model",
             "claude-sonnet-5",
             "--formats",
-            "summary-md,sqlite",
+            "summary-md",
             "--context",
             "Food History, Wages",
             "--dry-run",
@@ -417,8 +411,7 @@ COMMAND_LINES: list[tuple[list[str], RunSpec]] = [
             output=OutputSpec(
                 directory=None,
                 transcription_format="md",
-                formats=("summary-md", "sqlite"),
-                keep_working_files=False,
+                formats=("summary-md",),
             ),
             summary=SummarySpec(
                 enabled=True, context="Food History, Wages", fallback_context=None
@@ -484,8 +477,7 @@ COMMAND_LINES: list[tuple[list[str], RunSpec]] = [
             output=OutputSpec(
                 directory=Path("out"),
                 transcription_format="md",
-                formats=("summary-md", "summary-docx", "sqlite"),
-                keep_working_files=False,
+                formats=("summary-md", "summary-docx"),
             ),
             summary=SummarySpec(
                 enabled=True, context=None, fallback_context="fallback.txt"
@@ -551,8 +543,7 @@ COMMAND_LINES: list[tuple[list[str], RunSpec]] = [
             output=OutputSpec(
                 directory=None,
                 transcription_format="md",
-                formats=("summary-md", "summary-docx", "sqlite"),
-                keep_working_files=False,
+                formats=("summary-md", "summary-docx"),
             ),
             summary=SummarySpec(enabled=True, context="none", fallback_context=None),
             citations=CitationSpec(openalex=False),
@@ -625,7 +616,6 @@ COMMAND_LINES: list[tuple[list[str], RunSpec]] = [
                 directory=None,
                 transcription_format="txt",
                 formats=("summary-docx",),
-                keep_working_files=False,
             ),
             summary=SummarySpec(enabled=False, context=None, fallback_context=None),
             citations=CitationSpec(openalex=True),
@@ -674,7 +664,6 @@ COMMAND_LINES: list[tuple[list[str], RunSpec]] = [
             "--service-tier",
             "priority",
             "--beside-input",
-            "--keep-working-files",
             "--context",
             "auto",
             "--fallback-context",
@@ -688,8 +677,7 @@ COMMAND_LINES: list[tuple[list[str], RunSpec]] = [
             output=OutputSpec(
                 directory=None,
                 transcription_format="md",
-                formats=("summary-md", "summary-docx", "sqlite"),
-                keep_working_files=True,
+                formats=("summary-md", "summary-docx"),
             ),
             summary=SummarySpec(
                 enabled=True, context=None, fallback_context="Prices, Wages"

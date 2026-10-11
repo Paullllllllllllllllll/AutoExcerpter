@@ -8,6 +8,7 @@ options:
 commands:
   COMMAND
     run       transcribe and summarize documents
+    render    render stored documents again without model calls
     ui        guided run in an interactive terminal
 
 Run 'autoexcerpter <command> --help' for the options of a command.

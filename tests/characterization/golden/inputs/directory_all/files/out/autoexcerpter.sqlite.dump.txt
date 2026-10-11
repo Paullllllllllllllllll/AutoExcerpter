@@ -238,6 +238,87 @@
 }
 ## notes
 ## outputs
+{
+  "doc_id": 1,
+  "format": "summary-docx",
+  "path": "alpha_summary.docx",
+  "rendered_at": "<datetime>+00:00",
+  "run_id": "<run-1>",
+  "sha256": "<sha256>",
+  "stale": 0
+}
+{
+  "doc_id": 1,
+  "format": "summary-md",
+  "path": "alpha_summary.md",
+  "rendered_at": "<datetime>+00:00",
+  "run_id": "<run-1>",
+  "sha256": "<sha256>",
+  "stale": 0
+}
+{
+  "doc_id": 1,
+  "format": "transcription-md",
+  "path": "alpha_transcription.md",
+  "rendered_at": "<datetime>+00:00",
+  "run_id": "<run-1>",
+  "sha256": "<sha256>",
+  "stale": 0
+}
+{
+  "doc_id": 2,
+  "format": "summary-docx",
+  "path": "beta_summary.docx",
+  "rendered_at": "<datetime>+00:00",
+  "run_id": "<run-1>",
+  "sha256": "<sha256>",
+  "stale": 0
+}
+{
+  "doc_id": 2,
+  "format": "summary-md",
+  "path": "beta_summary.md",
+  "rendered_at": "<datetime>+00:00",
+  "run_id": "<run-1>",
+  "sha256": "<sha256>",
+  "stale": 0
+}
+{
+  "doc_id": 2,
+  "format": "transcription-md",
+  "path": "beta_transcription.md",
+  "rendered_at": "<datetime>+00:00",
+  "run_id": "<run-1>",
+  "sha256": "<sha256>",
+  "stale": 0
+}
+{
+  "doc_id": 3,
+  "format": "summary-docx",
+  "path": "scans_summary.docx",
+  "rendered_at": "<datetime>+00:00",
+  "run_id": "<run-1>",
+  "sha256": "<sha256>",
+  "stale": 0
+}
+{
+  "doc_id": 3,
+  "format": "summary-md",
+  "path": "scans_summary.md",
+  "rendered_at": "<datetime>+00:00",
+  "run_id": "<run-1>",
+  "sha256": "<sha256>",
+  "stale": 0
+}
+{
+  "doc_id": 3,
+  "format": "transcription-md",
+  "path": "scans_transcription.md",
+  "rendered_at": "<datetime>+00:00",
+  "run_id": "<run-1>",
+  "sha256": "<sha256>",
+  "stale": 0
+}
 ## responses
 {
   "attempt": 1,
@@ -2103,13 +2184,8 @@
       "source": "flag",
       "value": [
         "summary-md",
-        "summary-docx",
-        "sqlite"
+        "summary-docx"
       ]
-    },
-    "output.keep_working_files": {
-      "source": "flag",
-      "value": false
     },
     "output.transcription_format": {
       "source": "default",

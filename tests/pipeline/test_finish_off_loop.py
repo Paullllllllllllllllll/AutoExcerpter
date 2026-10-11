@@ -22,8 +22,8 @@ import pytest
 import autoexcerpter.pipeline.managers as managers_module
 import autoexcerpter.run as core
 from autoexcerpter.common.images import PagePayload
+from autoexcerpter.output.paths import ItemPaths
 from autoexcerpter.pipeline.item import ItemProcessor
-from autoexcerpter.pipeline.paths import ItemPaths
 from autoexcerpter.pipeline.units import DocumentHandle
 from autoexcerpter.rendering.citations import (
     LookupOutcome,

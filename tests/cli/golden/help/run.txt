@@ -15,11 +15,8 @@ output:
   --beside-input        write outputs beside each input
   --transcription-format {md,txt}
                         transcription file format; default: md
-  --formats LIST        comma-separated output formats; from summary-md, summary-docx, sqlite;
-                        default: summary-md,summary-docx,sqlite
-  --keep-working-files, --no-keep-working-files
-                        keep the X_autoexcerpter/ working logs of an item completed under --force;
-                        runs without --force always keep them; default: off
+  --formats LIST        comma-separated output formats; from summary-md, summary-docx; default:
+                        summary-md,summary-docx
 
 summary:
   --summarize, --no-summarize

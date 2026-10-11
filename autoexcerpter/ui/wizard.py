@@ -108,12 +108,10 @@ TUNING_FIELDS: Final = (
 SAME_MODEL_FIELDS: Final = ("reasoning_effort", "service_tier", "response_format")
 RUN_FLAGS: Final = (
     "openalex",
-    "keep_working_files",
     "force",
     "retranscribe",
     "dry_run",
 )
-SUMMARY_FORMATS: Final = ("summary-md", "summary-docx")
 
 OTHER_MODEL: Final = "<other>"
 ENDPOINT_PREFIX: Final = "endpoint:"
@@ -373,7 +371,6 @@ def _ask_summary(ctx: StepContext) -> Nav:
 _FORMAT_TITLES = {
     "summary-md": "Summary as Markdown (X_summary.md)",
     "summary-docx": "Summary as Word (X_summary.docx)",
-    "sqlite": "SQLite database (autoexcerpter.sqlite)",
 }
 
 
@@ -388,31 +385,25 @@ def _ask_formats(ctx: StepContext) -> Nav:
         )
 
     def formats() -> Nav:
-        summarizing = bool(state.value("summarize"))
-        offered = [
-            Choice(name, _FORMAT_TITLES[name])
-            for name in OUTPUT_FORMATS
-            if summarizing or name not in SUMMARY_FORMATS
-        ]
+        if not state.value("summarize"):
+            return DONE
+        offered = [Choice(name, _FORMAT_TITLES[name]) for name in OUTPUT_FORMATS]
         current = tuple(state.value("formats") or ())
         while True:
             answer = ctx.prompter.checkbox(
-                "Output formats:",
+                "Summary formats:",
                 offered,
                 checked=current,
                 marker=state.marker("formats"),
             )
             if answer is BACK:
                 return BACK
-            if summarizing and not answer:
+            if not answer:
                 ctx.prompter.show(
-                    "  summaries need summary-md, summary-docx or sqlite; "
-                    "select at least one"
+                    "  summaries need summary-md or summary-docx; select at least one"
                 )
                 continue
-            shown = {choice.value for choice in offered}
-            hidden = [name for name in current if name not in shown]
-            state.set("formats", OPTIONS["formats"].convert([*hidden, *answer]))
+            state.set("formats", OPTIONS["formats"].convert(list(answer)))
             return DONE
 
     return StepContext.sequence([transcription_format, formats])
@@ -1075,7 +1066,6 @@ def _images_step(session: Session) -> Step:
 
 _RUN_FLAG_TITLES = {
     "openalex": "Look up citations in OpenAlex",
-    "keep_working_files": "Keep working files after a forced run",
     "force": "Reprocess items whose outputs exist (--force)",
     "retranscribe": "Transcribe again instead of reusing logged pages",
     "dry_run": "Dry run: show the plan, no API calls or writes",

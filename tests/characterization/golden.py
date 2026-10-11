@@ -268,6 +268,9 @@ def dump_sqlite(path: Path, norm: Normalizer) -> str:
     for table in tables:
         parts.append(f"## {table}\n")
         for row in read_rows(path, table, order_by=_TABLE_KEYS.get(table)):
+            if table == "outputs" and row.get("sha256") is not None:
+                # The files hold run dates and temporary paths.
+                row = {**row, "sha256": "<sha256>"}
             parts.append(
                 _dumps(
                     {

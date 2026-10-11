@@ -19,9 +19,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         namespace = parser.parse_args(args)
     except UsageError as error:
+        if args[0] == "render":
+            from autoexcerpter.cli import store
+
+            return store.report_usage_error(error, args)
         return command.report_usage_error(error, args)
     if namespace.command == "run":
         return command.execute(namespace)
+    if namespace.command == "render":
+        from autoexcerpter.cli import store
+
+        return store.execute_render(namespace)
     if namespace.command == "ui":
         from autoexcerpter.ui import app
 

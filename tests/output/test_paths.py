@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-import autoexcerpter.pipeline.paths as paths_module
-from autoexcerpter.pipeline.paths import (
+import autoexcerpter.output.paths as paths_module
+from autoexcerpter.output.paths import (
     HASH_LENGTH,
     WINDOWS_MAX_PATH,
     ItemPaths,

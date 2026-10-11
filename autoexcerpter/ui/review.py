@@ -233,8 +233,6 @@ def _run_line(spec: RunSpec, mark: _Mark) -> Line:
     parts = [mark("run.force", "force" if run.force else "resume")]
     if run.retranscribe:
         parts.append(mark("run.retranscribe", "retranscribe"))
-    if spec.output.keep_working_files:
-        parts.append(mark("output.keep_working_files", "keep working files"))
     if spec.summary.enabled:
         openalex = "on" if spec.citations.openalex else "off"
         parts.append(mark("citations.openalex", f"OpenAlex {openalex}"))

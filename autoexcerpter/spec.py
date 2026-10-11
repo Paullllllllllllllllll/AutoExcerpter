@@ -42,6 +42,8 @@ __all__ = [
     "OPTIONS",
     "OUTPUT_FORMATS",
     "PHASES",
+    "RENDER_FORMATS",
+    "RENDER_OPTIONS",
     "PROVIDERS",
     "REASONING_EFFORTS",
     "RESPONSE_FORMATS",
@@ -54,6 +56,7 @@ __all__ = [
     "InputSpec",
     "ModelSpec",
     "OutputSpec",
+    "RenderSpec",
     "Resolution",
     "RunControl",
     "RunSpec",
@@ -63,6 +66,7 @@ __all__ = [
     "model_suggestions",
     "parse",
     "recommended_images",
+    "resolve_render",
     "resolve_spec",
     "to_argv",
 ]
@@ -74,7 +78,8 @@ RESPONSE_FORMATS = ("schema", "json", "text")
 IMAGE_DETAILS = ("low", "high", "auto", "original")
 IMAGE_FORMATS = ("jpeg", "png")
 TRANSCRIPTION_FORMATS = ("md", "txt")
-OUTPUT_FORMATS = ("summary-md", "summary-docx", "sqlite")
+OUTPUT_FORMATS = ("summary-md", "summary-docx")
+RENDER_FORMATS = ("transcription-md", "transcription-txt", "summary-md", "summary-docx")
 PHASES = ("transcription", "summary")
 
 DEFAULT_MODEL = "gpt-5.6-luna"
@@ -116,12 +121,15 @@ class InputSpec:
 
 @dataclass(frozen=True)
 class OutputSpec:
-    """Where and what to write; ``directory`` None means beside the input."""
+    """Where and what to write; ``directory`` None means beside the input.
+
+    ``formats`` are the summary files; the transcription file and the
+    database are always written.
+    """
 
     directory: Path | None
     transcription_format: str
     formats: tuple[str, ...]
-    keep_working_files: bool
 
 
 @dataclass(frozen=True)
@@ -476,18 +484,6 @@ def _build_table() -> OptionTable:
             target="output.formats",
         ),
         Option(
-            "keep_working_files",
-            "--keep-working-files",
-            (
-                "keep the X_autoexcerpter/ working logs of an item completed "
-                "under --force; runs without --force always keep them"
-            ),
-            group="output",
-            kind=Kind.SWITCH,
-            default=False,
-            target="output.keep_working_files",
-        ),
-        Option(
             "summarize",
             "--summarize",
             "summarize after transcribing",
@@ -656,6 +652,78 @@ def _build_table() -> OptionTable:
 
 
 OPTIONS = _build_table()
+
+
+def _render_flag(name: str, help: str) -> Option:
+    return Option(
+        name,
+        "--" + name.replace("_", "-"),
+        help,
+        group="run",
+        kind=Kind.FLAG,
+        default=False,
+        target=name,
+        settable=False,
+    )
+
+
+RENDER_OPTIONS = OptionTable(
+    [
+        Option(
+            "input",
+            "--input",
+            "output folder or autoexcerpter.sqlite to render",
+            group="input",
+            type=Path,
+            metavar="PATH",
+            default=Path("."),
+            target="input",
+            settable=False,
+        ),
+        Option(
+            "formats",
+            "--formats",
+            "comma-separated formats to render",
+            group="output",
+            kind=Kind.LIST,
+            choices=RENDER_FORMATS,
+            metavar="LIST",
+            default_help="the formats each document was rendered in",
+            target="formats",
+            settable=False,
+        ),
+        _render_flag("force", "replace files changed outside the tool"),
+        _render_flag("dry_run", "print what would be written without writing"),
+        _render_flag("json", "print one JSON summary line on stdout"),
+    ],
+    group_titles={"input": "input", "output": "output", "run": "run control"},
+)
+
+
+@dataclass(frozen=True)
+class RenderSpec:
+    """The options of ``render``; ``formats`` None renders the registered ones."""
+
+    input: Path
+    formats: tuple[str, ...] | None = None
+    force: bool = False
+    dry_run: bool = False
+    json: bool = False
+
+
+def resolve_render(flags: Mapping[str, Any]) -> RenderSpec:
+    """Resolve render options; no option takes a settings default.
+
+    Raises:
+        SpecError: An unknown option or an empty ``--formats``.
+    """
+    unknown = set(flags) - set(RENDER_OPTIONS.names)
+    if unknown:
+        raise SpecError(f"unknown options: {', '.join(sorted(unknown))}")
+    values, _ = RENDER_OPTIONS.by_targets(RENDER_OPTIONS.resolve(flags, None))
+    if values["formats"] == ():
+        raise SpecError("--formats needs at least one format")
+    return RenderSpec(**values)
 
 
 @dataclass(frozen=True)

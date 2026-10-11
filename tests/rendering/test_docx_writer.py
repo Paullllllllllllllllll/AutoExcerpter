@@ -1,25 +1,28 @@
-"""The DOCX summary writer in rendering/docx.py.
+"""The DOCX summary built by rendering/docx.py.
 
 Covers whole documents written to disk and read back (styles, page geometry,
-footer, headings, bullets, references), malformed input and the atomic save,
-hyperlinks, formatted text with LaTeX and the Markdown emphasis parser used for
-bullets and citations.
+footer, headings, bullets, references), malformed input, reproducible
+archives, hyperlinks, formatted text with LaTeX and the Markdown emphasis
+parser used for bullets and citations.
 """
 
 from __future__ import annotations
 
+import io
+import zipfile
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import pytest
 from docx import Document
 from docx.oxml.ns import qn
 from docx.shared import Pt
 
 from autoexcerpter.rendering.docx import (
+    ZIP_TIMESTAMP,
     add_formatted_text_to_paragraph,
     add_hyperlink,
-    create_docx_summary,
+    docx_summary,
     parse_markdown_emphasis,
     strip_markdown_emphasis,
 )
@@ -27,6 +30,19 @@ from autoexcerpter.rendering.summary import build_render_context
 
 _HYPERLINK = qn("w:hyperlink")
 _TEXT = qn("w:t")
+GENERATED = datetime(2026, 10, 11, 9, 30, tzinfo=UTC)
+
+
+def _write_docx(
+    results: list[dict[str, Any]],
+    output_path: Path,
+    name: str,
+    manager: Any = None,
+    data: Any = None,
+) -> None:
+    """Write the DOCX summary of *results* to *output_path*."""
+    archive = docx_summary(results, name, manager, data, generated=GENERATED)
+    output_path.write_bytes(archive)
 
 
 def _content_page(
@@ -60,7 +76,7 @@ class TestCreateDocxSummarySmoke:
             _content_page(12, ["First insight.", "Second insight with $x + y$."])
         ]
 
-        create_docx_summary(summary_results, output_path, "Sample Document")
+        _write_docx(summary_results, output_path, "Sample Document")
 
         doc = Document(str(output_path))
 
@@ -111,7 +127,7 @@ class TestCreateDocxSummarySmoke:
             _content_page(50, [], page_types=["bibliography"]),
         ]
 
-        create_docx_summary(summary_results, output_path, "Test")
+        _write_docx(summary_results, output_path, "Test")
 
         doc = Document(str(output_path))
         style_by_text = {
@@ -156,7 +172,7 @@ class TestCreateDocxSummarySmoke:
         ]
         manager, data = build_render_context(summary_results, openalex_enabled=False)
 
-        create_docx_summary(summary_results, output_path, "Doc", manager, data)
+        _write_docx(summary_results, output_path, "Doc", manager, data)
 
         doc = Document(str(output_path))
         ref_paragraph = next(
@@ -191,7 +207,7 @@ class TestCreateDocxSummarySmoke:
         citation.metadata = {"publication_year": 2020}
         output_path = tmp_path / "summary.docx"
 
-        create_docx_summary(results, output_path, "Doc", manager, data)
+        _write_docx(results, output_path, "Doc", manager, data)
 
         doc = Document(str(output_path))
         ref_paragraph = next(
@@ -206,13 +222,13 @@ class TestCreateDocxSummarySmoke:
 
 
 class TestDocxWriterRobustness:
-    """Malformed results render, and a save never leaves a temp file behind."""
+    """Malformed results render."""
 
     def test_non_string_bullets_are_skipped(self, tmp_path: Path) -> None:
         output_path = tmp_path / "summary.docx"
         bullets: Any = [None, 123, "real bullet"]
 
-        create_docx_summary([_content_page(1, bullets)], output_path, "Doc")
+        _write_docx([_content_page(1, bullets)], output_path, "Doc")
 
         texts = [p.text for p in Document(str(output_path)).paragraphs]
         assert any("real bullet" in t for t in texts)
@@ -224,35 +240,45 @@ class TestDocxWriterRobustness:
         result = _content_page(7, ["A bullet"])
         result["page_information"]["page_number_integer"] = "7\x0b"
 
-        create_docx_summary([result], output_path, "Doc")
+        _write_docx([result], output_path, "Doc")
 
         texts = [p.text for p in Document(str(output_path)).paragraphs]
         assert "Page 7" in texts
         assert not any("\x0b" in t for t in texts)
 
-    def test_successful_save_leaves_no_temp_file(self, tmp_path: Path) -> None:
-        output_path = tmp_path / "summary.docx"
 
-        create_docx_summary([_content_page(1, ["A bullet"])], output_path, "Doc")
+class TestReproducibleArchive:
+    """The same summaries and time give the same bytes."""
 
-        assert output_path.stat().st_size > 0
-        assert not output_path.with_name(output_path.name + ".tmp").exists()
+    def test_two_renders_are_byte_identical(self) -> None:
+        results = [_content_page(1, ["A bullet with $x^2$."])]
 
-    def test_failed_save_removes_temp_file(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """A non-OSError during the final replace still removes the temp file."""
+        first = docx_summary(results, "Doc", generated=GENERATED)
+        second = docx_summary(results, "Doc", generated=GENERATED)
 
-        def _boom(_src: Any, _dst: Any) -> None:
-            raise ValueError("not an OSError")
+        assert first == second
 
-        output_path = tmp_path / "summary.docx"
-        monkeypatch.setattr("autoexcerpter.rendering.docx.os.replace", _boom)
+    def test_members_and_core_properties_carry_fixed_times(self) -> None:
+        archive = docx_summary(
+            [_content_page(1, ["A bullet"])], "Doc", generated=GENERATED
+        )
 
-        with pytest.raises(ValueError, match="not an OSError"):
-            create_docx_summary([_content_page(1, ["A bullet"])], output_path, "Doc")
+        with zipfile.ZipFile(io.BytesIO(archive)) as members:
+            assert {info.date_time for info in members.infolist()} == {ZIP_TIMESTAMP}
+        properties = Document(io.BytesIO(archive)).core_properties
+        moment = GENERATED.replace(tzinfo=None)
+        assert properties.created is not None
+        assert properties.modified is not None
+        assert properties.created.replace(tzinfo=None) == moment
+        assert properties.modified.replace(tzinfo=None) == moment
 
-        assert [p.name for p in tmp_path.iterdir() if p.suffix == ".tmp"] == []
+    def test_the_metadata_line_shows_the_given_time(self) -> None:
+        archive = docx_summary(
+            [_content_page(1, ["A bullet"])], "Doc", generated=GENERATED
+        )
+
+        texts = [p.text for p in Document(io.BytesIO(archive)).paragraphs]
+        assert any(text.startswith("Processed 2026-10-11 09:30 |") for text in texts)
 
 
 # ============================================================================

@@ -1,17 +1,12 @@
-"""Transcription text file output for AutoExcerpter."""
+"""The transcription file of an item: a metadata header and the pages in order."""
 
 from __future__ import annotations
 
-import contextlib
-import logging
-import os
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from autoexcerpter.rendering.page_tags import printed_page_numbers
-
-logger = logging.getLogger(__name__)
 
 
 def page_break_marker(
@@ -31,81 +26,44 @@ def page_break_marker(
     return f'<page_break {attribute}="{index + 1}"/>\n'
 
 
-def write_transcription_to_text(
+def transcription_text(
     transcription_results: list[dict[str, Any]],
-    output_path: Path,
     document_name: str,
     item_type: str,
-    total_elapsed_time: float,
-    source_path: Path,
+    source_path: Path | str,
+    processed: datetime,
     metadata_notes: list[str] | None = None,
-) -> bool:
-    """Persist transcription output as a text file alongside basic metadata.
+) -> str:
+    """Return the transcription file: the header, then the pages in order.
 
-    Args:
-        metadata_notes: Optional extra provenance lines recorded in the header
-            (e.g. a summary-only-resume model mismatch).
+    *processed* is the time the header records; *metadata_notes* are extra
+    provenance lines of the header (a model change on resume, for example).
+    The text ends with exactly one newline.
     """
-    elapsed_str = str(timedelta(seconds=int(total_elapsed_time)))
     successes = sum(1 for result in transcription_results if "error" not in result)
     failures = len(transcription_results) - successes
-
-    # Write to a sibling temp file and atomically replace the target, so a crash
-    # mid-write never leaves a truncated .txt that resume trusts as COMPLETE
-    # (classification keys on exists() and st_size > 0).
-    tmp_path = output_path.with_name(output_path.name + ".tmp")
-    try:
-        # newline="\n" disables platform newline translation: a transcription
-        # containing a literal "\r\n" would otherwise be written as "\r\r\n"
-        # on Windows.
-        with tmp_path.open("w", encoding="utf-8", newline="\n") as file_handle:
-            file_handle.write(f"# Transcription of: {document_name}\n")
-            file_handle.write(f"# Source Path: {source_path}\n")
-            file_handle.write(f"# Type: {item_type}\n")
-            file_handle.write(
-                f"# Processed on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-            )
-            file_handle.write(
-                f"# Total images processed: {len(transcription_results)}\n"
-            )
-            file_handle.write(f"# Successfully transcribed: {successes}\n")
-            file_handle.write(f"# Failed items: {failures}\n")
-            for note in metadata_notes or []:
-                file_handle.write(f"# Note: {note}\n")
-            file_handle.write(
-                f"# Total processing time for this item: {elapsed_str}\n\n"
-            )
-
-            for index, result in enumerate(transcription_results):
-                transcription = result.get(
-                    "transcription", "[ERROR] Transcription data missing"
-                )
-                # A reused or corrupt log entry can carry a None / non-string
-                # transcription; coerce it so file.write() cannot raise TypeError
-                # (which would escape past the tmp-file cleanup below).
-                if not isinstance(transcription, str):
-                    transcription = str(transcription)
-                # A page without a printed number gets a positional marker so
-                # it stays locatable; numbered pages are written unchanged.
-                if not printed_page_numbers(transcription):
-                    file_handle.write(page_break_marker(result, item_type, index))
-                file_handle.write(transcription)
-                if index < len(transcription_results) - 1:
-                    file_handle.write("\n")
-
-        os.replace(tmp_path, output_path)
-        logger.info("Transcription text file saved: %s", output_path)
-        return True
-    except OSError as exc:
-        with contextlib.suppress(OSError):
-            tmp_path.unlink()
-        logger.error(
-            "Error writing transcription to text file %s: %s", output_path, exc
+    parts = [
+        f"# Transcription of: {document_name}\n",
+        f"# Source Path: {source_path}\n",
+        f"# Type: {item_type}\n",
+        f"# Processed on: {processed.strftime('%Y-%m-%d %H:%M:%S')}\n",
+        f"# Total images processed: {len(transcription_results)}\n",
+        f"# Successfully transcribed: {successes}\n",
+        f"# Failed items: {failures}\n",
+        *(f"# Note: {note}\n" for note in metadata_notes or []),
+        "\n",
+    ]
+    for index, result in enumerate(transcription_results):
+        transcription = result.get(
+            "transcription", "[ERROR] Transcription data missing"
         )
-        return False
-    except Exception:
-        # Any non-OSError failure (e.g. a corrupt log entry) must not orphan the
-        # sibling .txt.tmp file; clean it up before re-raising.
-        with contextlib.suppress(OSError):
-            tmp_path.unlink()
-        raise
+        if not isinstance(transcription, str):
+            transcription = str(transcription)
+        # A page without a printed number gets a positional marker so it
+        # stays locatable; numbered pages are written unchanged.
+        if not printed_page_numbers(transcription):
+            parts.append(page_break_marker(result, item_type, index))
+        parts.append(transcription)
+        if index < len(transcription_results) - 1:
+            parts.append("\n")
+    return "".join(parts).rstrip("\n") + "\n"

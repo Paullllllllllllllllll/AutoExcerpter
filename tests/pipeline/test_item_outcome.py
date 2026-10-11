@@ -4,8 +4,8 @@ A page-level failure (a transcription or summary API error after retries) or
 a unit that could not be stored fails the item, so the run counts it failed
 and exits non-zero. ``ItemProcessor.written_outputs`` lists every file
 written, which the ``--json`` run summary reports. Pending pages withhold the
-final outputs, and the DOCX and Markdown writers fail independently but share
-one set of stored citations.
+final outputs, and the DOCX and Markdown renderers fail independently but
+render the same stored citations.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+import autoexcerpter.output.render as render_module
 import autoexcerpter.pipeline.outputs as outputs_module
 from autoexcerpter.common.images import PagePayload
 from autoexcerpter.pipeline.item import ItemProcessor
@@ -91,13 +92,17 @@ def pipeline_env(mock_image_processing: dict[str, Any]) -> MagicMock:
 
 @pytest.fixture
 def summary_env(monkeypatch: pytest.MonkeyPatch, pipeline_env: MagicMock) -> MagicMock:
-    """Return a mock summary manager and mock the summary-file writers
-    (no docx/md is actually rendered)."""
+    """Return a mock summary manager; no citation is enriched."""
     mock_summary_manager = summarizer(_ok_summary)
     monkeypatch.setattr(outputs_module, "enrich_if_enabled", lambda cm: None)
-    monkeypatch.setattr(outputs_module, "create_docx_summary", MagicMock())
-    monkeypatch.setattr(outputs_module, "create_markdown_summary", MagicMock())
     return mock_summary_manager
+
+
+def _failing(message: str) -> Callable[[sqlite3.Connection, int], str]:
+    def renderer(connection: sqlite3.Connection, doc_id: int) -> str:
+        raise RuntimeError(message)
+
+    return renderer
 
 
 def _process(
@@ -210,29 +215,25 @@ class TestItemFailurePropagation:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """A failed summary-file render means the item is not complete."""
-        monkeypatch.setattr(
-            outputs_module,
-            "create_docx_summary",
-            MagicMock(side_effect=RuntimeError("docx exploded")),
+        monkeypatch.setitem(
+            render_module.RENDERERS, "summary-docx", _failing("docx exploded")
         )
         _, success = _process(
             make_pdf("RenderFail.pdf", 1), tmp_path / "out", pipeline_env, summary_env
         )
         assert success is False
 
-    def test_failed_txt_write_returns_false_and_withholds_output(
+    def test_failed_transcription_render_returns_false_and_withholds_output(
         self,
         make_pdf: Callable[..., Path],
         tmp_path: Path,
         pipeline_env: MagicMock,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """A failed final .txt write (the writer returns False) fails the item
-        and leaves the missing file out of written_outputs."""
-        monkeypatch.setattr(
-            outputs_module,
-            "write_transcription_to_text",
-            lambda *a, **k: False,
+        """A transcription file that could not be rendered fails the item and
+        stays out of written_outputs."""
+        monkeypatch.setitem(
+            render_module.RENDERERS, "transcription-md", _failing("txt exploded")
         )
         processor, success = _process(
             make_pdf("TxtFail.pdf", 1), tmp_path / "out", pipeline_env
@@ -347,24 +348,20 @@ class TestIndependentSummaryWriters:
         summary_env: MagicMock,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """A DOCX writer exception must not prevent the Markdown writer from
-        running; the item still fails because not all outputs were produced."""
-        md_writer = MagicMock()
-        monkeypatch.setattr(
-            outputs_module,
-            "create_docx_summary",
-            MagicMock(side_effect=RuntimeError("docx exploded")),
+        """A DOCX renderer exception must not prevent the Markdown file; the
+        item still fails because not all outputs were produced."""
+        monkeypatch.setitem(
+            render_module.RENDERERS, "summary-docx", _failing("docx exploded")
         )
-        monkeypatch.setattr(outputs_module, "create_markdown_summary", md_writer)
 
         processor, success = _process(
             make_pdf("Split.pdf", 1), tmp_path / "out", pipeline_env, summary_env
         )
         assert success is False
-        assert md_writer.called
         suffixes = {p.suffix for p in processor.written_outputs}
         assert ".docx" not in suffixes
         assert ".md" in suffixes
+        assert processor.paths.summary_md.is_file()
 
     def test_both_writers_render_the_same_stored_citations(
         self,
@@ -373,13 +370,14 @@ class TestIndependentSummaryWriters:
         pipeline_env: MagicMock,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """The DOCX and Markdown writers receive the citations the store holds."""
+        """The DOCX and Markdown renderers receive the citations the store holds."""
         captured: dict[str, Any] = {}
         citation = "Smith, J. (2020). A Title. Journal, 1, 1-2."
 
-        def spy(kind: str) -> Callable[..., None]:
-            def writer(*_args: Any, citation_manager: Any = None, **_: Any) -> None:
-                captured[kind] = citation_manager
+        def spy(kind: str, empty: str | bytes) -> Callable[..., str | bytes]:
+            def writer(*args: Any, **_: Any) -> str | bytes:
+                captured[kind] = args[2]
+                return empty
 
             return writer
 
@@ -388,8 +386,8 @@ class TestIndependentSummaryWriters:
             summary["references"] = [{"citation": citation, "is_partial": False}]
             return summary
 
-        monkeypatch.setattr(outputs_module, "create_docx_summary", spy("docx"))
-        monkeypatch.setattr(outputs_module, "create_markdown_summary", spy("md"))
+        monkeypatch.setattr(render_module, "docx_summary", spy("docx", b""))
+        monkeypatch.setattr(render_module, "markdown_summary", spy("md", ""))
 
         _process(
             make_pdf("Cite.pdf", num_pages=1),
@@ -399,9 +397,11 @@ class TestIndependentSummaryWriters:
             openalex_enabled=False,
         )
 
-        assert captured["docx"] is captured["md"]
-        pairs = captured["docx"].get_citations_with_pages()
-        assert [(pair[0].raw_text, pair[1]) for pair in pairs] == [(citation, "p. 1")]
+        for kind in ("docx", "md"):
+            pairs = captured[kind].get_citations_with_pages()
+            assert [(pair[0].raw_text, pair[1]) for pair in pairs] == [
+                (citation, "p. 1")
+            ]
 
 
 class TestLastRunReport:

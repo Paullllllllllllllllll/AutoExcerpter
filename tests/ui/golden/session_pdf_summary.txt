@@ -39,12 +39,11 @@ AutoExcerpter | new run   step 4 of 9
    Plain text (.txt)
    Back
   answer: Markdown (.md)
-? Output formats:
+? Summary formats:
    [x] Summary as Markdown (X_summary.md)
    [x] Summary as Word (X_summary.docx)
-   [x] SQLite database (autoexcerpter.sqlite)
    [ ] Back
-  answer: Summary as Markdown (X_summary.md), Summary as Word (X_summary.docx), SQLite database (autoexcerpter.sqlite)
+  answer: Summary as Markdown (X_summary.md), Summary as Word (X_summary.docx)
 
 AutoExcerpter | new run   step 5 of 9
 ? Summary context:
@@ -113,7 +112,6 @@ AutoExcerpter | new run   step 8 of 9
 AutoExcerpter | new run   step 9 of 9
 ? Run options:
    [x] Look up citations in OpenAlex
-   [ ] Keep working files after a forced run
    [ ] Reprocess items whose outputs exist (--force)
    [ ] Transcribe again instead of reusing logged pages
    [ ] Dry run: show the plan, no API calls or writes
@@ -123,7 +121,7 @@ AutoExcerpter | new run   step 9 of 9
 
 Review                                                                  (s) = from settings defaults
   input                 <tmp>/docs/doc.pdf  (1 PDF, 3 pages)
-  output                <tmp>/out | transcription md | formats summary-md, summary-docx, sqlite
+  output                <tmp>/out | transcription md | formats summary-md, summary-docx
   summary               on | context: bread prices, real wages
   transcription model   openai / gpt-5.6-terra (s) | reasoning high | tier priority (s) | response automatic (schema)
   summary model         openai / gpt-5.6-terra (s) | reasoning high | tier priority (s) | response automatic (schema)

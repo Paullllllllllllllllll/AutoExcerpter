@@ -28,8 +28,8 @@ import pytest
 import autoexcerpter.pipeline.managers as managers_module
 import autoexcerpter.run as core
 from autoexcerpter.common.sqlite import read_rows
+from autoexcerpter.output.paths import ItemPaths
 from autoexcerpter.output.store import DATABASE_NAME
-from autoexcerpter.pipeline.paths import ItemPaths
 from tests.conftest import make_settings, make_spec
 from tests.recording_events import RecordingEvents
 
@@ -303,7 +303,7 @@ def test_a_lease_holder_outliving_its_expiry_stores_no_later_unit(
 
     _, result, events = offline.run(summarize=False)
 
-    assert offline.transcribed == [0, 1]
+    assert sorted(offline.transcribed) == [0, 1]
     assert result.failed == 1
     assert result.items[0].outputs == ()
     assert not ItemPaths.for_item("doc", offline.out).transcription.exists()

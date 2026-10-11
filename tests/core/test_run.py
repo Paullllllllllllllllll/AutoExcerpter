@@ -20,9 +20,9 @@ from autoexcerpter.common.sqlite import read_rows
 from autoexcerpter.common.store import PlannedUnit
 from autoexcerpter.events import ItemFinished, ItemStarted, PageDone
 from autoexcerpter.llm import CallEnv
+from autoexcerpter.output.paths import ItemPaths
 from autoexcerpter.output.store import DATABASE_NAME, open_store, plan_pages
 from autoexcerpter.pipeline.job import job_from_spec
-from autoexcerpter.pipeline.paths import ItemPaths
 from autoexcerpter.pipeline.units import DocumentHandle
 from autoexcerpter.rendering.citations import OpenAlexClient
 from autoexcerpter.settings import resolve as resolve_settings

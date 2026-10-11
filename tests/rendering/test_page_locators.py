@@ -12,7 +12,9 @@
 
 from __future__ import annotations
 
+import io
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -20,34 +22,30 @@ from unittest.mock import patch
 import pytest
 from docx import Document
 
-from autoexcerpter.pipeline.page_numbering import PageNumberProcessor
 from autoexcerpter.rendering.citations import CitationManager
-from autoexcerpter.rendering.docx import create_docx_summary
+from autoexcerpter.rendering.docx import docx_summary
 from autoexcerpter.rendering.locators import format_page_range, int_to_roman
-from autoexcerpter.rendering.markdown import create_markdown_summary
+from autoexcerpter.rendering.markdown import markdown_summary
+from autoexcerpter.rendering.page_numbering import PageNumberProcessor
 from autoexcerpter.rendering.page_tags import printed_page_numbers
 from autoexcerpter.rendering.summary import build_render_context, format_page_heading
-from autoexcerpter.rendering.transcription import write_transcription_to_text
+from autoexcerpter.rendering.transcription import transcription_text
 
 _REF = {
     "citation": "Smith, J. (1990). Atlantic Trade Networks. Oxford University Press.",
     "is_partial": False,
 }
-
-
-def _body(path: Path) -> str:
-    """Return the .txt content after the metadata header."""
-    return path.read_text(encoding="utf-8").split("\n\n", 1)[1]
+GENERATED = datetime(2026, 10, 11, 12, 0, tzinfo=UTC)
 
 
 def _write_txt(
     tmp_path: Path, results: list[dict[str, Any]], item_type: str = "PDF"
 ) -> str:
-    out = tmp_path / "doc.txt"
-    assert write_transcription_to_text(
-        results, out, "doc", item_type, 1.0, tmp_path / "doc.pdf"
+    """Return the .txt content after the metadata header, without its newline."""
+    text = transcription_text(
+        results, "doc", item_type, tmp_path / "doc.pdf", GENERATED
     )
-    return _body(out)
+    return text.split("\n\n", 1)[1].removesuffix("\n")
 
 
 def _summary(
@@ -447,27 +445,24 @@ class TestBibliographyOnlyPage:
         loaded: list[dict[str, Any]] = json.loads(json.dumps(results))
         return loaded
 
-    def test_markdown_and_docx(self, tmp_path: Path) -> None:
+    def test_markdown_and_docx(self) -> None:
         results = self._results()
         manager, data = build_render_context(results)
         assert [item.heading_text for item in data.page_render_items] == ["Page 20"]
 
-        md_path = tmp_path / "doc.md"
-        create_markdown_summary(
-            results, md_path, "doc", citation_manager=manager, data=data
+        md = markdown_summary(
+            results, "doc", citation_manager=manager, data=data, generated=GENERATED
         )
-        md = md_path.read_text(encoding="utf-8")
         assert "### Page 21" not in md
         assert "### Page 20" in md
         assert "- **Bibliography**: p. 21" in md
         assert "Atlantic Trade Networks" in md
         assert "*(p. 21)*" in md
 
-        docx_path = tmp_path / "doc.docx"
-        create_docx_summary(
-            results, docx_path, "doc", citation_manager=manager, data=data
+        archive = docx_summary(
+            results, "doc", citation_manager=manager, data=data, generated=GENERATED
         )
-        texts = [p.text for p in Document(str(docx_path)).paragraphs]
+        texts = [p.text for p in Document(io.BytesIO(archive)).paragraphs]
         assert "Page 20" in texts
         assert "Page 21" not in texts
         assert any("Atlantic Trade Networks" in t and "(p. 21)" in t for t in texts)

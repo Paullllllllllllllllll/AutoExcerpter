@@ -15,7 +15,7 @@ from typing import Any, Literal
 import pytest
 import yaml
 
-from autoexcerpter.pipeline.paths import ItemPaths
+from autoexcerpter.output.paths import ItemPaths
 from tests.characterization.fakes import (
     CUSTOM_KEY_ENV,
     DUMMY_KEYS,
@@ -185,7 +185,6 @@ def run_tool(
     summarize: bool = True,
     docx: bool = True,
     markdown: bool = True,
-    keep_working_files: bool = False,
     context: str | None = None,
     openalex: bool = False,
     transcription_provider: str = "openai",
@@ -244,9 +243,7 @@ def run_tool(
         "--settings",
         str(settings_path),
         "--summarize" if summarize else "--no-summarize",
-        "--keep-working-files" if keep_working_files else "--no-keep-working-files",
-        "--formats",
-        ",".join([*formats, "sqlite"]),
+        *(["--formats", ",".join(formats)] if formats else []),
         "--openalex" if openalex else "--no-openalex",
         *_phase_args(
             "transcription",

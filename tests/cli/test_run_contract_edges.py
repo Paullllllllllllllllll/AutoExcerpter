@@ -33,6 +33,7 @@ from autoexcerpter.common.structured import StructuredRequest
 from autoexcerpter.common.testing import FakeRequest
 from autoexcerpter.common.usage import Usage
 from autoexcerpter.llm import ModelCaller
+from autoexcerpter.output.paths import ItemPaths
 from autoexcerpter.output.store import (
     DATABASE_NAME,
     KIND_TRANSCRIPTION,
@@ -41,7 +42,6 @@ from autoexcerpter.output.store import (
 )
 from autoexcerpter.pipeline.item import input_sha256
 from autoexcerpter.pipeline.pages import PageRunner
-from autoexcerpter.pipeline.paths import ItemPaths
 from autoexcerpter.pipeline.progress import PageProgress
 from autoexcerpter.pipeline.types import ItemSpec
 from autoexcerpter.settings import Settings
@@ -302,7 +302,7 @@ def pipeline_env(
 @pytest.fixture
 def summary_env(monkeypatch: pytest.MonkeyPatch, pipeline_env: MagicMock) -> MagicMock:
     """Enable summarization on top of pipeline_env with a mocked manager
-    and mocked summary-file writers (no docx/md is actually rendered)."""
+    and no citations."""
     mock_summary_manager = MagicMock()
     mock_summary_manager.generate_summary = AsyncMock(side_effect=_ok_summary)
     monkeypatch.setattr(
@@ -316,8 +316,6 @@ def summary_env(monkeypatch: pytest.MonkeyPatch, pipeline_env: MagicMock) -> Mag
         lambda *a, **k: (MagicMock(), MagicMock()),
     )
     monkeypatch.setattr(outputs_module, "enrich_if_enabled", lambda cm: None)
-    monkeypatch.setattr(outputs_module, "create_docx_summary", MagicMock())
-    monkeypatch.setattr(outputs_module, "create_markdown_summary", MagicMock())
     return mock_summary_manager
 
 

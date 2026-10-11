@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 import shutil
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -20,10 +21,10 @@ import docx
 
 from autoexcerpter.common.testing import WriteGuard
 from autoexcerpter.rendering.citations import CitationManager
-from autoexcerpter.rendering.docx import create_docx_summary
-from autoexcerpter.rendering.markdown import create_markdown_summary
+from autoexcerpter.rendering.docx import docx_summary
+from autoexcerpter.rendering.markdown import markdown_summary
 from autoexcerpter.rendering.summary import build_render_context
-from autoexcerpter.rendering.transcription import write_transcription_to_text
+from autoexcerpter.rendering.transcription import transcription_text
 from tests.characterization.golden import (
     UPDATE_ENV,
     Normalizer,
@@ -33,6 +34,7 @@ from tests.characterization.golden import (
 
 GOLDEN = Path(__file__).resolve().parent / "golden" / "readback"
 NAME = "rich"
+GENERATED = datetime(2026, 10, 11, 9, 30, tzinfo=UTC)
 
 _W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 _M = "{http://schemas.openxmlformats.org/officeDocument/2006/math}"
@@ -259,11 +261,19 @@ def _render(folder: Path) -> dict[str, str]:
     markdown = folder / f"{NAME}_summary.md"
     document = folder / f"{NAME}_summary.docx"
 
-    assert write_transcription_to_text(
-        TRANSCRIPTIONS, transcription, NAME, "PDF", 125.0, folder / "rich.pdf"
+    transcription.write_text(
+        transcription_text(TRANSCRIPTIONS, NAME, "PDF", folder / "rich.pdf", GENERATED),
+        encoding="utf-8",
+        newline="",
     )
-    create_markdown_summary(SUMMARIES, markdown, NAME, manager, data)
-    create_docx_summary(SUMMARIES, document, NAME, manager, data)
+    markdown.write_text(
+        markdown_summary(SUMMARIES, NAME, manager, data, generated=GENERATED),
+        encoding="utf-8",
+        newline="",
+    )
+    document.write_bytes(
+        docx_summary(SUMMARIES, NAME, manager, data, generated=GENERATED)
+    )
 
     return {
         "transcription.txt": norm.text(transcription.read_text(encoding="utf-8")),

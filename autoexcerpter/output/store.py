@@ -125,6 +125,7 @@ __all__ = [
     "DATABASE_NAME",
     "KIND_SUMMARY",
     "KIND_TRANSCRIPTION",
+    "MODEL_NOTE_PREFIX",
     "TOOL",
     "UNIT_KINDS",
     "VIEWS",
@@ -299,9 +300,10 @@ _COMPONENTS: Final = (COMPONENT,)
 
 # Spec fields that do not shape the outputs' content.
 _UNFINGERPRINTED_PREFIXES: Final = ("input.", "run.")
-_UNFINGERPRINTED: Final = frozenset(
-    {"output.directory", "output.formats", "output.keep_working_files"}
-)
+_UNFINGERPRINTED: Final = frozenset({"output.directory", "output.formats"})
+
+MODEL_NOTE_PREFIX: Final = "Resume with another model:"
+"""The start of the note a resume with another model records."""
 
 
 def tool_version() -> str:
@@ -806,7 +808,7 @@ def _model_note(
         )
     if not changes:
         return None
-    return f"Resume with another model: '{name}' holds " + "; ".join(changes) + "."
+    return f"{MODEL_NOTE_PREFIX} '{name}' holds " + "; ".join(changes) + "."
 
 
 def _check_input(name: str, details: _Details, input_path: Path | None) -> None:

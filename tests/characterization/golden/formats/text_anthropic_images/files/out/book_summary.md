@@ -15,4 +15,3 @@
 ### [No printed number; Image 3]
 
 - Bibliography page without summarizable prose.
-

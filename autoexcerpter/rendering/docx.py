@@ -1,21 +1,24 @@
-"""DOCX summary document creation for AutoExcerpter.
+"""The DOCX summary of an item.
 
-Generates formatted Word documents with structured summaries, including:
+Builds a formatted Word document with structured summaries, including:
 - LaTeX formulas as native Word equations (see ``rendering.equations``)
 - Citation deduplication with OpenAlex hyperlinks
 - Document structure overview with page ranges
 - XML sanitization for safe DOCX output
+
+The archive is reproducible: the same summaries and time give the same
+bytes, since every zip member carries a fixed timestamp and the core
+properties record the given time.
 """
 
 from __future__ import annotations
 
-import contextlib
+import io
 import logging
-import os
 import re
+import zipfile
 from dataclasses import dataclass
-from datetime import datetime
-from pathlib import Path
+from datetime import UTC, datetime
 from typing import Any
 
 from docx import Document
@@ -78,6 +81,9 @@ from autoexcerpter.rendering.summary import (
 )
 
 logger = logging.getLogger(__name__)
+
+ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
+"""The timestamp of every member of a summary archive (the zip epoch)."""
 
 
 def add_formatted_text_to_paragraph(paragraph: Any, text: str) -> None:
@@ -350,14 +356,15 @@ def _configure_page(document: Any) -> None:
         _add_page_number_footer(section)
 
 
-def create_docx_summary(
+def docx_summary(
     summary_results: list[dict[str, Any]],
-    output_path: Path,
     document_name: str,
     citation_manager: CitationSource | None = None,
     data: Any = None,
-) -> None:
-    """Create a DOCX summary document from structured summary results.
+    *,
+    generated: datetime,
+) -> bytes:
+    """Return the DOCX summary of structured summary results as an archive.
 
     Output order:
     1. Title + Metadata
@@ -369,7 +376,8 @@ def create_docx_summary(
     *data* are supplied by the pipeline they are already consolidated and
     OpenAlex-enriched, so this writer renders them as-is (one enrichment pass
     per item, shared with the Markdown writer). When called standalone they
-    are built (with default OpenAlex options) and enriched here.
+    are built (with default OpenAlex options) and enriched here. *generated*
+    is the time the metadata line and the core properties record.
     """
     if citation_manager is None or data is None:
         citation_manager = CitationManager()
@@ -382,12 +390,11 @@ def create_docx_summary(
     _configure_page(document)
     style_ids = _resolve_style_ids(document)
 
-    _write_title(document, document_name, data, style_ids)
+    _write_title(document, document_name, data, style_ids, generated)
     _write_structure(document, data.page_type_pages, style_ids)
     _write_page_summaries(document, data.page_render_items, style_ids)
     _write_references(document, citation_manager, style_ids)
-    _save_atomically(document, output_path)
-    logger.info("Summary document saved to %s", output_path)
+    return _archive(document, generated)
 
 
 @dataclass(frozen=True)
@@ -418,7 +425,11 @@ def _resolve_style_ids(document: Any) -> _StyleIds:
 
 
 def _write_title(
-    document: Any, document_name: str, data: SummaryData, style_ids: _StyleIds
+    document: Any,
+    document_name: str,
+    data: SummaryData,
+    style_ids: _StyleIds,
+    generated: datetime,
 ) -> None:
     """Write the title and the centered metadata line."""
     title = document.add_paragraph(sanitize_for_xml(document_name))
@@ -426,7 +437,7 @@ def _write_title(
     title.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
 
     metadata = (
-        f"Processed {datetime.now():%Y-%m-%d %H:%M}"
+        f"Processed {generated:%Y-%m-%d %H:%M}"
         f" | {data.content_page_count} content pages"
         f" | {data.source_page_count} total pages"
     )
@@ -564,18 +575,27 @@ def _write_reference(
             meta_run.font.color.rgb = _rgb(COLOR_REF_META_GRAY)
 
 
-def _save_atomically(document: Any, output_path: Path) -> None:
-    """Save to a sibling ``.tmp`` file and replace the target atomically.
+def _archive(document: Any, generated: datetime) -> bytes:
+    """Return *document* as DOCX bytes that depend only on its content.
 
-    A crash mid-save never leaves a truncated .docx that resume would trust as
-    complete (resume classifies on ``exists()`` and ``st_size > 0``); the
-    temp file is removed on any failure.
+    The core properties record *generated* as creation and modification
+    time; every zip member gets :data:`ZIP_TIMESTAMP`.
     """
-    tmp_path = output_path.with_name(output_path.name + ".tmp")
-    try:
-        document.save(str(tmp_path))
-        os.replace(tmp_path, output_path)
-    except Exception:
-        with contextlib.suppress(OSError):
-            tmp_path.unlink()
-        raise
+    moment = generated.astimezone(UTC).replace(tzinfo=None, microsecond=0)
+    properties = document.core_properties
+    properties.created = moment
+    properties.modified = moment
+    properties.revision = 1
+    saved = io.BytesIO()
+    document.save(saved)
+    fixed = io.BytesIO()
+    with (
+        zipfile.ZipFile(io.BytesIO(saved.getvalue())) as source,
+        zipfile.ZipFile(fixed, "w", zipfile.ZIP_DEFLATED) as target,
+    ):
+        for member in source.infolist():
+            info = zipfile.ZipInfo(member.filename, date_time=ZIP_TIMESTAMP)
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = member.external_attr
+            target.writestr(info, source.read(member.filename))
+    return fixed.getvalue()

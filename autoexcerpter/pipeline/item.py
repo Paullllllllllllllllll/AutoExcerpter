@@ -5,14 +5,14 @@ when summarizing, one summary unit per page, and works the units the store
 still lacks: pending and failed pages are transcribed on an asyncio page
 pool, and pages whose summary is missing, failed or stale are summarized
 from their stored text. It then consolidates and enriches the citations,
-stores them and writes the final files from the store. It reads no
+stores them and renders the final files from the store. It reads no
 configuration: everything comes from the
 :class:`~autoexcerpter.pipeline.job.ItemJob` and the
 :class:`~autoexcerpter.pipeline.units.DocumentHandle` built by the caller.
 Progress goes to the :class:`~autoexcerpter.events.RunEvents` it is given.
-Page images are rendered in a thread pool and the citations and files,
-OpenAlex lookups included, are made in a worker thread; the model calls
-run on the event loop.
+Page images are rendered in a thread pool and the citations, OpenAlex
+lookups included, are made in a worker thread; the model calls run on the
+event loop.
 """
 
 from __future__ import annotations
@@ -40,25 +40,23 @@ from autoexcerpter.common.store import PlannedUnit, UnitRow, refresh_documents
 from autoexcerpter.events import NullEvents, PageDone, RunEvents
 from autoexcerpter.imaging.payload import FolderPayloadSource, PdfPayloadSource
 from autoexcerpter.llm import CallEnv
+from autoexcerpter.output.paths import ItemPaths
+from autoexcerpter.output.render import render_item
 from autoexcerpter.output.store import (
     KIND_SUMMARY,
     KIND_TRANSCRIPTION,
-    CitationRow,
     image_settings_record,
-    read_citations,
     read_pages,
 )
 from autoexcerpter.pipeline.job import ItemJob
 from autoexcerpter.pipeline.managers import ItemManagers, build_managers
 from autoexcerpter.pipeline.outputs import (
-    ItemResults,
     OutputStatus,
     collect_citations,
     log_item_summary,
-    write_outputs,
+    render_formats,
 )
 from autoexcerpter.pipeline.pages import PageRunner
-from autoexcerpter.pipeline.paths import ItemPaths
 from autoexcerpter.pipeline.progress import PageProgress
 from autoexcerpter.pipeline.types import ItemSpec
 from autoexcerpter.pipeline.units import DocumentHandle
@@ -105,11 +103,12 @@ def input_sha256(item: ItemSpec) -> str | None:
 
 
 class ItemFiles:
-    """Store an item's citations and write its files from the store.
+    """Store an item's citations and render its files from the store.
 
-    *notes* are extra metadata lines for the transcription file. Once
-    ``stop`` is set, OpenAlex enrichment ends and no further file is
-    written. ``written`` lists the absolute paths of the files written.
+    Once ``stop`` is set, OpenAlex enrichment ends and no file is rendered.
+    ``written`` lists the absolute paths of the files that hold their
+    rendering. *force* replaces files changed outside the tool; render
+    warnings go to *events*.
     """
 
     def __init__(
@@ -119,7 +118,8 @@ class ItemFiles:
         job: ItemJob,
         document: DocumentHandle,
         *,
-        notes: Sequence[str] = (),
+        force: bool = False,
+        events: RunEvents | None = None,
     ) -> None:
         self.item = item
         self.name = item.output_stem
@@ -129,7 +129,8 @@ class ItemFiles:
         self.type_label = "PDF" if item.kind == "pdf" else "Image Folder"
         self.stop = threading.Event()
         self.written: list[Path] = []
-        self.notes = list(notes)
+        self.force = force
+        self.events: RunEvents = events if events is not None else NullEvents()
 
     async def _in_worker(self, func: Callable[[], T]) -> T:
         """Run *func* in a worker thread, off the event loop.
@@ -147,16 +148,11 @@ class ItemFiles:
             await _wait_out(worker)
             raise
 
-    def _read(
-        self,
-    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[CitationRow]]:
+    def _summaries(self) -> list[dict[str, Any]]:
         doc_id = self.document.doc_id
 
-        def query(
-            connection: sqlite3.Connection,
-        ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[CitationRow]]:
-            transcriptions, summaries = read_pages(connection, doc_id)
-            return transcriptions, summaries, read_citations(connection, doc_id)
+        def query(connection: sqlite3.Connection) -> list[dict[str, Any]]:
+            return read_pages(connection, doc_id)[1]
 
         return read(self.document.store.path, query)
 
@@ -167,7 +163,7 @@ class ItemFiles:
         """
         if not self.job.summarize:
             return True
-        _, summaries, _ = self._read()
+        summaries = self._summaries()
         if not summaries:
             return True
         citations = await self._in_worker(
@@ -184,27 +180,36 @@ class ItemFiles:
         await self.document.write_citations(citations)
         return True
 
-    async def write(self, elapsed_s: float) -> OutputStatus:
-        """Write the item's files from what the store holds."""
-        transcriptions, summaries, citations = self._read()
-        return await self._in_worker(
-            functools.partial(
-                write_outputs,
-                name=self.name,
-                item_type_label=self.type_label,
-                input_path=self.item.path,
-                paths=self.paths,
-                job=self.job,
-                results=ItemResults(
-                    transcriptions=transcriptions,
-                    summaries=summaries,
-                    citations=citations,
-                    elapsed_s=elapsed_s,
-                    metadata_notes=self.notes,
-                ),
-                written=self.written,
-                stop=self.stop,
-            )
+    async def write(self) -> OutputStatus:
+        """Render the item's files from what the store holds.
+
+        A file that could not be replaced fails its output; a file changed
+        outside the tool is left as it is with a warning.
+
+        Raises:
+            LeaseLostError: The run's lease on the document was lost.
+        """
+        if self.stop.is_set():
+            logger.warning("Item %s stopped: withholding its files.", self.name)
+            return OutputStatus(transcription_ok=False, summaries_ok=False)
+        report = await render_item(
+            self.document.store,
+            self.document.lease,
+            self.paths,
+            render_formats(self.job),
+            force=self.force,
+        )
+        for message in report.warnings:
+            self.events.warning(message)
+        current = {*report.written, *report.unchanged}
+        paths = self.paths
+        for path in (paths.transcription, paths.summary_docx, paths.summary_md):
+            if path in current:
+                self.written.append(path.resolve())
+        stale = set(report.stale)
+        return OutputStatus(
+            transcription_ok=paths.transcription not in stale,
+            summaries_ok=not stale & {paths.summary_docx, paths.summary_md},
         )
 
 
@@ -213,12 +218,12 @@ class ItemProcessor:
 
     *managers* defaults to managers built from *job* with the item's summary
     *context* and the run's call environment *env* (rate limiters, usage
-    totals, events). *notes* are extra metadata lines for the transcription
-    file. After :meth:`process`, ``written_outputs`` lists the absolute paths
-    of the files written and ``last_run_report`` the per-item statistics
-    (None when the item stopped before them). Once ``stop`` is set, OpenAlex
-    enrichment ends and no further output file is written; the item then
-    counts failed and its units stay in the store.
+    totals, events). *force* replaces output files changed outside the tool.
+    After :meth:`process`, ``written_outputs`` lists the absolute paths of
+    the files that hold their rendering and ``last_run_report`` the per-item
+    statistics (None when the item stopped before them). Once ``stop`` is
+    set, OpenAlex enrichment ends and no output file is rendered; the item
+    then counts failed and its units stay in the store.
     """
 
     def __init__(  # noqa: PLR0913 - the item, its document and the run's objects
@@ -232,7 +237,7 @@ class ItemProcessor:
         context: str | None = None,
         events: RunEvents | None = None,
         env: CallEnv | None = None,
-        notes: Sequence[str] = (),
+        force: bool = False,
     ) -> None:
         self.item = item
         self.name = item.output_stem
@@ -256,7 +261,9 @@ class ItemProcessor:
             pdf=item.kind == "pdf",
         )
 
-        self.files = ItemFiles(item, output_dir, job, document, notes=notes)
+        self.files = ItemFiles(
+            item, output_dir, job, document, force=force, events=self.events
+        )
         self.last_run_report: dict[str, Any] | None = None
         self.page_count = 0
         self.started_at = time.time()
@@ -490,11 +497,11 @@ class ItemProcessor:
                 task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
 
-    async def _write_outputs(self, elapsed_s: float) -> OutputStatus:
-        """Store the citations, then write the files from the store."""
+    async def _write_outputs(self) -> OutputStatus:
+        """Store the citations, then render the files from the store."""
         if not await self.files.store_citations():
             return OutputStatus(transcription_ok=False, summaries_ok=False)
-        return await self.files.write(elapsed_s)
+        return await self.files.write()
 
     async def _finish(self) -> bool:
         """Write the outputs, record the run report and return the verdict."""
@@ -524,7 +531,7 @@ class ItemProcessor:
                 summaries_pending,
             )
         else:
-            status = await self._write_outputs(elapsed_s)
+            status = await self._write_outputs()
 
         times = self._progress.transcription_times if self._progress else []
         avg_api_s = sum(times) / len(times) if times else None

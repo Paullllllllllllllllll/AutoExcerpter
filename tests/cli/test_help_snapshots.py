@@ -26,6 +26,7 @@ COLUMNS = 100
 CASES = {
     "autoexcerpter": (),
     "run": ("run",),
+    "render": ("render",),
     "ui": ("ui",),
 }
 

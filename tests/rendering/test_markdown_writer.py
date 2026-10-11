@@ -1,24 +1,25 @@
-"""The Markdown summary writer in rendering/markdown.py.
+"""The Markdown summary built by rendering/markdown.py.
 
 Covers the title and metadata line, the Document Structure section, the page
 summaries (headings, bullets, LaTeX, filtering, order, malformed input), the
-linked reference line and the written file (LF newlines, final newline, atomic
-write). The full layout of a rich document, including the references block, is
-pinned by the read-back snapshot in test_readback_snapshots.py.
+linked reference line and the text as a whole (LF newlines, one final
+newline). The full layout of a rich document, including the references
+block, is pinned by the read-back snapshot in test_readback_snapshots.py.
 """
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
-import pytest
-
 import autoexcerpter.rendering.markdown as markdown_module
 from autoexcerpter.rendering.citations import CitationManager
-from autoexcerpter.rendering.markdown import create_markdown_summary
+from autoexcerpter.rendering.markdown import markdown_summary
 from autoexcerpter.rendering.summary import build_render_context, prepare_summary_data
+
+GENERATED = datetime(2026, 10, 11, 9, 30, tzinfo=UTC)
 
 
 def _page(
@@ -40,9 +41,7 @@ def _page(
 
 
 def _render(tmp_path: Path, results: list[dict[str, Any]], name: str = "Test") -> str:
-    output_path = tmp_path / "summary.md"
-    create_markdown_summary(results, output_path, name)
-    return output_path.read_text(encoding="utf-8")
+    return markdown_summary(results, name, generated=GENERATED)
 
 
 # ============================================================================
@@ -65,7 +64,7 @@ class TestMarkdownStructure:
     def test_contains_metadata(self, tmp_path: Path) -> None:
         content = _render(tmp_path, [_page(1, ["Point 1"])])
 
-        assert "*Summary generated" in content
+        assert "*Summary generated 2026-10-11 09:30 " in content
         assert "1 total pages*" in content
 
     def test_empty_results(self, tmp_path: Path) -> None:
@@ -91,8 +90,8 @@ class TestMarkdownStructure:
 # ============================================================================
 # Page summaries
 # ============================================================================
-class TestCreateMarkdownSummary:
-    """Page headings and bullets of create_markdown_summary."""
+class TestMarkdownSummary:
+    """Page headings and bullets of markdown_summary."""
 
     def test_contains_bullet_points(self, tmp_path: Path) -> None:
         content = _render(tmp_path, [_page(1, ["First point", "Second point"])])
@@ -243,11 +242,9 @@ class TestMarkdownReferences:
         citation.url = "https://example.com/a b"
         citation.doi = "10.1234/test"
         citation.metadata = {"publication_year": 2020}
-        output_path = tmp_path / "summary.md"
 
-        create_markdown_summary(results, output_path, "Test", manager, data)
+        content = markdown_summary(results, "Test", manager, data, generated=GENERATED)
 
-        content = output_path.read_text(encoding="utf-8")
         assert "## Consolidated References" in content
         assert (
             "1. [Author (2020). \\[Reprint\\] Title.](https://example.com/a%20b) "
@@ -272,12 +269,10 @@ class TestMarkdownReferences:
         data = prepare_summary_data(results, manager)
         for citation in manager.citations.values():
             citation.url = url
-        output_path = tmp_path / "summary.md"
 
-        create_markdown_summary(
-            results, output_path, "Doc", citation_manager=manager, data=data
+        return markdown_summary(
+            results, "Doc", citation_manager=manager, data=data, generated=GENERATED
         )
-        return output_path.read_text(encoding="utf-8")
 
     def test_angle_brackets_escaped_in_link_url(self, tmp_path: Path) -> None:
         content = self._render_with_url(
@@ -296,66 +291,24 @@ class TestMarkdownReferences:
 
 
 # ============================================================================
-# The written file
+# The text as a whole
 # ============================================================================
-class TestMarkdownFile:
-    """Newlines and the atomic write of the .md file."""
+class TestMarkdownText:
+    """Newlines of the .md text."""
 
-    def test_written_file_contains_no_cr(self, tmp_path: Path) -> None:
-        output_path = tmp_path / "summary.md"
+    def test_text_contains_no_cr(self, tmp_path: Path) -> None:
+        content = _render(tmp_path, [_page(1, ["A bullet point", "Another one"])])
 
-        create_markdown_summary(
-            [_page(1, ["A bullet point", "Another bullet point"])], output_path, "Test"
-        )
+        assert "\r" not in content
+        assert "\n" in content
 
-        raw = output_path.read_bytes()
-        assert b"\r" not in raw
-        assert b"\n" in raw
-
-    def test_file_ends_with_newline(self, tmp_path: Path) -> None:
+    def test_text_ends_with_exactly_one_newline(self, tmp_path: Path) -> None:
         content = _render(tmp_path, [_page(1, ["A bullet"])], "Doc")
 
-        assert content.endswith("\n")
-        assert not content.endswith("\n\n\n")
+        assert content.endswith("- A bullet\n")
+        assert not content.endswith("\n\n")
 
-    def test_empty_document_ends_with_newline(self, tmp_path: Path) -> None:
-        assert _render(tmp_path, [], "Empty Doc").endswith("\n")
+    def test_empty_document_ends_with_one_newline(self, tmp_path: Path) -> None:
+        content = _render(tmp_path, [], "Empty Doc")
 
-    def test_successful_write_leaves_no_temp_file(self, tmp_path: Path) -> None:
-        out = tmp_path / "doc.md"
-
-        create_markdown_summary([], out, "My Document")
-
-        assert "# My Document" in out.read_text(encoding="utf-8")
-        assert not out.with_name(out.name + ".tmp").exists()
-
-    def test_failed_replace_keeps_previous_file(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        out = tmp_path / "doc.md"
-        out.write_text("PRIOR COMPLETE MD", encoding="utf-8")
-
-        def _boom(_src: Any, _dst: Any) -> None:
-            raise OSError("replace failed mid-swap")
-
-        monkeypatch.setattr("autoexcerpter.rendering.markdown.os.replace", _boom)
-
-        with pytest.raises(OSError, match="replace failed"):
-            create_markdown_summary([], out, "My Document")
-
-        assert out.read_text(encoding="utf-8") == "PRIOR COMPLETE MD"
-        assert not out.with_name(out.name + ".tmp").exists()
-
-    def test_non_os_error_removes_temp_file(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        def _boom(_src: Any, _dst: Any) -> None:
-            raise ValueError("not an OSError")
-
-        output_path = tmp_path / "summary.md"
-        monkeypatch.setattr("autoexcerpter.rendering.markdown.os.replace", _boom)
-
-        with pytest.raises(ValueError, match="not an OSError"):
-            create_markdown_summary([_page(1, ["A bullet"])], output_path, "Doc")
-
-        assert [p.name for p in tmp_path.iterdir() if p.suffix == ".tmp"] == []
+        assert content.endswith("total pages*\n")

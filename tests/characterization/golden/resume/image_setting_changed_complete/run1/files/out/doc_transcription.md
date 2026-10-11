@@ -5,7 +5,6 @@
 # Total images processed: 3
 # Successfully transcribed: 3
 # Failed items: 0
-# Total processing time for this item: <duration>
 
 # Preface
 

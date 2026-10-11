@@ -1,10 +1,10 @@
-"""Tests for pipeline.page_numbering: page number inference logic."""
+"""Tests for rendering.page_numbering: page number inference logic."""
 
 from typing import Any
 
 import pytest
 
-from autoexcerpter.pipeline.page_numbering import PageNumberProcessor
+from autoexcerpter.rendering.page_numbering import PageNumberProcessor
 
 
 class TestInferUnnumberedPageNumbers:

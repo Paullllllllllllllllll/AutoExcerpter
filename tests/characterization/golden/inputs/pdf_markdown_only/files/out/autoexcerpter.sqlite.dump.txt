@@ -116,6 +116,24 @@
 }
 ## notes
 ## outputs
+{
+  "doc_id": 1,
+  "format": "summary-md",
+  "path": "doc_summary.md",
+  "rendered_at": "<datetime>+00:00",
+  "run_id": "<run-1>",
+  "sha256": "<sha256>",
+  "stale": 0
+}
+{
+  "doc_id": 1,
+  "format": "transcription-md",
+  "path": "doc_transcription.md",
+  "rendered_at": "<datetime>+00:00",
+  "run_id": "<run-1>",
+  "sha256": "<sha256>",
+  "stale": 0
+}
 ## responses
 {
   "attempt": 1,
@@ -1074,13 +1092,8 @@
     "output.formats": {
       "source": "flag",
       "value": [
-        "summary-md",
-        "sqlite"
+        "summary-md"
       ]
-    },
-    "output.keep_working_files": {
-      "source": "flag",
-      "value": false
     },
     "output.transcription_format": {
       "source": "default",

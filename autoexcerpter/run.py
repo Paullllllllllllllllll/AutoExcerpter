@@ -51,6 +51,7 @@ from autoexcerpter.events import (
 )
 from autoexcerpter.imaging.settings import resolve_image_settings
 from autoexcerpter.llm import CallEnv
+from autoexcerpter.output.paths import ItemPaths
 from autoexcerpter.output.store import (
     KIND_TRANSCRIPTION,
     Classification,
@@ -67,7 +68,6 @@ from autoexcerpter.output.store import (
 from autoexcerpter.pipeline.context import ContextError, summary_context
 from autoexcerpter.pipeline.item import ItemFiles, ItemProcessor, input_sha256
 from autoexcerpter.pipeline.job import ItemJob, job_from_spec
-from autoexcerpter.pipeline.paths import ItemPaths
 from autoexcerpter.pipeline.scanner import scan_input_path
 from autoexcerpter.pipeline.types import ItemSpec
 from autoexcerpter.pipeline.units import DocumentHandle, Stamp
@@ -317,13 +317,11 @@ def _job(spec: RunSpec, settings: Settings) -> ItemJob:
         job = job_from_spec(spec, settings)
     except SettingsError as exc:
         raise ConfigurationError(str(exc)) from exc
-    if job.summarize and not (
-        job.output_markdown or job.output_docx or "sqlite" in spec.output.formats
-    ):
+    if job.summarize and not (job.output_markdown or job.output_docx):
         raise ConfigurationError(
             "Summaries are on but no output format is selected, so no summary "
-            "would be written. Pass --no-summarize, or select summary-md, "
-            "summary-docx or sqlite with --formats."
+            "would be written. Pass --no-summarize, or select summary-md or "
+            "summary-docx with --formats."
         )
     return job
 
@@ -761,7 +759,7 @@ async def _run_item(
             context=planned.context,
             events=events,
             env=env,
-            notes=[planned.resume.note] if planned.resume.note else (),
+            force=run_plan.force,
         )
         success = await processor.process()
         if not success:
@@ -800,8 +798,9 @@ async def _render_only(
             planned.output_dir,
             run_plan.job,
             item_run.handle(store, doc_id, lease),
+            events=env.events,
         )
-        await files.write(0.0)
+        await files.write()
     except (LeaseLostError, OSError) as exc:
         await _note(
             store, doc_id, f"'{planned.name}' was not rendered: {exc}", env.events

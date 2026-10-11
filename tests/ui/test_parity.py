@@ -379,7 +379,6 @@ def all_items_without_summary(ws: Workspace) -> Script:
         str(output),
         False,
         "txt",
-        [],
         "openai",
         "gpt-5.6-luna",
         KEEP,
@@ -452,7 +451,7 @@ def force_review_action(ws: Workspace) -> Script:
     ws.monkeypatch.setattr(core, "plan", plan)
     pdf = ws.pdf()
     answers = _base(pdf, FORCE_ACTION, "run")
-    answers[4:7] = [["summary-md", "sqlite"], "none"]
+    answers[4:7] = [["summary-md"], "none"]
     return Script(ws.session(), answers)
 
 
@@ -461,7 +460,7 @@ def dry_run(ws: Workspace) -> Script:
     pdf = ws.pdf("dir with space/book.pdf")
     answers = _base(pdf, "run")
     answers[5:7] = ["text", 'early modern "spice" trade, 1600\\1800']
-    answers[14:16] = [["keep_working_files", "force", "retranscribe", "dry_run"], "3"]
+    answers[14:16] = [["force", "retranscribe", "dry_run"], "3"]
     return Script(ws.session(), answers)
 
 

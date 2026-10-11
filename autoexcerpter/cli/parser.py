@@ -8,14 +8,16 @@ from typing import Any, NoReturn
 
 from autoexcerpter import ext
 from autoexcerpter.common.options import HelpFormatter
-from autoexcerpter.spec import OPTIONS
+from autoexcerpter.spec import OPTIONS, RENDER_OPTIONS
 
 __all__ = [
+    "RENDER_DESCRIPTION",
     "RUN_DESCRIPTION",
     "SUBCOMMANDS",
     "UI_DESCRIPTION",
     "Parser",
     "UsageError",
+    "add_render_command",
     "add_run_arguments",
     "add_run_command",
     "add_ui_command",
@@ -109,6 +111,37 @@ def add_run_command(commands: Commands) -> argparse.ArgumentParser:
     return run
 
 
+RENDER_DESCRIPTION = (
+    "Write the transcription and summary files of stored documents again from "
+    "their autoexcerpter.sqlite, without model calls."
+)
+
+RENDER_EPILOG = """\
+Without --formats each document is rendered in the formats it was rendered \
+in before. A file changed outside the tool is left as it is unless --force.
+
+Exit codes:
+  0    every file holds its rendering or was left as edited
+  1    a file could not be replaced, or another run holds a document
+  2    usage error, or a database the store refuses (one written before
+       the store names autoexcerpter migrate)
+  130  interrupted (Ctrl+C)
+"""
+
+
+def add_render_command(commands: Commands) -> argparse.ArgumentParser:
+    """Add the render subcommand."""
+    render: argparse.ArgumentParser = commands.add_parser(
+        "render",
+        help="render stored documents again without model calls",
+        description=RENDER_DESCRIPTION,
+        epilog=RENDER_EPILOG,
+        formatter_class=HelpFormatter,
+    )
+    RENDER_OPTIONS.add_arguments(render)
+    return render
+
+
 def add_ui_command(commands: Commands) -> argparse.ArgumentParser:
     """Add the ui subcommand: the settings option and the extension arguments."""
     ui: argparse.ArgumentParser = commands.add_parser(
@@ -124,6 +157,7 @@ def add_ui_command(commands: Commands) -> argparse.ArgumentParser:
 
 SUBCOMMANDS: tuple[Callable[[Commands], argparse.ArgumentParser], ...] = (
     add_run_command,
+    add_render_command,
     add_ui_command,
 )
 

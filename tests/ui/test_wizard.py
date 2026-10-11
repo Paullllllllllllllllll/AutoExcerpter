@@ -193,7 +193,6 @@ def test_summary_off_skips_context_and_summary_model(pdf: Path) -> None:
             "beside",
             False,
             "txt",
-            [],
             "openai",
             "gpt-5.6-luna",
             KEEP,
@@ -252,7 +251,7 @@ def test_settings_defaults_are_preselected_marked_and_spelled_out(pdf: Path) -> 
     settings = _settings(
         model="gpt-5.6-terra",
         reasoning_effort="medium",
-        formats=["summary-md", "sqlite"],
+        formats=["summary-md"],
         dpi=300,
         concurrency=4,
     )
@@ -288,14 +287,14 @@ def test_settings_defaults_are_preselected_marked_and_spelled_out(pdf: Path) -> 
     assert SETTINGS_LEGEND in review
     assert "openai / gpt-5.6-terra (s)" in review
     assert "reasoning medium (s)" in review
-    assert "formats summary-md, sqlite (s)" in review
+    assert "formats summary-md (s)" in review
     assert "300 DPI (s)" in review
     command = run.outcome.command
     assert command is not None
     for words in (
         ("--model", "gpt-5.6-terra"),
         ("--reasoning-effort", "medium"),
-        ("--formats", "summary-md,sqlite"),
+        ("--formats", "summary-md"),
         ("--dpi", "300"),
         ("--concurrency", "4"),
     ):

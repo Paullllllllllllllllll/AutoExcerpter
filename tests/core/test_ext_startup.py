@@ -30,7 +30,7 @@ from autoexcerpter.common.retry import Decision
 from autoexcerpter.common.structured import StructuredRequest
 from autoexcerpter.common.testing import ScriptedPrompter
 from autoexcerpter.llm import ModelCaller
-from autoexcerpter.pipeline.paths import ItemPaths
+from autoexcerpter.output.paths import ItemPaths
 from autoexcerpter.settings import Settings, SettingsError
 from autoexcerpter.spec import RunSpec
 from autoexcerpter.ui import app

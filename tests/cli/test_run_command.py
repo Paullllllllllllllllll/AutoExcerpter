@@ -17,8 +17,8 @@ from autoexcerpter.cli import command
 from autoexcerpter.cli.reporter import PROGRESS_STEPS, StderrReporter
 from autoexcerpter.common.usage import Usage
 from autoexcerpter.events import ItemFinished, ItemStarted, PageDone, Waiting
+from autoexcerpter.output.paths import ItemPaths
 from autoexcerpter.pipeline.job import job_from_spec
-from autoexcerpter.pipeline.paths import ItemPaths
 from autoexcerpter.settings import Endpoint, OpenAlexSettings
 from tests.conftest import make_settings, make_spec
 
@@ -98,7 +98,6 @@ class TestJobFromSpec:
         spec = make_spec(
             summarize=False,
             formats="summary-md",
-            keep_working_files=True,
             openalex=False,
             concurrency=3,
         )

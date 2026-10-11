@@ -50,13 +50,8 @@
         "source": "flag",
         "value": [
           "summary-md",
-          "summary-docx",
-          "sqlite"
+          "summary-docx"
         ]
-      },
-      "output.keep_working_files": {
-        "source": "flag",
-        "value": false
       },
       "output.transcription_format": {
         "source": "default",

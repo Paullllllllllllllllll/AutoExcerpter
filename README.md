@@ -92,8 +92,7 @@ part of a file or folder name, ignoring case.
 | `--output DIR` | output folder | beside the input | yes |
 | `--beside-input` | write outputs beside each input | | no |
 | `--transcription-format {md,txt}` | transcription file format | md | yes |
-| `--formats LIST` | comma-separated output formats; from summary-md, summary-docx, sqlite | summary-md,summary-docx,sqlite | yes |
-| `--keep-working-files`, `--no-keep-working-files` | keep the X_autoexcerpter/ working logs of an item completed under --force; runs without --force always keep them | off | yes |
+| `--formats LIST` | comma-separated output formats; from summary-md, summary-docx | summary-md,summary-docx | yes |
 
 The transcription file is always written. `--beside-input` overrides an `output`
 settings default.
@@ -373,7 +372,7 @@ headed by its printed page number (or `[No printed number; PDF p. N]`, with an
 inferred number in brackets, `Page [6]`) and the consolidated references with
 their pages. Page numbers are checked per section (front matter, body,
 appendix) against runs of consecutive detected numbers
-(`pipeline/page_numbering.py`): a misread number inside a run is corrected, while
+(`rendering/page_numbering.py`): a misread number inside a run is corrected, while
 an excerpt that skips pages, say from 12 to 30, keeps both runs. The Markdown file
 keeps LaTeX math as `$...$` and `$$...$$`; the
 Word file converts it to native Word equations (`rendering/equations.py`) and
@@ -391,7 +390,7 @@ metadata. An item's rows are upserted in one transaction, so resumed and repeate
 runs update them in place, and two processes can share a database.
 
 When an item's longest path would exceed the Windows path limit,
-`pipeline/paths.py` shortens the item name and appends an 8-character hash of the
+`output/paths.py` shortens the item name and appends an 8-character hash of the
 full name, the same way for every file of the item. `X_autoexcerpter/` stays
 after a run unless the item completed under `--force` without
 `--keep-working-files`.

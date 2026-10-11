@@ -51,7 +51,7 @@ def test_run_help_never_splits_a_flag_or_a_value(
         assert len(line) <= columns, line
         assert not re.search(r"[\w-]-$", line), line
     words = set(re.findall(r"[\w./-]+", out))
-    for value in (*OUTPUT_FORMATS, *IMAGE_DETAILS, "X_autoexcerpter/"):
+    for value in (*OUTPUT_FORMATS, *IMAGE_DETAILS):
         assert value in words, value
 
 

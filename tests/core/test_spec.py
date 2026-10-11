@@ -83,7 +83,6 @@ def _spec(rng: random.Random) -> RunSpec:
             directory=rng.choice([None, Path("out"), Path("x y")]),
             transcription_format=rng.choice(["md", "txt"]),
             formats=tuple(f for f in OUTPUT_FORMATS if rng.random() < 0.6),
-            keep_working_files=rng.random() < 0.5,
         ),
         summary=SummarySpec(
             enabled=rng.random() < 0.5,
@@ -135,8 +134,7 @@ _DEFAULT_VALUES: dict[str, list[Any]] = {
     "all": [True, False],
     "output": ["out", "x y"],
     "transcription_format": list(TRANSCRIPTION_FORMATS),
-    "formats": [["summary-md"], ["sqlite", "summary-docx"], list(OUTPUT_FORMATS)],
-    "keep_working_files": [True, False],
+    "formats": [["summary-md"], ["summary-docx"], list(OUTPUT_FORMATS)],
     "summarize": [True, False],
     "context": ["auto", "none", "Default topics", "ctx.txt"],
     "fallback_context": ["none", "Fallback topics", "fallback.txt"],

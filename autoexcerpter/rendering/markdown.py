@@ -1,12 +1,9 @@
-"""Markdown summary document creation for AutoExcerpter."""
+"""The Markdown summary of an item."""
 
 from __future__ import annotations
 
-import contextlib
 import logging
-import os
 from datetime import datetime
-from pathlib import Path
 from typing import Any
 
 from autoexcerpter.rendering.citations import (
@@ -29,14 +26,15 @@ from autoexcerpter.rendering.summary import (
 logger = logging.getLogger(__name__)
 
 
-def create_markdown_summary(
+def markdown_summary(
     summary_results: list[dict[str, Any]],
-    output_path: Path,
     document_name: str,
     citation_manager: CitationSource | None = None,
     data: Any = None,
-) -> None:
-    """Create a Markdown summary document from structured summary results.
+    *,
+    generated: datetime,
+) -> str:
+    """Return the Markdown summary of structured summary results.
 
     Output order:
     1. Title + Metadata
@@ -46,7 +44,6 @@ def create_markdown_summary(
 
     Args:
         summary_results: List of summary result dictionaries from the API.
-        output_path: Path where the markdown file will be written.
         document_name: Name of the source document for the title.
         citation_manager: Optional consolidated and enriched citations shared
             with the DOCX writer (a citation manager, or the stored citations).
@@ -54,6 +51,9 @@ def create_markdown_summary(
             omitted.
         data: Optional pre-computed :class:`SummaryData` paired with
             *citation_manager*.
+        generated: The time the metadata line records.
+
+    The text ends with exactly one newline.
     """
     if citation_manager is None or data is None:
         citation_manager = CitationManager()
@@ -62,21 +62,22 @@ def create_markdown_summary(
         enrich_if_enabled(citation_manager)
 
     lines = [
-        *_title_lines(document_name, data),
+        *_title_lines(document_name, data, generated),
         *_structure_lines(data.page_type_pages),
         *_page_summary_lines(data.page_render_items),
         *_reference_lines(citation_manager),
     ]
-    _write_atomically("\n".join(lines) + "\n", output_path)
-    logger.info("Markdown summary saved to %s", output_path)
+    return "\n".join(lines).rstrip("\n") + "\n"
 
 
-def _title_lines(document_name: str, data: SummaryData) -> list[str]:
+def _title_lines(
+    document_name: str, data: SummaryData, generated: datetime
+) -> list[str]:
     """Return the H1 title and the italic metadata line."""
     return [
         f"# {sanitize_for_xml(document_name)}",
         "",
-        f"*Summary generated {datetime.now().strftime('%Y-%m-%d %H:%M')} "
+        f"*Summary generated {generated.strftime('%Y-%m-%d %H:%M')} "
         f"· {data.content_page_count} content pages "
         f"· {data.source_page_count} total pages*",
         "",
@@ -173,19 +174,3 @@ def _reference_line(idx: int, citation: Citation, page_range_str: str) -> str:
             line += f" *[{', '.join(meta_parts)}]*"
 
     return line
-
-
-def _write_atomically(text: str, output_path: Path) -> None:
-    """Write to a sibling ``.tmp`` file and replace the target atomically.
-
-    A crash mid-write never leaves a truncated .md that resume would trust as
-    complete; the temp file is removed on any failure.
-    """
-    tmp_path = output_path.with_name(output_path.name + ".tmp")
-    try:
-        tmp_path.write_text(text, encoding="utf-8", newline="\n")
-        os.replace(tmp_path, output_path)
-    except Exception:
-        with contextlib.suppress(OSError):
-            tmp_path.unlink()
-        raise

@@ -84,7 +84,6 @@ def test_response_format_on_a_registry_provider(
         llm=fake_llm,
         root=tmp_path,
         output_dir=tmp_path / "out",
-        keep_working_files=True,
         transcription_provider=case.transcription.provider,
         transcription_model=case.transcription.model,
         transcription_format=case.transcription.response_format,

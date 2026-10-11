@@ -12,8 +12,8 @@ from pathlib import Path
 
 import pytest
 
+from autoexcerpter.output.paths import ItemPaths
 from autoexcerpter.output.store import DATABASE_NAME
-from autoexcerpter.pipeline.paths import ItemPaths
 from tests.characterization.adapter import RunResult, item_paths, run_tool
 from tests.characterization.fakes import SUMMARY, TRANSCRIPTION, FakeLLM
 from tests.characterization.golden import Normalizer
