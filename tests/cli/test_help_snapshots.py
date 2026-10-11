@@ -27,6 +27,7 @@ CASES = {
     "autoexcerpter": (),
     "run": ("run",),
     "render": ("render",),
+    "migrate": ("migrate",),
     "ui": ("ui",),
 }
 

@@ -8,15 +8,17 @@ from typing import Any, NoReturn
 
 from autoexcerpter import ext
 from autoexcerpter.common.options import HelpFormatter
-from autoexcerpter.spec import OPTIONS, RENDER_OPTIONS
+from autoexcerpter.spec import MIGRATE_OPTIONS, OPTIONS, RENDER_OPTIONS
 
 __all__ = [
+    "MIGRATE_DESCRIPTION",
     "RENDER_DESCRIPTION",
     "RUN_DESCRIPTION",
     "SUBCOMMANDS",
     "UI_DESCRIPTION",
     "Parser",
     "UsageError",
+    "add_migrate_command",
     "add_render_command",
     "add_run_arguments",
     "add_run_command",
@@ -142,6 +144,41 @@ def add_render_command(commands: Commands) -> argparse.ArgumentParser:
     return render
 
 
+MIGRATE_DESCRIPTION = (
+    "Import the outputs of AutoExcerpter 1.0 into autoexcerpter.sqlite: convert "
+    "its database, import the working logs and register the existing files, "
+    "then verify the import. Old files are only read."
+)
+
+MIGRATE_EPILOG = """\
+A database is snapshotted beside itself before its first write. Citations are \
+consolidated from the stored summaries with metadata from the OpenAlex cache \
+only; no request is made. A second run imports nothing.
+
+Exit codes:
+  0    every import verified
+  1    a unit count or failure count differs from the logs, or an import
+       failed
+  2    usage error, or a database the store refuses (newer, unreadable or of
+       an unknown layout)
+  130  interrupted (Ctrl+C)
+"""
+
+
+def add_migrate_command(commands: Commands) -> argparse.ArgumentParser:
+    """Add the migrate subcommand."""
+    migrate: argparse.ArgumentParser = commands.add_parser(
+        "migrate",
+        help="import the outputs of version 1.0 into the store",
+        description=MIGRATE_DESCRIPTION,
+        epilog=MIGRATE_EPILOG,
+        usage="%(prog)s --input PATH [options]",
+        formatter_class=HelpFormatter,
+    )
+    MIGRATE_OPTIONS.add_arguments(migrate)
+    return migrate
+
+
 def add_ui_command(commands: Commands) -> argparse.ArgumentParser:
     """Add the ui subcommand: the settings option and the extension arguments."""
     ui: argparse.ArgumentParser = commands.add_parser(
@@ -158,6 +195,7 @@ def add_ui_command(commands: Commands) -> argparse.ArgumentParser:
 SUBCOMMANDS: tuple[Callable[[Commands], argparse.ArgumentParser], ...] = (
     add_run_command,
     add_render_command,
+    add_migrate_command,
     add_ui_command,
 )
 

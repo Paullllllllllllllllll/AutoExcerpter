@@ -38,6 +38,7 @@ __all__ = [
     "DEFAULT_MODEL",
     "IMAGE_DETAILS",
     "IMAGE_FORMATS",
+    "MIGRATE_OPTIONS",
     "MODEL_SUGGESTIONS",
     "OPTIONS",
     "OUTPUT_FORMATS",
@@ -54,6 +55,7 @@ __all__ = [
     "Dpi",
     "ImageSpec",
     "InputSpec",
+    "MigrateSpec",
     "ModelSpec",
     "OutputSpec",
     "RenderSpec",
@@ -66,6 +68,7 @@ __all__ = [
     "model_suggestions",
     "parse",
     "recommended_images",
+    "resolve_migrate",
     "resolve_render",
     "resolve_spec",
     "to_argv",
@@ -724,6 +727,61 @@ def resolve_render(flags: Mapping[str, Any]) -> RenderSpec:
     if values["formats"] == ():
         raise SpecError("--formats needs at least one format")
     return RenderSpec(**values)
+
+
+MIGRATE_OPTIONS = OptionTable(
+    [
+        Option(
+            "input",
+            "--input",
+            "output folder, working folder or autoexcerpter.sqlite to import",
+            group="input",
+            type=Path,
+            metavar="PATH",
+            target="input",
+            settable=False,
+        ),
+        Option(
+            "settings",
+            "--settings",
+            "settings file whose state_dir holds the OpenAlex cache",
+            group="run",
+            type=Path,
+            metavar="FILE",
+            default_help="config/settings.yaml",
+            target="settings",
+            settable=False,
+        ),
+        _render_flag("dry_run", "print what would be imported without writing"),
+        _render_flag("json", "print one JSON summary line on stdout"),
+    ],
+    group_titles={"input": "input", "run": "run control"},
+)
+
+
+@dataclass(frozen=True)
+class MigrateSpec:
+    """The options of ``migrate``."""
+
+    input: Path
+    settings: Path | None = None
+    dry_run: bool = False
+    json: bool = False
+
+
+def resolve_migrate(flags: Mapping[str, Any]) -> MigrateSpec:
+    """Resolve migrate options; no option takes a settings default.
+
+    Raises:
+        SpecError: An unknown option or no input path.
+    """
+    unknown = set(flags) - set(MIGRATE_OPTIONS.names)
+    if unknown:
+        raise SpecError(f"unknown options: {', '.join(sorted(unknown))}")
+    values, _ = MIGRATE_OPTIONS.by_targets(MIGRATE_OPTIONS.resolve(flags, None))
+    if values["input"] is None:
+        raise SpecError("an input path is required (--input PATH)")
+    return MigrateSpec(**values)
 
 
 @dataclass(frozen=True)

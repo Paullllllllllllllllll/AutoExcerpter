@@ -1,0 +1,28 @@
+usage: autoexcerpter migrate --input PATH [options]
+
+Import the outputs of AutoExcerpter 1.0 into autoexcerpter.sqlite: convert its database, import
+the working logs and register the existing files, then verify the import. Old files are only read.
+
+options:
+  -h, --help       show this help message and exit
+
+input:
+  --input PATH     output folder, working folder or autoexcerpter.sqlite to import
+
+run control:
+  --settings FILE  settings file whose state_dir holds the OpenAlex cache; default:
+                   config/settings.yaml
+  --dry-run        print what would be imported without writing
+  --json           print one JSON summary line on stdout
+
+A database is snapshotted beside itself before its first write. Citations are consolidated from
+the stored summaries with metadata from the OpenAlex cache only; no request is made. A second run
+imports nothing.
+
+Exit codes:
+  0    every import verified
+  1    a unit count or failure count differs from the logs, or an import
+       failed
+  2    usage error, or a database the store refuses (newer, unreadable or of
+       an unknown layout)
+  130  interrupted (Ctrl+C)

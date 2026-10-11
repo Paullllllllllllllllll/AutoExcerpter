@@ -19,7 +19,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         namespace = parser.parse_args(args)
     except UsageError as error:
-        if args[0] == "render":
+        if args[0] in ("render", "migrate"):
             from autoexcerpter.cli import store
 
             return store.report_usage_error(error, args)
@@ -30,6 +30,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         from autoexcerpter.cli import store
 
         return store.execute_render(namespace)
+    if namespace.command == "migrate":
+        from autoexcerpter.cli import store
+
+        return store.execute_migrate(namespace)
     if namespace.command == "ui":
         from autoexcerpter.ui import app
 
