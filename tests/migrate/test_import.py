@@ -375,6 +375,25 @@ def test_a_summary_whose_transcription_a_run_changed_is_left_and_reported(
     assert units[("summary", 2)]["status"] == "pending"
 
 
+def test_a_changed_log_transcription_imports_its_summary_again(
+    item: Item, state_dir: Path
+) -> None:
+    _migrate(item.root, state_dir)
+    item.pages[0].text = "First page, corrected."
+    write_logs(item)
+
+    report = _migrate(item.root, state_dir)
+
+    (document,) = report.documents
+    assert document.imported == 2
+    units = {(u["kind"], u["idx"]): u for u in _view(item.root, "units")}
+    assert units[("transcription", 0)]["content"].endswith("First page, corrected.")
+    assert (units[("summary", 0)]["status"], units[("summary", 0)]["stale"]) == (
+        "done",
+        0,
+    )
+
+
 def test_a_unit_the_store_lacks_is_a_mismatch(
     item: Item, state_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

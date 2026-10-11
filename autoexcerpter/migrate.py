@@ -1439,7 +1439,13 @@ def _unit_changes(
     changes: _Changes, document: LegacyDocument, existing: _Existing, runs: set[str]
 ) -> None:
     retouched: set[int] = set()
-    for key, unit in sorted(document.units.items()):
+    # Transcriptions first: a page whose transcription changes is retouched,
+    # and its summary is then imported again.
+    ordered = sorted(
+        document.units.items(),
+        key=lambda item: (item[0][0] != KIND_TRANSCRIPTION, item[0]),
+    )
+    for key, unit in ordered:
         row = existing.units.get(key)
         if row is not None and row["status"] != "pending" and row["run_id"] not in runs:
             changes.kept.add(key)
