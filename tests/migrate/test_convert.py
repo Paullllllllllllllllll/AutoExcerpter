@@ -91,7 +91,7 @@ def test_a_version_1_database_is_converted_and_verified(
     assert (failed["status"], failed["error"]) == ("failed", "timeout")
     assert units[("alpha", "summary", 1)]["outcome"] == "placeholder"
     assert json.loads(units[("beta", "transcription", 0)]["usage"]) == USAGE
-    assert {d.before for d in report.documents} == {"refused"}
+    assert {d.before for d in report.documents} == {"versionless"}
     assert {d.after for d in report.documents} == {"complete", "partial"}
     assert all(d.warnings == [] for d in report.documents)
 

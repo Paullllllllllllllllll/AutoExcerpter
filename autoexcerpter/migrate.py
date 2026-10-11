@@ -1032,7 +1032,8 @@ class DocumentReport:
     *citations* and *outputs* count what was (or, in a dry run, would be)
     written; *kept* counts units a run of the store wrote, which the import
     leaves as they are. *before* and *after* are the document's resume
-    states (``refused`` while its database predates the store).
+    states (``versionless`` while its database predates the store,
+    ``unreadable`` for a database the store refuses).
     """
 
     root: Path
@@ -1291,7 +1292,7 @@ def _resume_state(root: Path, name: str, document: LegacyDocument | None) -> str
     try:
         state = classify(root, name, ResumeRequest(outputs=outputs, legacy=legacy))
     except StoreError:
-        return "refused"
+        return "unreadable"
     except InputMismatchError:
         return "mismatch"
     return state.state.value
@@ -1655,7 +1656,7 @@ def _roots(path: Path, report: MigrationReport) -> dict[Path, _Root]:
         if entry.state.versionless:
             names = {*_versionless_names(database_path(entry.root))}
             names |= {document.name for document in entry.documents}
-            entry.before = dict.fromkeys(sorted(names), "refused")
+            entry.before = dict.fromkeys(sorted(names), "versionless")
     return roots
 
 

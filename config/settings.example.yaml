@@ -91,7 +91,7 @@ openalex:
 #   summary_verbosity: low
 #   service_tier: flex
 #   transcription_format: md  # X_transcription.md; txt writes X_transcription.txt
-#   formats: [summary-md, summary-docx, sqlite]  # sqlite: autoexcerpter.sqlite
+#   formats: [summary-md, summary-docx]
 #   concurrency: 16
 #   # Summary context for items without a sidecar: topics or a text file.
 #   # A context default would override the sidecars, like --context.

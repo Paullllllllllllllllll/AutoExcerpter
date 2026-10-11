@@ -21,6 +21,8 @@ from autoexcerpter.events import ItemFinished, ItemStarted, PageDone, RunEvents
 from autoexcerpter.settings import SettingsError
 from autoexcerpter.spec import parse
 from autoexcerpter.ui import app
+from autoexcerpter.ui.session import TASKS
+from tests.migrate.legacy import Page, make_item, write_database, write_logs
 
 INTERRUPT = object()
 
@@ -52,6 +54,7 @@ def _text(console: Console) -> str:
 
 def _answers(pdf: Path, *review: Any, run_options: Any = KEEP) -> list[Any]:
     return [
+        KEEP,
         str(pdf),
         "beside",
         True,
@@ -155,6 +158,57 @@ def test_back_at_the_first_question_and_quit_exits_0(
     assert code == 0
     assert "? Quit without running?" in prompter.lines
     assert startup.calls == []
+
+
+def _headers(prompter: ScriptedPrompter) -> list[str]:
+    return [line for line in prompter.lines if line.startswith("AutoExcerpter | ")]
+
+
+@pytest.mark.parametrize("task", [name for name in TASKS if name != app.FIRST_TASK])
+def test_a_task_switch_starts_at_the_first_step_of_the_new_task(
+    monkeypatch: pytest.MonkeyPatch, task: str
+) -> None:
+    _no_run(monkeypatch)
+    code, _console, prompter = _launch([task, BACK, BACK, "quit"])
+    assert code == 0
+    title = TASKS[task]
+    headers = _headers(prompter)
+    assert headers[0].startswith("AutoExcerpter | new run   step 1 of ")
+    assert headers[1].startswith(f"AutoExcerpter | {title}   step 2 of ")
+    assert headers[2].startswith(f"AutoExcerpter | {title}   step 1 of ")
+    asked = [index for index, line in enumerate(prompter.lines) if line == "? Task:"]
+    assert len(asked) == 2
+    assert prompter.lines[asked[1] + 1 + list(TASKS).index(task)] == f" > {title}"
+    assert "? Quit without running?" in prompter.lines
+
+
+def test_the_migrate_task_imports_a_version_1_item(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _no_run(monkeypatch)
+    item = make_item(
+        tmp_path / "out", "doc", [Page("A."), Page("B.")], state_dir=tmp_path
+    )
+    write_logs(item)
+    code, console, prompter = _launch(["migrate", str(item.root), KEEP, "run"])
+    assert code == 0
+    assert "1 document, 4 units to import" in prompter.transcript
+    assert "Equivalent command:\n  autoexcerpter migrate" in prompter.transcript
+    assert "Resume state legacy -> complete: 1 document" in _text(console)
+    assert (item.root / "autoexcerpter.sqlite").is_file()
+
+
+def test_the_render_task_withholds_a_version_1_database(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _no_run(monkeypatch)
+    root = tmp_path / "out"
+    root.mkdir()
+    write_database(root, [])
+    code, _console, prompter = _launch(["render", str(root), KEEP, KEEP, KEEP, "quit"])
+    assert code == 0
+    assert "Run unavailable: " in prompter.transcript
+    assert "Convert it first with the migrate task:" in prompter.transcript
 
 
 def test_quit_on_the_review_exits_0(
@@ -311,7 +365,7 @@ def test_ctrl_c_in_the_wizard_exits_130(
     pdf: Path, startup: _Calls, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _no_run(monkeypatch)
-    prompter = _Interrupting([str(pdf), "beside", INTERRUPT])
+    prompter = _Interrupting([KEEP, str(pdf), "beside", INTERRUPT])
     code, console, _prompter = _launch([], prompter=prompter)
     assert code == 130
     assert "Interrupted by the user." in _text(console)

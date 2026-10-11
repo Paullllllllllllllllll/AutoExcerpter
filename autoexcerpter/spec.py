@@ -592,7 +592,7 @@ def _build_table() -> OptionTable:
         Option(
             "retranscribe",
             "--retranscribe",
-            "transcribe again instead of reusing logged transcriptions",
+            "transcribe again instead of reusing stored transcriptions",
             group="run",
             kind=Kind.FLAG,
             default=False,

@@ -119,7 +119,7 @@ images:
 
 run control:
   --force               reprocess items whose outputs exist (resume is the default)
-  --retranscribe        transcribe again instead of reusing logged transcriptions
+  --retranscribe        transcribe again instead of reusing stored transcriptions
   --concurrency N       parallel page requests; default: 16
   --dry-run             plan without API calls or writes
   --json                print one JSON summary line on stdout

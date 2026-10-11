@@ -1,5 +1,25 @@
 # Changelog
 
+- **v2.0.0** (11 October 2026) -- Major release: the output folder's
+  `autoexcerpter.sqlite` becomes the single source of truth of every run, and the
+  transcription and summary files become views rendered from it. Each page's
+  transcription and summary commit as units the moment they arrive, every
+  provider attempt is stored with the response body as received over HTTP, and
+  runs lease the documents they work on, so two runs on one folder never write the
+  same document and a reader holding the database only delays writes. Resume reads
+  only the store and adds the states `legacy`, `blocked` and `refused`; a model
+  switch resumes with a note, and a changed input is processed again. The working
+  logs in `X_autoexcerpter/`, the `sqlite` format and `--keep-working-files` are
+  gone. Rendered files are reproducible: the header shows the time the document
+  last changed instead of the elapsed time, text files end with one newline and
+  Word files have fixed archive timestamps. The new `render` command writes the
+  files again without model calls and keeps files changed outside the tool unless
+  `--force`; the new `migrate` command converts version 1.0 databases, imports
+  their working logs and registers the existing files, consolidates citations from
+  the OpenAlex cache without requests and verifies the import. Outside code reads
+  the store through the views `page_text`, `page_summaries`, `document_citations`,
+  `document_status` and `page_attempts`. The guided UI asks for the task first and
+  offers render and migrate beside a new run.
 - **v1.0.2** (7 October 2026) -- Patch release. Output limits follow the vendor
   documentation: 16,384 tokens for the GPT-5 to GPT-5.3 chat-latest models, 32,768
   for the Gemini 3 Pro and 3.1 Flash image models and gpt-4.1-mini, and 65,536 for

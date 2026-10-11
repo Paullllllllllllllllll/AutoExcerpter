@@ -1067,7 +1067,7 @@ def _images_step(session: Session) -> Step:
 _RUN_FLAG_TITLES = {
     "openalex": "Look up citations in OpenAlex",
     "force": "Reprocess items whose outputs exist (--force)",
-    "retranscribe": "Transcribe again instead of reusing logged pages",
+    "retranscribe": "Transcribe again instead of reusing stored pages",
     "dry_run": "Dry run: show the plan, no API calls or writes",
 }
 

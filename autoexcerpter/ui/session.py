@@ -1,38 +1,66 @@
-"""What a guided session shares: settings, discovered items, effective spec.
+"""What a guided session shares: settings, tasks, discovered items, the spec.
 
-The wizard steps and the review screen both read the answers through
-:func:`resolution`, which resolves them like command-line flags over the
-settings defaults. :class:`Inventory` holds what the input step found.
+Every wizard task (a new run, render, migrate) is a :class:`TaskFlow`.
+:func:`build_wizard` puts the task step first, so the user can switch
+tasks, then the task's own steps. The run task's steps and its review read
+the answers through :func:`resolution`, which resolves them like
+command-line flags over the settings defaults. :class:`Inventory` holds what
+the input step found.
 """
 
 from __future__ import annotations
 
+import argparse
 import logging
 import os
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Any, Final
 
 import fitz
 
+from autoexcerpter import ext
 from autoexcerpter import run as core
-from autoexcerpter.common.options import Source
+from autoexcerpter.common.options import OptionTable, Source
 from autoexcerpter.common.selection import ItemSelection, select_items
-from autoexcerpter.common.wizard import State
+from autoexcerpter.common.wizard import (
+    BACK,
+    DONE,
+    Choice,
+    Nav,
+    Prompter,
+    Review,
+    State,
+    Step,
+    StepContext,
+    Wizard,
+)
 from autoexcerpter.llm.capabilities import detect_capabilities
 from autoexcerpter.llm.options import build_invoke_kwargs
 from autoexcerpter.pipeline.types import ItemSpec
 from autoexcerpter.settings import Settings, SettingsError, resolve
 from autoexcerpter.spec import OPTIONS, ModelSpec, Resolution
 
+if TYPE_CHECKING:
+    from rich.console import Console
+
 __all__ = [
     "INVENTORY",
+    "TASKS",
+    "TASK_STEP",
+    "TITLE",
     "Inventory",
+    "RunRequest",
     "Session",
     "Support",
+    "TaskFlow",
+    "TaskSwitch",
     "absolute",
+    "build_wizard",
     "can_reset",
+    "command_words",
     "current_model",
     "has_settings_default",
     "inventory_of",
@@ -43,11 +71,23 @@ __all__ = [
     "source_of",
     "support_of",
     "take_inventory",
+    "task_step",
 ]
 
 logger = logging.getLogger(__name__)
 
-INVENTORY = "inventory"
+TITLE: Final = "AutoExcerpter"
+INVENTORY: Final = "inventory"
+TASK_STEP: Final = "task"
+
+TASKS: Mapping[str, str] = MappingProxyType(
+    {
+        "run": "new run",
+        "render": "render files again",
+        "migrate": "import version 1.0 outputs (migrate)",
+    }
+)
+"""The wizard tasks in menu order, by name, with their titles."""
 
 
 @dataclass(frozen=True)
@@ -63,14 +103,146 @@ class Session:
     environ: Mapping[str, str] = field(default_factory=lambda: os.environ)
 
 
-def new_state(session: Session) -> State:
-    """Return an empty answer state over the option table and the defaults."""
-    return State(OPTIONS, session.settings.defaults)
+def new_state(session: Session, table: OptionTable = OPTIONS) -> State:
+    """Return an empty answer state over *table* and its settings defaults."""
+    defaults = {
+        name: value
+        for name, value in session.settings.defaults.items()
+        if name in table and table[name].settable
+    }
+    return State(table, defaults)
 
 
 def absolute(path: Path | str) -> Path:
     """Expand ``~`` and make *path* absolute against the current directory."""
     return Path(os.path.abspath(os.path.expanduser(str(path).strip())))
+
+
+def command_words(
+    program: Sequence[str],
+    argv: Sequence[str],
+    session: Session,
+    table: OptionTable,
+) -> list[str]:
+    """Return the full command: *program*, *argv* and the settings file.
+
+    ``--settings`` is added when the ui was started with one and *table*
+    has the option.
+    """
+    words = [*program, *argv]
+    if session.settings_path is not None and "settings" in table:
+        words += ["--settings", str(absolute(session.settings_path))]
+    return words
+
+
+class TaskSwitch(Exception):
+    """The user chose another task on the task step."""
+
+    def __init__(self, task: str) -> None:
+        super().__init__(task)
+        self.task = task
+
+
+def task_step(current: str) -> Step:
+    """Return the task step: DONE for *current*, TaskSwitch for another task."""
+
+    def ask(ctx: StepContext) -> Nav:
+        answer = ctx.prompter.select(
+            "Task:",
+            [Choice(name, title) for name, title in TASKS.items()],
+            default=current,
+        )
+        if answer is BACK:
+            return BACK
+        if answer != current:
+            raise TaskSwitch(answer)
+        return DONE
+
+    return Step(TASK_STEP, "Task", ask=ask)
+
+
+class _TaskWizard(Wizard):
+    """A wizard whose task step counts as answered on its first visit.
+
+    It serves a task the user chose on an earlier wizard's task step: the
+    first pass skips the task step without showing it, and Back from the
+    task's first step returns to it.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._task_chosen = True
+
+    def _ask(self, step: Step) -> Nav:
+        if self._task_chosen and step.name == TASK_STEP:
+            self._task_chosen = False
+            self.visited.add(step.name)
+            return DONE
+        return super()._ask(step)
+
+
+@dataclass(frozen=True)
+class RunRequest:
+    """What a task runs with after the wizard: answers, console and arguments.
+
+    ``args`` holds the parsed ``ui`` arguments for the extension.
+    """
+
+    session: Session
+    answers: Mapping[str, Any]
+    console: Console
+    args: argparse.Namespace
+
+
+@dataclass(frozen=True)
+class TaskFlow:
+    """One wizard task: its steps, review, command and run.
+
+    ``program`` holds the leading command words, such as
+    ``("autoexcerpter", "render")``; ``steps`` returns the task's steps
+    without the task step; ``command`` returns the full equivalent command,
+    program first; ``run`` returns the exit code.
+    """
+
+    name: str
+    title: str
+    program: tuple[str, ...]
+    table: OptionTable
+    steps: Callable[[Session], Sequence[Step]]
+    review: Callable[[State, Session], Review]
+    command: Callable[[State, Session], list[str]]
+    run: Callable[[RunRequest], int]
+
+
+def build_wizard(
+    flow: TaskFlow,
+    session: Session,
+    prompter: Prompter,
+    *,
+    width: int = 80,
+    chosen: bool = False,
+) -> Wizard:
+    """Return the wizard of *flow*: the task step, then the task's steps.
+
+    The extension steps follow only for the run options. *chosen* means the
+    user chose the task on an earlier wizard's task step: the wizard then
+    starts at the task's first step, and Back from it returns to the task
+    step.
+    """
+    steps = [task_step(flow.name), *flow.steps(session)]
+    if flow.table is OPTIONS:
+        steps += ext.wizard_steps()
+    wizard = _TaskWizard if chosen else Wizard
+    return wizard(
+        new_state(session, flow.table),
+        prompter,
+        steps,
+        title=TITLE,
+        task=flow.title,
+        review=lambda state: flow.review(state, session),
+        command=lambda state: flow.command(state, session),
+        width=width,
+    )
 
 
 def plural(count: int, word: str, many: str | None = None) -> str:

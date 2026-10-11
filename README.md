@@ -1,11 +1,12 @@
-# AutoExcerpter v1.0.2
+# AutoExcerpter v2.0.0
 
 AutoExcerpter transcribes PDFs and folders of page images with vision-language
 models, summarizes each page and builds a consolidated bibliography whose entries
 are enriched from OpenAlex. It runs on OpenAI, Anthropic, Google and OpenRouter
 models and on OpenAI-compatible endpoints that you name in the settings. The
 `run` command serves scripts and agents; the `ui` command walks you through a run
-in the terminal. Please report bugs on the
+in the terminal. `render` writes the files again from the store without model
+calls, and `migrate` imports the outputs of version 1.0. Please report bugs on the
 [GitHub issue tracker](https://github.com/Paullllllllllllllllll/AutoExcerpter/issues).
 
 ## Overview
@@ -21,9 +22,11 @@ AutoExcerpter then corrects page numbers across the document, merges duplicate
 citations, looks them up in OpenAlex and renders the summary as Markdown and Word
 files.
 
-For an input `X.pdf` or an image folder `X/`, a run writes `X_transcription.md`,
-`X_summary.md`, `X_summary.docx`, the working logs in `X_autoexcerpter/` and the
-folder database `autoexcerpter.sqlite` ([Output Contract](#output-contract)).
+Every page result goes into the output folder's database `autoexcerpter.sqlite`
+the moment it arrives, together with every provider response as received. The
+files a user reads are views rendered from that store: for an input `X.pdf` or an
+image folder `X/`, a run writes `X_transcription.md`, `X_summary.md` and
+`X_summary.docx` ([Output Contract](#output-contract)).
 
 ## Installation
 
@@ -56,6 +59,8 @@ uv run autoexcerpter run --input scans --all --output excerpts
 uv run autoexcerpter run --input scans --select 1-3  # or a name: --select braudel
 uv run autoexcerpter run --input scans --all --dry-run --json
 uv run autoexcerpter ui                              # guided run
+uv run autoexcerpter render --input excerpts         # rewrite the files, no calls
+uv run autoexcerpter migrate --input excerpts        # import version 1.0 outputs
 ```
 
 A folder input is searched recursively; item numbers count in discovery order,
@@ -71,7 +76,8 @@ and default. They mirror the option table (`autoexcerpter/spec.py`), and
 stated default are off or unset until given. The last column says whether the
 settings `defaults:` block can set the option; its key there is the flag without
 the leading dashes, with underscores for hyphens (`--transcription-format` becomes
-`transcription_format`). `autoexcerpter ui` takes only `--settings FILE`.
+`transcription_format`). `autoexcerpter ui` takes only `--settings FILE`;
+`render` and `migrate` are described under [Store](#store).
 
 ### Input
 
@@ -150,7 +156,7 @@ option, for example as `model` or `summary_verbosity`.
 | Flag | Description | Default | In `defaults:` |
 | --- | --- | --- | --- |
 | `--force` | reprocess items whose outputs exist (resume is the default) | | no |
-| `--retranscribe` | transcribe again instead of reusing logged transcriptions | | no |
+| `--retranscribe` | transcribe again instead of reusing stored transcriptions | | no |
 | `--concurrency N` | parallel page requests | 16 | yes |
 | `--dry-run` | plan without API calls or writes | | no |
 | `--json` | print one JSON summary line on stdout | | no |
@@ -162,7 +168,7 @@ option, for example as `model` or `summary_verbosity`.
 | --- | --- |
 | 0 | every item completed, or nothing was left to do |
 | 1 | an item failed, or no item could be processed (no PDF or image folder found, `--select` matched nothing, an unexpected error) |
-| 2 | usage or configuration error (invalid flags or settings, several items without `--all` or `--select`, two items with one output name in one folder, a working log in the output folder that belongs to another input of the same name, summaries on without a summary format, an unset API key variable) |
+| 2 | usage or configuration error (invalid flags or settings, several items without `--all` or `--select`, two items with one output name in one folder, a stored document in the output folder that belongs to another input of the same name, summaries on without a summary format, an unset API key variable, a database the store refuses) |
 | 130 | interrupted (Ctrl+C) |
 
 Progress, warnings and errors go to stderr. With `--json`, stdout carries exactly
@@ -186,9 +192,15 @@ items; `spec` maps every field of the effective run specification, such as
 
 ## Guided UI
 
-`autoexcerpter ui` asks one step at a time: input (with the PDFs, image folders
-and pages found, and the item selection), output location, summary on or off,
-formats, summary context, transcription model, summary model, page images
+`autoexcerpter ui` first asks for the task: a new run, rendering the files of
+stored documents again (`render`) or importing version 1.0 outputs (`migrate`).
+A task chosen there opens at its first step, and Back from it returns to the
+task question. The render task asks for the input, the formats, whether to
+replace files changed outside the tool and whether to dry-run; the migrate task
+asks for the input and whether to dry-run, and its review shows what a dry run
+would import. The new run asks one step at a time: input (with the PDFs, image
+folders and pages found, and the item selection), output location, summary on or
+off, formats, summary context, transcription model, summary model, page images
 ("Recommended" or "Customize") and run options. Every list ends with Back; a text
 or path prompt takes `<` alone as Back. Settings defaults are preselected, and
 answers act like flags over them. The review screen marks values taken from
@@ -260,7 +272,7 @@ defaults:
   summary_verbosity: low
   service_tier: flex
   transcription_format: md
-  formats: [summary-md, summary-docx, sqlite]
+  formats: [summary-md, summary-docx]
   concurrency: 16
   fallback_context: path/to/summary_topics.txt
 ```
@@ -279,8 +291,8 @@ The `defaults:` block holds run defaults keyed by option names. Unknown keys,
 options that only the command line can set and invalid values are errors.
 Precedence is flag (or wizard answer), then settings default, then code default.
 `--dry-run --json` prints the effective spec with the source of each value, and
-the `documents` table of the database stores it for every item, so a run stays
-reproducible after the defaults change. Tuning values such as the citation merge
+the store records it with every run, so a run stays reproducible after the
+defaults change. Tuning values such as the citation merge
 thresholds, image byte caps and text cleaning switches are code constants.
 
 ## Providers and Response Formats
@@ -357,8 +369,7 @@ For an input `X.pdf` or an image folder `X/`, written beside the input or into
 X_transcription.md       (X_transcription.txt with --transcription-format txt)
 X_summary.md             summary-md
 X_summary.docx           summary-docx
-X_autoexcerpter/         transcription.jsonl, summary.jsonl (working logs)
-autoexcerpter.sqlite     sqlite; one database per output folder
+autoexcerpter.sqlite     the store; one database per output folder, always written
 ```
 
 The transcription starts with a metadata header and holds the pages in scan
@@ -378,22 +389,103 @@ keeps LaTeX math as `$...$` and `$$...$$`; the
 Word file converts it to native Word equations (`rendering/equations.py`) and
 links references matched in OpenAlex.
 
-The working logs are versioned JSONL: a header with the format version, the model
-and the image settings fingerprint, then one line per page.
-`autoexcerpter.sqlite` (`rendering/sqlite.py`) has four tables. `documents` holds
-one row per item: input path and content hash, tool version, models, settings
-fingerprint, the effective spec with sources, page counts, completeness and the
-files written. `pages` holds each page's status, error, model, token usage and
-text; `summaries` each page summary with bullet points and references; and
-`citations` the consolidated citations with pages, DOI, URL and OpenAlex
-metadata. An item's rows are upserted in one transaction, so resumed and repeated
-runs update them in place, and two processes can share a database.
+The files are rendered from the store once an item has every unit stored, each
+replaced atomically and recorded with its hash. A document renders to the same
+bytes until its units change: the transcription header shows the time the
+document last changed, and the Word file has fixed archive timestamps. Text files
+end with exactly one newline.
 
 When an item's longest path would exceed the Windows path limit,
 `output/paths.py` shortens the item name and appends an 8-character hash of the
-full name, the same way for every file of the item. `X_autoexcerpter/` stays
-after a run unless the item completed under `--force` without
-`--keep-working-files`.
+full name, the same way for every file of the item.
+
+## Store
+
+`autoexcerpter.sqlite` is the single source of truth of every run in its output
+folder (`common/store.py` with AutoExcerpter's tables in `output/store.py`). It
+records each run with its tool version, command and effective spec; the prompt,
+schema and context texts it used; one document per item with its input path and
+hash and the image settings its pages were produced with; one transcription unit
+and one summary unit per page with status, content, model, provider, token usage
+and error; every provider attempt with the response body as received over HTTP;
+the page summaries, the consolidated citations, and the rendered files with their
+hashes. Each unit commits in its own short transaction as its page finishes, so
+an interrupted run loses at most the pages in flight. A run leases each document
+it works on, so two runs on one folder never write the same document; a lease
+that is not renewed expires after 10 minutes.
+
+Outside code reads the store through five views, which stay stable across
+versions while the tables behind them may change:
+
+| View | One row per | Columns |
+| --- | --- | --- |
+| `page_text` | page transcription | `document`, `kind`, `page_index`, `image_name`, `order_index`, `text`, `status`, `model`, `usage`, `outcome`, `error`, `provider`, `run_id` |
+| `page_summaries` | page summary | `document`, `order_index`, `page`, `image_name`, `status`, `stale`, `outcome`, `page_information`, `bullet_points`, `page_references`, `model`, `usage`, `error`, `provider`, `run_id` |
+| `document_citations` | consolidated citation | `document`, `position`, `text`, `pages`, `partial`, `doi`, `url`, `metadata` |
+| `document_status` | document | `document`, `kind`, `input_path`, `status`, `units_total`, `units_done`, `units_failed`, `units_pending`, `last_run_id`, `updated_at` |
+| `page_attempts` | provider attempt | `document`, `kind`, `order_index`, `response_id`, `run_id`, `provider`, `model`, `attempt`, `submission_id`, `custom_id`, `raw`, `raw_kind`, `usage`, `error`, `http_status`, `created_at`, `role` |
+
+Open the database read-only and close it after the query, so that a running item
+never waits on the reader:
+
+```python
+import sqlite3
+from pathlib import Path
+
+database = Path("excerpts") / "autoexcerpter.sqlite"
+connection = sqlite3.connect(f"{database.resolve().as_uri()}?mode=ro", uri=True)
+try:
+    rows = connection.execute(
+        "SELECT order_index, status, text FROM page_text WHERE document = ? "
+        "ORDER BY order_index",
+        ("doc",),
+    ).fetchall()
+finally:
+    connection.close()
+```
+
+A reader that holds a transaction open delays the run's writes, which wait and
+warn once a minute but never fail a page. A database with a newer schema, an
+unreadable file and a database written before the store stop the run with exit
+code 2 and are left as they are.
+
+### Render
+
+`autoexcerpter render --input PATH` writes the files of every stored document
+below `PATH` (a folder or one `autoexcerpter.sqlite`) again, without model calls.
+Without `--formats` each document gets the formats it was rendered in before;
+`--formats` takes `transcription-md`, `transcription-txt`, `summary-md` and
+`summary-docx`. A file that matches neither its recorded hash nor the new
+rendering was changed outside the tool and is left as it is unless `--force`.
+`--dry-run` reports what would be written. Exit codes: 0 when every file holds
+its rendering or was left as edited, 1 when a file could not be replaced or
+another run holds a document, 2 for a usage error or a refused database; a
+database written before the store names the migrate command.
+
+### Migrate
+
+`autoexcerpter migrate --input PATH` imports what version 1.0 left at or below
+`PATH`: the folder databases, the working logs `transcription.jsonl` and
+`summary.jsonl` in each `X_autoexcerpter/` folder, and the rendered files. It
+snapshots each database beside itself (`autoexcerpter.pre-migrate-<time>.sqlite`)
+before its first write and rebuilds a version 1.0 database into the store in one
+transaction, verified by its row counts. The last log record of each page becomes
+its unit; pages a log lacks are planned as pending, so a partial item resumes
+where it stopped. Citations are consolidated from the stored summaries with
+OpenAlex metadata from the cache in `state_dir` (`--settings FILE` names the
+settings file); no request is made. The existing files are registered with their
+hashes, so a later `render` replaces them in place. Old files are only read, and
+a second run imports nothing.
+
+Each document is then verified from the store. A unit count or failure count
+that differs from the logs fails the import (exit 1). A re-rendered body that
+differs from the existing file, compared without the header, the
+`<page_break .../>` markers and a missing final newline, is a warning. The report
+counts the documents per resume state before and after the import. Exit code 2
+means a database the store refuses: newer, unreadable or of an unknown layout.
+With `--json`, stdout carries one summary line with `databases`, `converted`,
+`documents`, `units`, `citations`, `outputs`, `mismatches`, `warnings` and
+`snapshots`.
 
 ## Batch Processing
 
@@ -404,37 +496,36 @@ provider across the run. A failed item is counted, and the run continues.
 
 ## Resume
 
-Resume is the default. Each item is classified from its outputs and working logs
-(`pipeline/resume.py`) before the run; a dry run shows the states.
+Resume is the default. Each item is classified from the store alone
+(`output/store.py`) before the run; a dry run shows the states.
 
 | State | Meaning | Action |
 | --- | --- | --- |
-| `none` | nothing to reuse | process from scratch |
-| `partial` | the transcription log holds completed pages | transcribe the remaining pages |
-| `transcription_only` | the transcription exists, but summary outputs are missing or the logs show missing or failed pages | redo what is missing or failed |
-| `complete` | every expected output exists and the logs show no gap or failure | skip (`items_skipped`) |
+| `none` | no stored units | process from scratch |
+| `partial` | pages are pending or failed | transcribe them, then summarize them |
+| `transcription_only` | every page is transcribed, some summaries are missing, failed or stale | summarize those pages from the stored text |
+| `complete` | every unit is stored | skip (`items_skipped`); missing files are rendered again without model calls |
+| `legacy` | output files or version 1.0 working logs exist without stored units | skip and list; `migrate` imports them, `--force` processes the item again |
+| `blocked` | another live run holds the document's lease | skip and list |
+| `refused` | pages remain to transcribe, but the stored pages used other image settings | count failed; name the changed keys |
 
-With the `sqlite` format, a complete item without a complete `documents` row is
-finished from its logs without model calls; without logs it stays skipped with a
-warning that `--force` rebuilds it. A logged failure never counts as complete, so
-a rerun retries failed pages. A page stopped by a content filter or refused by
-the model fails after one call (`error_type` `content_filter` or `refusal`) and is
-retried the same way. An input whose size or image set changed since its log was
-written is processed from scratch. When an item's working log was written for
-another input of the same name that still exists, as with two `doc.pdf` files
-sharing one `--output` folder, the plan stops with exit 2 before any work; give one
-of them another output folder.
+A failure never counts as complete, so a rerun retries failed pages. A page
+stopped by a content filter or refused by the model fails after one call
+(`error_type` `content_filter` or `refusal`) and is retried the same way. When a
+page's transcription changes, its summary is marked stale and made again. An
+input whose content hash changed since its units were stored is processed from
+scratch. When a stored document belongs to another input of the same name that
+still exists, as with two `doc.pdf` files sharing one `--output` folder, the plan
+stops with exit 2 before any work; give one of them another output folder.
 
-`--force` processes every selected item from scratch. `--retranscribe` keeps
-resume but transcribes logged pages again instead of reusing them. Before logged
-pages are reused while pages remain to transcribe, the run's image settings must
-match those recorded in the log. Otherwise the item fails with the changed keys
-named and a hint to use `--force`; a log without a fingerprint is refused the same
-way. Switching the transcription model on resume is allowed: the model and the
-settings derived from it (detail resolution, image cap) are not compared, the run
-warns, and the transcription file notes both models. Each page record and its
-`pages.model` row name the model that transcribed the page. A log of another
-format version is ignored with a warning, so its item starts over.
+`--force` processes every selected item from scratch; the earlier provider
+responses stay in the store. `--retranscribe` keeps resume but transcribes the
+stored pages again and summarizes them again. The image settings are compared key
+by key with the record stored with the document. Switching the transcription
+model on resume is allowed: the model and the settings derived from it (detail
+resolution, image cap) are not compared, the run records a note, and the
+transcription file names both models. Each unit names the model that produced
+it.
 
 ## Citations and OpenAlex
 
@@ -468,20 +559,22 @@ citations looked up per document. `--no-openalex` turns lookups off.
 
 ```text
 autoexcerpter/
-  __main__.py   entry point: dispatch run or ui
+  __main__.py   entry point: dispatch run, render, migrate or ui
   spec.py       RunSpec dataclasses and the option table (OPTIONS)
   settings.py   typed settings: machine values and the defaults block
   run.py        core: discover, plan, run
   events.py     run events: item started, page done, waiting, warning, item finished
   ext.py        extension seam with pass-through defaults
   providers.py  provider names and inference from model names
+  migrate.py    import of version 1.0 databases, working logs and files
   cli/          argparse from the option table, stderr reporter, --json, exit codes
-  ui/           questionary wizard, review screen, rich progress
-  common/       vendored modules shared with the sibling tools
-  llm/          client factory, model calls, capability table, prompts
+  ui/           questionary wizard with the run, render and migrate tasks
+  common/       vendored modules shared with the sibling tools, the store among them
+  llm/          client factory, model calls with attempt capture, capability table
   imaging/      page payload sources and image presets
-  pipeline/     item processing, pages, working logs, resume, context, paths
-  rendering/    transcription, Markdown, DOCX, equations, SQLite, citations/
+  output/       the store's tables, views and resume, the renderers, item paths
+  pipeline/     item processing, pages, units, context
+  rendering/    transcription, Markdown, DOCX, equations, citations/
   resources/    prompts and the transcription and summary schemas
 ```
 
@@ -489,7 +582,8 @@ The core imports nothing from `cli/` or `ui/`. It never prints, prompts or exits
 and reports through the run events, which the CLI writes to stderr and the UI
 shows as progress bars. `common/` holds tool-agnostic modules (option tables,
 wizard framework, settings loader, structured calls, retry, rate limiting, HTTP
-timeouts, images, JSONL, SQLite writer, agent contract) kept byte-identical
+timeouts, images, the run store and its SQLite writer, attempt capture, agent
+contract) kept byte-identical
 across the sibling tools: `common/MANIFEST.json` pins each file by its SHA-256, and
 `tests/common/test_manifest.py` fails when a copy drifts. `ext.py` holds the
 extension hooks (extra arguments, settings blocks and wizard steps, a startup
@@ -523,12 +617,21 @@ work, names the variable and exits with code 2; the UI withholds Run and names
 the variable on the review screen.
 
 **Image settings changed.** A resumed item with pages left to transcribe fails
-when its image settings differ from its log. Rerun with the earlier
+when its image settings differ from those stored with it. Rerun with the earlier
 settings, or pass `--force` to start the item over.
 
 **Pages failed with `content_filter` or `refusal`.** A provider's content filter
 can stop pages dense with long verbatim passages. Rerun the item with another
-model; since the model is part of the image settings, this needs `--force`.
+model; a model switch resumes, so only the failed pages are sent again.
+
+**"written before the store".** A run or `render` on a folder whose
+`autoexcerpter.sqlite` comes from version 1.0 exits with code 2. Run
+`autoexcerpter migrate --input <folder>` once; the old database stays as a
+snapshot beside the new one.
+
+**Items listed as legacy.** Output files or working logs of version 1.0 without
+stored units are skipped. `migrate` imports them; `--force` processes them
+again.
 
 **Rate limit errors (429) or timeouts.** Lower `--concurrency`, adjust
 `rate_limits` to your provider account, or raise `timeouts.request`.

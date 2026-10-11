@@ -1,8 +1,8 @@
 """Resolve the page-image settings of one transcription model.
 
 The per-provider sections below are the recommended values; the run's
-``ImageSpec`` overrides the fields it sets. The resolved dict is recorded in
-the working log, and its fingerprint guards resume.
+``ImageSpec`` overrides the fields it sets. The resolved dict is recorded
+with the document in the store, and resume compares it key by key.
 """
 
 from __future__ import annotations

@@ -98,6 +98,7 @@ def _settings_file(folder: Path) -> Path:
 
 def _answers(pdf: Path, output: Path) -> list[Any]:
     return [
+        KEEP,
         str(pdf),
         "folder",
         str(output),
