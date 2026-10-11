@@ -319,7 +319,7 @@ def test_a_summary_row_commits_before_its_unit(tmp_path: Path) -> None:
             calls: list[str] = []
             original = store.write_unit
 
-            async def failing(lease: Lease, result: UnitResult) -> None:
+            async def failing(lease: Lease, result: UnitResult, **_: object) -> None:
                 calls.append(result.kind)
                 raise sqlite3.OperationalError("disk I/O error")
 

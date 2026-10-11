@@ -159,9 +159,9 @@ class AttemptRecord:
     """One provider attempt as stored: request, verbatim response and outcome.
 
     ``request`` holds the call parameters without image or audio payloads
-    (see :func:`redact_payloads`). ``raw`` is the captured body with
-    ``raw_kind`` ``'http'``, or a dump of the SDK object with ``'sdk'`` where
-    no hook could see the body. ``latency`` is in seconds.
+    (see :func:`redact_payloads`). ``raw`` is the captured body as bytes,
+    unaltered, with ``raw_kind`` ``'http'``, or a dump of the SDK object with
+    ``'sdk'`` where no hook could see the body. ``latency`` is in seconds.
     """
 
     provider: str
@@ -170,7 +170,7 @@ class AttemptRecord:
     attempt: int
     label: str | None = None
     request: Mapping[str, Any] = field(default_factory=dict)
-    raw: str | None = None
+    raw: str | bytes | None = None
     raw_kind: RawKind | None = None
     usage: Mapping[str, Any] | None = None
     error: str | None = None

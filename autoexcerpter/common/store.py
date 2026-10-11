@@ -18,14 +18,12 @@ Writes run through one :class:`~.sqlite.SqliteWriter` per store, each in one
 short transaction that never spans a network call; a busy database delays a
 write without failing it. A document is worked under a lease: every write
 transaction on its units, outputs and submissions checks, inside the
-transaction, that the lease still names this holder and carries its
-generation, and that it had not expired when the write was submitted to the
-writer; it raises :class:`LeaseLostError` otherwise. Judging expiry at
-submission keeps a busy database from failing queued writes: the writer runs
-them in order, so a renewal submitted before expiry commits before the writes
-queued after it. A takeover committed first still fails them on the
-generation. Response
-rows are appended without a lease check and are never updated or deleted.
+transaction, that the lease still names this holder, carries its generation
+and has not expired by the clock read inside the transaction; it raises
+:class:`LeaseLostError` otherwise, and a renewal of an expired lease fails the
+same way. A write that waited on a busy database past the lease's expiry
+therefore fails, while the response rows of its attempts stay: response rows
+are appended without a lease check and are never updated or deleted.
 Reads use short read-only connections; a busy database delays a read the same
 way, retried with the writer's backoff and warnings, without failing it.
 """
@@ -1118,14 +1116,11 @@ def _touch(
     )
 
 
-def _check_lease(
-    connection: sqlite3.Connection, lease: Lease, submitted: float
-) -> None:
-    """Raise unless *lease* holds now and had not expired at *submitted*.
+def _check_lease(connection: sqlite3.Connection, lease: Lease, now: float) -> None:
+    """Raise unless *lease* holds and has not expired at *now*.
 
-    Holder and generation are compared with the row read inside the
-    transaction; expiry is judged at *submitted*, the clock reading taken
-    when the write was queued.
+    Holder, generation and expiry are compared with the row read inside the
+    transaction; *now* is the clock reading taken inside it.
     """
     row = connection.execute(
         "SELECT lease_run_id, lease_generation, lease_until FROM documents "
@@ -1139,7 +1134,7 @@ def _check_lease(
         raise LeaseLostError(
             f"The lease on document {lease.doc_id} passed to another holder.", lease
         )
-    if until is None or until <= submitted:
+    if until is None or until <= now:
         raise LeaseLostError(f"The lease on document {lease.doc_id} expired.", lease)
 
 
@@ -1179,6 +1174,15 @@ class _PlannedFile:
     recorded: str | None
     temp: Path | None = None
     error: str | None = None
+    kept: bool = False
+
+
+def _changed_since_plan(item: _PlannedFile) -> bool:
+    """Whether the target's contents changed after the render planned it."""
+    try:
+        return file_sha256(item.target.path) != item.current
+    except OSError:
+        return True
 
 
 def _replace(item: _PlannedFile) -> str | None:
@@ -1207,9 +1211,24 @@ def _commit_render(
     items: Sequence[_PlannedFile],
     run_id: str,
     now: str,
+    force: bool = False,
 ) -> list[str | None]:
+    """Replace the planned files and record them; return each file's error.
+
+    Unless *force*, a target whose contents changed after planning is left
+    as it is and its item marked kept.
+    """
     errors: list[str | None] = []
     for item in items:
+        if (
+            item.error is None
+            and item.temp is not None
+            and not force
+            and _changed_since_plan(item)
+        ):
+            item.kept = True
+            errors.append(None)
+            continue
         error = item.error if item.error is not None else _replace(item)
         if error is None:
             connection.execute(
@@ -1354,10 +1373,10 @@ class Store:
             raise
 
     async def _leased(self, lease: Lease, func: Callable[[sqlite3.Connection], T]) -> T:
-        submitted = self.clock()
+        clock = self.clock
 
         def write(connection: sqlite3.Connection) -> T:
-            _check_lease(connection, lease, submitted)
+            _check_lease(connection, lease, clock())
             return func(connection)
 
         return await self._write(write)
@@ -1544,18 +1563,18 @@ class Store:
     async def renew(self, lease: Lease) -> Lease:
         """Extend *lease*; raise :class:`LeaseLostError` once it has expired.
 
-        The lease must not have expired when the renewal is submitted; the new
-        expiry counts from the clock when the renewal's transaction runs.
+        Expiry is judged by the clock when the renewal's transaction runs, and
+        the new expiry counts from that reading; an expired lease is not
+        renewed, so its holder acquires the document again.
         """
         clock, ttl = self.clock, self.lease_ttl
-        submitted = clock()
 
         def write(connection: sqlite3.Connection) -> Lease:
             now = clock()
             cursor = connection.execute(
                 "UPDATE documents SET lease_until = ? WHERE doc_id = ? "
                 "AND lease_run_id = ? AND lease_generation = ? AND lease_until > ?",
-                (now + ttl, lease.doc_id, lease.holder, lease.generation, submitted),
+                (now + ttl, lease.doc_id, lease.holder, lease.generation, now),
             )
             if cursor.rowcount == 0:
                 raise LeaseLostError(
@@ -1640,8 +1659,18 @@ class Store:
 
         return await self._leased(lease, write)
 
-    async def write_unit(self, lease: Lease, result: UnitResult) -> None:
-        """Commit one unit's state and the document's counts in one transaction."""
+    async def write_unit(
+        self,
+        lease: Lease,
+        result: UnitResult,
+        *,
+        extra: Callable[[sqlite3.Connection], object] | None = None,
+    ) -> None:
+        """Commit one unit's state and the document's counts in one transaction.
+
+        *extra* runs first in the same transaction, for a tool's content row
+        of the unit, so that the row and the unit commit or roll back together.
+        """
         run_id = self._require_run()
         now = _iso(self.clock())
         params = {
@@ -1667,6 +1696,8 @@ class Store:
         }
 
         def write(connection: sqlite3.Connection) -> None:
+            if extra is not None:
+                extra(connection)
             connection.execute(_UPSERT_UNIT, params)
             _touch(connection, lease.doc_id, run_id, now)
 
@@ -1878,7 +1909,9 @@ class Store:
         Each rendering goes to a temporary file first; the targets are
         replaced while the transaction that checks the lease and updates
         ``outputs`` holds the write lock. A file that matches neither its
-        recorded hash nor the new rendering is left alone unless *force*. A
+        recorded hash nor the new rendering is left alone unless *force*; so is
+        a file whose contents changed between that check and the replacement,
+        which the transaction checks again. A
         target that cannot be read is not replaced, since the overwrite guard
         cannot judge it. That case and a failed replacement mark the output
         stale and add a warning. *hook*
@@ -1912,7 +1945,7 @@ class Store:
             def write(connection: sqlite3.Connection) -> list[str | None]:
                 if hook is not None:
                     hook()
-                return _commit_render(connection, doc_id, items, run_id, now)
+                return _commit_render(connection, doc_id, items, run_id, now, force)
 
             errors = await self._leased(lease, write)
         finally:
@@ -1921,7 +1954,13 @@ class Store:
                     with contextlib.suppress(OSError):
                         item.temp.unlink(missing_ok=True)
         for item, error in zip(items, errors, strict=True):
-            if error is not None:
+            if item.kept:
+                report.kept.append(item.target.path)
+                report.warnings.append(
+                    f"{item.target.path} changed while it was rendered and is left "
+                    "as it is; render with force to replace it."
+                )
+            elif error is not None:
                 report.stale.append(item.target.path)
                 report.warnings.append(error)
             elif item.temp is None:
@@ -1968,7 +2007,6 @@ class Store:
             raise ValueError("Custom ids must be unique, one per unit.")
         leases = self._leases_for([unit.doc_id for unit in units])
         clock = self.clock
-        submitted = clock()
         submission = (
             submission_id,
             self.tool,
@@ -1986,7 +2024,7 @@ class Store:
         def write(connection: sqlite3.Connection) -> None:
             now = clock()
             for lease in leases:
-                _check_lease(connection, lease, submitted)
+                _check_lease(connection, lease, now)
             connection.execute(
                 "INSERT INTO submissions (submission_id, tool, provider, model, "
                 "run_id, part, request_count, intent_at, updated_at, status) "
@@ -2011,7 +2049,6 @@ class Store:
     ) -> Submission:
         held = dict(self._held)
         clock = self.clock
-        submitted = clock()
         columns = {**values, "updated_at": _NOW}
         assignments = ", ".join(f"{column} = ?" for column in columns)
         sql = f"UPDATE submissions SET {assignments} WHERE submission_id = ?"
@@ -2030,7 +2067,7 @@ class Store:
                     f"Submission {submission_id} is {row[0]}; this change needs "
                     f"status {' or '.join(allowed)}."
                 )
-            _check_submission_leases(connection, submission_id, held, submitted)
+            _check_submission_leases(connection, submission_id, held, now)
             params = [stamp if value is _NOW else value for value in columns.values()]
             connection.execute(sql, (*params, submission_id))
             if after is not None:
@@ -2390,7 +2427,7 @@ def _check_submission_leases(
     connection: sqlite3.Connection,
     submission_id: str,
     held: Mapping[int, Lease],
-    submitted: float,
+    now: float,
 ) -> None:
     rows = connection.execute(
         "SELECT DISTINCT doc_id FROM submission_requests WHERE submission_id = ?",
@@ -2400,7 +2437,7 @@ def _check_submission_leases(
         lease = held.get(int(doc_id))
         if lease is None:
             raise LeaseLostError(f"Document {doc_id} is not leased by this run.")
-        _check_lease(connection, lease, submitted)
+        _check_lease(connection, lease, now)
 
 
 def _resume_state(

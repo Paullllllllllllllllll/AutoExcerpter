@@ -142,11 +142,11 @@ class HttpAttempt:
             return
         latency = time.monotonic() - self._started
         captured = self._scope.last if self._scope is not None else None
-        raw: str | None = None
+        raw: str | bytes | None = None
         raw_kind: RawKind | None = None
         status = getattr(error, "status_code", None)
         if captured is not None:
-            raw, raw_kind, status = captured.text, "http", captured.status
+            raw, raw_kind, status = captured.body, "http", captured.status
         elif response is not None:
             raw, raw_kind = sdk_dump(unwrap_raw_response(response)), "sdk"
         provider, model, role, attempt, label = self._identity

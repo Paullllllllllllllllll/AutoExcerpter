@@ -131,6 +131,40 @@ def test_a_hand_edited_file_stays_unless_forced(tmp_path: Path) -> None:
     asyncio.run(main())
 
 
+def test_a_file_edited_while_the_render_waits_stays_unless_forced(
+    tmp_path: Path,
+) -> None:
+    db = tmp_path / "tool.sqlite"
+    target = tmp_path / "doc.txt"
+    edited = b"edited while the render waited\n"
+
+    def edit() -> None:
+        target.write_bytes(edited)
+
+    async def main() -> None:
+        async with Store(db, "tool") as store:
+            await store.begin_run("run")
+            lease = await _document(store, ["one"])
+            spec = [RenderTarget(target, "txt", _text)]
+            await store.render(lease, spec)
+            recorded = store.outputs(lease.doc_id)[0].sha256
+            await store.write_unit(lease, _result(0, "changed"))
+
+            kept = await store.render(lease, spec, hook=edit)
+            assert kept.kept == [target]
+            assert kept.written == []
+            assert "changed while it was rendered" in kept.warnings[0]
+            assert target.read_bytes() == edited
+            assert store.outputs(lease.doc_id)[0].sha256 == recorded
+            assert _temps(tmp_path) == []
+
+            forced = await store.render(lease, spec, force=True, hook=edit)
+            assert forced.written == [target]
+
+    asyncio.run(main())
+    assert target.read_bytes() == b"changed\n"
+
+
 def test_an_existing_file_without_a_row_needs_force(tmp_path: Path) -> None:
     db = tmp_path / "tool.sqlite"
     target = tmp_path / "doc.txt"

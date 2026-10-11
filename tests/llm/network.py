@@ -76,7 +76,7 @@ class MockNetwork:
 
 def bodies(records: list[AttemptRecord]) -> list[bytes | None]:
     """Return the raw body of each record as bytes."""
-    return [None if r.raw is None else r.raw.encode("utf-8") for r in records]
+    return [r.raw.encode("utf-8") if isinstance(r.raw, str) else r.raw for r in records]
 
 
 __all__ = ["MockNetwork", "Recorder", "bodies"]

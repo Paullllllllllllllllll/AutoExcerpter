@@ -1,4 +1,4 @@
-"""Lease expiry is judged when a write is submitted, not when it runs.
+"""Lease expiry is judged when a write runs, by the clock inside its transaction.
 
 Run on Windows with:
 
@@ -24,6 +24,7 @@ from autoexcerpter.common.store import (
     Lease,
     LeaseLostError,
     PlannedUnit,
+    ResponseRow,
     Store,
     UnitResult,
     WriterOptions,
@@ -83,43 +84,50 @@ def _start(coroutine: Awaitable[object]) -> asyncio.Task[object]:
     return asyncio.create_task(run())
 
 
-def test_writes_and_a_renewal_queued_before_expiry_commit_after_a_long_reader(
+def test_a_renewal_and_a_write_that_start_after_expiry_fail_but_responses_stay(
     tmp_path: Path,
 ) -> None:
+    """The first write checked its lease inside a transaction begun before the
+    expiry and holds the write lock while its commit waits, so it commits;
+    the renewal and the write queued behind it start after the expiry."""
     db = tmp_path / "tool.sqlite"
     clock = FakeClock()
     busy: list[float] = []
 
-    async def main() -> tuple[Lease, float, float]:
+    async def main() -> list[object]:
         async with _store(db, clock, busy) as store:
             lease = await _lease(store)
             reader = _reader(db)
             try:
                 first = _start(store.write_unit(lease, _result(0, "before")))
                 renewal = _start(store.renew(lease))
+                second = _start(store.write_unit(lease, _result(1, "after")))
+                row = ResponseRow(
+                    provider="openai", model="model-a", raw="{}", raw_kind="http"
+                )
+                response = _start(store.append_response(row))
                 await asyncio.sleep(0)
                 await _until(lambda: bool(busy))
                 clock.advance(LEASE_TTL + 60.0)
-                renewed_at = clock.now
-                late = _start(store.write_unit(lease, _result(1, "after")))
-                await asyncio.sleep(0)
             finally:
                 reader.execute("COMMIT")
                 reader.close()
-            await first
-            renewed = await renewal
-            await late
-            assert isinstance(renewed, Lease)
-            (row,) = read_rows(db, "documents")
-            return renewed, float(row["lease_until"]), renewed_at
+            return list(
+                await asyncio.gather(
+                    first, renewal, second, response, return_exceptions=True
+                )
+            )
 
-    renewed, lease_until, renewed_at = asyncio.run(main())
+    first, renewal, second, response = asyncio.run(main())
 
     assert busy
-    assert renewed.until == renewed_at + LEASE_TTL
-    assert lease_until == renewed_at + LEASE_TTL
+    assert first is None
+    assert isinstance(renewal, LeaseLostError)
+    assert isinstance(second, LeaseLostError)
+    assert isinstance(response, int)
     contents = {row["idx"]: row["content"] for row in read_rows(db, "units")}
-    assert contents == {0: "before", 1: "after", 2: None}
+    assert contents == {0: "before", 1: None, 2: None}
+    assert len(read_rows(db, "responses")) == 1
 
 
 def test_a_write_submitted_after_expiry_without_a_renewal_still_fails(

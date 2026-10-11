@@ -214,6 +214,17 @@ class TestOpenAI:
         assert network.violations == []
         assert network.scoped == [True, True]
 
+    def test_a_body_of_invalid_utf8_is_recorded_as_its_bytes(
+        self, network: MockNetwork, recorder: Recorder, sleeps: Sleeps
+    ) -> None:
+        broken = b'{"error": "\xff\xfe broken"}'
+        network.answers = [(500, broken), (200, OPENAI_OK)]
+
+        _run(helpers.env(clock=sleeps.clock), recorder=recorder)
+
+        assert bodies(recorder.records) == [broken, OPENAI_OK]
+        assert recorder.records[0].raw == broken
+
     def test_without_a_recorder_nothing_is_captured(
         self, network: MockNetwork, recorder: Recorder, sleeps: Sleeps
     ) -> None:

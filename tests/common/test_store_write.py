@@ -15,8 +15,10 @@ from autoexcerpter.common.store import (
     Component,
     Lease,
     LeaseLostError,
+    PlannedUnit,
     RenderTarget,
     Store,
+    UnitResult,
 )
 from tests.common.store_child import FakeClock
 
@@ -112,6 +114,33 @@ def test_write_refuses_an_expired_or_taken_lease(tmp_path: Path) -> None:
     asyncio.run(main())
     assert called == []
     assert read_rows(db, "extra") == []
+
+
+def test_a_unit_and_its_extra_row_commit_or_roll_back_together(
+    tmp_path: Path,
+) -> None:
+    db = tmp_path / "tool.sqlite"
+
+    def failing(connection: sqlite3.Connection) -> None:
+        connection.execute("INSERT INTO extra (doc_id, text) VALUES (1, 'lost')")
+        raise ValueError("refused")
+
+    async def main() -> None:
+        async with Store(db, "tool", components=(EXTRA,)) as store:
+            await store.begin_run("run")
+            lease = await _lease(store)
+            await store.plan_units(
+                lease, "page", [PlannedUnit(0)], model="m", provider="p"
+            )
+            done = UnitResult("page", 0, "done", "m", "p", content="kept")
+            await store.write_unit(lease, done, extra=_insert("row", lease))
+            failed = UnitResult("page", 0, "done", "m", "p", content="lost")
+            with pytest.raises(ValueError, match="refused"):
+                await store.write_unit(lease, failed, extra=failing)
+
+    asyncio.run(main())
+    assert [row["text"] for row in read_rows(db, "extra")] == ["row"]
+    assert [row["content"] for row in read_rows(db, "units")] == ["kept"]
 
 
 def test_a_bytes_rendering_is_written_as_it_is(tmp_path: Path) -> None:
