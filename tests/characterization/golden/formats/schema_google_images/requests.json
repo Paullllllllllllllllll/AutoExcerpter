@@ -263,7 +263,8 @@
               "<function>"
             ]
           },
-          "transport": "<EitherTransport>"
+          "transport": "<EitherTransport>",
+          "verify": "<SSLContext>"
         },
         "google_api_key": "<env:GOOGLE_API_KEY>",
         "max_retries": 0,
@@ -281,7 +282,8 @@
               "<function>"
             ]
           },
-          "transport": "<EitherTransport>"
+          "transport": "<EitherTransport>",
+          "verify": "<SSLContext>"
         },
         "google_api_key": "<env:GOOGLE_API_KEY>",
         "max_retries": 0,

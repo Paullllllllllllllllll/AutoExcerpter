@@ -1,4 +1,4 @@
-"""Read-back snapshots of the transcription, Markdown, DOCX and SQLite writers.
+"""Read-back snapshots of the transcription, Markdown and DOCX writers.
 
 One fixed set of page results covers the page kinds (roman, arabic,
 unnumbered, spread, blank, error, bibliography, figures), Markdown emphasis,
@@ -11,7 +11,6 @@ goldens.
 
 from __future__ import annotations
 
-import asyncio
 import os
 import shutil
 from pathlib import Path
@@ -20,17 +19,9 @@ from typing import Any
 import docx
 
 from autoexcerpter.common.testing import WriteGuard
-from autoexcerpter.common.usage import Usage, UsageTotals
 from autoexcerpter.rendering.citations import CitationManager
 from autoexcerpter.rendering.docx import create_docx_summary
 from autoexcerpter.rendering.markdown import create_markdown_summary
-from autoexcerpter.rendering.sqlite import (
-    DATABASE_NAME,
-    DocumentRecord,
-    RunInfo,
-    open_database,
-    write_document,
-)
 from autoexcerpter.rendering.summary import build_render_context
 from autoexcerpter.rendering.transcription import write_transcription_to_text
 from tests.characterization.golden import (
@@ -38,7 +29,6 @@ from tests.characterization.golden import (
     Normalizer,
     compare,
     dump_docx,
-    dump_sqlite,
 )
 
 GOLDEN = Path(__file__).resolve().parent / "golden" / "readback"
@@ -47,11 +37,6 @@ NAME = "rich"
 _W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 _M = "{http://schemas.openxmlformats.org/officeDocument/2006/math}"
 _PREFIXES = {_W: "w:", _M: "m:"}
-
-SPEC: dict[str, dict[str, Any]] = {
-    "input.path": {"value": "rich.pdf", "source": "flag"},
-    "summary_model.model": {"value": "gpt-5-mini", "source": "settings"},
-}
 
 # A citation the test enriches by hand, as an OpenAlex match would.
 ENRICHED = "Lancet, T. (2000). A controlled trial of rationing. The Lancet, 355."
@@ -234,42 +219,6 @@ def _citation_manager() -> tuple[CitationManager, Any]:
     return manager, data
 
 
-def _usage(tokens: int) -> UsageTotals:
-    totals = UsageTotals()
-    totals.add("transcription", Usage(total_tokens=tokens))
-    totals.add("summary", Usage(total_tokens=tokens // 10))
-    return totals
-
-
-def _write_sqlite(folder: Path, manager: CitationManager) -> Path:
-    record = DocumentRecord(
-        name=NAME,
-        path=folder / "rich.pdf",
-        kind="pdf",
-        hash="0" * 64,
-        transcription_model="gpt-5-mini",
-        summary_model="gpt-5-mini",
-        complete=True,
-        report={
-            "pages_total": len(TRANSCRIPTIONS),
-            "pages_ok": len(TRANSCRIPTIONS) - 1,
-            "pages_failed": 1,
-            "outputs": [str(folder / f"{NAME}_summary.md")],
-        },
-        pages=TRANSCRIPTIONS,
-        summaries=SUMMARIES,
-        citations=manager.get_sorted_citations(),
-        usage={i: _usage(100 * (i + 1)) for i in range(len(TRANSCRIPTIONS))},
-    )
-
-    async def main() -> None:
-        async with open_database(folder) as writer:
-            await write_document(writer, record, RunInfo(SPEC, "9.9.9"))
-
-    asyncio.run(main())
-    return folder / DATABASE_NAME
-
-
 def _local(tag: str) -> str:
     for namespace, prefix in _PREFIXES.items():
         if tag.startswith(namespace):
@@ -315,14 +264,12 @@ def _render(folder: Path) -> dict[str, str]:
     )
     create_markdown_summary(SUMMARIES, markdown, NAME, manager, data)
     create_docx_summary(SUMMARIES, document, NAME, manager, data)
-    database = _write_sqlite(folder, manager)
 
     return {
         "transcription.txt": norm.text(transcription.read_text(encoding="utf-8")),
         "summary.md": norm.text(markdown.read_text(encoding="utf-8")),
         "summary.docx.dump.txt": norm.text(dump_docx(document)),
         "summary.docx.omml.txt": dump_omml(document),
-        "autoexcerpter.sqlite.dump.txt": dump_sqlite(database, norm),
     }
 
 

@@ -1,4 +1,4 @@
-"""Output stem, output paths and working paths of one item."""
+"""Output stem, output paths and the version 1.0 log paths of one item."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+import autoexcerpter.pipeline.paths as paths_module
 from autoexcerpter.pipeline.paths import (
     HASH_LENGTH,
     WINDOWS_MAX_PATH,
@@ -22,8 +23,7 @@ def _all_paths(paths: ItemPaths) -> list[Path]:
         paths.transcription,
         paths.summary_md,
         paths.summary_docx,
-        paths.transcription_log,
-        paths.summary_log,
+        *paths.legacy_logs(),
     ]
 
 
@@ -33,9 +33,11 @@ def test_role_suffixed_names_beside_each_other(tmp_path: Path) -> None:
     assert paths.transcription == tmp_path / "Book 1791_transcription.md"
     assert paths.summary_md == tmp_path / "Book 1791_summary.md"
     assert paths.summary_docx == tmp_path / "Book 1791_summary.docx"
-    assert paths.working_dir == tmp_path / "Book 1791_autoexcerpter"
-    assert paths.transcription_log == paths.working_dir / "transcription.jsonl"
-    assert paths.summary_log == paths.working_dir / "summary.jsonl"
+    legacy = tmp_path / "Book 1791_autoexcerpter"
+    assert paths.legacy_logs() == (
+        legacy / "transcription.jsonl",
+        legacy / "summary.jsonl",
+    )
 
 
 def test_txt_format_changes_only_the_transcription_extension(tmp_path: Path) -> None:
@@ -43,11 +45,17 @@ def test_txt_format_changes_only_the_transcription_extension(tmp_path: Path) -> 
     txt = ItemPaths.for_item("doc", tmp_path, "txt")
 
     assert txt.transcription == tmp_path / "doc_transcription.txt"
-    assert (txt.summary_md, txt.summary_docx, txt.working_dir) == (
+    assert (txt.summary_md, txt.summary_docx, txt.legacy_logs()) == (
         md.summary_md,
         md.summary_docx,
-        md.working_dir,
+        md.legacy_logs(),
     )
+
+
+def test_the_name_bound_keeps_the_version_1_log_paths() -> None:
+    # Shortened names must stay those version 1.0 chose, so migrate finds the
+    # files of a shortened item; its longest path was the transcription log.
+    assert len("_autoexcerpter/transcription.jsonl") == paths_module._LONGEST_SUFFIX
 
 
 def test_unknown_transcription_format_is_rejected(tmp_path: Path) -> None:

@@ -109,6 +109,10 @@ class StderrReporter:
             )
         for item in run_plan.skipped:
             _write(f"DRY-RUN: {item.name} -> already complete (skip)")
+        for item in (*run_plan.legacy, *run_plan.blocked):
+            _write(f"DRY-RUN: {item.name} -> {item.state} (skip): {item.reason}")
+        for item in run_plan.refused:
+            _write(f"DRY-RUN: {item.name} -> refused: {item.reason}")
 
     def completion(self, result: RunResult) -> None:
         """Write the run overview: items, pages, run time and outputs."""

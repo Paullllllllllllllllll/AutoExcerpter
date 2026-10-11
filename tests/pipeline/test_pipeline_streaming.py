@@ -1,16 +1,15 @@
-"""Tests for the streaming in-memory pipeline in pipeline/item.py.
+"""The streaming in-memory pipeline of pipeline/item.py, into the store.
 
 Covers ItemProcessor on top of PdfPayloadSource with a mocked
 TranscriptionManager and summarization disabled:
-- end-to-end process: .txt output, no images/ directory, log header
-  with file_provenance, page entries with image_provenance/source_file
-- pre-render page-level resume: build_payload called only for pending pages
-- render failure: preprocessing_failure entries without aborting the run
+- end-to-end process: the transcription file, no images or working folder,
+  the image settings on the document, the provenance of every page unit
+- pre-render resume: build_payload called only for the pages still to do
+- render failure: a failed preprocessing_failure unit without aborting
 """
 
 from __future__ import annotations
 
-import asyncio
 import json
 from collections.abc import Callable
 from pathlib import Path
@@ -20,9 +19,11 @@ from unittest.mock import MagicMock
 import pytest
 
 from autoexcerpter.common.images import PagePayload
+from autoexcerpter.common.sqlite import read_rows
+from autoexcerpter.output.store import DATABASE_NAME
 from autoexcerpter.pipeline.item import ItemProcessor, PayloadSource
-from autoexcerpter.pipeline.log import finalize_log_file
-from tests.pipeline.helpers import make_processor, transcriber
+from autoexcerpter.pipeline.units import DocumentHandle
+from tests.pipeline.helpers import process, store_pages, stored_units, transcriber
 
 
 def _fake_transcribe(payload: PagePayload) -> dict[str, Any]:
@@ -42,60 +43,35 @@ def streaming_env(mock_image_processing: dict[str, Any]) -> MagicMock:
     return transcriber(_fake_transcribe)
 
 
-def _make_processor(
-    pdf_path: Path,
-    output_dir: Path,
-    manager: MagicMock,
-    completed_page_indices: set[int] | None = None,
-) -> ItemProcessor:
-    """Construct an ItemProcessor for a PDF input."""
-    return make_processor(
-        pdf_path,
-        output_dir,
-        transcribe_manager=manager,
-        completed=completed_page_indices,
-    )
+def _spy_on_pages(built: list[int], fail_at: int | None = None) -> Any:
+    """Return a ``prepare`` hook recording, or failing, the rendered pages."""
+
+    def prepare(processor: ItemProcessor) -> None:
+        open_source = processor._open_source
+
+        def opened() -> PayloadSource:
+            source = open_source()
+            build = source.build_payload
+
+            def spy(index: int) -> PagePayload:
+                built.append(index)
+                if index == fail_at:
+                    raise RuntimeError("render exploded")
+                return build(index)
+
+            source.build_payload = spy  # type: ignore[method-assign]
+            return source
+
+        processor._open_source = opened  # type: ignore[method-assign]
+
+    return prepare
 
 
-def _read_log_entries(log_path: Path) -> list[dict[str, Any]]:
-    """Parse a JSONL transcription log (header line + one object per line)."""
-    entries = [
-        json.loads(line)
-        for line in log_path.read_text(encoding="utf-8").splitlines()
-        if line.strip()
-    ]
-    assert isinstance(entries, list)
-    return entries
+def _two_stored_pages(texts: dict[int, str]) -> Callable[[DocumentHandle], Any]:
+    async def before(document: DocumentHandle) -> None:
+        await store_pages(document, 3, texts)
 
-
-def _seed_log(processor: ItemProcessor, entries: list[dict[str, Any]]) -> None:
-    """Write a versioned JSONL transcription log mimicking a crashed run."""
-    from autoexcerpter.constants import LOG_FORMAT_VERSION
-
-    header = {
-        "_format_version": LOG_FORMAT_VERSION,
-        "log_type": "transcription",
-        "input_item_name": processor.name,
-        "input_item_path": str(processor.item.path),
-        "input_type": "PDF",
-        "total_images": len(entries),
-        "model_name": processor.job.transcription.name,
-    }
-    source = processor._open_source()
-    try:
-        header["file_provenance"] = source.file_provenance()
-    finally:
-        source.close()
-    lines = [json.dumps(header)] + [json.dumps(entry) for entry in entries]
-    processor.paths.transcription_log.write_text(
-        "\n".join(lines) + "\n", encoding="utf-8"
-    )
-
-
-def _prepare_resume(processor: ItemProcessor, source: PayloadSource) -> None:
-    """Snapshot the seeded log and rewrite its header, as process() does."""
-    processor._load_resume_state(source)
-    processor._init_transcription_log(source)
+    return before
 
 
 class TestProcessItemEndToEnd:
@@ -107,40 +83,33 @@ class TestProcessItemEndToEnd:
         tmp_path: Path,
         streaming_env: MagicMock,
     ) -> None:
-        """process writes the .txt, keeps no images dir, and logs provenance."""
         pdf_path = make_pdf("Book.pdf", num_pages=3)
-        processor = _make_processor(pdf_path, tmp_path / "out", streaming_env)
+        out = tmp_path / "out"
 
-        asyncio.run(processor.process())
+        processor, success = process(pdf_path, out, transcribe_manager=streaming_env)
 
-        assert processor.paths.transcription.exists()
+        assert success
         txt_content = processor.paths.transcription.read_text(encoding="utf-8")
         for page in ("page_0001.jpg", "page_0002.jpg", "page_0003.jpg"):
             assert f"Transcribed text of {page}." in txt_content
-
-        assert not (processor.paths.working_dir / "images").exists()
+        assert not any(path.is_dir() for path in out.iterdir())
         assert streaming_env.transcribe_payload.call_count == 3
 
-        entries = _read_log_entries(processor.paths.transcription_log)
-        header = entries[0]
-        assert "file_provenance" in header
-        assert header["file_provenance"]["source_file"] == str(pdf_path)
-        assert header["file_provenance"]["source_sha256"]
-        assert header["file_provenance"]["target_dpi"] == 300
-
-        page_entries = sorted(
-            entries[1:], key=lambda e: e["original_input_order_index"]
-        )
-        assert len(page_entries) == 3
-        for index, entry in enumerate(page_entries):
-            assert entry["source_file"] == str(pdf_path)
-            assert entry["page_index"] == index
-            provenance = entry["image_provenance"]
-            assert "sha256" not in provenance
-            assert provenance["byte_size"] > 0
+        (document,) = read_rows(out / DATABASE_NAME, "documents")
+        settings = json.loads(document["image_settings"])
+        assert settings["model_type"] == "openai"
+        assert settings["target_dpi"] == 300
+        units = stored_units(out)
+        assert [unit["source_index"] for unit in units] == [0, 1, 2]
+        for unit in units:
+            provenance = json.loads(unit["provenance"])
+            assert provenance["source_file"] == str(pdf_path)
+            image = provenance["image_provenance"]
+            assert "sha256" not in image
+            assert image["byte_size"] > 0
             # Direct render strategy: the render DPI is derived from the
             # active resize profile and never exceeds the target_dpi ceiling.
-            assert 0 < provenance["effective_dpi"] <= 300
+            assert 0 < image["effective_dpi"] <= 300
 
 
 class TestPreRenderResume:
@@ -151,188 +120,81 @@ class TestPreRenderResume:
         make_pdf: Callable[..., Path],
         tmp_path: Path,
         streaming_env: MagicMock,
-        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """With pages 0 and 1 completed, only index 2 is rendered."""
-        pdf_path = make_pdf("Resume.pdf", num_pages=3)
-        processor = _make_processor(
-            pdf_path, tmp_path / "out", streaming_env, completed_page_indices={0, 1}
-        )
-        _seed_log(
-            processor,
-            [
-                {
-                    "image": "page_0001.jpg",
-                    "original_input_order_index": 0,
-                    "transcription": "prior page one",
-                },
-                {
-                    "image": "page_0002.jpg",
-                    "original_input_order_index": 1,
-                    "transcription": "prior page two",
-                },
-            ],
+        """With pages 0 and 1 stored, only index 2 is rendered."""
+        built: list[int] = []
+        out = tmp_path / "out"
+
+        processor, success = process(
+            make_pdf("Resume.pdf", num_pages=3),
+            out,
+            before=_two_stored_pages({0: "prior page one", 1: "prior page two"}),
+            prepare=_spy_on_pages(built),
+            transcribe_manager=streaming_env,
         )
 
-        source = processor._open_source()
-        built_indices: list[int] = []
-        original_build = source.build_payload
-
-        def spy_build(index: int) -> PagePayload:
-            built_indices.append(index)
-            return original_build(index)
-
-        monkeypatch.setattr(source, "build_payload", spy_build)
-
-        try:
-            _prepare_resume(processor, source)
-            results, _ = asyncio.run(processor._transcribe_and_summarize(source))
-        finally:
-            source.close()
-            finalize_log_file(processor.paths.transcription_log)
-
-        assert built_indices == [2]
+        assert success
+        assert built == [2]
         assert streaming_env.transcribe_payload.call_count == 1
-        assert len(results) == 3
-        assert [r["original_input_order_index"] for r in results] == [0, 1, 2]
-        assert results[0]["transcription"] == "prior page one"
-        assert (
-            results[2]["transcription"].strip() == "Transcribed text of page_0003.jpg."
-        )
-
-    def test_all_pages_completed_skips_transcription(
-        self,
-        make_pdf: Callable[..., Path],
-        tmp_path: Path,
-        streaming_env: MagicMock,
-    ) -> None:
-        """When every page is completed, no payload is built at all."""
-        pdf_path = make_pdf("Done.pdf", num_pages=2)
-        processor = _make_processor(
-            pdf_path, tmp_path / "out", streaming_env, completed_page_indices={0, 1}
-        )
-        _seed_log(
-            processor,
-            [
-                {
-                    "image": "page_0001.jpg",
-                    "original_input_order_index": 0,
-                    "transcription": "a",
-                },
-                {
-                    "image": "page_0002.jpg",
-                    "original_input_order_index": 1,
-                    "transcription": "b",
-                },
-            ],
-        )
-
-        source = processor._open_source()
-        try:
-            _prepare_resume(processor, source)
-            results, _ = asyncio.run(processor._transcribe_and_summarize(source))
-        finally:
-            source.close()
-            finalize_log_file(processor.paths.transcription_log)
-
-        assert streaming_env.transcribe_payload.call_count == 0
-        assert len(results) == 2
-
-
-class TestProcessItemResume:
-    """End-to-end resume through process keeps prior page results.
-
-    The log is rewritten on resume, so prior results must be snapshotted
-    before the rewrite and written back with the new header.
-    """
-
-    def test_resumed_pages_survive_log_reinitialization(
-        self,
-        make_pdf: Callable[..., Path],
-        tmp_path: Path,
-        streaming_env: MagicMock,
-    ) -> None:
-        """Prior transcriptions appear in the .txt and in the new log."""
-        pdf_path = make_pdf("ResumeE2E.pdf", num_pages=3)
-        processor = _make_processor(
-            pdf_path, tmp_path / "out", streaming_env, completed_page_indices={0, 1}
-        )
-        _seed_log(
-            processor,
-            [
-                {
-                    "image": "page_0001.jpg",
-                    "original_input_order_index": 0,
-                    "transcription": "prior page one text",
-                },
-                {
-                    "image": "page_0002.jpg",
-                    "original_input_order_index": 1,
-                    "transcription": "prior page two text",
-                },
-            ],
-        )
-
-        asyncio.run(processor.process())
-
-        assert streaming_env.transcribe_payload.call_count == 1
+        contents = [unit["content"] for unit in stored_units(out)]
+        assert contents[:2] == ["prior page one", "prior page two"]
+        assert contents[2].strip() == "Transcribed text of page_0003.jpg."
         txt_content = processor.paths.transcription.read_text(encoding="utf-8")
-        assert "prior page one text" in txt_content
-        assert "prior page two text" in txt_content
+        assert "prior page one" in txt_content
         assert "Transcribed text of page_0003.jpg." in txt_content
 
-        # The reinitialized log must contain the resumed entries again so a
-        # later crash + resume still sees them as completed.
-        entries = _read_log_entries(processor.paths.transcription_log)
-        logged_indices = {
-            e["original_input_order_index"]
-            for e in entries
-            if "original_input_order_index" in e
-        }
-        assert logged_indices == {0, 1, 2}
+    def test_all_pages_stored_skips_transcription(
+        self,
+        make_pdf: Callable[..., Path],
+        tmp_path: Path,
+        streaming_env: MagicMock,
+    ) -> None:
+        """When every page is stored, no payload is built at all."""
+        built: list[int] = []
+
+        _, success = process(
+            make_pdf("Done.pdf", num_pages=3),
+            tmp_path / "out",
+            before=_two_stored_pages({0: "a", 1: "b", 2: "c"}),
+            prepare=_spy_on_pages(built),
+            transcribe_manager=streaming_env,
+        )
+
+        assert success
+        assert built == []
+        assert streaming_env.transcribe_payload.call_count == 0
 
 
 class TestRenderFailure:
-    """A failing build_payload yields a preprocessing_failure entry."""
+    """A failing build_payload yields a failed preprocessing_failure unit."""
 
     def test_render_failure_records_error_and_run_completes(
         self,
         make_pdf: Callable[..., Path],
         tmp_path: Path,
         streaming_env: MagicMock,
-        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Page index 1 fails to render; the other pages still succeed."""
-        pdf_path = make_pdf("Flaky.pdf", num_pages=3)
-        processor = _make_processor(pdf_path, tmp_path / "out", streaming_env)
+        out = tmp_path / "out"
 
-        source = processor._open_source()
-        original_build = source.build_payload
+        _, success = process(
+            make_pdf("Flaky.pdf", num_pages=3),
+            out,
+            prepare=_spy_on_pages([], fail_at=1),
+            transcribe_manager=streaming_env,
+        )
 
-        def flaky_build(index: int) -> PagePayload:
-            if index == 1:
-                raise RuntimeError("render exploded")
-            return original_build(index)
-
-        monkeypatch.setattr(source, "build_payload", flaky_build)
-
-        try:
-            results, _ = asyncio.run(processor._transcribe_and_summarize(source))
-        finally:
-            source.close()
-            finalize_log_file(processor.paths.transcription_log)
-
-        assert len(results) == 3
-        failed = results[1]
-        assert failed["original_input_order_index"] == 1
-        assert failed["error_type"] == "preprocessing_failure"
-        assert failed["transcription"].startswith("[preprocessing error:")
+        assert not success
+        units = stored_units(out)
+        failed = units[1]
+        assert (failed["status"], failed["error_type"]) == (
+            "failed",
+            "preprocessing_failure",
+        )
+        assert failed["content"].startswith("[preprocessing error:")
         assert "render exploded" in failed["error"]
-        assert failed["image"] == "page_0002.jpg"
-        assert failed["sequence_number"] == 2
-
-        succeeded = [results[0], results[2]]
-        for entry in succeeded:
-            assert "error" not in entry
-            assert "image_provenance" in entry
+        assert failed["label"] == "page_0002.jpg"
+        for unit in (units[0], units[2]):
+            assert unit["status"] == "done"
+            assert "image_provenance" in json.loads(unit["provenance"])
         assert streaming_env.transcribe_payload.call_count == 2

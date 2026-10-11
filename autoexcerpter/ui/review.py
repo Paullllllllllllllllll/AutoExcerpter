@@ -18,7 +18,7 @@ from autoexcerpter import run as core
 from autoexcerpter.common.options import Source
 from autoexcerpter.common.wizard import Line, Part, Review, ReviewAction, State
 from autoexcerpter.imaging.settings import detect_model_type
-from autoexcerpter.pipeline.resume import ProcessingState
+from autoexcerpter.output.store import ItemState
 from autoexcerpter.settings import SettingsError
 from autoexcerpter.spec import (
     CONTEXT_NONE,
@@ -246,10 +246,10 @@ def _run_line(spec: RunSpec, mark: _Mark) -> Line:
 
 def _item_state(planned: core.PlannedItem) -> str:
     state = planned.resume.state
-    if state is ProcessingState.NONE:
+    if state is ItemState.NONE:
         return "new"
     reused = plural(planned.completed_pages, "page")
-    if state is ProcessingState.TRANSCRIPTION_ONLY:
+    if state is ItemState.TRANSCRIPTION_ONLY:
         return f"partial, transcription done ({reused} reused)"
     return f"partial ({reused} reused)"
 

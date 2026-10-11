@@ -20,6 +20,7 @@ before the call returns, raises or retries.
 from __future__ import annotations
 
 import contextlib
+import inspect
 import itertools
 import logging
 import time
@@ -66,6 +67,29 @@ from autoexcerpter.settings import Settings
 __all__ = ["CallEnv", "HttpAttempt", "ModelCaller", "collect_usage"]
 
 logger = logging.getLogger(__name__)
+
+_CLIENT_ATTRIBUTES = (
+    "root_async_client",
+    "root_client",
+    "async_client",
+    "client",
+    "_async_client",
+    "_client",
+)
+"""Attributes under which LangChain chat models keep their SDK clients."""
+
+
+async def _close_quietly(client: Any, method: str = "close") -> None:
+    """Call ``client.<method>()``, awaiting an async closer; never raises."""
+    close = getattr(client, method, None)
+    if not callable(close):
+        return
+    try:
+        result = close()
+        if inspect.isawaitable(result):
+            await result
+    except Exception as exc:  # noqa: BLE001 - closing is best effort
+        logger.debug("Error closing client %r: %s", type(client).__name__, exc)
 
 
 class HttpAttempt:
@@ -171,7 +195,8 @@ class CallEnv:
 
     *limiters* holds one rate limiter per provider, *usage* the token totals
     per role, and *events* receives the retry waits. *prepared* holds callers
-    built ahead of the items, one per role (see :meth:`prepare`).
+    built ahead of the items, one per role (see :meth:`prepare`); *callers*
+    every caller built, which :meth:`aclose` closes at the end of the run.
     """
 
     settings: Settings = field(default_factory=Settings)
@@ -179,6 +204,7 @@ class CallEnv:
     usage: UsageTotals = field(default_factory=UsageTotals)
     events: RunEvents = field(default_factory=NullEvents)
     prepared: dict[str, ModelCaller] = field(default_factory=dict)
+    callers: list[ModelCaller] = field(default_factory=list)
 
     @classmethod
     def create(
@@ -199,14 +225,27 @@ class CallEnv:
         Raises what :class:`ModelCaller` raises, for example ``OSError`` when
         the key variable is unset.
         """
-        self.prepared[role] = ModelCaller(role, phase, self)
+        self.prepared[role] = self._build(role, phase)
 
     def caller(self, role: str, phase: PhaseModel) -> ModelCaller:
         """Return the prepared caller of *role* for *phase*, else a new one."""
         prepared = self.prepared.pop(role, None)
         if prepared is not None and prepared.phase == phase:
             return prepared
-        return ModelCaller(role, phase, self)
+        return self._build(role, phase)
+
+    def _build(self, role: str, phase: PhaseModel) -> ModelCaller:
+        caller = ModelCaller(role, phase, self)
+        self.callers.append(caller)
+        return caller
+
+    async def aclose(self) -> None:
+        """Close the HTTP clients of every caller built; never raises."""
+        callers = list(self.callers)
+        self.callers.clear()
+        self.prepared.clear()
+        for caller in callers:
+            await caller.aclose()
 
 
 class ModelCaller:
@@ -349,6 +388,17 @@ class ModelCaller:
         return await call_with_retry(
             one_attempt, policy=self._policy, hooks=hooks, label=label
         )
+
+    async def aclose(self) -> None:
+        """Close the SDK clients, and so the hooked httpx clients, of every
+        chat model built; never raises."""
+        models, self._clients = list(self._clients.values()), {}
+        for model in models:
+            for attr in _CLIENT_ATTRIBUTES:
+                await _close_quietly(getattr(model, attr, None))
+            # A google-genai client closes its async httpx client apart.
+            aio = getattr(getattr(model, "client", None), "aio", None)
+            await _close_quietly(aio, "aclose")
 
     def _report_retry(self, event: RetryEvent) -> None:
         self.env.events.waiting(

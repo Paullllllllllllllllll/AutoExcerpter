@@ -19,7 +19,7 @@ from typing import Any
 
 import pytest
 
-from autoexcerpter.rendering.sqlite import DATABASE_NAME
+from autoexcerpter.output.store import DATABASE_NAME
 from tests.characterization.adapter import RunResult, item_paths, run_tool
 from tests.characterization.fakes import (
     SUMMARY,
@@ -40,8 +40,6 @@ REFUSAL = Injection(refusal="I cannot help with this page.")
 CHANGED_JPEG_QUALITY = 80
 # Paths relative to the output folder, as the snapshot keys them.
 DOC = item_paths("doc", Path())
-WORKING_DIR = DOC.working_dir.as_posix()
-WORKING_LOGS = {DOC.transcription_log.as_posix(), DOC.summary_log.as_posix()}
 FINAL_OUTPUTS = (
     DOC.transcription.as_posix(),
     DOC.summary_md.as_posix(),
@@ -112,6 +110,17 @@ def folder_bytes(folder: Path) -> dict[str, bytes]:
 def pages(result: RunResult, role: str) -> list[int | None]:
     """Return the page of every request of *role*, in page order."""
     return [call["page"] for call in result.calls(role)]
+
+
+def unit_column(
+    output_dir: Path, column: str, kind: str = "transcription"
+) -> dict[int, Any]:
+    """Return *column* of the stored units of *kind*, by page index."""
+    with contextlib.closing(sqlite3.connect(output_dir / DATABASE_NAME)) as db:
+        rows = db.execute(
+            f"SELECT idx, {column} FROM units WHERE kind = ? ORDER BY idx", (kind,)
+        ).fetchall()
+    return dict(rows)
 
 
 def refuse(llm: FakeLLM, page: int = FAILED_PAGE) -> None:
@@ -236,7 +245,11 @@ def test_partial_failure_then_resume(
     assert "finished INCOMPLETE" in first.stderr
     assert pages(first, TRANSCRIPTION) == [0, 1, 2]
     assert pages(first, SUMMARY) == [0, 2]
-    assert WORKING_LOGS.issubset(output_files(first))
+    assert unit_column(runner.output_dir, "status") == {
+        0: "done",
+        1: "failed",
+        2: "done",
+    }
     runner.check("partial_failure/run1", first)
 
     second = runner.run(pdf)
@@ -246,7 +259,7 @@ def test_partial_failure_then_resume(
     assert pages(second, TRANSCRIPTION) == [FAILED_PAGE]
     assert pages(second, SUMMARY) == [FAILED_PAGE]
     runner.check("partial_failure/run2", second)
-    assert output_files(second) == output_files(clean)
+    assert final_outputs(second) == final_outputs(clean)
 
 
 # ============================================================================
@@ -266,7 +279,6 @@ def test_force_reprocesses_every_page(
     assert pages(second, TRANSCRIPTION) == [0, 1, 2]
     assert pages(second, SUMMARY) == [0, 1, 2]
     assert final_outputs(second) == final_outputs(clean)
-    assert not (runner.output_dir / WORKING_DIR).exists()
     runner.check("force/run2", second)
 
 
@@ -351,7 +363,7 @@ def test_dry_run_plan(tmp_path: Path, runner: Runner) -> None:
     assert complete.exit_code == 0, complete.stderr
     failed = failed_first_run(runner, tree, selection="beta")
     assert failed.exit_code == 1, failed.stderr
-    # A crash mid-item leaves the working logs but no final outputs.
+    # A crash mid-item leaves the stored pages but no final outputs.
     beta = item_paths("beta", runner.output_dir)
     for path in (beta.transcription, beta.summary_md, beta.summary_docx):
         path.unlink()
@@ -423,25 +435,6 @@ SWITCHED = {
 }
 
 
-def page_models(output_dir: Path) -> dict[int, str | None]:
-    """Return the ``pages.model`` of each page in the output database."""
-    with contextlib.closing(sqlite3.connect(output_dir / DATABASE_NAME)) as db:
-        rows = db.execute("SELECT page_index, model FROM pages").fetchall()
-    return dict(rows)
-
-
-def strip_page_models(log_path: Path) -> None:
-    """Rewrite a working log as a log without per-page models."""
-    entries = [json.loads(line) for line in log_path.read_text("utf-8").splitlines()]
-    for entry in entries:
-        entry.pop("model", None)
-    log_path.write_text(
-        "".join(json.dumps(entry) + "\n" for entry in entries),
-        encoding="utf-8",
-        newline="\n",
-    )
-
-
 def test_model_switch_on_resume_proceeds_and_warns(runner: Runner, pdf: Path) -> None:
     first = failed_first_run(runner, pdf)
     assert first.exit_code == 1, first.stderr
@@ -455,31 +448,15 @@ def test_model_switch_on_resume_proceeds_and_warns(runner: Runner, pdf: Path) ->
     assert "Image settings changed" not in second.stderr
     transcript = (runner.output_dir / DOC.transcription).read_text(encoding="utf-8")
     assert "Resume with another model" in transcript
-    assert page_models(runner.output_dir) == {
+    assert unit_column(runner.output_dir, "model") == {
         0: FIRST_MODEL,
         1: SWITCHED["transcription_model"],
         2: FIRST_MODEL,
     }
-
-
-@pytest.mark.parametrize("switch", [False, True], ids=["same_model", "switched"])
-def test_log_without_page_models_keeps_resuming(
-    runner: Runner, pdf: Path, switch: bool
-) -> None:
-    first = failed_first_run(runner, pdf)
-    assert first.exit_code == 1, first.stderr
-    strip_page_models(runner.output_dir / DOC.transcription_log)
-
-    second = runner.run(pdf, **(SWITCHED if switch else {}))
-
-    assert second.exit_code == 0, second.stderr
-    assert pages(second, TRANSCRIPTION) == [FAILED_PAGE]
-    resumed = SWITCHED["transcription_model"] if switch else FIRST_MODEL
-    # Reused pages fall back to the model of the log header.
-    assert page_models(runner.output_dir) == {
-        0: FIRST_MODEL,
-        1: resumed,
-        2: FIRST_MODEL,
+    assert unit_column(runner.output_dir, "provider") == {
+        0: "openai",
+        1: "openrouter",
+        2: "openai",
     }
 
 

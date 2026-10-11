@@ -16,9 +16,12 @@ position in the item (``original_input_order_index``):
   ``ok``, ``blank`` or ``failed``; ``provenance`` holds the image provenance
   and the source file.
 - ``summary``: same ``label`` and ``source_index``; ``content`` stays NULL,
-  the summary itself is a ``summaries`` row. A change of the page's
-  transcription unit (its status or content) marks a summary that is not
-  pending stale, so resume summarizes the page again.
+  the summary itself is a ``summaries`` row. ``outcome`` is ``ok``,
+  ``blank`` (the placeholder of a blank page), ``placeholder`` (the
+  placeholder of a page whose transcription failed) or ``failed`` (the
+  summary call failed; its row holds the error placeholder). A change of
+  the page's transcription unit (its status or content) marks a summary
+  that is not pending stale, so resume summarizes the page again.
 
 ``summaries`` holds one row per summarized page (``page`` is its 1-based
 position, ``page_information``, ``bullet_points`` and ``page_references``
@@ -139,7 +142,9 @@ __all__ = [
     "model_derived_keys",
     "open_store",
     "plan_pages",
+    "read_citations",
     "read_only_connection",
+    "read_pages",
     "read_store",
     "settings_fingerprint",
     "store_artifacts",
@@ -588,6 +593,93 @@ async def write_citations(
     await store.write(lease, replace)
 
 
+def _loaded(value: Any) -> Any:
+    if not isinstance(value, str):
+        return value
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        return value
+
+
+def read_pages(
+    connection: sqlite3.Connection, doc_id: int
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Return a document's stored transcriptions and summaries in page order.
+
+    Pending units are left out. Each transcription is a page entry as the
+    writers take it: ``original_input_order_index``, ``image``,
+    ``transcription``, ``page_index`` (the PDF page, when known) and, for a
+    failed page, ``error``. Each summary carries the ``summaries`` row's
+    fields, ``references`` among them, and ``error`` when its call failed.
+    """
+    transcriptions: list[dict[str, Any]] = []
+    for idx, label, source_index, status, content, error in connection.execute(
+        "SELECT idx, label, source_index, status, content, error FROM units "
+        "WHERE doc_id = ? AND kind = ? AND status != 'pending' ORDER BY idx",
+        (doc_id, KIND_TRANSCRIPTION),
+    ):
+        entry: dict[str, Any] = {
+            "original_input_order_index": int(idx),
+            "image": label,
+            "transcription": content if content is not None else "",
+        }
+        if isinstance(source_index, int):
+            entry["page_index"] = source_index
+        if status == "failed":
+            entry["error"] = error or "failed"
+        transcriptions.append(entry)
+    summaries: list[dict[str, Any]] = []
+    for (
+        idx,
+        label,
+        status,
+        error,
+        page,
+        info,
+        bullets,
+        references,
+    ) in connection.execute(
+        "SELECT u.idx, u.label, u.status, u.error, s.page, s.page_information, "
+        "s.bullet_points, s.page_references FROM units AS u "
+        "JOIN summaries AS s ON s.doc_id = u.doc_id AND s.idx = u.idx "
+        "WHERE u.doc_id = ? AND u.kind = ? AND u.status != 'pending' "
+        "ORDER BY u.idx",
+        (doc_id, KIND_SUMMARY),
+    ):
+        summary: dict[str, Any] = {
+            "original_input_order_index": int(idx),
+            "image_filename": label,
+            "page": page,
+            "page_information": _loaded(info),
+            "bullet_points": _loaded(bullets),
+            "references": _loaded(references),
+        }
+        if status == "failed":
+            summary["error"] = error or "failed"
+        summaries.append(summary)
+    return transcriptions, summaries
+
+
+def read_citations(connection: sqlite3.Connection, doc_id: int) -> list[CitationRow]:
+    """Return a document's citations in rendered order."""
+    return [
+        CitationRow(
+            text=str(text),
+            pages=pages,
+            partial=bool(partial),
+            doi=doi,
+            url=url,
+            metadata=_loaded(metadata),
+        )
+        for text, pages, partial, doi, url, metadata in connection.execute(
+            "SELECT text, pages, partial, doi, url, metadata FROM citations "
+            "WHERE doc_id = ? ORDER BY position",
+            (doc_id,),
+        )
+    ]
+
+
 # =============================================================================
 # Resume classification
 # =============================================================================
@@ -703,16 +795,18 @@ def _model_note(
     for kind, model in models.items():
         earlier = [used for used in details.models.get(kind, ()) if used != model]
         if model is not None and earlier:
-            changes.append(f"{kind} with {', '.join(earlier)}; this run uses {model}")
+            changes.append(
+                f"{kind} units of {', '.join(earlier)}; this run uses {model}"
+            )
     if not changes and derived:
         model = models.get(KIND_TRANSCRIPTION)
         changes.append(
-            f"{KIND_TRANSCRIPTION} with another model; this run uses "
+            f"{KIND_TRANSCRIPTION} units of another model; this run uses "
             f"{model or 'another model'}"
         )
     if not changes:
         return None
-    return f"'{name}' holds units made by another model: " + "; ".join(changes) + "."
+    return f"Resume with another model: '{name}' holds " + "; ".join(changes) + "."
 
 
 def _check_input(name: str, details: _Details, input_path: Path | None) -> None:
@@ -904,8 +998,8 @@ def classify(
             name,
             doc_id,
             reason=(
-                f"Image settings changed for '{name}': {', '.join(changed)}. "
-                "Skipping it; use --force to replace the existing run."
+                f"Image settings changed: {', '.join(changed)}. Skipping "
+                f"'{name}'; use --force to replace the existing run."
             ),
         )
     total = len(details.units.get(KIND_TRANSCRIPTION, {}))

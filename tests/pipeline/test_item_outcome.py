@@ -1,16 +1,16 @@
 """The item verdict, the written outputs and the per-item run report.
 
-A page-level failure (a transcription or summary API error after retries) or a
-failed working-log append fails the item, so the run counts it failed and exits
-non-zero. ``ItemProcessor.written_outputs`` lists every file written, which the
-``--json`` run summary reports. Deferred pages withhold the final outputs, and
-the DOCX and Markdown writers fail independently but share one citation
-manager.
+A page-level failure (a transcription or summary API error after retries) or
+a unit that could not be stored fails the item, so the run counts it failed
+and exits non-zero. ``ItemProcessor.written_outputs`` lists every file
+written, which the ``--json`` run summary reports. Pending pages withhold the
+final outputs, and the DOCX and Markdown writers fail independently but share
+one set of stored citations.
 """
 
 from __future__ import annotations
 
-import asyncio
+import sqlite3
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -22,14 +22,8 @@ import autoexcerpter.pipeline.outputs as outputs_module
 from autoexcerpter.common.images import PagePayload
 from autoexcerpter.pipeline.item import ItemProcessor
 from autoexcerpter.pipeline.progress import PageProgress
-from autoexcerpter.pipeline.resume import load_results
-from autoexcerpter.rendering.citations import CitationManager
-from tests.pipeline.helpers import (
-    make_processor,
-    summarizer,
-    transcriber,
-    write_working_logs,
-)
+from autoexcerpter.pipeline.units import DocumentHandle
+from tests.pipeline.helpers import process, statuses, summarizer, transcriber
 
 
 def _ok_transcribe(payload: PagePayload) -> dict[str, Any]:
@@ -100,49 +94,29 @@ def summary_env(monkeypatch: pytest.MonkeyPatch, pipeline_env: MagicMock) -> Mag
     """Return a mock summary manager and mock the summary-file writers
     (no docx/md is actually rendered)."""
     mock_summary_manager = summarizer(_ok_summary)
-    monkeypatch.setattr(
-        outputs_module,
-        "build_render_context",
-        lambda *a, **k: (MagicMock(), MagicMock()),
-    )
     monkeypatch.setattr(outputs_module, "enrich_if_enabled", lambda cm: None)
     monkeypatch.setattr(outputs_module, "create_docx_summary", MagicMock())
     monkeypatch.setattr(outputs_module, "create_markdown_summary", MagicMock())
     return mock_summary_manager
 
 
-def _make_processor(
+def _process(
     pdf_path: Path,
     output_dir: Path,
     manager: MagicMock,
     summary_manager: MagicMock | None = None,
-) -> ItemProcessor:
-    return make_processor(
+    prepare: Callable[[ItemProcessor], None] | None = None,
+    **options: Any,
+) -> tuple[ItemProcessor, bool]:
+    return process(
         pdf_path,
         output_dir,
+        prepare=prepare,
         transcribe_manager=manager,
         summary_manager=summary_manager,
         summarize=summary_manager is not None,
+        **options,
     )
-
-
-def _process(processor: ItemProcessor) -> bool:
-    return asyncio.run(processor.process())
-
-
-class _FakeSource:
-    def __init__(self, pages: int) -> None:
-        self.pages = pages
-        self.closed = False
-
-    def __len__(self) -> int:
-        return self.pages
-
-    def file_provenance(self) -> dict[str, Any]:
-        return {}
-
-    def close(self) -> None:
-        self.closed = True
 
 
 class TestItemFailurePropagation:
@@ -154,10 +128,9 @@ class TestItemFailurePropagation:
         tmp_path: Path,
         pipeline_env: MagicMock,
     ) -> None:
-        processor = _make_processor(
-            make_pdf("OK.pdf", 2), tmp_path / "out", pipeline_env
-        )
-        assert _process(processor) is True
+        _, success = _process(make_pdf("OK.pdf", 2), tmp_path / "out", pipeline_env)
+        assert success is True
+        assert statuses(tmp_path / "out") == ["done", "done"]
 
     def test_all_pages_fail_transcription_returns_false(
         self,
@@ -167,10 +140,11 @@ class TestItemFailurePropagation:
     ) -> None:
         """An item whose pages all fail is not complete."""
         pipeline_env.transcribe_payload.side_effect = _failed_transcribe
-        processor = _make_processor(
+        _, success = _process(
             make_pdf("AllFail.pdf", 3), tmp_path / "out", pipeline_env
         )
-        assert _process(processor) is False
+        assert success is False
+        assert statuses(tmp_path / "out") == ["failed"] * 3
 
     def test_single_failed_page_returns_false(
         self,
@@ -187,10 +161,10 @@ class TestItemFailurePropagation:
             return _ok_transcribe(payload)
 
         pipeline_env.transcribe_payload.side_effect = flaky
-        processor = _make_processor(
+        _, success = _process(
             make_pdf("OneFail.pdf", 3), tmp_path / "out", pipeline_env
         )
-        assert _process(processor) is False
+        assert success is False
         assert sorted(calls) == [1, 2, 3]
 
     def test_failed_summary_page_returns_false(
@@ -208,10 +182,12 @@ class TestItemFailurePropagation:
             return _ok_summary(transcription, page_num)
 
         summary_env.generate_summary.side_effect = flaky_summary
-        processor = _make_processor(
-            make_pdf("SummaryFail.pdf", 3), tmp_path / "out", pipeline_env, summary_env
+        out = tmp_path / "out"
+        _, success = _process(
+            make_pdf("SummaryFail.pdf", 3), out, pipeline_env, summary_env
         )
-        assert _process(processor) is False
+        assert success is False
+        assert statuses(out, "summary") == ["done", "failed", "done"]
 
     def test_successful_summaries_return_true(
         self,
@@ -220,10 +196,10 @@ class TestItemFailurePropagation:
         pipeline_env: MagicMock,
         summary_env: MagicMock,
     ) -> None:
-        processor = _make_processor(
+        _, success = _process(
             make_pdf("SummaryOK.pdf", 2), tmp_path / "out", pipeline_env, summary_env
         )
-        assert _process(processor) is True
+        assert success is True
 
     def test_summary_render_failure_returns_false(
         self,
@@ -239,10 +215,10 @@ class TestItemFailurePropagation:
             "create_docx_summary",
             MagicMock(side_effect=RuntimeError("docx exploded")),
         )
-        processor = _make_processor(
+        _, success = _process(
             make_pdf("RenderFail.pdf", 1), tmp_path / "out", pipeline_env, summary_env
         )
-        assert _process(processor) is False
+        assert success is False
 
     def test_failed_txt_write_returns_false_and_withholds_output(
         self,
@@ -258,32 +234,36 @@ class TestItemFailurePropagation:
             "write_transcription_to_text",
             lambda *a, **k: False,
         )
-        processor = _make_processor(
+        processor, success = _process(
             make_pdf("TxtFail.pdf", 1), tmp_path / "out", pipeline_env
         )
-        assert _process(processor) is False
+        assert success is False
         assert processor.written_outputs == []
 
-    def test_failed_append_turns_the_item_verdict_false(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    def test_a_unit_that_could_not_be_stored_fails_the_item(
+        self,
+        make_pdf: Callable[..., Path],
+        tmp_path: Path,
+        pipeline_env: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """A page entry that never reached the working log fails the item."""
-        processor = make_processor(tmp_path / "doc.pdf", tmp_path / "out")
+        real = DocumentHandle.write_transcription
 
-        async def _pages(source: Any) -> tuple[list[dict[str, Any]], list[Any]]:
-            return [{"original_input_order_index": 0}], []
+        async def failing_second(self: DocumentHandle, result: Any) -> None:
+            if result.idx == 1:
+                raise sqlite3.OperationalError("disk I/O error")
+            await real(self, result)
 
-        monkeypatch.setattr(processor, "_transcribe_and_summarize", _pages)
+        monkeypatch.setattr(DocumentHandle, "write_transcription", failing_second)
+        processor, success = _process(
+            make_pdf("Unstored.pdf", 2), tmp_path / "out", pipeline_env
+        )
 
-        # With no failed append the item is complete.
-        assert asyncio.run(processor._run(_FakeSource(1))) is True  # type: ignore[arg-type]
-
-        processor.written_outputs = []
-        processor.runner.log_append_failures = 2
-
-        assert asyncio.run(processor._run(_FakeSource(1))) is False  # type: ignore[arg-type]
+        assert success is False
+        assert processor.written_outputs == []
         assert processor.last_run_report is not None
         assert processor.last_run_report["pages_failed"] == 0
+        assert processor.last_run_report["pages_deferred"] == 1
 
 
 class TestJsonOutputs:
@@ -295,10 +275,10 @@ class TestJsonOutputs:
         tmp_path: Path,
         pipeline_env: MagicMock,
     ) -> None:
-        processor = _make_processor(
+        processor, success = _process(
             make_pdf("Outs.pdf", 1), tmp_path / "out", pipeline_env
         )
-        assert _process(processor) is True
+        assert success is True
         txt = processor.paths.transcription
         assert processor.written_outputs == [txt.resolve()]
         assert txt.exists()
@@ -310,10 +290,10 @@ class TestJsonOutputs:
         pipeline_env: MagicMock,
         summary_env: MagicMock,
     ) -> None:
-        processor = _make_processor(
+        processor, success = _process(
             make_pdf("Summ.pdf", 1), tmp_path / "out", pipeline_env, summary_env
         )
-        assert _process(processor) is True
+        assert success is True
         assert processor.written_outputs == [
             processor.paths.transcription.resolve(),
             processor.paths.summary_docx.resolve(),
@@ -322,10 +302,9 @@ class TestJsonOutputs:
 
 
 class TestDeferralWithholding:
-    """A run that leaves pages deferred must NOT emit a truncated .txt that
+    """A run that leaves pages pending must NOT emit a truncated .txt that
     self-reports as complete, must fail the item (exit 1, items_failed), and
-    must retain the completed pages in the working log so a later run resumes
-    and finishes them."""
+    must keep the stored pages so a later run finishes the item."""
 
     def test_partial_run_withholds_txt_and_fails(
         self,
@@ -335,39 +314,28 @@ class TestDeferralWithholding:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """process() is False, the final .txt is NOT written, nothing is
-        registered in written_outputs, and the working log holds exactly the
-        one page that completed before the deferral."""
-        processor = _make_processor(
-            make_pdf("Partial.pdf", 3), tmp_path / "out", pipeline_env
+        registered in written_outputs, and the store holds exactly the one
+        page that completed before the deferral."""
+
+        def deferring(processor: ItemProcessor) -> None:
+            real_run = processor.runner.run
+
+            async def run(idx: int, source: Any, progress: PageProgress) -> str:
+                if idx >= 1:
+                    return "deferred"
+                return await real_run(idx, source, progress)
+
+            monkeypatch.setattr(processor.runner, "run", run)
+
+        out = tmp_path / "out"
+        processor, success = _process(
+            make_pdf("Partial.pdf", 3), out, pipeline_env, prepare=deferring
         )
 
-        # Defer every page after index 0; page 0 transcribes for real via the
-        # mocked manager.
-        real_run = processor.runner.run
-
-        async def deferring(
-            idx: int,
-            source: Any,
-            t_results: list[dict[str, Any]],
-            s_results: list[dict[str, Any]],
-            progress: PageProgress,
-        ) -> dict[str, Any] | None:
-            if idx >= 1:
-                return None
-            return await real_run(idx, source, t_results, s_results, progress)
-
-        monkeypatch.setattr(processor.runner, "run", deferring)
-
-        assert _process(processor) is False
-        # The truncated .txt must not exist and must not be advertised.
+        assert success is False
         assert not processor.paths.transcription.exists()
         assert processor.written_outputs == []
-        # The working log retains exactly the completed page, so a later
-        # resume can finish the rest.
-        log_path = processor.paths.transcription_log
-        logged = load_results(log_path) or []
-        assert [entry["original_input_order_index"] for entry in logged] == [0]
-        assert "error" not in logged[0]
+        assert statuses(out) == ["done", "pending", "pending"]
 
 
 class TestIndependentSummaryWriters:
@@ -389,92 +357,51 @@ class TestIndependentSummaryWriters:
         )
         monkeypatch.setattr(outputs_module, "create_markdown_summary", md_writer)
 
-        processor = _make_processor(
+        processor, success = _process(
             make_pdf("Split.pdf", 1), tmp_path / "out", pipeline_env, summary_env
         )
-        assert _process(processor) is False
-        # The Markdown writer ran despite the DOCX failure.
+        assert success is False
         assert md_writer.called
-        # The DOCX path is not advertised; the Markdown path is.
         suffixes = {p.suffix for p in processor.written_outputs}
         assert ".docx" not in suffixes
         assert ".md" in suffixes
 
-    def test_one_citation_manager_shared_by_both_writers(
+    def test_both_writers_render_the_same_stored_citations(
         self,
         make_pdf: Callable[..., Path],
         tmp_path: Path,
         pipeline_env: MagicMock,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """The DOCX and Markdown writers receive the same CitationManager."""
+        """The DOCX and Markdown writers receive the citations the store holds."""
         captured: dict[str, Any] = {}
+        citation = "Smith, J. (2020). A Title. Journal, 1, 1-2."
 
-        def spy_docx(
-            results: list[dict[str, Any]],
-            path: Path,
-            name: str,
-            citation_manager: CitationManager | None = None,
-            data: object = None,
-        ) -> None:
-            captured["docx"] = citation_manager
+        def spy(kind: str) -> Callable[..., None]:
+            def writer(*_args: Any, citation_manager: Any = None, **_: Any) -> None:
+                captured[kind] = citation_manager
 
-        def spy_md(
-            results: list[dict[str, Any]],
-            path: Path,
-            name: str,
-            citation_manager: CitationManager | None = None,
-            data: object = None,
-        ) -> None:
-            captured["md"] = citation_manager
+            return writer
 
-        monkeypatch.setattr(outputs_module, "create_docx_summary", spy_docx)
-        monkeypatch.setattr(outputs_module, "create_markdown_summary", spy_md)
+        def summarize(transcription: str, page_num: int) -> dict[str, Any]:
+            summary = _ok_summary(transcription, page_num)
+            summary["references"] = [{"citation": citation, "is_partial": False}]
+            return summary
 
-        processor = make_processor(
+        monkeypatch.setattr(outputs_module, "create_docx_summary", spy("docx"))
+        monkeypatch.setattr(outputs_module, "create_markdown_summary", spy("md"))
+
+        _process(
             make_pdf("Cite.pdf", num_pages=1),
             tmp_path / "out",
-            transcribe_manager=pipeline_env,
-            summary_manager=summarizer(_ok_summary),
-            completed={0},
-            summarize=True,
+            pipeline_env,
+            summarizer(summarize),
             openalex_enabled=False,
         )
-        write_working_logs(
-            processor,
-            tx_entries=[
-                {
-                    "image": "page_0001.jpg",
-                    "original_input_order_index": 0,
-                    "transcription": "text",
-                }
-            ],
-            summary_entries=[
-                {
-                    "original_input_order_index": 0,
-                    "page": 1,
-                    "page_information": {
-                        "page_number_integer": 1,
-                        "page_number_type": "arabic",
-                        "page_types": ["content"],
-                    },
-                    "bullet_points": ["a point"],
-                    "references": [
-                        {
-                            "citation": "Smith, J. (2020). A Title. Journal, 1, 1-2.",
-                            "is_partial": False,
-                        }
-                    ],
-                }
-            ],
-            total_images=1,
-        )
 
-        asyncio.run(processor.process())
-
-        assert captured["docx"] is not None
         assert captured["docx"] is captured["md"]
-        assert isinstance(captured["docx"], CitationManager)
+        pairs = captured["docx"].get_citations_with_pages()
+        assert [(pair[0].raw_text, pair[1]) for pair in pairs] == [(citation, "p. 1")]
 
 
 class TestLastRunReport:
@@ -484,10 +411,10 @@ class TestLastRunReport:
         tmp_path: Path,
         pipeline_env: MagicMock,
     ) -> None:
-        processor = _make_processor(
+        processor, success = _process(
             make_pdf("Report.pdf", 2), tmp_path / "out", pipeline_env
         )
-        assert _process(processor) is True
+        assert success is True
 
         report = processor.last_run_report
         assert report is not None
@@ -507,10 +434,10 @@ class TestLastRunReport:
         pipeline_env: MagicMock,
     ) -> None:
         pipeline_env.transcribe_payload.side_effect = _failed_transcribe
-        processor = _make_processor(
+        processor, success = _process(
             make_pdf("RepFail.pdf", 2), tmp_path / "out", pipeline_env
         )
-        assert _process(processor) is False
+        assert success is False
 
         report = processor.last_run_report
         assert report is not None

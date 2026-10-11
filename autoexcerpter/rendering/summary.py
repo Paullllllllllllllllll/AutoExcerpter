@@ -10,12 +10,14 @@ from __future__ import annotations
 import logging
 import re
 import threading
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Protocol
 
 from autoexcerpter.constants import ERROR_MARKERS
 from autoexcerpter.rendering.citations import (
     DEFAULT_MAX_API_REQUESTS,
+    Citation,
     CitationManager,
     OpenAlexClient,
 )
@@ -26,6 +28,57 @@ from autoexcerpter.rendering.locators import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class CitationSource(Protocol):
+    """The consolidated citations a summary writer renders, in order."""
+
+    def get_citations_with_pages(self) -> list[tuple[Citation, str]]: ...
+
+
+class CitationRecord(Protocol):
+    """One stored citation: its text, pages and OpenAlex metadata."""
+
+    @property
+    def text(self) -> str: ...
+
+    @property
+    def pages(self) -> str | None: ...
+
+    @property
+    def partial(self) -> bool: ...
+
+    @property
+    def doi(self) -> str | None: ...
+
+    @property
+    def url(self) -> str | None: ...
+
+    @property
+    def metadata(self) -> Mapping[str, Any] | None: ...
+
+
+class StoredCitations:
+    """Citations read back from the store, in their stored order."""
+
+    def __init__(self, records: Iterable[CitationRecord]) -> None:
+        self._pairs = [
+            (
+                Citation(
+                    raw_text=record.text,
+                    metadata=dict(record.metadata) if record.metadata else None,
+                    doi=record.doi,
+                    url=record.url,
+                    partial=record.partial,
+                ),
+                record.pages or "",
+            )
+            for record in records
+        ]
+
+    def get_citations_with_pages(self) -> list[tuple[Citation, str]]:
+        """Return ``(citation, page range)`` pairs in stored order."""
+        return list(self._pairs)
 
 
 def sanitize_for_xml(text: str | None) -> str:

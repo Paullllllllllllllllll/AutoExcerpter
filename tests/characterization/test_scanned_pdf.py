@@ -10,8 +10,9 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
 
+from autoexcerpter.common.sqlite import read_rows
+from autoexcerpter.output.store import DATABASE_NAME
 from tests.characterization.adapter import RunResult, run_tool
 from tests.characterization.fakes import SUMMARY, TRANSCRIPTION, FakeLLM
 from tests.characterization.inputs import make_pdf
@@ -22,15 +23,6 @@ PAGES = 3
 PAGE_SIZE = (200.0, 300.0)
 SCAN_SIZE = (400, 600)
 SCAN_DPI = 144.0
-
-
-def _log_entries(path: Path) -> list[dict[str, Any]]:
-    records = [
-        json.loads(line)
-        for line in path.read_text(encoding="utf-8").splitlines()
-        if line.strip()
-    ]
-    return [record for record in records if "_format_version" not in record]
 
 
 def test_pdf_scanned_native_dpi(
@@ -59,12 +51,13 @@ def test_pdf_scanned_native_dpi(
     }
     assert sizes == {SCAN_SIZE}
 
-    log = result.paths("doc").transcription_log
-    assert log in result.created
-    entries = _log_entries(log)
-    assert len(entries) == PAGES
-    for entry in entries:
-        image = entry["image_provenance"]
+    database = tmp_path / "out" / DATABASE_NAME
+    assert database in result.created
+    units = read_rows(database, "units", order_by=["idx"])
+    pages = [unit for unit in units if unit["kind"] == "transcription"]
+    assert len(pages) == PAGES
+    for unit in pages:
+        image = json.loads(unit["provenance"])["image_provenance"]
         assert image["dpi_source"] == "image"
         assert image["source_dpi_x"] == SCAN_DPI
         assert image["source_dpi_y"] == SCAN_DPI

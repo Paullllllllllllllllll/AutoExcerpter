@@ -12,8 +12,8 @@ from pathlib import Path
 
 import pytest
 
+from autoexcerpter.output.store import DATABASE_NAME
 from autoexcerpter.pipeline.paths import ItemPaths
-from autoexcerpter.rendering.sqlite import DATABASE_NAME
 from tests.characterization.adapter import RunResult, item_paths, run_tool
 from tests.characterization.fakes import SUMMARY, TRANSCRIPTION, FakeLLM
 from tests.characterization.golden import Normalizer
@@ -460,44 +460,19 @@ def test_pdf_openalex_enrichment(
 
 
 # ============================================================================
-# Working files
+# No working files
 # ============================================================================
-DOC = item_paths("doc", Path())
-WORKING_LOGS = {DOC.transcription_log.name, DOC.summary_log.name}
-
-
-@pytest.mark.parametrize(
-    ("keep", "force", "expected_logs"),
-    [
-        pytest.param(True, False, WORKING_LOGS, id="pdf_keep_working_files"),
-        pytest.param(True, True, WORKING_LOGS, id="pdf_keep_working_files_force"),
-        pytest.param(False, False, WORKING_LOGS, id="pdf_cleanup_without_force"),
-        pytest.param(False, True, set(), id="pdf_cleanup_force"),
-    ],
-)
-def test_pdf_working_files(
-    tmp_path: Path,
-    docs_dir: Path,
-    fake_llm: FakeLLM,
-    golden: Golden,
-    request: pytest.FixtureRequest,
-    keep: bool,
-    force: bool,
-    expected_logs: set[str],
+@pytest.mark.parametrize("force", [False, True], ids=["resume", "force"])
+def test_a_run_leaves_no_jsonl_and_no_working_folder(
+    tmp_path: Path, docs_dir: Path, fake_llm: FakeLLM, force: bool
 ) -> None:
     pdf = make_pdf(docs_dir / "doc.pdf", pages=3)
+    out = tmp_path / "out"
 
-    result = run_tool(
-        pdf,
-        llm=fake_llm,
-        root=tmp_path,
-        output_dir=tmp_path / "out",
-        keep_working_files=keep,
-        force=force,
-    )
+    result = run_tool(pdf, llm=fake_llm, root=tmp_path, output_dir=out, force=force)
 
     _assert_items_complete(result, 1)
-    working_dir = result.paths("doc").working_dir
-    logs = {path.name for path in result.created if path.parent == working_dir}
-    assert logs == expected_logs
-    golden(_case(request.node.callspec.id), result)
+    entries = sorted(path.name for path in out.iterdir())
+    assert entries == sorted([*_final_names(result.paths("doc")), DATABASE_NAME])
+    assert not any(path.is_dir() for path in out.iterdir())
+    assert not list(tmp_path.rglob("*.jsonl"))

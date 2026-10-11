@@ -23,7 +23,7 @@ from autoexcerpter.common.wizard import (
     Step,
     StepContext,
 )
-from autoexcerpter.pipeline.resume import ProcessingState, ResumeResult
+from autoexcerpter.output.store import Classification, ItemState
 from autoexcerpter.settings import Endpoint, Settings
 from autoexcerpter.spec import OPTIONS, RunSpec, parse
 from autoexcerpter.ui.review import FORCE_ACTION, PROGRAM
@@ -690,7 +690,7 @@ def _complete_unless_forced(monkeypatch: pytest.MonkeyPatch) -> None:
             return result
         complete = tuple(
             dataclasses.replace(
-                item, resume=ResumeResult(item.name, ProcessingState.COMPLETE)
+                item, resume=Classification(ItemState.COMPLETE, item.name)
             )
             for item in result.to_process
         )

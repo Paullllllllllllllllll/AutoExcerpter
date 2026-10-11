@@ -17,6 +17,7 @@ from autoexcerpter.rendering.citations import (
 from autoexcerpter.rendering.summary import (
     PAGE_TYPE_LABELS,
     STRUCTURE_PAGE_TYPE_ORDER,
+    CitationSource,
     PageRenderData,
     SummaryData,
     collapse_internal_newlines,
@@ -32,7 +33,7 @@ def create_markdown_summary(
     summary_results: list[dict[str, Any]],
     output_path: Path,
     document_name: str,
-    citation_manager: CitationManager | None = None,
+    citation_manager: CitationSource | None = None,
     data: Any = None,
 ) -> None:
     """Create a Markdown summary document from structured summary results.
@@ -47,9 +48,10 @@ def create_markdown_summary(
         summary_results: List of summary result dictionaries from the API.
         output_path: Path where the markdown file will be written.
         document_name: Name of the source document for the title.
-        citation_manager: Optional pre-built, consolidated, and enriched citation
-            manager shared with the DOCX writer. Built (with default OpenAlex
-            options) and enriched here when omitted.
+        citation_manager: Optional consolidated and enriched citations shared
+            with the DOCX writer (a citation manager, or the stored citations).
+            Built (with default OpenAlex options) and enriched here when
+            omitted.
         data: Optional pre-computed :class:`SummaryData` paired with
             *citation_manager*.
     """
@@ -113,13 +115,14 @@ def _page_summary_lines(page_render_items: list[PageRenderData]) -> list[str]:
     return lines
 
 
-def _reference_lines(citation_manager: CitationManager) -> list[str]:
+def _reference_lines(citation_manager: CitationSource) -> list[str]:
     """Return the Consolidated References section, empty without citations."""
-    if not citation_manager.citations:
+    citations_with_pages = citation_manager.get_citations_with_pages()
+    if not citations_with_pages:
         return []
     logger.info(
         "Processing %d unique citations for consolidated references section",
-        len(citation_manager.citations),
+        len(citations_with_pages),
     )
     lines = [
         "---",
@@ -132,7 +135,6 @@ def _reference_lines(citation_manager: CitationManager) -> list[str]:
         "provide access to extended metadata via OpenAlex.*",
         "",
     ]
-    citations_with_pages = citation_manager.get_citations_with_pages()
     for idx, (citation, page_range_str) in enumerate(citations_with_pages, start=1):
         lines.append(_reference_line(idx, citation, page_range_str))
     return lines

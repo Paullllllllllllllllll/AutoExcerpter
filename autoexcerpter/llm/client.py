@@ -18,8 +18,10 @@ clients of google-genai, with a transport that keeps async calls on httpx.
 
 from __future__ import annotations
 
+import functools
 import logging
 import os
+import ssl
 from collections.abc import Awaitable
 from dataclasses import dataclass
 from typing import Any
@@ -137,16 +139,26 @@ def _apply_per_phase_timeout(kwargs: dict[str, Any], phases: dict[str, Any]) -> 
     kwargs["timeout"] = build_httpx_timeout(kwargs["timeout"], **phases)
 
 
+@functools.cache
+def tls_context() -> ssl.SSLContext:
+    """Return the TLS context of every hooked httpx client, built once.
+
+    It is the context httpx builds by default; building one loads the CA
+    bundle, which takes about a quarter second, so the clients share it.
+    """
+    return httpx.create_ssl_context()
+
+
 def _hooked_openai_clients(kwargs: dict[str, Any]) -> None:
     """Add httpx clients with the capture hooks and the kwargs' timeout."""
     import openai
 
     timeout = kwargs["timeout"]
     kwargs["http_client"] = openai.DefaultHttpxClient(
-        event_hooks=capture_hooks(), timeout=timeout
+        event_hooks=capture_hooks(), timeout=timeout, verify=tls_context()
     )
     kwargs["http_async_client"] = openai.DefaultAsyncHttpxClient(
-        event_hooks=async_capture_hooks(), timeout=timeout
+        event_hooks=async_capture_hooks(), timeout=timeout, verify=tls_context()
     )
 
 
@@ -205,12 +217,16 @@ def _hook_anthropic(model: Any) -> None:
         return
     model.__dict__["_client"] = sync_client.with_options(
         http_client=anthropic.DefaultHttpxClient(
-            timeout=sync_client.timeout, event_hooks=capture_hooks()
+            timeout=sync_client.timeout,
+            event_hooks=capture_hooks(),
+            verify=tls_context(),
         )
     )
     model.__dict__["_async_client"] = async_client.with_options(
         http_client=anthropic.DefaultAsyncHttpxClient(
-            timeout=async_client.timeout, event_hooks=async_capture_hooks()
+            timeout=async_client.timeout,
+            event_hooks=async_capture_hooks(),
+            verify=tls_context(),
         )
     )
 
@@ -236,8 +252,8 @@ class EitherTransport(httpx.BaseTransport, httpx.AsyncBaseTransport):
     """
 
     def __init__(self) -> None:
-        self._sync = httpx.HTTPTransport()
-        self._async = httpx.AsyncHTTPTransport()
+        self._sync = httpx.HTTPTransport(verify=tls_context())
+        self._async = httpx.AsyncHTTPTransport(verify=tls_context())
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
         return self._sync.handle_request(request)
@@ -266,6 +282,7 @@ def _create_google_model(api_key: str, kwargs: dict[str, Any]) -> BaseChatModel:
     kwargs["client_args"] = {
         "transport": EitherTransport(),
         "event_hooks": {"response": [capture_either]},
+        "verify": tls_context(),
     }
     logger.debug("Creating Google model: %s", kwargs.get("model"))
     return ChatGoogleGenerativeAI(**kwargs)

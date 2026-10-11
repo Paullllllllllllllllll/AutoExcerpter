@@ -14,14 +14,15 @@ from typing import Any
 
 import pytest
 
-import autoexcerpter.pipeline.item as item_module
-import autoexcerpter.pipeline.pages as pages_module
 from autoexcerpter.pipeline.item import ItemProcessor
 from autoexcerpter.pipeline.progress import PageProgress
 from tests.pipeline.helpers import (
     make_processor,
     make_progress,
     make_runner,
+    statuses,
+    store_pages,
+    stored_document,
     transcriber,
 )
 
@@ -50,18 +51,24 @@ class _RenderSource:
         )
 
 
-def _processor(tmp_path: Path, concurrency: int) -> ItemProcessor:
-    return make_processor(
+def _processor(tmp_path: Path, concurrency: int, pages: int = 6) -> ItemProcessor:
+    processor = make_processor(
         tmp_path / "doc.pdf", tmp_path / "out", concurrency=concurrency
+    )
+    processor.page_count = pages
+    return processor
+
+
+def _pool(processor: ItemProcessor, pending: list[int]) -> Any:
+    return processor._transcribe_pending(
+        _FakeSource(processor.page_count),  # type: ignore[arg-type]
+        pending,
     )
 
 
-async def _fake_run(
-    idx: int, source: Any, t_res: list[dict[str, Any]], s_res: Any, progress: Any
-) -> dict[str, Any]:
-    t_res.append({"original_input_order_index": idx})
+async def _fake_run(idx: int, source: Any, progress: PageProgress) -> str:
     progress.advance()
-    return {"original_input_order_index": idx}
+    return "ok"
 
 
 class _SpyExecutor(concurrent.futures.ThreadPoolExecutor):
@@ -89,41 +96,48 @@ def test_one_render_executor_per_item(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, spy_executor: type[_SpyExecutor]
 ) -> None:
     processor = _processor(tmp_path, 2)
-    monkeypatch.setattr(processor.runner, "run", _fake_run)
+    seen: list[int] = []
 
-    results, _ = asyncio.run(processor._transcribe_and_summarize(_FakeSource(6)))  # type: ignore[arg-type]
+    async def run(idx: int, source: Any, progress: PageProgress) -> str:
+        seen.append(idx)
+        return await _fake_run(idx, source, progress)
+
+    monkeypatch.setattr(processor.runner, "run", run)
+
+    asyncio.run(_pool(processor, list(range(6))))
 
     assert len(spy_executor.instances) == 1
     assert (False, True) in spy_executor.shutdowns
     assert processor.runner.executor is None
-    assert sorted(r["original_input_order_index"] for r in results) == list(range(6))
+    assert sorted(seen) == list(range(6))
 
 
 def test_the_pool_bounds_pages_in_flight(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     processor = _processor(tmp_path, 2)
-    state = {"active": 0, "peak": 0}
+    state = {"active": 0, "peak": 0, "done": 0}
 
-    async def slow_run(*args: Any) -> dict[str, Any]:
+    async def slow_run(*args: Any) -> str:
         state["active"] += 1
         state["peak"] = max(state["peak"], state["active"])
         await asyncio.sleep(0.01)
         state["active"] -= 1
+        state["done"] += 1
         return await _fake_run(*args)
 
     monkeypatch.setattr(processor.runner, "run", slow_run)
 
-    results, _ = asyncio.run(processor._transcribe_and_summarize(_FakeSource(6)))  # type: ignore[arg-type]
+    asyncio.run(_pool(processor, list(range(6))))
 
-    assert len(results) == 6
+    assert state["done"] == 6
     assert state["peak"] == 2
 
 
 def test_cancelling_the_item_cancels_its_pages(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    processor = _processor(tmp_path, 2)
+    processor = _processor(tmp_path, 2, pages=4)
     started: list[int] = []
     cancelled: list[int] = []
 
@@ -138,9 +152,7 @@ def test_cancelling_the_item_cancels_its_pages(
     monkeypatch.setattr(processor.runner, "run", blocking_run)
 
     async def scenario() -> None:
-        task = asyncio.ensure_future(
-            processor._transcribe_and_summarize(_FakeSource(4))  # type: ignore[arg-type]
-        )
+        task = asyncio.ensure_future(_pool(processor, list(range(4))))
         while len(started) < 2:
             await asyncio.sleep(0)
         task.cancel()
@@ -156,7 +168,7 @@ def test_cancelling_the_item_cancels_its_pages(
 def test_a_fatal_page_error_cancels_the_rest(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, spy_executor: type[_SpyExecutor]
 ) -> None:
-    processor = _processor(tmp_path, 1)
+    processor = _processor(tmp_path, 1, pages=4)
 
     async def boom(*_args: Any) -> None:
         raise RuntimeError("fatal")
@@ -164,14 +176,12 @@ def test_a_fatal_page_error_cancels_the_rest(
     monkeypatch.setattr(processor.runner, "run", boom)
 
     with pytest.raises(RuntimeError, match="fatal"):
-        asyncio.run(processor._transcribe_and_summarize(_FakeSource(4)))  # type: ignore[arg-type]
+        asyncio.run(_pool(processor, list(range(4))))
 
     assert (False, True) in spy_executor.shutdowns
 
 
-def test_pages_render_off_the_loop_and_count_every_page(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_pages_render_off_the_loop_and_count_every_page(tmp_path: Path) -> None:
     manager = transcriber(
         return_value={
             "transcription": "hello",
@@ -179,58 +189,43 @@ def test_pages_render_off_the_loop_and_count_every_page(
             "provider": "openai",
         }
     )
-    runner = make_runner(tmp_path, transcribe_manager=manager)
-    monkeypatch.setattr(pages_module, "append_to_log", lambda *a, **k: True)
     source = _RenderSource()
     progress = make_progress(16)
-    results: list[dict[str, Any]] = []
 
-    async def run_all() -> None:
-        await asyncio.gather(
-            *(runner.run(i, source, results, [], progress) for i in range(16))
-        )
+    async def run_all() -> list[str]:
+        async with stored_document(tmp_path) as document:
+            await store_pages(document, 16, {})
+            runner = make_runner(
+                tmp_path, transcribe_manager=manager, document=document
+            )
+            return await asyncio.gather(
+                *(runner.run(i, source, progress) for i in range(16))
+            )
 
-    asyncio.run(run_all())
+    results = asyncio.run(run_all())
 
+    assert results == ["ok"] * 16
     assert progress.processed == 16
     assert len(progress.transcription_times) == 16
-    assert len(results) == 16
+    assert statuses(tmp_path) == ["done"] * 16
     assert threading.main_thread().name not in source.threads
 
 
 def test_progress_denominator_is_pending_count(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    processor = make_processor(
-        tmp_path / "doc.pdf", tmp_path / "out", completed={0, 1}, concurrency=2
-    )
-
-    # Pages 0 and 1 were completed on a prior run.
-    async def fake_reload(
-        _eligible: Any,
-        _prior: Any,
-        _runner: Any,
-        t_results: list[dict[str, Any]],
-        _s: list[dict[str, Any]],
-    ) -> None:
-        t_results.extend({"original_input_order_index": i} for i in (0, 1))
-
-    monkeypatch.setattr(item_module, "reload_completed_pages", fake_reload)
-
+    processor = _processor(tmp_path, 2, pages=5)
     captured: list[tuple[int, int]] = []
 
-    async def spy(
-        idx: int, source: Any, t: Any, s: Any, progress: PageProgress
-    ) -> dict[str, Any]:
+    async def spy(idx: int, source: Any, progress: PageProgress) -> str:
         captured.append((progress.total, progress.already_complete))
-        t.append({"original_input_order_index": idx})
-        return {"original_input_order_index": idx}
+        return "ok"
 
     monkeypatch.setattr(processor.runner, "run", spy)
 
-    asyncio.run(processor._transcribe_and_summarize(_FakeSource(5)))  # type: ignore[arg-type]
+    # Pages 0 and 1 were completed on a prior run.
+    asyncio.run(_pool(processor, [2, 3, 4]))
 
-    # 5 total, 2 already complete -> 3 pending pages this run.
     assert captured, "spy was never called"
     assert all(total == 3 for total, _ in captured)
     assert all(done == 2 for _, done in captured)

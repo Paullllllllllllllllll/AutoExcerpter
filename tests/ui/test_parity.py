@@ -36,7 +36,7 @@ from autoexcerpter.common.wizard import (
     command_display,
     command_line,
 )
-from autoexcerpter.pipeline.resume import ProcessingState, ResumeResult
+from autoexcerpter.output.store import Classification, ItemState
 from autoexcerpter.settings import Settings, load, resolve
 from autoexcerpter.spec import OPTIONS, PHASES, RunSpec
 from autoexcerpter.ui.review import FORCE_ACTION, PROGRAM
@@ -443,7 +443,7 @@ def force_review_action(ws: Workspace) -> Script:
             return result
         complete = tuple(
             dataclasses.replace(
-                item, resume=ResumeResult(item.name, ProcessingState.COMPLETE)
+                item, resume=Classification(ItemState.COMPLETE, item.name)
             )
             for item in result.to_process
         )

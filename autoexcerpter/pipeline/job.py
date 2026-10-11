@@ -1,9 +1,9 @@
-"""The explicit settings and resume state handed to one item's processor."""
+"""The explicit settings handed to one item's processor."""
 
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from autoexcerpter.imaging.settings import request_detail_option
@@ -21,14 +21,11 @@ class ItemJob:
     ``"none"`` disables context, and text or a path to a text file overrides
     the sidecars. *fallback_context* (text or a path) applies to items without
     a sidecar. The plan resolves each item's prompt context from both and the
-    item's sidecars. *cleanup* deletes the working
-    directory of an item that finished complete outside resume mode.
-    *openalex* is the run's OpenAlex client, shared by every item so that its
-    cache and budget state carry across items; None when lookups are off.
-    Citations are looked up only when *openalex_enabled* is set and
-    *openalex* holds a client, at most *openalex_max_requests* per item.
-    *transcription_format* is the transcription file's extension;
-    *output_sqlite* writes the output folder's database.
+    item's sidecars. *openalex* is the run's OpenAlex client, shared by every
+    item so that its cache and budget state carry across items; None when
+    lookups are off. Citations are looked up only when *openalex_enabled* is
+    set and *openalex* holds a client, at most *openalex_max_requests* per
+    item. *transcription_format* is the transcription file's extension.
     """
 
     transcription: PhaseModel
@@ -36,31 +33,15 @@ class ItemJob:
     summarize: bool = True
     output_docx: bool = True
     output_markdown: bool = True
-    output_sqlite: bool = True
     transcription_format: str = "md"
     concurrency: int = 1
     timeout: float | None = None
     context: str | None = None
     fallback_context: str | None = None
-    cleanup: bool = False
     openalex_enabled: bool = True
     openalex_max_requests: int = 300
     images: ImageSpec | None = None
     openalex: OpenAlexClient | None = None
-
-
-@dataclass(frozen=True)
-class ItemResume:
-    """Working-log state of an item found by the resume check.
-
-    The parsed lists and header are reused instead of re-reading the logs;
-    a field left None falls back to a disk read.
-    """
-
-    completed_page_indices: frozenset[int] = field(default_factory=frozenset)
-    transcription_results: list[dict[str, Any]] | None = None
-    summary_results: list[dict[str, Any]] | None = None
-    log_header: dict[str, Any] | None = None
 
 
 def _seconds(value: float) -> float:
@@ -152,13 +133,11 @@ def job_from_spec(spec: RunSpec, settings: Settings) -> ItemJob:
         summarize=spec.summary.enabled,
         output_docx="summary-docx" in formats,
         output_markdown="summary-md" in formats,
-        output_sqlite="sqlite" in formats,
         transcription_format=spec.output.transcription_format,
         concurrency=spec.run.concurrency,
         timeout=_seconds(settings.timeouts.request),
         context=spec.summary.context,
         fallback_context=spec.summary.fallback_context,
-        cleanup=not spec.output.keep_working_files,
         openalex_enabled=spec.citations.openalex,
         openalex_max_requests=settings.openalex.max_requests,
         images=spec.images,
@@ -168,7 +147,6 @@ def job_from_spec(spec: RunSpec, settings: Settings) -> ItemJob:
 
 __all__ = [
     "ItemJob",
-    "ItemResume",
     "PhaseModel",
     "job_from_spec",
     "phase_model",

@@ -20,8 +20,8 @@ from autoexcerpter.events import (
     RunEvents,
     Waiting,
 )
+from autoexcerpter.output.store import Classification, ItemState
 from autoexcerpter.pipeline.paths import ItemPaths
-from autoexcerpter.pipeline.resume import ProcessingState, ResumeResult
 from autoexcerpter.pipeline.types import ItemSpec
 from autoexcerpter.ui.progress import RichProgress, plan_table, summary_table
 from tests.conftest import make_settings, make_spec
@@ -191,17 +191,16 @@ def test_plan_table_shows_resume_state_and_skips(
     alpha, beta = run_plan.to_process
     partial = dataclasses.replace(
         alpha,
-        resume=ResumeResult(
-            "alpha", ProcessingState.PARTIAL, completed_page_indices={0, 1}
-        ),
+        resume=Classification(ItemState.PARTIAL, "alpha"),
+        completed_pages=2,
     )
     skipped = dataclasses.replace(
-        beta, resume=ResumeResult("beta", ProcessingState.COMPLETE)
+        beta, resume=Classification(ItemState.COMPLETE, "beta")
     )
     gamma = core.PlannedItem(
         ItemSpec("image_folder", tmp_path / "gamma"),
         tmp_path,
-        ResumeResult("gamma", ProcessingState.NONE),
+        Classification(ItemState.NONE, "gamma"),
     )
     run_plan = dataclasses.replace(
         run_plan, to_process=(partial, gamma), skipped=(skipped,)

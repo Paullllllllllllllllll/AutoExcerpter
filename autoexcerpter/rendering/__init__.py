@@ -8,9 +8,8 @@ Public interface:
 
 Citation deduplication and OpenAlex enrichment live in the
 ``rendering.citations`` package (``CitationManager``); the writers call it
-internally. ``rendering.equations`` converts LaTeX formulas to Word equations,
-``rendering.locators`` formats page locators and Roman numerals, and
-``rendering.sqlite`` defines the tables of ``autoexcerpter.sqlite``.
+internally. ``rendering.equations`` converts LaTeX formulas to Word equations
+and ``rendering.locators`` formats page locators and Roman numerals.
 """
 
 from autoexcerpter.rendering.docx import create_docx_summary

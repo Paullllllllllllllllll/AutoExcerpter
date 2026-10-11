@@ -69,6 +69,7 @@ def summary_fields(
 def plan_fields(run_plan: core.RunPlan) -> dict[str, Any]:
     """Return the fields of the JSON summary of a dry run.
 
+    ``skipped`` names the items left alone (complete, legacy and blocked);
     ``spec`` holds the effective value and source of every run option.
     """
     return {
@@ -80,7 +81,7 @@ def plan_fields(run_plan: core.RunPlan) -> dict[str, Any]:
             }
             for item in run_plan.to_process
         ],
-        "skipped": [item.name for item in run_plan.skipped],
+        "skipped": [item.name for item in run_plan.not_processed],
         "spec": run_plan.effective_spec(),
     }
 
@@ -172,18 +173,15 @@ def _execute(
         return exc.exit_code
     reporter.plan(run_plan)
 
-    if not run_plan.dry_run and not run_plan.to_process:
-        emitter.emit(summary_fields(skipped=len(run_plan.skipped)))
+    skipped = len(run_plan.not_processed)
+    if not run_plan.dry_run and not run_plan.has_work:
+        emitter.emit(summary_fields(skipped=skipped))
         return ExitCode.OK
     try:
         ext.startup(spec, settings=settings, args=args)
     except SettingsError as exc:
         reporter.error(str(exc))
-        emitter.emit(
-            summary_fields(
-                total=len(run_plan.to_process), skipped=len(run_plan.skipped)
-            )
-        )
+        emitter.emit(summary_fields(total=len(run_plan.to_process), skipped=skipped))
         return ExitCode.USAGE
     if run_plan.dry_run:
         reporter.dry_run(run_plan)
@@ -194,9 +192,7 @@ def _execute(
         result = asyncio.run(core.run(run_plan, reporter))
     except core.PlanError as exc:
         reporter.error(str(exc))
-        emitter.emit(
-            summary_fields(total=exc.items_total, skipped=len(run_plan.skipped))
-        )
+        emitter.emit(summary_fields(total=exc.items_total, skipped=skipped))
         return exc.exit_code
     reporter.completion(result)
     reporter.incomplete(result)

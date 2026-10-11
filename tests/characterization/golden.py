@@ -2,8 +2,8 @@
 
 ``snapshot`` turns a ``RunResult`` into text files: every file the run
 created (the transcription, the summary ``.md``, text dumps of the summary
-``.docx`` and of the SQLite database, the JSONL working logs), the JSON
-summary line with the exit code, and ``requests.json`` with the
+``.docx`` and of the store database), the JSON summary line with the exit
+code, and ``requests.json`` with the
 provider-class constructions, the per-call request digests and the OpenAlex
 requests. Paths, dates, timestamps, durations, hashes and versions become
 placeholders. ``check_golden`` compares the snapshot with ``golden/<case>/``
@@ -27,12 +27,14 @@ import docx
 from docx.text.paragraph import Paragraph
 
 from autoexcerpter.common.sqlite import read_rows, table_names
-from autoexcerpter.rendering.sqlite import TABLES
 from tests.characterization.adapter import RunResult
 from tests.characterization.fakes import FakeOpenAlex
 
 GOLDEN_DIR = Path(__file__).resolve().parent / "golden"
 UPDATE_ENV = "AE_UPDATE_GOLDEN"
+# Artifact texts and request strings longer than this are dumped as their
+# length; ``requests.json`` records the prompts and schemas sent.
+LONG_TEXT = 200
 
 _W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 _M = "{http://schemas.openxmlformats.org/officeDocument/2006/math}"
@@ -57,10 +59,24 @@ _KEY_PLACEHOLDERS: dict[str, str] = {
 }
 # Columns of the SQLite dump that vary between identical runs.
 _COLUMN_PLACEHOLDERS: dict[str, str] = {
-    "hash": "<sha256>",
     "tool_version": "<version>",
+    "input_sha256": "<sha256>",
+    "settings_fingerprint": "<sha256>",
+    "lease_until": "<epoch>",
+    "latency": "<seconds>",
 }
-_TABLE_KEYS = {spec.name: list(spec.key) for spec in TABLES}
+# Row order of the store tables; the others keep their insertion order.
+_TABLE_KEYS: dict[str, list[str]] = {
+    "units": ["doc_id", "kind", "idx"],
+    "responses": ["doc_id", "kind", "idx", "created_at", "attempt"],
+    "summaries": ["doc_id", "idx"],
+    "citations": ["doc_id", "position"],
+    "outputs": ["doc_id", "path"],
+    "artifacts": ["kind", "sha256"],
+}
+_UUID_RE = re.compile(
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.IGNORECASE
+)
 
 
 # ============================================================================
@@ -99,29 +115,6 @@ class Normalizer:
 
 def _dumps(value: Any) -> str:
     return json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
-
-
-def _jsonl(path: Path, norm: Normalizer) -> str:
-    """Normalize a JSONL working log: header first, entries in page order."""
-    header: list[Any] = []
-    entries: list[Any] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        record = json.loads(line)
-        if isinstance(record, dict) and "_format_version" in record:
-            header.append(record)
-        else:
-            entries.append(record)
-
-    def order(entry: Any) -> tuple[int, str]:
-        if not isinstance(entry, dict):
-            return 10_000, ""
-        index = entry.get("original_input_order_index")
-        return (index if isinstance(index, int) else 10_000), str(entry.get("image"))
-
-    entries.sort(key=order)
-    return "".join(_dumps(norm.data(record)) for record in header + entries)
 
 
 def _run_text(run: Any) -> str:
@@ -207,26 +200,81 @@ def dump_docx(path: Path) -> str:
 # ============================================================================
 # Snapshot and comparison
 # ============================================================================
-def _column_value(column: str, value: Any, norm: Normalizer) -> Any:
+def _column_value(
+    column: str,
+    value: Any,
+    norm: Normalizer,
+    runs: dict[str, str],
+    responses: dict[int, int],
+) -> Any:
     if column in _COLUMN_PLACEHOLDERS and value is not None:
         return _COLUMN_PLACEHOLDERS[column]
+    if column == "response_id" and value is not None:
+        return responses.get(value, value)
+    if column == "text" and isinstance(value, str) and len(value) > LONG_TEXT:
+        return f"<{len(value)} characters>"
+    if isinstance(value, bytes):
+        value = value.decode("utf-8", errors="replace")
     if isinstance(value, str) and value[:1] in "[{":
         with contextlib.suppress(json.JSONDecodeError):
             value = json.loads(value)
-    return norm.data(value, column)
+    if column == "request":
+        value = _shortened(value)
+    return _runs(norm.data(value, column), runs)
+
+
+def _shortened(value: Any) -> Any:
+    """Return *value* with every string longer than ``LONG_TEXT`` as its length."""
+    if isinstance(value, dict):
+        return {key: _shortened(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_shortened(item) for item in value]
+    if isinstance(value, str) and len(value) > LONG_TEXT:
+        return f"<{len(value)} characters>"
+    return value
+
+
+def _runs(value: Any, runs: dict[str, str]) -> Any:
+    """Replace run ids by their order and other UUIDs by a placeholder."""
+    if isinstance(value, dict):
+        return {key: _runs(item, runs) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_runs(item, runs) for item in value]
+    if isinstance(value, str):
+        return _UUID_RE.sub(lambda m: runs.get(m.group(0), "<uuid>"), value)
+    return value
 
 
 def dump_sqlite(path: Path, norm: Normalizer) -> str:
     """Return every table of a SQLite file, rows ordered by key, normalized.
 
-    JSON text columns are parsed so that their paths normalize too.
+    JSON text columns are parsed so that their paths normalize too. Run ids
+    become ``<run-N>`` in the order the runs began and response ids their
+    rank in unit order, since concurrent pages append in any order; long
+    artifact texts become their length.
     """
+    tables = table_names(path)
+    runs: dict[str, str] = {}
+    responses: dict[int, int] = {}
+    if "runs" in tables:
+        for number, row in enumerate(read_rows(path, "runs"), start=1):
+            runs[str(row["run_id"])] = f"<run-{number}>"
+    if "responses" in tables:
+        ordered = read_rows(path, "responses", order_by=_TABLE_KEYS["responses"])
+        responses = {
+            int(row["response_id"]): rank for rank, row in enumerate(ordered, start=1)
+        }
     parts: list[str] = []
-    for table in table_names(path):
+    for table in tables:
         parts.append(f"## {table}\n")
         for row in read_rows(path, table, order_by=_TABLE_KEYS.get(table)):
             parts.append(
-                _dumps({key: _column_value(key, val, norm) for key, val in row.items()})
+                _dumps(
+                    {
+                        key: _column_value(key, val, norm, runs, responses)
+                        for key, val in row.items()
+                    }
+                )
             )
     return "".join(parts)
 
@@ -237,8 +285,6 @@ def _file_entry(path: Path, norm: Normalizer) -> tuple[str, str]:
         return ".dump.txt", norm.text(dump_docx(path))
     if suffix == ".sqlite":
         return ".dump.txt", dump_sqlite(path, norm)
-    if suffix in (".json", ".jsonl"):
-        return "", _jsonl(path, norm)
     if suffix in (".txt", ".md"):
         return "", norm.text(path.read_text(encoding="utf-8"))
     return ".bytes.txt", f"<{path.stat().st_size} bytes>\n"

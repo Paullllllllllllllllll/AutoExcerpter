@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
-import shutil
 import sqlite3
 from collections.abc import Callable
 from pathlib import Path
@@ -19,12 +17,14 @@ import autoexcerpter.pipeline.managers as managers_module
 import autoexcerpter.run as core
 from autoexcerpter.common.contract import ExitCode
 from autoexcerpter.common.sqlite import read_rows
-from autoexcerpter.constants import LOG_FORMAT_VERSION
+from autoexcerpter.common.store import PlannedUnit
 from autoexcerpter.events import ItemFinished, ItemStarted, PageDone
+from autoexcerpter.llm import CallEnv
+from autoexcerpter.output.store import DATABASE_NAME, open_store, plan_pages
 from autoexcerpter.pipeline.job import job_from_spec
 from autoexcerpter.pipeline.paths import ItemPaths
+from autoexcerpter.pipeline.units import DocumentHandle
 from autoexcerpter.rendering.citations import OpenAlexClient
-from autoexcerpter.rendering.sqlite import DATABASE_NAME
 from autoexcerpter.settings import resolve as resolve_settings
 from tests.conftest import make_settings, make_spec
 from tests.recording_events import RecordingEvents
@@ -66,16 +66,39 @@ def transcriber(
     return manager
 
 
-def _fake_processor(
-    success: bool, working_dir: Path, written: list[Path] | None = None
-) -> MagicMock:
+def _fake_processor(success: bool, written: list[Path] | None = None) -> MagicMock:
     processor = MagicMock()
     processor.process = AsyncMock(return_value=success)
     processor.written_outputs = written or []
     processor.last_run_report = {"pages_ok": 1}
-    processor.record = None
-    processor.paths.working_dir = working_dir
     return processor
+
+
+def _store_document(out: Path, name: str, input_path: Path) -> None:
+    """Store document *name* of *input_path* in *out* with one pending page."""
+
+    async def seed() -> None:
+        async with open_store(out) as store:
+            await store.begin_run("run")
+            doc_id = await store.ensure_document(name, input_path=input_path)
+            lease = await store.acquire(doc_id)
+            assert lease is not None
+            await plan_pages(
+                store,
+                lease,
+                [PlannedUnit(0)],
+                transcription=("gpt-5-mini", "openai"),
+                summary=None,
+            )
+            await store.release(lease)
+            await store.end_run(0)
+
+    asyncio.run(seed())
+
+
+def _view(database: Path, view: str) -> list[dict[str, Any]]:
+    order = ["document"] if view == "document_status" else ["document", "order_index"]
+    return read_rows(database, view, order_by=order)
 
 
 def test_discover_finds_pdfs_and_image_folders(
@@ -191,41 +214,57 @@ def test_duplicate_guard_runs_before_the_resume_check(
 ) -> None:
     input_path, flags = _same_stem(tmp_path, make_pdf)
     monkeypatch.setattr(
-        core, "ResumeChecker", MagicMock(side_effect=AssertionError("resume first"))
+        core, "classify", MagicMock(side_effect=AssertionError("resume first"))
     )
     with pytest.raises(core.DuplicateOutputError):
         _plan(input_path, **flags)
 
 
-def _log_from_other_input(tmp_path: Path, make_pdf: MakePdf) -> tuple[Path, Path]:
-    """Return inputs A and B named doc.pdf; out/ holds A's working log."""
+def _document_of_other_input(tmp_path: Path, make_pdf: MakePdf) -> tuple[Path, Path]:
+    """Return inputs A and B named doc.pdf; out/ stores A's document."""
     for sub in ("a", "b"):
         (tmp_path / sub).mkdir()
     first, second = make_pdf("a/doc.pdf"), make_pdf("b/doc.pdf")
-    log = ItemPaths.for_item("doc", tmp_path / "out").transcription_log
-    log.parent.mkdir(parents=True)
-    header = {"_format_version": LOG_FORMAT_VERSION, "input_item_path": str(first)}
-    log.write_text(json.dumps(header) + "\n", encoding="utf-8")
+    _store_document(tmp_path / "out", "doc", first)
     return first, second
 
 
-def test_a_log_of_another_existing_input_stops_the_plan(
+def test_a_document_of_another_existing_input_stops_the_plan(
     tmp_path: Path, make_pdf: MakePdf
 ) -> None:
-    first, second = _log_from_other_input(tmp_path, make_pdf)
+    first, second = _document_of_other_input(tmp_path, make_pdf)
     with pytest.raises(core.DuplicateOutputError) as raised:
         _plan(second, output=tmp_path / "out")
     assert raised.value.exit_code == 2
+    assert raised.value.items_total == 1
     assert str(first) in str(raised.value) and str(second) in str(raised.value)
 
 
-def test_a_log_of_a_moved_input_keeps_the_resume(
+def test_a_document_of_a_moved_input_keeps_the_resume(
     tmp_path: Path, make_pdf: MakePdf
 ) -> None:
-    first, second = _log_from_other_input(tmp_path, make_pdf)
+    first, second = _document_of_other_input(tmp_path, make_pdf)
     first.unlink()
     run_plan = _plan(second, output=tmp_path / "out")
     assert [item.name for item in run_plan.to_process] == ["doc"]
+
+
+def test_a_versionless_database_stops_the_plan_and_names_migrate(
+    tmp_path: Path, make_pdf: MakePdf
+) -> None:
+    out = tmp_path / "out"
+    out.mkdir()
+    with sqlite3.connect(out / DATABASE_NAME) as connection:
+        connection.execute("CREATE TABLE documents (name TEXT PRIMARY KEY)")
+    connection.close()
+    before = (out / DATABASE_NAME).read_bytes()
+
+    with pytest.raises(core.StoreRefusedError) as raised:
+        _plan(make_pdf("doc.pdf"), output=out)
+
+    assert raised.value.exit_code == 2
+    assert "autoexcerpter migrate" in str(raised.value)
+    assert (out / DATABASE_NAME).read_bytes() == before
 
 
 @pytest.fixture
@@ -268,7 +307,7 @@ def test_name_search_ignores_the_parent_path(library: Path) -> None:
         _plan(library, select="Shared")
 
 
-def test_complete_items_are_skipped_unless_forced(
+def test_outputs_without_store_units_are_legacy_unless_forced(
     tmp_path: Path, make_pdf: MakePdf
 ) -> None:
     pdf = make_pdf("doc.pdf")
@@ -279,10 +318,28 @@ def test_complete_items_are_skipped_unless_forced(
     skipping = _plan(pdf, output=out, summarize=False)
     forcing = _plan(pdf, output=out, summarize=False, force=True)
 
-    assert [item.name for item in skipping.skipped] == ["doc"]
-    assert skipping.to_process == ()
+    assert [item.name for item in skipping.legacy] == ["doc"]
+    assert skipping.to_process == skipping.skipped == ()
+    assert "migrate imports it" in skipping.warnings[0]
     assert [item.state for item in forcing.to_process] == ["none"]
     assert forcing.to_process[0].completed_pages == 0
+    assert not (out / DATABASE_NAME).exists()
+
+
+def test_complete_items_are_skipped_unless_forced(
+    tmp_path: Path, make_pdf: MakePdf, transcriber: MagicMock
+) -> None:
+    pdf = make_pdf("doc.pdf")
+    out = tmp_path / "out"
+    asyncio.run(core.run(_plan(pdf, output=out, summarize=False)))
+
+    skipping = _plan(pdf, output=out, summarize=False)
+    forcing = _plan(pdf, output=out, summarize=False, force=True)
+
+    assert [item.name for item in skipping.skipped] == ["doc"]
+    assert skipping.to_process == ()
+    assert not skipping.has_work
+    assert [item.state for item in forcing.to_process] == ["none"]
 
 
 def test_outputs_go_beside_the_input_without_an_output_folder(
@@ -520,18 +577,18 @@ def test_items_beside_one_another_share_one_database(
 
     database = tmp_path / "in" / DATABASE_NAME
     assert result.complete == 2
-    documents = read_rows(database, "documents", order_by=["name"])
-    assert [(row["name"], row["complete"]) for row in documents] == [
-        ("alpha", 1),
-        ("beta", 1),
+    documents = _view(database, "document_status")
+    assert [(row["document"], row["status"]) for row in documents] == [
+        ("alpha", "complete"),
+        ("beta", "complete"),
     ]
-    pages = read_rows(database, "pages", order_by=["document", "page_index"])
-    assert [(row["document"], row["page_index"]) for row in pages] == [
+    pages = _view(database, "page_text")
+    assert [(row["document"], row["order_index"]) for row in pages] == [
         ("alpha", 0),
         ("alpha", 1),
         ("beta", 0),
     ]
-    assert read_rows(database, "summaries") == []
+    assert _view(database, "page_summaries") == []
     assert sorted(path.name for path in (tmp_path / "in").iterdir()) == sorted(
         [
             "alpha.pdf",
@@ -539,13 +596,11 @@ def test_items_beside_one_another_share_one_database(
             DATABASE_NAME,
             "alpha_transcription.md",
             "beta_transcription.md",
-            "alpha_autoexcerpter",
-            "beta_autoexcerpter",
         ]
     )
 
 
-def test_without_the_sqlite_format_no_database_is_written(
+def test_the_database_is_written_without_the_sqlite_format(
     tmp_path: Path, make_pdf: MakePdf, transcriber: MagicMock
 ) -> None:
     out = tmp_path / "out"
@@ -556,29 +611,36 @@ def test_without_the_sqlite_format_no_database_is_written(
     result = asyncio.run(core.run(run_plan))
 
     assert result.complete == 1
-    assert not (out / DATABASE_NAME).exists()
+    assert result.databases == (str((out / DATABASE_NAME).resolve()),)
 
 
-def test_a_failed_database_write_fails_the_item(
+def test_a_failed_unit_write_fails_the_item_and_withholds_its_files(
     tmp_path: Path,
     make_pdf: MakePdf,
     transcriber: MagicMock,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def locked(*_args: Any) -> None:
-        raise sqlite3.OperationalError("database is locked")
+    real = DocumentHandle.write_transcription
 
-    monkeypatch.setattr(core, "write_document", locked)
-    run_plan = _plan(make_pdf("doc.pdf"), output=tmp_path / "out", summarize=False)
+    async def locked_once(self: DocumentHandle, result: Any) -> None:
+        if result.idx == 0:
+            raise sqlite3.OperationalError("disk I/O error")
+        await real(self, result)
+
+    monkeypatch.setattr(DocumentHandle, "write_transcription", locked_once)
+    out = tmp_path / "out"
+    run_plan = _plan(make_pdf("doc.pdf", 2), output=out, summarize=False)
 
     result = asyncio.run(core.run(run_plan))
 
     assert result.failed == 1
-    assert result.items[0].outputs
-    assert result.outputs == list(result.items[0].outputs)
+    assert result.items[0].outputs == ()
+    assert result.outputs == [str((out / DATABASE_NAME).resolve())]
+    statuses = [row["status"] for row in _view(out / DATABASE_NAME, "page_text")]
+    assert statuses == ["pending", "done"]
 
 
-def test_failed_page_fails_the_item_and_keeps_its_logs(
+def test_failed_page_fails_the_item_and_keeps_its_pages(
     tmp_path: Path, make_pdf: MakePdf, transcriber: MagicMock
 ) -> None:
     def fail_second(payload: Any, **_kwargs: Any) -> dict[str, Any]:
@@ -597,50 +659,13 @@ def test_failed_page_fails_the_item_and_keeps_its_logs(
     assert sorted(page.status for page in events.of("page_done")) == ["failed", "ok"]
     assert result.failed == 1
     assert not result.items[0].success
-    assert result.items[0].paths.working_dir.exists()
+    statuses = [row["status"] for row in _view(result_database(result), "page_text")]
+    assert statuses == ["done", "failed"]
 
 
-@pytest.mark.parametrize(
-    ("force", "success", "removed"),
-    [(True, True, True), (True, False, False), (False, True, False)],
-)
-def test_working_dir_cleanup_rule(
-    tmp_path: Path,
-    make_pdf: MakePdf,
-    monkeypatch: pytest.MonkeyPatch,
-    force: bool,
-    success: bool,
-    removed: bool,
-) -> None:
-    working_dir = tmp_path / "wd"
-    working_dir.mkdir()
-    monkeypatch.setattr(
-        core,
-        "ItemProcessor",
-        MagicMock(return_value=_fake_processor(success, working_dir)),
-    )
-    run_plan = _plan(make_pdf("doc.pdf"), force=force)
-
-    asyncio.run(core.run(run_plan))
-
-    assert working_dir.exists() is not removed
-
-
-def test_kept_working_files_survive_a_forced_run(
-    tmp_path: Path, make_pdf: MakePdf, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    working_dir = tmp_path / "wd"
-    working_dir.mkdir()
-    monkeypatch.setattr(
-        core,
-        "ItemProcessor",
-        MagicMock(return_value=_fake_processor(True, working_dir)),
-    )
-    run_plan = _plan(make_pdf("doc.pdf"), force=True, keep_working_files=True)
-
-    asyncio.run(core.run(run_plan))
-
-    assert working_dir.exists()
+def result_database(result: core.RunResult) -> Path:
+    (database,) = result.databases
+    return Path(database)
 
 
 def test_item_verdict_and_outputs_reach_the_result(
@@ -650,14 +675,17 @@ def test_item_verdict_and_outputs_reach_the_result(
     monkeypatch.setattr(
         core,
         "ItemProcessor",
-        MagicMock(return_value=_fake_processor(False, tmp_path / "wd", written)),
+        MagicMock(return_value=_fake_processor(False, written)),
     )
     run_plan = _plan(make_pdf("A.pdf"))
 
     result = asyncio.run(core.run(run_plan))
 
     assert result.failed == 1
-    assert result.outputs == [str(path) for path in written]
+    assert result.outputs == [
+        *(str(path) for path in written),
+        str((tmp_path / DATABASE_NAME).resolve()),
+    ]
     assert result.items[0].report == {"pages_ok": 1}
 
 
@@ -667,7 +695,7 @@ def test_a_crashing_item_does_not_stop_the_run(
     (tmp_path / "in").mkdir()
     make_pdf("in/alpha.pdf")
     make_pdf("in/beta.pdf")
-    healthy = _fake_processor(True, tmp_path / "wd")
+    healthy = _fake_processor(True)
     monkeypatch.setattr(
         core, "ItemProcessor", MagicMock(side_effect=[RuntimeError("boom"), healthy])
     )
@@ -700,7 +728,7 @@ def test_cancellation_propagates_and_stops_the_run(
     (tmp_path / "in").mkdir()
     make_pdf("in/alpha.pdf")
     make_pdf("in/beta.pdf")
-    processor = _fake_processor(False, tmp_path / "wd")
+    processor = _fake_processor(False)
     processor.process = AsyncMock(side_effect=asyncio.CancelledError)
     factory = MagicMock(return_value=processor)
     monkeypatch.setattr(core, "ItemProcessor", factory)
@@ -765,7 +793,7 @@ def test_the_checked_callers_serve_the_first_item(
         builds_seen.append(len(built))
         env.caller("transcription", job.transcription)
         builds_seen.append(len(built))
-        return _fake_processor(True, tmp_path / "wd")
+        return _fake_processor(True)
 
     monkeypatch.setattr(core, "ItemProcessor", processor)
     run_plan = _plan(make_pdf("doc.pdf"), output=tmp_path / "out", summarize=False)
@@ -776,25 +804,27 @@ def test_the_checked_callers_serve_the_first_item(
     assert builds_seen == [1, 1, 2]
 
 
+def test_the_run_closes_its_callers_when_it_ends(
+    tmp_path: Path,
+    make_pdf: MakePdf,
+    monkeypatch: pytest.MonkeyPatch,
+    transcriber: MagicMock,
+) -> None:
+    closed: list[int] = []
+
+    async def aclose(self: CallEnv) -> None:
+        closed.append(len(self.callers))
+
+    monkeypatch.setattr(CallEnv, "aclose", aclose)
+    run_plan = _plan(make_pdf("doc.pdf"), output=tmp_path / "out", summarize=False)
+
+    result = asyncio.run(core.run(run_plan))
+
+    assert result.complete == 1
+    assert len(closed) == 1 and closed[0] >= 1
+
+
 def test_a_dry_run_plan_is_not_run(tmp_path: Path, make_pdf: MakePdf) -> None:
     run_plan = _plan(make_pdf("doc.pdf"), dry_run=True)
     with pytest.raises(ValueError, match="dry-run"):
         asyncio.run(core.run(run_plan))
-
-
-def test_remove_working_dir_retries_after_clearing_read_only(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    target = tmp_path / "locked.txt"
-    target.write_text("x", encoding="utf-8")
-    captured: dict[str, Any] = {}
-
-    def fake_rmtree(path: Any, **kwargs: Any) -> None:
-        captured.update(kwargs)
-
-    monkeypatch.setattr(shutil, "rmtree", fake_rmtree)
-    core.remove_working_dir(tmp_path)
-
-    removed: list[Any] = []
-    captured["onexc"](removed.append, str(target), PermissionError("denied"))
-    assert removed == [str(target)]

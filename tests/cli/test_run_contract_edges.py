@@ -4,7 +4,7 @@
   but not for a real run whose items are all skipped.
 - Cut-short runs report the tokens already spent.
 - Runs fully handled by the resume check still write the JSON line.
-- A summary-only resume reuses the logged transcription and reports its
+- A summary-only resume reuses the stored transcription and reports its
   outputs.
 - Deferred pages fail the item and withhold the partial outputs; the next
   run finishes them.
@@ -28,15 +28,22 @@ import autoexcerpter.pipeline.outputs as outputs_module
 import autoexcerpter.run as core
 from autoexcerpter import __main__ as entry
 from autoexcerpter import ext
+from autoexcerpter.common.store import PlannedUnit, UnitResult
 from autoexcerpter.common.structured import StructuredRequest
 from autoexcerpter.common.testing import FakeRequest
 from autoexcerpter.common.usage import Usage
-from autoexcerpter.constants import LOG_FORMAT_VERSION
 from autoexcerpter.llm import ModelCaller
+from autoexcerpter.output.store import (
+    DATABASE_NAME,
+    KIND_TRANSCRIPTION,
+    open_store,
+    plan_pages,
+)
+from autoexcerpter.pipeline.item import input_sha256
 from autoexcerpter.pipeline.pages import PageRunner
 from autoexcerpter.pipeline.paths import ItemPaths
 from autoexcerpter.pipeline.progress import PageProgress
-from autoexcerpter.rendering.sqlite import DATABASE_NAME
+from autoexcerpter.pipeline.types import ItemSpec
 from autoexcerpter.settings import Settings
 from autoexcerpter.spec import RunSpec
 from tests.llm import helpers
@@ -314,29 +321,46 @@ def summary_env(monkeypatch: pytest.MonkeyPatch, pipeline_env: MagicMock) -> Mag
     return mock_summary_manager
 
 
-def _seed_complete_log(
+def _seed_transcribed(
     output_dir: Path, item_name: str, input_path: Path, model_name: str
 ) -> None:
-    """Write a versioned transcription log marking page 0 as completed."""
-    paths = ItemPaths.for_item(item_name, output_dir)
-    paths.working_dir.mkdir(parents=True, exist_ok=True)
-    header = {
-        "_format_version": LOG_FORMAT_VERSION,
-        "log_type": "transcription",
-        "input_item_name": item_name,
-        "input_item_path": str(input_path),
-        "input_type": "PDF",
-        "total_images": 1,
-        "model_name": model_name,
-    }
-    page = {
-        "image": "page_0001.jpg",
-        "original_input_order_index": 0,
-        "transcription": "prior page text",
-    }
-    paths.transcription_log.write_text(
-        json.dumps(header) + "\n" + json.dumps(page) + "\n", encoding="utf-8"
-    )
+    """Store page 0 of a one-page item as transcribed, without summaries."""
+
+    async def seed() -> None:
+        async with open_store(output_dir) as store:
+            await store.begin_run("run")
+            doc_id = await store.ensure_document(
+                item_name,
+                input_path=input_path,
+                input_sha256=input_sha256(ItemSpec("pdf", input_path)),
+                kind="pdf",
+            )
+            lease = await store.acquire(doc_id)
+            assert lease is not None
+            unit = PlannedUnit(0, label="page_0001.jpg", source_index=0)
+            await plan_pages(
+                store,
+                lease,
+                [unit],
+                transcription=(model_name, "openai"),
+                summary=None,
+            )
+            await store.write_unit(
+                lease,
+                UnitResult(
+                    kind=KIND_TRANSCRIPTION,
+                    idx=0,
+                    status="done",
+                    model=model_name,
+                    provider="openai",
+                    content="prior page text",
+                    outcome="ok",
+                ),
+            )
+            await store.release(lease)
+            await store.end_run(0)
+
+    asyncio.run(seed())
 
 
 def _run_main(in_dir: Path, out_dir: Path, *extra: str, summarize: bool = False) -> int:
@@ -373,8 +397,8 @@ class TestResumeJsonEmission:
         in_dir.mkdir()
         out_dir.mkdir()
         make_pdf("in/Item.pdf", 1)
-        # Without summaries only the transcription is required for the item
-        # to be classified COMPLETE.
+        # A transcription without units in the store is a legacy output,
+        # skipped like a complete item.
         paths = ItemPaths.for_item("Item", out_dir)
         paths.transcription.write_text("done", encoding="utf-8")
 
@@ -400,10 +424,10 @@ class TestResumeJsonEmission:
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """A summary-only resume reuses the logged transcription.
+        """A summary-only resume reuses the stored transcription.
 
-        The transcription and its full log exist, the summaries do not; the run
-        writes the summaries and reports the item complete with its outputs.
+        The store holds the transcribed page, not its summary; the run writes
+        the summary and reports the item complete with its outputs.
         """
         in_dir = tmp_path / "in"
         out_dir = tmp_path / "out"
@@ -411,8 +435,7 @@ class TestResumeJsonEmission:
         out_dir.mkdir()
         pdf_path = make_pdf("in/Item.pdf", 1)
         paths = ItemPaths.for_item("Item", out_dir)
-        paths.transcription.write_text("prior transcription", encoding="utf-8")
-        _seed_complete_log(out_dir, "Item", pdf_path, "gpt-5-mini")
+        _seed_transcribed(out_dir, "Item", pdf_path, "gpt-5-mini")
 
         exit_code = _run_main(in_dir, out_dir, summarize=True)
 
@@ -430,8 +453,8 @@ class TestResumeJsonEmission:
             str((out_dir / DATABASE_NAME).resolve()),
         ]
         assert payload["outputs"] == expected_outputs
-        # The logged transcription was reused (no fresh transcription call)
-        # while the summaries were regenerated.
+        # The stored transcription was reused (no fresh transcription call)
+        # while the summary was made.
         assert pipeline_env.transcribe_payload.call_count == 0
         assert summary_env.generate_summary.call_count == 1
 
@@ -439,7 +462,7 @@ class TestResumeJsonEmission:
 class TestDeferralWithholding:
     """Deferred pages fail the item and withhold its transcription file.
 
-    The completed pages stay in the working log, so a later run resumes and
+    The completed pages stay in the store, so a later run resumes and
     finishes the deferred ones.
     """
 
@@ -464,16 +487,11 @@ class TestDeferralWithholding:
         defer = {"on": True}
 
         async def maybe_defer(
-            self: PageRunner,
-            idx: int,
-            source: Any,
-            t_results: list[dict[str, Any]],
-            s_results: list[dict[str, Any]],
-            progress: PageProgress,
-        ) -> dict[str, Any] | None:
+            self: PageRunner, idx: int, source: Any, progress: PageProgress
+        ) -> str:
             if defer["on"] and idx >= 1:
-                return None
-            return await real_run(self, idx, source, t_results, s_results, progress)
+                return "deferred"
+            return await real_run(self, idx, source, progress)
 
         monkeypatch.setattr(PageRunner, "run", maybe_defer)
 
@@ -483,7 +501,7 @@ class TestDeferralWithholding:
         assert exit_code_1 == 1
         assert payload_1["items_failed"] >= 1
         assert payload_1["items_complete"] == 0
-        # Only the database holds the item, as an incomplete row.
+        # Only the database holds the item, with its deferred pages pending.
         assert payload_1["outputs"] == [str((out_dir / DATABASE_NAME).resolve())]
         assert not transcript.exists()
 
@@ -496,6 +514,7 @@ class TestDeferralWithholding:
         assert payload_2["items_complete"] == 1
         assert transcript.exists()
         # The resumed run reused page 0 and transcribed only the two that were
-        # deferred (3 total minus the 1 already logged).
+        # deferred (3 total minus the 1 already stored).
+        assert pipeline_env.transcribe_payload.call_count == 3
         txt = transcript.read_text(encoding="utf-8")
         assert "# Total images processed: 3" in txt

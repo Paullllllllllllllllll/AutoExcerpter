@@ -41,9 +41,6 @@ BULLET_LEFT_INDENT_CM = 0.5
 BULLET_HANGING_INDENT_CM = 0.25
 REF_HANGING_INDENT_CM = 0.5
 
-# Resume refuses working logs without this exact marker.
-LOG_FORMAT_VERSION = 2
-
 # Phrases of the blank and untranscribable-page markers that
 # llm/transcription.py emits, matched case-insensitively as substrings so
 # that every variant skips the summary call.
@@ -71,8 +68,6 @@ def is_blank_transcription(text: str | None) -> bool:
     lowered = stripped.lower()
     return any(marker in lowered for marker in BLANK_PAGE_SENTINELS)
 
-
-OPENAI_MODEL_PREFIXES = ("gpt-", "o1", "o3", "o4")
 
 # Markers of a single-bullet summary without usable content: the blank-page
 # phrases, then the bracketed prefixes of llm/summary.py's failure
@@ -126,9 +121,7 @@ __all__ = [
     "BULLET_LEFT_INDENT_CM",
     "BULLET_HANGING_INDENT_CM",
     "REF_HANGING_INDENT_CM",
-    "LOG_FORMAT_VERSION",
     "is_blank_transcription",
-    "OPENAI_MODEL_PREFIXES",
     "ERROR_MARKERS",
     "MATH_NAMESPACE",
     "MIN_SAMPLES_FOR_ETA",

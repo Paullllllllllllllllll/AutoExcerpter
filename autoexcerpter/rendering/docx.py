@@ -68,6 +68,7 @@ from autoexcerpter.rendering.equations import (
 from autoexcerpter.rendering.summary import (
     PAGE_TYPE_LABELS,
     STRUCTURE_PAGE_TYPE_ORDER,
+    CitationSource,
     PageRenderData,
     SummaryData,
     collapse_internal_newlines,
@@ -353,7 +354,7 @@ def create_docx_summary(
     summary_results: list[dict[str, Any]],
     output_path: Path,
     document_name: str,
-    citation_manager: CitationManager | None = None,
+    citation_manager: CitationSource | None = None,
     data: Any = None,
 ) -> None:
     """Create a DOCX summary document from structured summary results.
@@ -364,10 +365,11 @@ def create_docx_summary(
     3. Content Summaries (in document order)
     4. Consolidated References
 
-    When *citation_manager* and *data* are supplied by the pipeline they are
-    already consolidated and OpenAlex-enriched, so this writer renders them as-is
-    (one enrichment pass per item, shared with the Markdown writer). When called
-    standalone they are built (with default OpenAlex options) and enriched here.
+    When *citation_manager* (a citation manager or the stored citations) and
+    *data* are supplied by the pipeline they are already consolidated and
+    OpenAlex-enriched, so this writer renders them as-is (one enrichment pass
+    per item, shared with the Markdown writer). When called standalone they
+    are built (with default OpenAlex options) and enriched here.
     """
     if citation_manager is None or data is None:
         citation_manager = CitationManager()
@@ -479,14 +481,15 @@ def _write_page_summaries(
 
 
 def _write_references(
-    document: Any, citation_manager: CitationManager, style_ids: _StyleIds
+    document: Any, citation_manager: CitationSource, style_ids: _StyleIds
 ) -> None:
     """Write the Consolidated References section on a new page."""
-    if not citation_manager.citations:
+    citations_with_pages = citation_manager.get_citations_with_pages()
+    if not citations_with_pages:
         return
     logger.info(
         "Processing %d unique citations for consolidated references section",
-        len(citation_manager.citations),
+        len(citations_with_pages),
     )
 
     document.add_page_break()
@@ -505,7 +508,6 @@ def _write_references(
     note_run.font.size = Pt(METADATA_FONT_PT)
     note_run.font.color.rgb = _rgb(COLOR_METADATA_GRAY)
 
-    citations_with_pages = citation_manager.get_citations_with_pages()
     for idx, (citation, page_range_str) in enumerate(citations_with_pages, start=1):
         _write_reference(document, idx, citation, page_range_str)
 

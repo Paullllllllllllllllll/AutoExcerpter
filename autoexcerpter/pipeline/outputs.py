@@ -1,8 +1,10 @@
-"""Final outputs of one item: the transcription file and the summary files.
+"""Final outputs of one item: its citations, the transcription and summary files.
 
-The writers block (OpenAlex lookups, file I/O), so the item processor runs
-:func:`write_outputs` in a worker thread and stops it through a
-``threading.Event``.
+The citations are consolidated and OpenAlex-enriched once per item by
+:func:`collect_citations`; the item stores them, and :func:`write_outputs`
+writes the files from what the store holds. Both block (OpenAlex lookups,
+file I/O), so the item processor runs them in a worker thread and stops
+them through a ``threading.Event``.
 """
 
 from __future__ import annotations
@@ -10,10 +12,12 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from autoexcerpter.output.store import CitationRow
 from autoexcerpter.pipeline.job import ItemJob
 from autoexcerpter.pipeline.page_numbering import PageNumberProcessor
 from autoexcerpter.pipeline.paths import ItemPaths
@@ -22,35 +26,36 @@ from autoexcerpter.rendering import (
     create_markdown_summary,
     write_transcription_to_text,
 )
-from autoexcerpter.rendering.citations import Citation, enrich_if_enabled
-from autoexcerpter.rendering.summary import build_render_context
+from autoexcerpter.rendering.citations import CitationManager, enrich_if_enabled
+from autoexcerpter.rendering.summary import (
+    StoredCitations,
+    build_render_context,
+    prepare_summary_data,
+)
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class OutputStatus:
-    """Whether the transcription and the summary files were written.
-
-    *citations* are the citations the summaries were rendered with, None
-    when no summary was rendered.
-    """
+    """Whether the transcription and the summary files were written."""
 
     transcription_ok: bool = True
     summaries_ok: bool = True
-    citations: list[Citation] | None = None
 
 
 @dataclass(frozen=True)
 class ItemResults:
-    """What one item's run produced, for its final files.
+    """What the store holds for one item, for its final files.
 
-    *transcriptions* must be in input order; *metadata_notes* are extra
-    metadata lines for the transcription file.
+    *transcriptions* and *summaries* are in page order; *citations* in
+    rendered order; *metadata_notes* are extra metadata lines for the
+    transcription file.
     """
 
     transcriptions: list[dict[str, Any]]
     summaries: list[dict[str, Any]]
+    citations: Sequence[CitationRow]
     elapsed_s: float
     metadata_notes: list[str]
 
@@ -59,10 +64,48 @@ def _stopped(stop: threading.Event | None, name: str, what: str) -> bool:
     """Return whether *stop* is set, logging the withheld output if so."""
     if stop is None or not stop.is_set():
         return False
-    logger.warning(
-        "Item %s stopped: withholding the %s (working logs retained).", name, what
-    )
+    logger.warning("Item %s stopped: withholding the %s.", name, what)
     return True
+
+
+def _position_label(item_type_label: str) -> str:
+    return "pdf" if item_type_label == "PDF" else "image"
+
+
+def collect_citations(
+    summaries: list[dict[str, Any]],
+    *,
+    item_type_label: str,
+    job: ItemJob,
+    stop: threading.Event | None = None,
+) -> list[CitationRow] | None:
+    """Return the item's citations, consolidated and OpenAlex-enriched.
+
+    None when *stop* was set during the enrichment.
+    """
+    adjusted = PageNumberProcessor().adjust_and_sort_page_numbers(summaries)
+    manager, _ = build_render_context(
+        adjusted,
+        position_label=_position_label(item_type_label),
+        openalex_enabled=job.openalex_enabled and job.openalex is not None,
+        max_requests=job.openalex_max_requests,
+        openalex=job.openalex,
+        stop=stop,
+    )
+    enrich_if_enabled(manager)
+    if stop is not None and stop.is_set():
+        return None
+    return [
+        CitationRow(
+            text=citation.raw_text,
+            pages=pages,
+            partial=citation.partial,
+            doi=citation.doi,
+            url=citation.url,
+            metadata=citation.metadata,
+        )
+        for citation, pages in manager.get_citations_with_pages()
+    ]
 
 
 def write_outputs(
@@ -79,8 +122,8 @@ def write_outputs(
     """Write the item's final files and append each written path to *written*.
 
     A writer that fails marks the status without stopping the other writers.
-    Once *stop* is set, OpenAlex enrichment ends and no further file is
-    written; the outputs not written count as failed.
+    Once *stop* is set, no further file is written; the outputs not written
+    count as failed.
     """
     if _stopped(stop, name, "final outputs"):
         return OutputStatus(transcription_ok=False, summaries_ok=False)
@@ -98,21 +141,19 @@ def write_outputs(
     if status.transcription_ok:
         written.append(paths.transcription.resolve())
     else:
-        # The file does not exist, so it is neither advertised nor allowed to
-        # count as complete; the working log is retained for a re-run.
         logger.error(
             "Item %s: the transcription file could not be written; marking the "
-            "item failed (working log retained for a re-run).",
+            "item failed (its pages stay in the store).",
             name,
         )
 
     if job.summarize and results.summaries:
-        status.summaries_ok, status.citations = _write_summaries(
+        status.summaries_ok = _write_summaries(
             name=name,
             item_type_label=item_type_label,
             paths=paths,
             job=job,
-            summary_results=results.summaries,
+            results=results,
             written=written,
             stop=stop,
         )
@@ -125,43 +166,32 @@ def _write_summaries(
     item_type_label: str,
     paths: ItemPaths,
     job: ItemJob,
-    summary_results: list[dict[str, Any]],
+    results: ItemResults,
     written: list[Path],
     stop: threading.Event | None,
-) -> tuple[bool, list[Citation] | None]:
-    """Render the DOCX and Markdown summaries from one citation manager.
+) -> bool:
+    """Render the DOCX and Markdown summaries with the stored citations.
 
-    Citations are collected, consolidated and OpenAlex-enriched once, and both
-    writers render from the same instance. A failure while building it, or a
-    stop during the enrichment, blocks both writers. Returns whether every
-    writer succeeded and the citations.
+    Returns whether every writer succeeded.
     """
-    adjusted = PageNumberProcessor().adjust_and_sort_page_numbers(summary_results)
+    adjusted = PageNumberProcessor().adjust_and_sort_page_numbers(results.summaries)
+    data = prepare_summary_data(
+        adjusted,
+        CitationManager(openalex_enabled=False),
+        position_label=_position_label(item_type_label),
+    )
+    citations = StoredCitations(results.citations)
     ok = True
-    try:
-        citation_manager, render_data = build_render_context(
-            adjusted,
-            position_label="pdf" if item_type_label == "PDF" else "image",
-            openalex_enabled=job.openalex_enabled and job.openalex is not None,
-            max_requests=job.openalex_max_requests,
-            openalex=job.openalex,
-            stop=stop,
-        )
-        enrich_if_enabled(citation_manager)
-    except Exception as e:  # noqa: BLE001 - the summary files fail alone
-        logger.error(f"Error building summary render context: {e}")
-        return False, None
-    if _stopped(stop, name, "summary files"):
-        return False, None
-
-    if job.output_docx:
+    if job.output_docx and _stopped(stop, name, "DOCX summary"):
+        ok = False
+    elif job.output_docx:
         try:
             create_docx_summary(
                 adjusted,
                 paths.summary_docx,
                 name,
-                citation_manager=citation_manager,
-                data=render_data,
+                citation_manager=citations,
+                data=data,
             )
             written.append(paths.summary_docx.resolve())
         except Exception as e:  # noqa: BLE001 - one optional output fails alone
@@ -176,14 +206,14 @@ def _write_summaries(
                 adjusted,
                 paths.summary_md,
                 name,
-                citation_manager=citation_manager,
-                data=render_data,
+                citation_manager=citations,
+                data=data,
             )
             written.append(paths.summary_md.resolve())
         except Exception as e:  # noqa: BLE001 - one optional output fails alone
             ok = False
             logger.error(f"Error creating Markdown summary: {e}")
-    return ok, citation_manager.get_sorted_citations()
+    return ok
 
 
 def log_item_summary(
@@ -223,8 +253,12 @@ def log_item_summary(
             summary_outputs.append(str(paths.summary_md))
         if summary_outputs:
             logger.info(f"  Final summary outputs: {', '.join(summary_outputs)}")
-    detail_suffix = " and " + str(paths.summary_log) if job.summarize else ""
-    logger.info(f"  Detailed logs: {paths.transcription_log}{detail_suffix}")
 
 
-__all__ = ["ItemResults", "OutputStatus", "log_item_summary", "write_outputs"]
+__all__ = [
+    "ItemResults",
+    "OutputStatus",
+    "collect_citations",
+    "log_item_summary",
+    "write_outputs",
+]

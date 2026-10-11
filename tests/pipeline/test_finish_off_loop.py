@@ -3,7 +3,7 @@
 The OpenAlex enrichment runs in a worker thread: while a lookup blocks, other
 tasks on the loop keep running. Cancelling the item or the run during the
 enrichment waits for the in-flight lookup only, writes no summary file, keeps
-the working logs and leaves the recorded lookups in the OpenAlex cache.
+the stored pages and leaves the recorded lookups in the OpenAlex cache.
 """
 
 from __future__ import annotations
@@ -24,6 +24,7 @@ import autoexcerpter.run as core
 from autoexcerpter.common.images import PagePayload
 from autoexcerpter.pipeline.item import ItemProcessor
 from autoexcerpter.pipeline.paths import ItemPaths
+from autoexcerpter.pipeline.units import DocumentHandle
 from autoexcerpter.rendering.citations import (
     LookupOutcome,
     LookupResult,
@@ -32,7 +33,13 @@ from autoexcerpter.rendering.citations import (
 from autoexcerpter.rendering.citations.openalex import CACHE_FILE
 from autoexcerpter.state import read_json
 from tests.conftest import make_settings, make_spec
-from tests.pipeline.helpers import make_processor, summarizer, transcriber
+from tests.pipeline.helpers import (
+    make_processor,
+    statuses,
+    stored_document,
+    summarizer,
+    transcriber,
+)
 
 MakePdf = Callable[..., Path]
 pytestmark = pytest.mark.usefixtures("mock_api_keys")
@@ -111,10 +118,13 @@ async def _until(predicate: Callable[[], bool], timeout: float = 10.0) -> None:
         await asyncio.sleep(0.01)
 
 
-def _processor(pdf: Path, output_dir: Path, client: OpenAlexClient) -> ItemProcessor:
+def _processor(
+    pdf: Path, output_dir: Path, client: OpenAlexClient, document: DocumentHandle
+) -> ItemProcessor:
     return make_processor(
         pdf,
         output_dir,
+        document,
         transcribe_manager=transcriber(_transcribe),
         summary_manager=summarizer(_summarize),
         summarize=True,
@@ -131,8 +141,8 @@ def _assert_stopped_cleanly(paths: ItemPaths, client: GatedOpenAlex) -> None:
     assert len(client.looked_up) == 2
     assert not paths.summary_docx.exists()
     assert not paths.summary_md.exists()
-    assert paths.transcription_log.exists()
-    assert paths.summary_log.exists()
+    assert statuses(paths.output_dir) == ["done"]
+    assert statuses(paths.output_dir, "summary") == ["done"]
     assert _found_dois(client.cache.state_dir or Path()) == {"10.1/1", "10.1/2"}
 
 
@@ -140,7 +150,9 @@ def test_the_loop_keeps_running_while_a_lookup_blocks(
     make_pdf: MakePdf, tmp_path: Path, mock_image_processing: dict[str, Any]
 ) -> None:
     client = GatedOpenAlex(tmp_path / "state", gate_at=1)
-    processor = _processor(make_pdf("doc.pdf"), tmp_path / "out", client)
+    out = tmp_path / "out"
+    pdf = make_pdf("doc.pdf")
+    paths = ItemPaths.for_item("doc", out)
 
     async def scenario() -> tuple[int, bool, bool]:
         ticks = 0
@@ -151,16 +163,18 @@ def test_the_loop_keeps_running_while_a_lookup_blocks(
                 ticks += 1
                 await asyncio.sleep(0.005)
 
-        ticking = asyncio.create_task(ticker())
-        item = asyncio.create_task(processor.process())
-        await _until(client.entered.is_set)
-        before = ticks
-        await asyncio.sleep(0.1)
-        during = ticks - before
-        blocked = not item.done()
-        client.release.set()
-        success = await item
-        ticking.cancel()
+        async with stored_document(out, summarize=True) as document:
+            processor = _processor(pdf, out, client, document)
+            ticking = asyncio.create_task(ticker())
+            item = asyncio.create_task(processor.process())
+            await _until(client.entered.is_set)
+            before = ticks
+            await asyncio.sleep(0.1)
+            during = ticks - before
+            blocked = not item.done()
+            client.release.set()
+            success = await item
+            ticking.cancel()
         return during, blocked, success
 
     during, blocked, success = asyncio.run(scenario())
@@ -168,34 +182,39 @@ def test_the_loop_keeps_running_while_a_lookup_blocks(
     assert blocked
     assert during > 0
     assert success
-    assert processor.paths.summary_docx.exists()
-    assert processor.paths.summary_md.exists()
+    assert paths.summary_docx.exists()
+    assert paths.summary_md.exists()
 
 
 def test_cancelling_the_item_waits_only_for_the_inflight_lookup(
     make_pdf: MakePdf, tmp_path: Path, mock_image_processing: dict[str, Any]
 ) -> None:
     client = GatedOpenAlex(tmp_path / "state", gate_at=2)
-    processor = _processor(make_pdf("doc.pdf"), tmp_path / "out", client)
+    out = tmp_path / "out"
+    pdf = make_pdf("doc.pdf")
+    processors: list[ItemProcessor] = []
 
     async def scenario() -> tuple[bool, float]:
-        item = asyncio.create_task(processor.process())
-        await _until(client.entered.is_set)
-        item.cancel()
-        await asyncio.sleep(0.05)
-        waited = not item.done()
-        released = time.monotonic()
-        client.release.set()
-        with pytest.raises(asyncio.CancelledError):
-            await item
+        async with stored_document(out, summarize=True) as document:
+            processor = _processor(pdf, out, client, document)
+            processors.append(processor)
+            item = asyncio.create_task(processor.process())
+            await _until(client.entered.is_set)
+            item.cancel()
+            await asyncio.sleep(0.05)
+            waited = not item.done()
+            released = time.monotonic()
+            client.release.set()
+            with pytest.raises(asyncio.CancelledError):
+                await item
         return waited, time.monotonic() - released
 
     waited, seconds = asyncio.run(scenario())
 
     assert waited
     assert seconds < 1.0
-    assert processor.stop.is_set()
-    _assert_stopped_cleanly(processor.paths, client)
+    assert processors[0].stop.is_set()
+    _assert_stopped_cleanly(processors[0].paths, client)
 
 
 def test_cancelling_the_run_stops_the_enrichment(

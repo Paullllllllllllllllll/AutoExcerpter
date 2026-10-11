@@ -1,16 +1,45 @@
+## artifacts
+{
+  "created_at": "<datetime>+00:00",
+  "kind": "summary_prompt",
+  "run_id": "<run-1>",
+  "sha256": "19d077973451ec81fd22b41718ba937475d3d6beb7d1fb153f1f46bdd86a8b52",
+  "text": "<7680 characters>"
+}
+{
+  "created_at": "<datetime>+00:00",
+  "kind": "summary_schema",
+  "run_id": "<run-1>",
+  "sha256": "1ecfed652ead1e92c94f1d0d5729f53ced3c17818d47c1329bd3ff8675436812",
+  "text": "<5199 characters>"
+}
+{
+  "created_at": "<datetime>+00:00",
+  "kind": "transcription_prompt",
+  "run_id": "<run-1>",
+  "sha256": "0fdf86688a8d19a503f47dff4e0cd824b33f9ec25217e9aee6e3c115bc2774c5",
+  "text": "<4157 characters>"
+}
+{
+  "created_at": "<datetime>+00:00",
+  "kind": "transcription_schema",
+  "run_id": "<run-1>",
+  "sha256": "7655345ceca247fc2d3c60a5b4406f6a855c07514816f5a57d949e6b584b7c79",
+  "text": "<2614 characters>"
+}
 ## citations
 {
-  "document": "doc",
+  "doc_id": 1,
   "doi": null,
   "metadata": null,
   "pages": "p. 1; PDF p. 3",
   "partial": 0,
   "position": 1,
-  "text": "Allen, R. C. (2001). The great divergence in European wages and prices from the Middle Ages to the First World War. *Explorations in Economic History, 38*(4), 411-447. https://doi.org/10.1006/exeh.2001.0775",
+  "text": "<206 characters>",
   "url": null
 }
 {
-  "document": "doc",
+  "doc_id": 1,
   "doi": null,
   "metadata": null,
   "pages": "p. xi; p. 1",
@@ -20,7 +49,7 @@
   "url": null
 }
 {
-  "document": "doc",
+  "doc_id": 1,
   "doi": null,
   "metadata": null,
   "pages": "PDF p. 3",
@@ -31,20 +60,976 @@
 }
 ## documents
 {
-  "complete": 1,
-  "hash": "<sha256>",
+  "doc_id": 1,
+  "first_run_id": "<run-1>",
+  "image_settings": {
+    "cap_policy": "openai-original-30k-v1",
+    "grayscale_conversion": true,
+    "handle_transparency": true,
+    "high_target_box": [
+      768,
+      1536
+    ],
+    "image_high_res_tier": false,
+    "image_original_patch_cap_30k": true,
+    "jpeg_quality": 95,
+    "llm_detail": "original",
+    "low_max_side_px": 512,
+    "max_image_bytes": 50000000,
+    "max_pixels_per_page": 24000000,
+    "model_name": "gpt-5.6-terra",
+    "model_type": "openai",
+    "native_fallback_dpi": 300,
+    "payload_format": "jpeg",
+    "provider": "openai",
+    "render_strategy": "direct",
+    "request_detail": "original",
+    "resampling_algorithm": "bilinear",
+    "resize_profile": "high",
+    "resolved_detail": "original",
+    "target_dpi": "native"
+  },
+  "input_path": "<tmp>/docs/doc.pdf",
+  "input_sha256": "<sha256>",
   "kind": "pdf",
+  "last_run_id": "<run-1>",
+  "lease_generation": 1,
+  "lease_run_id": null,
+  "lease_until": null,
   "name": "doc",
-  "outputs": [
-    "doc_transcription.md",
-    "doc_summary.md"
-  ],
-  "pages_deferred": 0,
-  "pages_failed": 0,
-  "pages_ok": 3,
-  "pages_total": 3,
-  "path": "<tmp>/docs/doc.pdf",
-  "settings_fingerprint": "e384a422f7bf9dbb6bc59ec4ef90a0744bbf053212a31eb0077ac4fefbd83404",
+  "status": "complete",
+  "tool": "autoexcerpter",
+  "units_done": 6,
+  "units_failed": 0,
+  "units_pending": 0,
+  "units_total": 6,
+  "updated_at": "<datetime>+00:00"
+}
+## meta
+{
+  "component": "core",
+  "version": 1
+}
+{
+  "component": "autoexcerpter",
+  "version": 1
+}
+## notes
+## outputs
+## responses
+{
+  "attempt": 1,
+  "created_at": "<datetime>+00:00",
+  "custom_id": null,
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "http_status": null,
+  "idx": 0,
+  "kind": "summary",
+  "latency": "<seconds>",
+  "model": "gpt-5.6-terra",
+  "provider": "openai",
+  "raw": {
+    "additional_kwargs": {},
+    "content": "{\"page_information\": {\"page_number_integer\": 11, \"is_two_page_spread\": false, \"page_number_integer_end\": null, \"page_number_type\": \"roman\", \"page_types\": [\"preface\"]}, \"bullet_points\": [\"The preface introduces new research on the *material culture* of eating in early modern Europe between 1500 and 1800.\", \"It frames the chapters around prices, wages and diets and follows Braudel's long-run view of material life.\"], \"references\": [{\"citation\": \"Braudel (1979)\", \"is_partial\": true}]}",
+    "id": "lc_run--<uuid>-0",
+    "invalid_tool_calls": [],
+    "name": null,
+    "response_metadata": {
+      "model_name": "gpt-5.6-terra",
+      "status": "completed"
+    },
+    "tool_calls": [],
+    "type": "ai",
+    "usage_metadata": {
+      "input_tokens": 900,
+      "output_tokens": 250,
+      "total_tokens": 1150
+    }
+  },
+  "raw_kind": "sdk",
+  "request": {
+    "base_url": null,
+    "endpoint": null,
+    "enforced": true,
+    "invoke_kwargs": {
+      "max_output_tokens": 128000,
+      "reasoning": {
+        "effort": "high"
+      },
+      "service_tier": "flex",
+      "text": {
+        "format": {
+          "name": "article_page_summary",
+          "schema": {
+            "$schema": "Summary_2_3_0",
+            "additionalProperties": false,
+            "properties": {
+              "bullet_points": {
+                "description": "<756 characters>",
+                "items": {
+                  "type": "string"
+                },
+                "type": [
+                  "array",
+                  "null"
+                ]
+              },
+              "page_information": {
+                "additionalProperties": false,
+                "description": "Comprehensive page metadata including page number and content classification.",
+                "properties": {
+                  "is_two_page_spread": {
+                    "description": "True when the scanned image shows a two-page spread (two facing pages side by side); false for a single page.",
+                    "type": "boolean"
+                  },
+                  "page_number_integer": {
+                    "description": "<216 characters>",
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "page_number_integer_end": {
+                    "description": "For a two-page spread, the integer page number of the RIGHT page (Roman numerals converted to integers, same as page_number_integer); null for single pages or unnumbered spreads.",
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "page_number_type": {
+                    "description": "Numbering system: 'roman' for Roman numerals, 'arabic' for standard numerals, 'none' if no page number is visible.",
+                    "enum": [
+                      "roman",
+                      "arabic",
+                      "none"
+                    ],
+                    "type": "string"
+                  },
+                  "page_types": {
+                    "description": "<595 characters>",
+                    "items": {
+                      "enum": [
+                        "content",
+                        "table_of_contents",
+                        "bibliography",
+                        "title_page",
+                        "index",
+                        "blank",
+                        "preface",
+                        "appendix",
+                        "figures_tables_sources",
+                        "abstract",
+                        "copyright",
+                        "other"
+                      ],
+                      "type": "string"
+                    },
+                    "maxItems": 3,
+                    "minItems": 1,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "page_number_integer",
+                  "is_two_page_spread",
+                  "page_number_integer_end",
+                  "page_number_type",
+                  "page_types"
+                ],
+                "type": "object"
+              },
+              "references": {
+                "description": "Bibliographic citations in APA style. Extract from ALL page types. Set to null only if no citations present.",
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "citation": {
+                      "description": "The citation in APA style, exactly as reconstructable from the page. Never invent or paraphrase a title; record only bibliographic data the page actually states.",
+                      "type": "string"
+                    },
+                    "is_partial": {
+                      "description": "<219 characters>",
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "citation",
+                    "is_partial"
+                  ],
+                  "type": "object"
+                },
+                "type": [
+                  "array",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "page_information",
+              "bullet_points",
+              "references"
+            ],
+            "title": "Article Page Summary",
+            "type": "object"
+          },
+          "strict": true,
+          "type": "json_schema"
+        },
+        "verbosity": "low"
+      }
+    },
+    "model": "gpt-5.6-terra",
+    "options": {
+      "reasoning": {
+        "effort": "high"
+      },
+      "temperature": 1.0,
+      "text": {
+        "verbosity": "low"
+      }
+    },
+    "provider": "openai",
+    "response_format": "schema",
+    "schema": "article_page_summary",
+    "service_tier": "flex"
+  },
+  "response_id": 1,
+  "role": "summary",
+  "run_id": "<run-1>",
+  "submission_id": null,
+  "tool": "autoexcerpter",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 900,
+    "output_tokens": 250,
+    "reasoning_tokens": 0,
+    "total_tokens": 1150
+  }
+}
+{
+  "attempt": 1,
+  "created_at": "<datetime>+00:00",
+  "custom_id": null,
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "http_status": null,
+  "idx": 1,
+  "kind": "summary",
+  "latency": "<seconds>",
+  "model": "gpt-5.6-terra",
+  "provider": "openai",
+  "raw": {
+    "additional_kwargs": {},
+    "content": "{\"page_information\": {\"page_number_integer\": 1, \"is_two_page_spread\": false, \"page_number_integer_end\": null, \"page_number_type\": \"arabic\", \"page_types\": [\"content\"]}, \"bullet_points\": [\"Bread prices rose faster than wages after 1550, shifting the economic burden onto **urban households**.\", \"The real wage index is defined as $w_t / p_t$, nominal wages deflated by the bread price.\", \"A consumer basket weights goods so that $$\\\\sum_{i=1}^{n} \\\\omega_i = 1$$ holds in every year.\"], \"references\": [{\"citation\": \"Allen, R. C. (2001). The great divergence in European wages and prices from the Middle Ages to the First World War. *Explorations in Economic History, 38*(4), 411-447. https://doi.org/10.1006/exeh.2001.0775\", \"is_partial\": false}, {\"citation\": \"Braudel, F. (1979). *Civilisation matérielle, économie et capitalisme, XVe-XVIIIe siècle*. Paris: Armand Colin.\", \"is_partial\": false}]}",
+    "id": "lc_run--<uuid>-0",
+    "invalid_tool_calls": [],
+    "name": null,
+    "response_metadata": {
+      "model_name": "gpt-5.6-terra",
+      "status": "completed"
+    },
+    "tool_calls": [],
+    "type": "ai",
+    "usage_metadata": {
+      "input_tokens": 900,
+      "output_tokens": 250,
+      "total_tokens": 1150
+    }
+  },
+  "raw_kind": "sdk",
+  "request": {
+    "base_url": null,
+    "endpoint": null,
+    "enforced": true,
+    "invoke_kwargs": {
+      "max_output_tokens": 128000,
+      "reasoning": {
+        "effort": "high"
+      },
+      "service_tier": "flex",
+      "text": {
+        "format": {
+          "name": "article_page_summary",
+          "schema": {
+            "$schema": "Summary_2_3_0",
+            "additionalProperties": false,
+            "properties": {
+              "bullet_points": {
+                "description": "<756 characters>",
+                "items": {
+                  "type": "string"
+                },
+                "type": [
+                  "array",
+                  "null"
+                ]
+              },
+              "page_information": {
+                "additionalProperties": false,
+                "description": "Comprehensive page metadata including page number and content classification.",
+                "properties": {
+                  "is_two_page_spread": {
+                    "description": "True when the scanned image shows a two-page spread (two facing pages side by side); false for a single page.",
+                    "type": "boolean"
+                  },
+                  "page_number_integer": {
+                    "description": "<216 characters>",
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "page_number_integer_end": {
+                    "description": "For a two-page spread, the integer page number of the RIGHT page (Roman numerals converted to integers, same as page_number_integer); null for single pages or unnumbered spreads.",
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "page_number_type": {
+                    "description": "Numbering system: 'roman' for Roman numerals, 'arabic' for standard numerals, 'none' if no page number is visible.",
+                    "enum": [
+                      "roman",
+                      "arabic",
+                      "none"
+                    ],
+                    "type": "string"
+                  },
+                  "page_types": {
+                    "description": "<595 characters>",
+                    "items": {
+                      "enum": [
+                        "content",
+                        "table_of_contents",
+                        "bibliography",
+                        "title_page",
+                        "index",
+                        "blank",
+                        "preface",
+                        "appendix",
+                        "figures_tables_sources",
+                        "abstract",
+                        "copyright",
+                        "other"
+                      ],
+                      "type": "string"
+                    },
+                    "maxItems": 3,
+                    "minItems": 1,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "page_number_integer",
+                  "is_two_page_spread",
+                  "page_number_integer_end",
+                  "page_number_type",
+                  "page_types"
+                ],
+                "type": "object"
+              },
+              "references": {
+                "description": "Bibliographic citations in APA style. Extract from ALL page types. Set to null only if no citations present.",
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "citation": {
+                      "description": "The citation in APA style, exactly as reconstructable from the page. Never invent or paraphrase a title; record only bibliographic data the page actually states.",
+                      "type": "string"
+                    },
+                    "is_partial": {
+                      "description": "<219 characters>",
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "citation",
+                    "is_partial"
+                  ],
+                  "type": "object"
+                },
+                "type": [
+                  "array",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "page_information",
+              "bullet_points",
+              "references"
+            ],
+            "title": "Article Page Summary",
+            "type": "object"
+          },
+          "strict": true,
+          "type": "json_schema"
+        },
+        "verbosity": "low"
+      }
+    },
+    "model": "gpt-5.6-terra",
+    "options": {
+      "reasoning": {
+        "effort": "high"
+      },
+      "temperature": 1.0,
+      "text": {
+        "verbosity": "low"
+      }
+    },
+    "provider": "openai",
+    "response_format": "schema",
+    "schema": "article_page_summary",
+    "service_tier": "flex"
+  },
+  "response_id": 2,
+  "role": "summary",
+  "run_id": "<run-1>",
+  "submission_id": null,
+  "tool": "autoexcerpter",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 900,
+    "output_tokens": 250,
+    "reasoning_tokens": 0,
+    "total_tokens": 1150
+  }
+}
+{
+  "attempt": 1,
+  "created_at": "<datetime>+00:00",
+  "custom_id": null,
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "http_status": null,
+  "idx": 2,
+  "kind": "summary",
+  "latency": "<seconds>",
+  "model": "gpt-5.6-terra",
+  "provider": "openai",
+  "raw": {
+    "additional_kwargs": {},
+    "content": "{\"page_information\": {\"page_number_integer\": null, \"is_two_page_spread\": false, \"page_number_integer_end\": null, \"page_number_type\": \"none\", \"page_types\": [\"bibliography\"]}, \"bullet_points\": null, \"references\": [{\"citation\": \"Allen, R. C. (2001). The great divergence in European wages and prices from the Middle Ages to the First World War. *Explorations in Economic History, 38*(4), 411-447.\", \"is_partial\": false}, {\"citation\": \"Montanari, M. (1994). *The Culture of Food*. Oxford: Blackwell.\", \"is_partial\": false}]}",
+    "id": "lc_run--<uuid>-0",
+    "invalid_tool_calls": [],
+    "name": null,
+    "response_metadata": {
+      "model_name": "gpt-5.6-terra",
+      "status": "completed"
+    },
+    "tool_calls": [],
+    "type": "ai",
+    "usage_metadata": {
+      "input_tokens": 900,
+      "output_tokens": 250,
+      "total_tokens": 1150
+    }
+  },
+  "raw_kind": "sdk",
+  "request": {
+    "base_url": null,
+    "endpoint": null,
+    "enforced": true,
+    "invoke_kwargs": {
+      "max_output_tokens": 128000,
+      "reasoning": {
+        "effort": "high"
+      },
+      "service_tier": "flex",
+      "text": {
+        "format": {
+          "name": "article_page_summary",
+          "schema": {
+            "$schema": "Summary_2_3_0",
+            "additionalProperties": false,
+            "properties": {
+              "bullet_points": {
+                "description": "<756 characters>",
+                "items": {
+                  "type": "string"
+                },
+                "type": [
+                  "array",
+                  "null"
+                ]
+              },
+              "page_information": {
+                "additionalProperties": false,
+                "description": "Comprehensive page metadata including page number and content classification.",
+                "properties": {
+                  "is_two_page_spread": {
+                    "description": "True when the scanned image shows a two-page spread (two facing pages side by side); false for a single page.",
+                    "type": "boolean"
+                  },
+                  "page_number_integer": {
+                    "description": "<216 characters>",
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "page_number_integer_end": {
+                    "description": "For a two-page spread, the integer page number of the RIGHT page (Roman numerals converted to integers, same as page_number_integer); null for single pages or unnumbered spreads.",
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "page_number_type": {
+                    "description": "Numbering system: 'roman' for Roman numerals, 'arabic' for standard numerals, 'none' if no page number is visible.",
+                    "enum": [
+                      "roman",
+                      "arabic",
+                      "none"
+                    ],
+                    "type": "string"
+                  },
+                  "page_types": {
+                    "description": "<595 characters>",
+                    "items": {
+                      "enum": [
+                        "content",
+                        "table_of_contents",
+                        "bibliography",
+                        "title_page",
+                        "index",
+                        "blank",
+                        "preface",
+                        "appendix",
+                        "figures_tables_sources",
+                        "abstract",
+                        "copyright",
+                        "other"
+                      ],
+                      "type": "string"
+                    },
+                    "maxItems": 3,
+                    "minItems": 1,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "page_number_integer",
+                  "is_two_page_spread",
+                  "page_number_integer_end",
+                  "page_number_type",
+                  "page_types"
+                ],
+                "type": "object"
+              },
+              "references": {
+                "description": "Bibliographic citations in APA style. Extract from ALL page types. Set to null only if no citations present.",
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "citation": {
+                      "description": "The citation in APA style, exactly as reconstructable from the page. Never invent or paraphrase a title; record only bibliographic data the page actually states.",
+                      "type": "string"
+                    },
+                    "is_partial": {
+                      "description": "<219 characters>",
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "citation",
+                    "is_partial"
+                  ],
+                  "type": "object"
+                },
+                "type": [
+                  "array",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "page_information",
+              "bullet_points",
+              "references"
+            ],
+            "title": "Article Page Summary",
+            "type": "object"
+          },
+          "strict": true,
+          "type": "json_schema"
+        },
+        "verbosity": "low"
+      }
+    },
+    "model": "gpt-5.6-terra",
+    "options": {
+      "reasoning": {
+        "effort": "high"
+      },
+      "temperature": 1.0,
+      "text": {
+        "verbosity": "low"
+      }
+    },
+    "provider": "openai",
+    "response_format": "schema",
+    "schema": "article_page_summary",
+    "service_tier": "flex"
+  },
+  "response_id": 3,
+  "role": "summary",
+  "run_id": "<run-1>",
+  "submission_id": null,
+  "tool": "autoexcerpter",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 900,
+    "output_tokens": 250,
+    "reasoning_tokens": 0,
+    "total_tokens": 1150
+  }
+}
+{
+  "attempt": 1,
+  "created_at": "<datetime>+00:00",
+  "custom_id": null,
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "http_status": null,
+  "idx": 0,
+  "kind": "transcription",
+  "latency": "<seconds>",
+  "model": "gpt-5.6-terra",
+  "provider": "openai",
+  "raw": {
+    "additional_kwargs": {},
+    "content": "{\"image_analysis\": \"Single column; page number centered in the footer; one footnote.\", \"transcription\": \"# Preface\\n\\nThis volume brings together **new research** on the *material\\nculture* of eating in early modern Europe. Its chapters trace how\\nprices, wages and diets changed between 1500 and 1800.[^1]\\n\\n[^1]: See Braudel (1979) for the classic statement of this view.\\n\\n<page_number>xi</page_number>\", \"no_transcribable_text\": false, \"transcription_not_possible\": false}",
+    "id": "lc_run--<uuid>-0",
+    "invalid_tool_calls": [],
+    "name": null,
+    "response_metadata": {
+      "model_name": "gpt-5.6-terra",
+      "status": "completed"
+    },
+    "tool_calls": [],
+    "type": "ai",
+    "usage_metadata": {
+      "input_tokens": 1500,
+      "output_tokens": 400,
+      "total_tokens": 1900
+    }
+  },
+  "raw_kind": "sdk",
+  "request": {
+    "base_url": null,
+    "endpoint": null,
+    "enforced": true,
+    "invoke_kwargs": {
+      "max_output_tokens": 128000,
+      "reasoning": {
+        "effort": "high"
+      },
+      "service_tier": "flex",
+      "text": {
+        "format": {
+          "name": "markdown_transcription_schema",
+          "schema": {
+            "additionalProperties": false,
+            "properties": {
+              "image_analysis": {
+                "description": "A brief layout note only: number of columns, header and footer, and the positions of page numbers and footnotes. Do not transcribe any text here.",
+                "type": "string"
+              },
+              "no_transcribable_text": {
+                "description": "True **if and only if** the image contains no transcribable text; otherwise, false.",
+                "type": "boolean"
+              },
+              "transcription": {
+                "description": "<1588 characters>",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "transcription_not_possible": {
+                "description": "True *if and only if* transcription is entirely impossible; otherwise, false.",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "image_analysis",
+              "transcription",
+              "no_transcribable_text",
+              "transcription_not_possible"
+            ],
+            "type": "object"
+          },
+          "strict": true,
+          "type": "json_schema"
+        },
+        "verbosity": "medium"
+      }
+    },
+    "model": "gpt-5.6-terra",
+    "options": {
+      "image_size": "original",
+      "reasoning": {
+        "effort": "high"
+      },
+      "temperature": 1.0,
+      "text": {
+        "verbosity": "medium"
+      }
+    },
+    "provider": "openai",
+    "response_format": "schema",
+    "schema": "markdown_transcription_schema",
+    "service_tier": "flex"
+  },
+  "response_id": 4,
+  "role": "transcription",
+  "run_id": "<run-1>",
+  "submission_id": null,
+  "tool": "autoexcerpter",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 1500,
+    "output_tokens": 400,
+    "reasoning_tokens": 0,
+    "total_tokens": 1900
+  }
+}
+{
+  "attempt": 1,
+  "created_at": "<datetime>+00:00",
+  "custom_id": null,
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "http_status": null,
+  "idx": 1,
+  "kind": "transcription",
+  "latency": "<seconds>",
+  "model": "gpt-5.6-terra",
+  "provider": "openai",
+  "raw": {
+    "additional_kwargs": {},
+    "content": "{\"image_analysis\": \"Single column; page number in the footer; one figure and one footnote.\", \"transcription\": \"## The Price of Bread\\n\\nBread prices rose faster than wages after 1550, and the eco-\\nnomic burden fell on urban households.[^2] The real wage index\\nis defined as $w_t / p_t$.\\n\\n![Image: line chart of bread prices and day wages in Antwerp, 1500-1800; prices rise steeply after 1550 while wages stay flat]\\n\\n[^2]: Allen, R. C. (2001). The great divergence in European wages and prices from the Middle Ages to the First World War. *Explorations in Economic History, 38*(4), 411-447. https://doi.org/10.1006/exeh.2001.0775\\n\\n<page_number>1</page_number>\", \"no_transcribable_text\": false, \"transcription_not_possible\": false}",
+    "id": "lc_run--<uuid>-0",
+    "invalid_tool_calls": [],
+    "name": null,
+    "response_metadata": {
+      "model_name": "gpt-5.6-terra",
+      "status": "completed"
+    },
+    "tool_calls": [],
+    "type": "ai",
+    "usage_metadata": {
+      "input_tokens": 1500,
+      "output_tokens": 400,
+      "total_tokens": 1900
+    }
+  },
+  "raw_kind": "sdk",
+  "request": {
+    "base_url": null,
+    "endpoint": null,
+    "enforced": true,
+    "invoke_kwargs": {
+      "max_output_tokens": 128000,
+      "reasoning": {
+        "effort": "high"
+      },
+      "service_tier": "flex",
+      "text": {
+        "format": {
+          "name": "markdown_transcription_schema",
+          "schema": {
+            "additionalProperties": false,
+            "properties": {
+              "image_analysis": {
+                "description": "A brief layout note only: number of columns, header and footer, and the positions of page numbers and footnotes. Do not transcribe any text here.",
+                "type": "string"
+              },
+              "no_transcribable_text": {
+                "description": "True **if and only if** the image contains no transcribable text; otherwise, false.",
+                "type": "boolean"
+              },
+              "transcription": {
+                "description": "<1588 characters>",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "transcription_not_possible": {
+                "description": "True *if and only if* transcription is entirely impossible; otherwise, false.",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "image_analysis",
+              "transcription",
+              "no_transcribable_text",
+              "transcription_not_possible"
+            ],
+            "type": "object"
+          },
+          "strict": true,
+          "type": "json_schema"
+        },
+        "verbosity": "medium"
+      }
+    },
+    "model": "gpt-5.6-terra",
+    "options": {
+      "image_size": "original",
+      "reasoning": {
+        "effort": "high"
+      },
+      "temperature": 1.0,
+      "text": {
+        "verbosity": "medium"
+      }
+    },
+    "provider": "openai",
+    "response_format": "schema",
+    "schema": "markdown_transcription_schema",
+    "service_tier": "flex"
+  },
+  "response_id": 5,
+  "role": "transcription",
+  "run_id": "<run-1>",
+  "submission_id": null,
+  "tool": "autoexcerpter",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 1500,
+    "output_tokens": 400,
+    "reasoning_tokens": 0,
+    "total_tokens": 1900
+  }
+}
+{
+  "attempt": 1,
+  "created_at": "<datetime>+00:00",
+  "custom_id": null,
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "http_status": null,
+  "idx": 2,
+  "kind": "transcription",
+  "latency": "<seconds>",
+  "model": "gpt-5.6-terra",
+  "provider": "openai",
+  "raw": {
+    "additional_kwargs": {},
+    "content": "{\"image_analysis\": \"Single column bibliography; no page number visible.\", \"transcription\": \"## Bibliography\\n\\nAllen, R. C. (2001). The great divergence in European wages and prices from the Middle Ages to the First World War. *Explorations in Economic History, 38*(4), 411-447.\\n\\nMontanari, M. (1994). *The Culture of Food*. Oxford: Blackwell.\", \"no_transcribable_text\": false, \"transcription_not_possible\": false}",
+    "id": "lc_run--<uuid>-0",
+    "invalid_tool_calls": [],
+    "name": null,
+    "response_metadata": {
+      "model_name": "gpt-5.6-terra",
+      "status": "completed"
+    },
+    "tool_calls": [],
+    "type": "ai",
+    "usage_metadata": {
+      "input_tokens": 1500,
+      "output_tokens": 400,
+      "total_tokens": 1900
+    }
+  },
+  "raw_kind": "sdk",
+  "request": {
+    "base_url": null,
+    "endpoint": null,
+    "enforced": true,
+    "invoke_kwargs": {
+      "max_output_tokens": 128000,
+      "reasoning": {
+        "effort": "high"
+      },
+      "service_tier": "flex",
+      "text": {
+        "format": {
+          "name": "markdown_transcription_schema",
+          "schema": {
+            "additionalProperties": false,
+            "properties": {
+              "image_analysis": {
+                "description": "A brief layout note only: number of columns, header and footer, and the positions of page numbers and footnotes. Do not transcribe any text here.",
+                "type": "string"
+              },
+              "no_transcribable_text": {
+                "description": "True **if and only if** the image contains no transcribable text; otherwise, false.",
+                "type": "boolean"
+              },
+              "transcription": {
+                "description": "<1588 characters>",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "transcription_not_possible": {
+                "description": "True *if and only if* transcription is entirely impossible; otherwise, false.",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "image_analysis",
+              "transcription",
+              "no_transcribable_text",
+              "transcription_not_possible"
+            ],
+            "type": "object"
+          },
+          "strict": true,
+          "type": "json_schema"
+        },
+        "verbosity": "medium"
+      }
+    },
+    "model": "gpt-5.6-terra",
+    "options": {
+      "image_size": "original",
+      "reasoning": {
+        "effort": "high"
+      },
+      "temperature": 1.0,
+      "text": {
+        "verbosity": "medium"
+      }
+    },
+    "provider": "openai",
+    "response_format": "schema",
+    "schema": "markdown_transcription_schema",
+    "service_tier": "flex"
+  },
+  "response_id": 6,
+  "role": "transcription",
+  "run_id": "<run-1>",
+  "submission_id": null,
+  "tool": "autoexcerpter",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 1500,
+    "output_tokens": 400,
+    "reasoning_tokens": 0,
+    "total_tokens": 1900
+  }
+}
+## runs
+{
+  "command": "run",
+  "ended_at": "<datetime>+00:00",
+  "exit_code": 0,
+  "run_id": "<run-1>",
+  "settings_fingerprint": "<sha256>",
   "spec": {
     "citations.openalex": {
       "source": "flag",
@@ -214,77 +1199,21 @@
       "value": "medium"
     }
   },
-  "summary_failures": 0,
-  "summary_model": "gpt-5.6-terra",
-  "tool_version": "<version>",
-  "transcription_model": "gpt-5.6-terra",
-  "updated_at": "<datetime>"
+  "started_at": "<datetime>+00:00",
+  "tool": "autoexcerpter",
+  "tool_version": "<version>"
 }
-## pages
-{
-  "document": "doc",
-  "error": null,
-  "error_type": null,
-  "image": "page_0001.jpg",
-  "model": "gpt-5.6-terra",
-  "page_index": 0,
-  "pdf_page_index": 0,
-  "status": "ok",
-  "text": "# Preface\n\nThis volume brings together **new research** on the *material\nculture* of eating in early modern Europe. Its chapters trace how\nprices, wages and diets changed between 1500 and 1800.[^1]\n\n[^1]: See Braudel (1979) for the classic statement of this view.\n\n<page_number>xi</page_number>\n",
-  "usage": {
-    "cached_tokens": 0,
-    "input_tokens": 1500,
-    "output_tokens": 400,
-    "reasoning_tokens": 0,
-    "total_tokens": 1900
-  }
-}
-{
-  "document": "doc",
-  "error": null,
-  "error_type": null,
-  "image": "page_0002.jpg",
-  "model": "gpt-5.6-terra",
-  "page_index": 1,
-  "pdf_page_index": 1,
-  "status": "ok",
-  "text": "## The Price of Bread\n\nBread prices rose faster than wages after 1550, and the economic burden fell on urban households.[^2] The real wage index\nis defined as $w_t / p_t$.\n\n![Image: line chart of bread prices and day wages in Antwerp, 1500-1800; prices rise steeply after 1550 while wages stay flat]\n\n[^2]: Allen, R. C. (2001). The great divergence in European wages and prices from the Middle Ages to the First World War. *Explorations in Economic History, 38*(4), 411-447. https://doi.org/10.1006/exeh.2001.0775\n\n<page_number>1</page_number>\n",
-  "usage": {
-    "cached_tokens": 0,
-    "input_tokens": 1500,
-    "output_tokens": 400,
-    "reasoning_tokens": 0,
-    "total_tokens": 1900
-  }
-}
-{
-  "document": "doc",
-  "error": null,
-  "error_type": null,
-  "image": "page_0003.jpg",
-  "model": "gpt-5.6-terra",
-  "page_index": 2,
-  "pdf_page_index": 2,
-  "status": "ok",
-  "text": "## Bibliography\n\nAllen, R. C. (2001). The great divergence in European wages and prices from the Middle Ages to the First World War. *Explorations in Economic History, 38*(4), 411-447.\n\nMontanari, M. (1994). *The Culture of Food*. Oxford: Blackwell.\n",
-  "usage": {
-    "cached_tokens": 0,
-    "input_tokens": 1500,
-    "output_tokens": 400,
-    "reasoning_tokens": 0,
-    "total_tokens": 1900
-  }
-}
+## submission_requests
+## submissions
 ## summaries
 {
   "bullet_points": [
     "The preface introduces new research on the *material culture* of eating in early modern Europe between 1500 and 1800.",
     "It frames the chapters around prices, wages and diets and follows Braudel's long-run view of material life."
   ],
-  "document": "doc",
-  "error": null,
-  "model": "gpt-5.6-terra",
-  "page_index": 0,
+  "doc_id": 1,
+  "idx": 0,
+  "page": 1,
   "page_information": {
     "is_two_page_spread": false,
     "page_number_integer": 11,
@@ -299,15 +1228,7 @@
       "citation": "Braudel (1979)",
       "is_partial": true
     }
-  ],
-  "status": "ok",
-  "usage": {
-    "cached_tokens": 0,
-    "input_tokens": 900,
-    "output_tokens": 250,
-    "reasoning_tokens": 0,
-    "total_tokens": 1150
-  }
+  ]
 }
 {
   "bullet_points": [
@@ -315,10 +1236,9 @@
     "The real wage index is defined as $w_t / p_t$, nominal wages deflated by the bread price.",
     "A consumer basket weights goods so that $$\\sum_{i=1}^{n} \\omega_i = 1$$ holds in every year."
   ],
-  "document": "doc",
-  "error": null,
-  "model": "gpt-5.6-terra",
-  "page_index": 1,
+  "doc_id": 1,
+  "idx": 1,
+  "page": 2,
   "page_information": {
     "is_two_page_spread": false,
     "page_number_integer": 1,
@@ -337,22 +1257,13 @@
       "citation": "Braudel, F. (1979). *Civilisation matérielle, économie et capitalisme, XVe-XVIIIe siècle*. Paris: Armand Colin.",
       "is_partial": false
     }
-  ],
-  "status": "ok",
-  "usage": {
-    "cached_tokens": 0,
-    "input_tokens": 900,
-    "output_tokens": 250,
-    "reasoning_tokens": 0,
-    "total_tokens": 1150
-  }
+  ]
 }
 {
   "bullet_points": null,
-  "document": "doc",
-  "error": null,
-  "model": "gpt-5.6-terra",
-  "page_index": 2,
+  "doc_id": 1,
+  "idx": 2,
+  "page": 3,
   "page_information": {
     "is_two_page_spread": false,
     "page_number_integer": null,
@@ -371,13 +1282,234 @@
       "citation": "Montanari, M. (1994). *The Culture of Food*. Oxford: Blackwell.",
       "is_partial": false
     }
-  ],
-  "status": "ok",
+  ]
+}
+## units
+{
+  "attempts": 1,
+  "content": null,
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "idx": 0,
+  "kind": "summary",
+  "label": "page_0001.jpg",
+  "model": "gpt-5.6-terra",
+  "outcome": "ok",
+  "provenance": null,
+  "provider": "openai",
+  "response_id": 1,
+  "run_id": "<run-1>",
+  "source_index": 0,
+  "stale": 0,
+  "status": "done",
+  "tool": "autoexcerpter",
+  "updated_at": "<datetime>+00:00",
   "usage": {
     "cached_tokens": 0,
     "input_tokens": 900,
     "output_tokens": 250,
     "reasoning_tokens": 0,
     "total_tokens": 1150
+  }
+}
+{
+  "attempts": 1,
+  "content": null,
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "idx": 1,
+  "kind": "summary",
+  "label": "page_0002.jpg",
+  "model": "gpt-5.6-terra",
+  "outcome": "ok",
+  "provenance": null,
+  "provider": "openai",
+  "response_id": 2,
+  "run_id": "<run-1>",
+  "source_index": 1,
+  "stale": 0,
+  "status": "done",
+  "tool": "autoexcerpter",
+  "updated_at": "<datetime>+00:00",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 900,
+    "output_tokens": 250,
+    "reasoning_tokens": 0,
+    "total_tokens": 1150
+  }
+}
+{
+  "attempts": 1,
+  "content": null,
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "idx": 2,
+  "kind": "summary",
+  "label": "page_0003.jpg",
+  "model": "gpt-5.6-terra",
+  "outcome": "ok",
+  "provenance": null,
+  "provider": "openai",
+  "response_id": 3,
+  "run_id": "<run-1>",
+  "source_index": 2,
+  "stale": 0,
+  "status": "done",
+  "tool": "autoexcerpter",
+  "updated_at": "<datetime>+00:00",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 900,
+    "output_tokens": 250,
+    "reasoning_tokens": 0,
+    "total_tokens": 1150
+  }
+}
+{
+  "attempts": 1,
+  "content": "# Preface\n\nThis volume brings together **new research** on the *material\nculture* of eating in early modern Europe. Its chapters trace how\nprices, wages and diets changed between 1500 and 1800.[^1]\n\n[^1]: See Braudel (1979) for the classic statement of this view.\n\n<page_number>xi</page_number>\n",
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "idx": 0,
+  "kind": "transcription",
+  "label": "page_0001.jpg",
+  "model": "gpt-5.6-terra",
+  "outcome": "ok",
+  "provenance": {
+    "image_provenance": {
+      "byte_size": "<bytes>",
+      "cap_policy": "openai-original-30k-v1",
+      "downscale_reason": "none",
+      "dpi_source": "fallback",
+      "effective_dpi": 300.0,
+      "format_fallback": false,
+      "height": 1250,
+      "mime_type": "image/jpeg",
+      "payload_format": "jpeg",
+      "render_dpi": 300.0,
+      "sent_dpi": 300.0,
+      "source_dpi_x": 300.0,
+      "source_dpi_y": 300.0,
+      "source_height": 1250,
+      "source_width": 834,
+      "width": 834
+    },
+    "source_file": "<tmp>/docs/doc.pdf"
+  },
+  "provider": "openai",
+  "response_id": 4,
+  "run_id": "<run-1>",
+  "source_index": 0,
+  "stale": 0,
+  "status": "done",
+  "tool": "autoexcerpter",
+  "updated_at": "<datetime>+00:00",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 1500,
+    "output_tokens": 400,
+    "reasoning_tokens": 0,
+    "total_tokens": 1900
+  }
+}
+{
+  "attempts": 1,
+  "content": "## The Price of Bread\n\nBread prices rose faster than wages after 1550, and the economic burden fell on urban households.[^2] The real wage index\nis defined as $w_t / p_t$.\n\n![Image: line chart of bread prices and day wages in Antwerp, 1500-1800; prices rise steeply after 1550 while wages stay flat]\n\n[^2]: Allen, R. C. (2001). The great divergence in European wages and prices from the Middle Ages to the First World War. *Explorations in Economic History, 38*(4), 411-447. https://doi.org/10.1006/exeh.2001.0775\n\n<page_number>1</page_number>\n",
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "idx": 1,
+  "kind": "transcription",
+  "label": "page_0002.jpg",
+  "model": "gpt-5.6-terra",
+  "outcome": "ok",
+  "provenance": {
+    "image_provenance": {
+      "byte_size": "<bytes>",
+      "cap_policy": "openai-original-30k-v1",
+      "downscale_reason": "none",
+      "dpi_source": "fallback",
+      "effective_dpi": 300.0,
+      "format_fallback": false,
+      "height": 1250,
+      "mime_type": "image/jpeg",
+      "payload_format": "jpeg",
+      "render_dpi": 300.0,
+      "sent_dpi": 300.0,
+      "source_dpi_x": 300.0,
+      "source_dpi_y": 300.0,
+      "source_height": 1250,
+      "source_width": 834,
+      "width": 834
+    },
+    "source_file": "<tmp>/docs/doc.pdf"
+  },
+  "provider": "openai",
+  "response_id": 5,
+  "run_id": "<run-1>",
+  "source_index": 1,
+  "stale": 0,
+  "status": "done",
+  "tool": "autoexcerpter",
+  "updated_at": "<datetime>+00:00",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 1500,
+    "output_tokens": 400,
+    "reasoning_tokens": 0,
+    "total_tokens": 1900
+  }
+}
+{
+  "attempts": 1,
+  "content": "## Bibliography\n\nAllen, R. C. (2001). The great divergence in European wages and prices from the Middle Ages to the First World War. *Explorations in Economic History, 38*(4), 411-447.\n\nMontanari, M. (1994). *The Culture of Food*. Oxford: Blackwell.\n",
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "idx": 2,
+  "kind": "transcription",
+  "label": "page_0003.jpg",
+  "model": "gpt-5.6-terra",
+  "outcome": "ok",
+  "provenance": {
+    "image_provenance": {
+      "byte_size": "<bytes>",
+      "cap_policy": "openai-original-30k-v1",
+      "downscale_reason": "none",
+      "dpi_source": "fallback",
+      "effective_dpi": 300.0,
+      "format_fallback": false,
+      "height": 1250,
+      "mime_type": "image/jpeg",
+      "payload_format": "jpeg",
+      "render_dpi": 300.0,
+      "sent_dpi": 300.0,
+      "source_dpi_x": 300.0,
+      "source_dpi_y": 300.0,
+      "source_height": 1250,
+      "source_width": 834,
+      "width": 834
+    },
+    "source_file": "<tmp>/docs/doc.pdf"
+  },
+  "provider": "openai",
+  "response_id": 6,
+  "run_id": "<run-1>",
+  "source_index": 2,
+  "stale": 0,
+  "status": "done",
+  "tool": "autoexcerpter",
+  "updated_at": "<datetime>+00:00",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 1500,
+    "output_tokens": 400,
+    "reasoning_tokens": 0,
+    "total_tokens": 1900
   }
 }

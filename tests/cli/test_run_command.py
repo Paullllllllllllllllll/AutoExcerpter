@@ -107,7 +107,6 @@ class TestJobFromSpec:
         assert job.summarize is False
         assert job.output_markdown is True
         assert job.output_docx is False
-        assert job.cleanup is False
         assert job.openalex_enabled is False
         assert job.openalex is None
         assert job.concurrency == 3
@@ -476,7 +475,9 @@ class TestDryRun:
         assert spec["output.directory"] == {"value": str(out), "source": "flag"}
         assert spec["run.concurrency"]["source"] == "default"
         assert "DRY-RUN: Alpha -> none (0 completed page(s))" in captured.err
-        assert "DRY-RUN: Beta -> already complete (skip)" in captured.err
+        assert "DRY-RUN: Beta -> legacy (skip): Beta_transcription.md exists" in (
+            captured.err
+        )
 
 
 def _report(**kwargs: Any) -> dict[str, Any]:

@@ -158,7 +158,7 @@ def _run(
     except core.PlanError as exc:
         _say(console, f"Error: {exc}")
         return int(exc.exit_code)
-    if not run_plan.dry_run and not run_plan.to_process:
+    if not run_plan.dry_run and not run_plan.has_work:
         skipped = plural(len(run_plan.skipped), "item")
         _say(console, f"Nothing to do: {skipped} already complete.")
         return int(ExitCode.OK)

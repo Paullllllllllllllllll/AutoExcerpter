@@ -1,10 +1,9 @@
-"""Native rendering, payloads, sizing, settings and resume through the sources.
+"""Native rendering, payloads, sizing and settings through the sources.
 
 The tool-agnostic geometry and encoding contracts live in tests/common.
 """
 
 import io
-import json
 import math
 import random
 from contextlib import AbstractContextManager
@@ -24,15 +23,8 @@ from autoexcerpter.common.native import (
     native_page_dpi,
     resolve_target_size,
 )
-from autoexcerpter.constants import LOG_FORMAT_VERSION
 from autoexcerpter.imaging.payload import FolderPayloadSource, PdfPayloadSource
 from autoexcerpter.imaging.settings import resolve_image_settings
-from autoexcerpter.pipeline.paths import ItemPaths
-from autoexcerpter.pipeline.resume import (
-    ProcessingState,
-    ResumeChecker,
-    verify_image_settings,
-)
 from tests.conftest import image_config
 
 
@@ -352,7 +344,7 @@ def test_large_native_ignores_numeric_memory_guard(tmp_path: Path) -> None:
     assert numeric.provenance["downscale_reason"] == "memory_guard"
 
 
-def test_fingerprint_resume(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+def test_fingerprint_covers_the_settings_in_any_order(tmp_path: Path) -> None:
     path = tmp_path / "source.png"
     path.write_bytes(scan_bytes(100, 150))
     cfg = settings()
@@ -369,31 +361,9 @@ def test_fingerprint_resume(tmp_path: Path, caplog: pytest.LogCaptureFixture) ->
     assert image_settings_fingerprint(current) == image_settings_fingerprint(
         dict(reversed(list(current.items())))
     )
-    header = {
-        "_format_version": LOG_FORMAT_VERSION,
-        "file_provenance": provenance,
-        "model_name": cfg["model_name"],
-        "total_images": 2,
-    }
-    verify_image_settings(header, current)
-    with pytest.raises(ValueError, match="payload_format.*--force"):
-        verify_image_settings(header, {**current, "payload_format": "png"})
-    paths = ItemPaths.for_item("document", tmp_path)
-    paths.working_dir.mkdir()
-    log = paths.transcription_log
-    entry = {"original_input_order_index": 0, "transcription": "Synthetic text."}
-    log.write_text(json.dumps(header) + "\n" + json.dumps(entry), encoding="utf-8")
-    checker = ResumeChecker("skip", summarize=False)
-    # The checker never classifies a settings mismatch as complete: the item
-    # stays partial, and the item processor's check fails it before its
-    # working log is rewritten, so the run exits non-zero.
-    result = checker.should_skip("document", tmp_path)
-    assert result.state == ProcessingState.PARTIAL
-    assert result.completed_page_indices == {0}
-    assert ResumeChecker("overwrite").should_skip("document", tmp_path).state == (
-        ProcessingState.NONE
+    assert image_settings_fingerprint(current) != image_settings_fingerprint(
+        {**current, "payload_format": "png"}
     )
-    assert any(record.levelname == "ERROR" for record in caplog.records)
 
 
 @pytest.mark.parametrize("provider", ["openrouter", "custom", "google", "anthropic"])

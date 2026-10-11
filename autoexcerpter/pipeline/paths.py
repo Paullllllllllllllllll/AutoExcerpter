@@ -1,11 +1,14 @@
-"""Output and working paths of one item.
+"""Output paths of one item.
 
 For an item ``X`` written into a folder, the outputs are
-``X_transcription.md`` (or ``.txt``), ``X_summary.md`` and ``X_summary.docx``;
-the working logs ``transcription.jsonl`` and ``summary.jsonl`` live in
-``X_autoexcerpter/``. When the longest of these paths would exceed the Windows
-path limit, the item name is shortened and suffixed with a hash of the full
-name, the same way for every file of the item.
+``X_transcription.md`` (or ``.txt``), ``X_summary.md`` and ``X_summary.docx``,
+rendered from the folder's ``autoexcerpter.sqlite``. Version 1.0 kept the
+working logs ``transcription.jsonl`` and ``summary.jsonl`` in
+``X_autoexcerpter/``; :meth:`ItemPaths.legacy_logs` names them, so resume can
+tell an item of that version and ``migrate`` can import it. When the longest
+of these paths would exceed the Windows path limit, the item name is
+shortened and suffixed with a hash of the full name, the same way for every
+file of the item.
 """
 
 from __future__ import annotations
@@ -16,9 +19,8 @@ from pathlib import Path
 
 TRANSCRIPTION_SUFFIX = "_transcription"
 SUMMARY_SUFFIX = "_summary"
-WORKING_SUFFIX = "_autoexcerpter"
-TRANSCRIPTION_LOG = "transcription.jsonl"
-SUMMARY_LOG = "summary.jsonl"
+LEGACY_SUFFIX = "_autoexcerpter"
+LEGACY_LOGS = ("transcription.jsonl", "summary.jsonl")
 TRANSCRIPTION_FORMATS = ("md", "txt")
 
 # MAX_PATH (260) less the terminating null character.
@@ -27,10 +29,11 @@ WINDOWS_MAX_PATH = 259
 TEMP_SUFFIX_RESERVE = 32
 HASH_LENGTH = 8
 
+# The version 1.0 log paths stay in the bound, so shortened names do not change.
 _LONGEST_SUFFIX = max(
     *(len(f"{TRANSCRIPTION_SUFFIX}.{fmt}") for fmt in TRANSCRIPTION_FORMATS),
     len(f"{SUMMARY_SUFFIX}.docx"),
-    len(WORKING_SUFFIX) + 1 + max(len(TRANSCRIPTION_LOG), len(SUMMARY_LOG)),
+    len(LEGACY_SUFFIX) + 1 + max(len(log) for log in LEGACY_LOGS),
 )
 
 
@@ -58,15 +61,13 @@ def item_base(name: str, output_dir: Path) -> str:
 
 @dataclass(frozen=True)
 class ItemPaths:
-    """Every output and working path of one item, derived in one place."""
+    """Every output path of one item, derived in one place."""
 
     output_dir: Path
-    working_dir: Path
+    base: str
     transcription: Path
     summary_docx: Path
     summary_md: Path
-    transcription_log: Path
-    summary_log: Path
 
     @classmethod
     def for_item(
@@ -80,24 +81,25 @@ class ItemPaths:
         if transcription_format not in TRANSCRIPTION_FORMATS:
             raise ValueError(f"unknown transcription format {transcription_format!r}")
         base = item_base(name, output_dir)
-        working_dir = output_dir / f"{base}{WORKING_SUFFIX}"
         return cls(
             output_dir=output_dir,
-            working_dir=working_dir,
+            base=base,
             transcription=output_dir
             / f"{base}{TRANSCRIPTION_SUFFIX}.{transcription_format}",
             summary_docx=output_dir / f"{base}{SUMMARY_SUFFIX}.docx",
             summary_md=output_dir / f"{base}{SUMMARY_SUFFIX}.md",
-            transcription_log=working_dir / TRANSCRIPTION_LOG,
-            summary_log=working_dir / SUMMARY_LOG,
         )
+
+    def legacy_logs(self) -> tuple[Path, ...]:
+        """Return the working logs version 1.0 kept for this item."""
+        folder = self.output_dir / f"{self.base}{LEGACY_SUFFIX}"
+        return tuple(folder / log for log in LEGACY_LOGS)
 
 
 __all__ = [
     "HASH_LENGTH",
-    "SUMMARY_LOG",
+    "LEGACY_LOGS",
     "TRANSCRIPTION_FORMATS",
-    "TRANSCRIPTION_LOG",
     "WINDOWS_MAX_PATH",
     "ItemPaths",
     "item_base",

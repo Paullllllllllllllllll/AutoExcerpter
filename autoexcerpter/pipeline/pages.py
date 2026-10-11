@@ -1,7 +1,12 @@
-"""One page of an item: render, transcribe, clean, summarize and log it.
+"""One page of an item: render, transcribe, clean and summarize it into the store.
 
 Rendering runs in an executor; the model calls are awaited on the event
-loop.
+loop. Each page has a transcription unit and, when the run summarizes, a
+summary unit (see :mod:`autoexcerpter.output.store`). The transcription unit
+is committed before the summary call, so a crash during that call leaves the
+page transcribed and its summary pending. A unit that cannot be written is
+counted and the page stays pending; a lost lease stops every page that has
+not started its unit yet.
 """
 
 from __future__ import annotations
@@ -11,16 +16,22 @@ import concurrent.futures
 import contextvars
 import functools
 import logging
+from collections.abc import Awaitable, Callable
 from typing import Any, Protocol
 
 from autoexcerpter.common.images import PagePayload
-from autoexcerpter.common.usage import UsageTotals
+from autoexcerpter.common.store import LeaseLostError
 from autoexcerpter.constants import is_blank_transcription
-from autoexcerpter.llm import collect_usage
-from autoexcerpter.pipeline.log import append_to_log
-from autoexcerpter.pipeline.paths import ItemPaths
+from autoexcerpter.llm.summary import placeholder_summary as failed_summary
+from autoexcerpter.output.store import (
+    KIND_SUMMARY,
+    KIND_TRANSCRIPTION,
+    SummaryRow,
+    transcription_outcome,
+)
 from autoexcerpter.pipeline.progress import PageProgress
 from autoexcerpter.pipeline.text_cleaner import clean_transcription
+from autoexcerpter.pipeline.units import DocumentHandle, UnitCall, unit_call
 from autoexcerpter.rendering.page_tags import printed_page_numbers
 
 logger = logging.getLogger(__name__)
@@ -110,8 +121,6 @@ def build_summary_result(
             result["processing_time"] = summary_payload["processing_time"]
         if "provider" in summary_payload:
             result["provider"] = summary_payload["provider"]
-        if "api_response" in summary_payload:
-            result["api_response"] = summary_payload["api_response"]
         if "schema_retries" in summary_payload:
             result["schema_retries"] = summary_payload["schema_retries"]
         if error_message and "error_type" in summary_payload:
@@ -151,38 +160,73 @@ def _position(page_value: Any, fallback_index: int) -> int:
     return page_value if isinstance(page_value, int) else fallback_index + 1
 
 
+def _summary_outcome(
+    entry: dict[str, Any], transcription_failed: bool, text: str
+) -> str:
+    """Return the outcome of a page's summary unit."""
+    if transcription_failed:
+        return "placeholder"
+    if "error" in entry:
+        return "failed"
+    return "blank" if is_blank_transcription(text) else "ok"
+
+
+def summary_row(index: int, entry: dict[str, Any]) -> SummaryRow:
+    """Return the ``summaries`` row of a page's summary entry."""
+    page = entry.get("page")
+    info = entry.get("page_information")
+    bullets = entry.get("bullet_points")
+    references = entry.get("references")
+    return SummaryRow(
+        index,
+        page=page if isinstance(page, int) and not isinstance(page, bool) else None,
+        page_information=info if isinstance(info, dict) else None,
+        bullet_points=bullets if isinstance(bullets, list) else None,
+        references=references if isinstance(references, list) else None,
+    )
+
+
+def _provenance(result: dict[str, Any]) -> dict[str, Any] | None:
+    provenance: dict[str, Any] = {
+        key: result[key] for key in ("source_file", "image_provenance") if key in result
+    }
+    return provenance or None
+
+
 class PageRunner:
     """Process single pages of one item on the event loop.
 
     *summary_manager* is None when the run does not summarize. *executor*
-    renders the page images; None uses the loop's default executor.
-    *transcription_model*, when set, is stored as ``model`` in each new
-    transcription entry. ``page_usage`` maps each page index run here to the
-    usage of its model calls, per role.
+    renders the page images; None uses the loop's default executor. *pdf*
+    says whether a page's source index is its PDF page (else its image
+    name). After the pages, ``write_errors`` holds the unit writes that
+    failed and ``lost`` the lost lease, if any.
     """
 
     def __init__(
         self,
         *,
         item_name: str,
-        paths: ItemPaths,
+        document: DocumentHandle,
         transcribe_manager: Transcriber,
         summary_manager: Summarizer | None,
         transcription_provider: str | None,
-        transcription_model: str | None = None,
+        pdf: bool = True,
         executor: concurrent.futures.Executor | None = None,
     ) -> None:
         self.item_name = item_name
-        self.paths = paths
+        self.document = document
         self.transcribe_manager = transcribe_manager
         self.summary_manager = summary_manager
         self.transcription_provider = transcription_provider
-        self.transcription_model = transcription_model
+        self.pdf = pdf
         self.executor = executor
-        # Working-log appends that failed on the page path. Such a page exists
-        # only in memory, so the item must not be reported complete.
-        self.log_append_failures = 0
-        self.page_usage: dict[int, UsageTotals] = {}
+        self.write_errors: list[BaseException] = []
+        self.lost: LeaseLostError | None = None
+
+    def source_index(self, index: int, image_name: str) -> int | str:
+        """Return a page's source index: its PDF page, else its image name."""
+        return index if self.pdf else image_name
 
     async def summarize(
         self,
@@ -229,136 +273,154 @@ class PageRunner:
             original_index, image_name, summary_data, page_num, summary_error
         )
 
-    def note_log_append_failure(self, log_path: Any) -> None:
-        """Count (and log) a page-path working-log append that failed."""
-        self.log_append_failures += 1
-        failures = self.log_append_failures
-        logger.error(
-            "Item %s: failed to append an entry to %s (%d hot-path append "
-            "failure(s) so far); that page is not recoverable from the working "
-            "log on a later resume.",
-            self.item_name,
-            log_path,
-            failures,
-        )
-
-    async def run(
-        self,
-        index: int,
-        source: PageSource,
-        transcription_results: list[dict[str, Any]],
-        summary_results: list[dict[str, Any]],
-        progress: PageProgress,
-    ) -> dict[str, Any]:
+    async def run(self, index: int, source: PageSource, progress: PageProgress) -> str:
         """Render, transcribe and optionally summarize the page at *index*.
 
-        Appends to the shared result lists, advances *progress* and records
-        the page's usage in ``page_usage``. A page cancelled before its
-        transcription is logged leaves no trace, so a later resume runs it.
+        Advances *progress* and returns the page's event status: ``ok``,
+        ``failed``, or ``deferred`` when the page was not stored (a lost
+        lease or a failed write).
         """
-        with collect_usage() as usage:
-            self.page_usage[index] = usage
-            return await self._run(
-                index, source, transcription_results, summary_results, progress
-            )
-
-    async def summarize_logged(
-        self, entry: dict[str, Any], index: int, image_name: str
-    ) -> dict[str, Any] | None:
-        """Summarize a page transcribed by an earlier run; record its usage."""
-        with collect_usage() as usage:
-            self.page_usage[index] = usage
-            return await self.summarize(entry, index, image_name)
-
-    async def _run(
-        self,
-        index: int,
-        source: PageSource,
-        transcription_results: list[dict[str, Any]],
-        summary_results: list[dict[str, Any]],
-        progress: PageProgress,
-    ) -> dict[str, Any]:
         image_name = f"page index {index}"
-        # Set once the paid transcription entry is on disk; the except handler
-        # must not log a second entry for this index.
-        transcription_logged = False
-        transcription_result: dict[str, Any] = {}
         try:
             image_name = source.image_name(index)
-            transcription_result = await self._transcribe(index, source, image_name)
-
-            if "error" not in transcription_result:
-                raw_text = transcription_result.get("transcription", "")
-                transcription_result["transcription"] = clean_transcription(raw_text)
-
-            # Persist the paid transcription before the summary call, so a crash
-            # during that call leaves the supported summary-only resume state.
-            transcription_logged = append_to_log(
-                self.paths.transcription_log, transcription_result
-            )
-            if not transcription_logged:
-                self.note_log_append_failure(self.paths.transcription_log)
-
-            summary_result = await self.summarize(
-                transcription_result, index, image_name
-            )
-            if summary_result is not None:
-                if not append_to_log(self.paths.summary_log, summary_result):
-                    self.note_log_append_failure(self.paths.summary_log)
-                summary_results.append(summary_result)
-
-            processed_now = progress.advance()
-            if (
-                "processing_time" in transcription_result
-                and "error" not in transcription_result
-            ):
-                progress.record_time(transcription_result["processing_time"])
-
-            logger.debug(
-                f"Processed {processed_now}/{progress.total} pending page(s) "
-                f"({progress.already_complete} already complete) "
-                f"- Item {index + 1} - Status: {_status(transcription_result)} "
-                f"- {progress.eta(processed_now)}"
-            )
-            transcription_results.append(transcription_result)
-            return transcription_result
-
-        except Exception as e:
-            logger.exception(f"Critical error during task for {image_name}: {e}")
-            error_result: dict[str, Any] = {
-                "page": index + 1,
-                "image": image_name,
-                "transcription": f"[CRITICAL ERROR] Unhandled in task: {e}",
-                "error": str(e),
-                "original_input_order_index": index,
-                **self._model_field(),
-            }
-            # Keep the working log and the summaries consistent with the normal
-            # failure path. When the transcription entry is already on disk,
-            # a second entry would duplicate the page on every later resume.
-            if not transcription_logged:
-                append_to_log(self.paths.transcription_log, error_result)
-            try:
-                summary_result = await self.summarize(error_result, index, image_name)
-            except Exception:
-                logger.exception(
-                    f"Failed to build placeholder summary for {image_name}"
-                )
-                summary_result = None
-            if summary_result is not None:
-                if transcription_logged:
-                    # The logged transcription is error-free, so the failure
-                    # must live on the summary entry, which resume regenerates.
-                    summary_result["error"] = str(e)
-                append_to_log(self.paths.summary_log, summary_result)
-                summary_results.append(summary_result)
-            # A logged transcription means "transcribed, summary pending":
-            # keep the real text in memory rather than the crash placeholder.
-            transcription_results.append(
-                transcription_result if transcription_logged else error_result
-            )
+        except Exception as exc:  # noqa: BLE001 - the transcription records it
+            logger.error("Could not name page %d: %s", index, exc)
+        stored = await self._transcribe_page(index, source, image_name, progress)
+        if stored is None:
             progress.advance()
-            return error_result
+            return "deferred"
+        text, error = stored
+        if self.summary_manager is not None:
+            await self.summarize_page(index, image_name, text, error)
+        processed = progress.advance()
+        logger.debug(
+            f"Processed {processed}/{progress.total} pending page(s) "
+            f"({progress.already_complete} already complete) - Item {index + 1} "
+            f"- {progress.eta(processed)}"
+        )
+        return "failed" if error is not None else "ok"
+
+    async def summarize_page(
+        self, index: int, image_name: str, text: str, error: str | None
+    ) -> bool:
+        """Summarize a stored transcription into the page's summary unit.
+
+        *error* is the transcription's error: a failed page gets a
+        placeholder summary without a call. Returns whether the unit was
+        stored.
+        """
+        if self.lost is not None or self.summary_manager is None:
+            return False
+        source_index = self.source_index(index, image_name)
+        transcription: dict[str, Any] = {"transcription": text}
+        if error is not None:
+            transcription["error"] = error
+        async with unit_call(self.document, KIND_SUMMARY, index) as call:
+            try:
+                entry = await self.summarize(transcription, index, image_name)
+            except Exception as exc:  # noqa: BLE001 - a crash fails one summary
+                logger.exception(f"Failed to summarize {image_name}: {exc}")
+                page = index + 1
+                entry = build_summary_result(
+                    index, image_name, failed_summary(page, str(exc)), page, str(exc)
+                )
+                entry["error_type"] = type(exc).__name__
+        if entry is None:
+            return False
+        failed = "error" in entry and error is None
+        row = summary_row(index, entry)
+        return await self._write(
+            call,
+            lambda result: self.document.write_summary(result, row),
+            status="failed" if failed else "done",
+            content=None,
+            outcome=_summary_outcome(entry, error is not None, text),
+            label=image_name,
+            source_index=source_index,
+            error=entry.get("error") if failed else None,
+            error_type=entry.get("error_type") if failed else None,
+        )
+
+    async def _transcribe_page(
+        self, index: int, source: PageSource, image_name: str, progress: PageProgress
+    ) -> tuple[str, str | None] | None:
+        """Transcribe and store one page; return its text and error.
+
+        None when the unit was not stored.
+        """
+        if self.lost is not None:
+            return None
+        async with unit_call(self.document, KIND_TRANSCRIPTION, index) as call:
+            try:
+                result = await self._transcribe(index, source, image_name)
+                if "error" not in result:
+                    raw_text = result.get("transcription", "")
+                    result["transcription"] = clean_transcription(raw_text)
+            except Exception as exc:  # noqa: BLE001 - a crash fails one page
+                logger.exception(f"Critical error during task for {image_name}: {exc}")
+                result = {
+                    "transcription": f"[CRITICAL ERROR] Unhandled in task: {exc}",
+                    "error": str(exc),
+                    "error_type": type(exc).__name__,
+                }
+        text = result.get("transcription", "")
+        if not isinstance(text, str):
+            text = str(text)
+        error = result.get("error")
+        error = None if error is None else str(error)
+        stored = await self._write(
+            call,
+            self.document.write_transcription,
+            status="failed" if error is not None else "done",
+            content=text,
+            outcome=transcription_outcome(text, error),
+            label=image_name,
+            source_index=self.source_index(index, image_name),
+            error=error,
+            error_type=result.get("error_type") if error is not None else None,
+            provenance=_provenance(result),
+        )
+        if not stored:
+            return None
+        if error is None and "processing_time" in result:
+            progress.record_time(result["processing_time"])
+        logger.debug(f"Page {index + 1} - Status: {_status(result)}")
+        return text, error
+
+    async def _write(
+        self,
+        call: UnitCall,
+        write: Callable[[Any], Awaitable[None]],
+        **fields: Any,
+    ) -> bool:
+        """Build the unit's row from *call* and commit it through *write*.
+
+        A lost lease stops the item; any other failure is counted. Returns
+        whether the unit was stored.
+        """
+        try:
+            await write(call.result(**fields))
+        except LeaseLostError as exc:
+            logger.error(
+                "Stopping '%s': page %d was not stored: %s",
+                self.item_name,
+                call.idx + 1,
+                exc,
+            )
+            self.lost = exc
+            return False
+        except Exception as exc:  # noqa: BLE001 - tallied; the item fails
+            logger.error(
+                "The %s of page %d of '%s' could not be stored in %s: %s",
+                call.kind,
+                call.idx + 1,
+                self.item_name,
+                self.document.store.path,
+                exc,
+            )
+            self.write_errors.append(exc)
+            return False
+        return True
 
     async def _render(self, source: PageSource, index: int) -> PagePayload:
         """Build the page payload in the executor."""
@@ -383,25 +445,12 @@ class PageRunner:
                 "error": str(e),
                 "error_type": "preprocessing_failure",
                 "provider": self.transcription_provider,
-                **self._model_field(),
-                "original_input_order_index": index,
             }
-        result = {
+        return {
             **(await self.transcribe_manager.transcribe_payload(payload)),
-            **self._model_field(),
-            "original_input_order_index": index,
             "source_file": payload.source_file,
             "image_provenance": payload.provenance,
         }
-        if payload.page_index is not None:
-            result["page_index"] = payload.page_index
-        return result
-
-    def _model_field(self) -> dict[str, str]:
-        """The ``model`` entry of a new transcription record, if known."""
-        if self.transcription_model is None:
-            return {}
-        return {"model": self.transcription_model}
 
 
 def _status(transcription_result: dict[str, Any]) -> str:
@@ -422,5 +471,6 @@ __all__ = [
     "Transcriber",
     "build_summary_result",
     "placeholder_summary",
+    "summary_row",
     "warn_on_page_number_mismatch",
 ]

@@ -1,21 +1,1112 @@
+## artifacts
+{
+  "created_at": "<datetime>+00:00",
+  "kind": "summary_prompt",
+  "run_id": "<run-1>",
+  "sha256": "66e28711e28a8ca4ae80aacbfe4703032974d50881b910b8a99fad665e2df4f3",
+  "text": "<7259 characters>"
+}
+{
+  "created_at": "<datetime>+00:00",
+  "kind": "summary_schema",
+  "run_id": "<run-1>",
+  "sha256": "1ecfed652ead1e92c94f1d0d5729f53ced3c17818d47c1329bd3ff8675436812",
+  "text": "<5199 characters>"
+}
+{
+  "created_at": "<datetime>+00:00",
+  "kind": "transcription_prompt",
+  "run_id": "<run-1>",
+  "sha256": "ef8e49d8ec141a07e14da422db9978bf17ad3ef004acff63d03f6b82cc7ca3ce",
+  "text": "<1455 characters>"
+}
 ## citations
 ## documents
 {
-  "complete": 1,
-  "hash": "<sha256>",
-  "kind": "image_folder",
+  "doc_id": 1,
+  "first_run_id": "<run-1>",
+  "image_settings": {
+    "cap_policy": "profile-v1",
+    "grayscale_conversion": true,
+    "handle_transparency": true,
+    "high_target_box": [
+      768,
+      1536
+    ],
+    "image_high_res_tier": false,
+    "image_original_patch_cap_30k": false,
+    "jpeg_quality": 95,
+    "low_max_side_px": 512,
+    "max_image_bytes": 20000000,
+    "max_pixels_per_page": 24000000,
+    "media_resolution": "high",
+    "model_name": "gemini-2.5-flash-lite",
+    "model_type": "google",
+    "native_fallback_dpi": 300,
+    "payload_format": "jpeg",
+    "provider": "google",
+    "render_strategy": "direct",
+    "request_detail": null,
+    "resampling_algorithm": "bilinear",
+    "resize_profile": "high",
+    "resolved_detail": "high",
+    "target_dpi": 300
+  },
+  "input_path": "<tmp>/in/book",
+  "input_sha256": "<sha256>",
+  "kind": "images",
+  "last_run_id": "<run-1>",
+  "lease_generation": 1,
+  "lease_run_id": null,
+  "lease_until": null,
   "name": "book",
-  "outputs": [
-    "book_transcription.md",
-    "book_summary.docx",
-    "book_summary.md"
-  ],
-  "pages_deferred": 0,
-  "pages_failed": 0,
-  "pages_ok": 3,
-  "pages_total": 3,
-  "path": "<tmp>/in/book",
-  "settings_fingerprint": "1f4121b76c8edd0ee1232070d17d9ea7aac6c7b3ece6918cd6af1e81bfe2625f",
+  "status": "complete",
+  "tool": "autoexcerpter",
+  "units_done": 6,
+  "units_failed": 0,
+  "units_pending": 0,
+  "units_total": 6,
+  "updated_at": "<datetime>+00:00"
+}
+## meta
+{
+  "component": "core",
+  "version": 1
+}
+{
+  "component": "autoexcerpter",
+  "version": 1
+}
+## notes
+## outputs
+## responses
+{
+  "attempt": 1,
+  "created_at": "<datetime>+00:00",
+  "custom_id": null,
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "http_status": null,
+  "idx": 0,
+  "kind": "summary",
+  "latency": "<seconds>",
+  "model": "gemini-2.5-flash-lite",
+  "provider": "google",
+  "raw": {
+    "additional_kwargs": {},
+    "content": "- The preface introduces new research on the *material culture* of eating in early modern Europe between 1500 and 1800.\n- It frames the chapters around prices, wages and diets and follows Braudel's long-run view of material life.",
+    "id": "lc_run--<uuid>-0",
+    "invalid_tool_calls": [],
+    "name": null,
+    "response_metadata": {
+      "model_name": "gemini-2.5-flash-lite",
+      "status": "completed"
+    },
+    "tool_calls": [],
+    "type": "ai",
+    "usage_metadata": {
+      "input_tokens": 900,
+      "output_tokens": 250,
+      "total_tokens": 1150
+    }
+  },
+  "raw_kind": "sdk",
+  "request": {
+    "base_url": null,
+    "endpoint": null,
+    "enforced": false,
+    "invoke_kwargs": {
+      "max_output_tokens": 65536,
+      "temperature": 1.0
+    },
+    "model": "gemini-2.5-flash-lite",
+    "options": {
+      "reasoning": {
+        "effort": "high"
+      },
+      "temperature": 1.0,
+      "text": {
+        "verbosity": "low"
+      }
+    },
+    "provider": "google",
+    "response_format": "json",
+    "schema": "article_page_summary",
+    "service_tier": "flex"
+  },
+  "response_id": 1,
+  "role": "summary",
+  "run_id": "<run-1>",
+  "submission_id": null,
+  "tool": "autoexcerpter",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 900,
+    "output_tokens": 250,
+    "reasoning_tokens": 0,
+    "total_tokens": 1150
+  }
+}
+{
+  "attempt": 2,
+  "created_at": "<datetime>+00:00",
+  "custom_id": null,
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "http_status": null,
+  "idx": 0,
+  "kind": "summary",
+  "latency": "<seconds>",
+  "model": "gemini-2.5-flash-lite",
+  "provider": "google",
+  "raw": {
+    "additional_kwargs": {},
+    "content": "- The preface introduces new research on the *material culture* of eating in early modern Europe between 1500 and 1800.\n- It frames the chapters around prices, wages and diets and follows Braudel's long-run view of material life.",
+    "id": "lc_run--<uuid>-0",
+    "invalid_tool_calls": [],
+    "name": null,
+    "response_metadata": {
+      "model_name": "gemini-2.5-flash-lite",
+      "status": "completed"
+    },
+    "tool_calls": [],
+    "type": "ai",
+    "usage_metadata": {
+      "input_tokens": 900,
+      "output_tokens": 250,
+      "total_tokens": 1150
+    }
+  },
+  "raw_kind": "sdk",
+  "request": {
+    "base_url": null,
+    "endpoint": null,
+    "enforced": false,
+    "invoke_kwargs": {
+      "max_output_tokens": 65536,
+      "temperature": 1.0
+    },
+    "model": "gemini-2.5-flash-lite",
+    "options": {
+      "reasoning": {
+        "effort": "high"
+      },
+      "temperature": 1.0,
+      "text": {
+        "verbosity": "low"
+      }
+    },
+    "provider": "google",
+    "response_format": "json",
+    "schema": "article_page_summary",
+    "service_tier": "flex"
+  },
+  "response_id": 2,
+  "role": "summary",
+  "run_id": "<run-1>",
+  "submission_id": null,
+  "tool": "autoexcerpter",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 900,
+    "output_tokens": 250,
+    "reasoning_tokens": 0,
+    "total_tokens": 1150
+  }
+}
+{
+  "attempt": 3,
+  "created_at": "<datetime>+00:00",
+  "custom_id": null,
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "http_status": null,
+  "idx": 0,
+  "kind": "summary",
+  "latency": "<seconds>",
+  "model": "gemini-2.5-flash-lite",
+  "provider": "google",
+  "raw": {
+    "additional_kwargs": {},
+    "content": "- The preface introduces new research on the *material culture* of eating in early modern Europe between 1500 and 1800.\n- It frames the chapters around prices, wages and diets and follows Braudel's long-run view of material life.",
+    "id": "lc_run--<uuid>-0",
+    "invalid_tool_calls": [],
+    "name": null,
+    "response_metadata": {
+      "model_name": "gemini-2.5-flash-lite",
+      "status": "completed"
+    },
+    "tool_calls": [],
+    "type": "ai",
+    "usage_metadata": {
+      "input_tokens": 900,
+      "output_tokens": 250,
+      "total_tokens": 1150
+    }
+  },
+  "raw_kind": "sdk",
+  "request": {
+    "base_url": null,
+    "endpoint": null,
+    "enforced": false,
+    "invoke_kwargs": {
+      "max_output_tokens": 65536,
+      "temperature": 1.0
+    },
+    "model": "gemini-2.5-flash-lite",
+    "options": {
+      "reasoning": {
+        "effort": "high"
+      },
+      "temperature": 1.0,
+      "text": {
+        "verbosity": "low"
+      }
+    },
+    "provider": "google",
+    "response_format": "json",
+    "schema": "article_page_summary",
+    "service_tier": "flex"
+  },
+  "response_id": 3,
+  "role": "summary",
+  "run_id": "<run-1>",
+  "submission_id": null,
+  "tool": "autoexcerpter",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 900,
+    "output_tokens": 250,
+    "reasoning_tokens": 0,
+    "total_tokens": 1150
+  }
+}
+{
+  "attempt": 4,
+  "created_at": "<datetime>+00:00",
+  "custom_id": null,
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "http_status": null,
+  "idx": 0,
+  "kind": "summary",
+  "latency": "<seconds>",
+  "model": "gemini-2.5-flash-lite",
+  "provider": "google",
+  "raw": {
+    "additional_kwargs": {},
+    "content": "- The preface introduces new research on the *material culture* of eating in early modern Europe between 1500 and 1800.\n- It frames the chapters around prices, wages and diets and follows Braudel's long-run view of material life.",
+    "id": "lc_run--<uuid>-0",
+    "invalid_tool_calls": [],
+    "name": null,
+    "response_metadata": {
+      "model_name": "gemini-2.5-flash-lite",
+      "status": "completed"
+    },
+    "tool_calls": [],
+    "type": "ai",
+    "usage_metadata": {
+      "input_tokens": 900,
+      "output_tokens": 250,
+      "total_tokens": 1150
+    }
+  },
+  "raw_kind": "sdk",
+  "request": {
+    "base_url": null,
+    "endpoint": null,
+    "enforced": false,
+    "invoke_kwargs": {
+      "max_output_tokens": 65536,
+      "temperature": 1.0
+    },
+    "model": "gemini-2.5-flash-lite",
+    "options": {
+      "reasoning": {
+        "effort": "high"
+      },
+      "temperature": 1.0,
+      "text": {
+        "verbosity": "low"
+      }
+    },
+    "provider": "google",
+    "response_format": "json",
+    "schema": "article_page_summary",
+    "service_tier": "flex"
+  },
+  "response_id": 4,
+  "role": "summary",
+  "run_id": "<run-1>",
+  "submission_id": null,
+  "tool": "autoexcerpter",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 900,
+    "output_tokens": 250,
+    "reasoning_tokens": 0,
+    "total_tokens": 1150
+  }
+}
+{
+  "attempt": 1,
+  "created_at": "<datetime>+00:00",
+  "custom_id": null,
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "http_status": null,
+  "idx": 1,
+  "kind": "summary",
+  "latency": "<seconds>",
+  "model": "gemini-2.5-flash-lite",
+  "provider": "google",
+  "raw": {
+    "additional_kwargs": {},
+    "content": "- Bread prices rose faster than wages after 1550, shifting the economic burden onto **urban households**.\n- The real wage index is defined as $w_t / p_t$, nominal wages deflated by the bread price.\n- A consumer basket weights goods so that $$\\sum_{i=1}^{n} \\omega_i = 1$$ holds in every year.",
+    "id": "lc_run--<uuid>-0",
+    "invalid_tool_calls": [],
+    "name": null,
+    "response_metadata": {
+      "model_name": "gemini-2.5-flash-lite",
+      "status": "completed"
+    },
+    "tool_calls": [],
+    "type": "ai",
+    "usage_metadata": {
+      "input_tokens": 900,
+      "output_tokens": 250,
+      "total_tokens": 1150
+    }
+  },
+  "raw_kind": "sdk",
+  "request": {
+    "base_url": null,
+    "endpoint": null,
+    "enforced": false,
+    "invoke_kwargs": {
+      "max_output_tokens": 65536,
+      "temperature": 1.0
+    },
+    "model": "gemini-2.5-flash-lite",
+    "options": {
+      "reasoning": {
+        "effort": "high"
+      },
+      "temperature": 1.0,
+      "text": {
+        "verbosity": "low"
+      }
+    },
+    "provider": "google",
+    "response_format": "json",
+    "schema": "article_page_summary",
+    "service_tier": "flex"
+  },
+  "response_id": 5,
+  "role": "summary",
+  "run_id": "<run-1>",
+  "submission_id": null,
+  "tool": "autoexcerpter",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 900,
+    "output_tokens": 250,
+    "reasoning_tokens": 0,
+    "total_tokens": 1150
+  }
+}
+{
+  "attempt": 2,
+  "created_at": "<datetime>+00:00",
+  "custom_id": null,
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "http_status": null,
+  "idx": 1,
+  "kind": "summary",
+  "latency": "<seconds>",
+  "model": "gemini-2.5-flash-lite",
+  "provider": "google",
+  "raw": {
+    "additional_kwargs": {},
+    "content": "- Bread prices rose faster than wages after 1550, shifting the economic burden onto **urban households**.\n- The real wage index is defined as $w_t / p_t$, nominal wages deflated by the bread price.\n- A consumer basket weights goods so that $$\\sum_{i=1}^{n} \\omega_i = 1$$ holds in every year.",
+    "id": "lc_run--<uuid>-0",
+    "invalid_tool_calls": [],
+    "name": null,
+    "response_metadata": {
+      "model_name": "gemini-2.5-flash-lite",
+      "status": "completed"
+    },
+    "tool_calls": [],
+    "type": "ai",
+    "usage_metadata": {
+      "input_tokens": 900,
+      "output_tokens": 250,
+      "total_tokens": 1150
+    }
+  },
+  "raw_kind": "sdk",
+  "request": {
+    "base_url": null,
+    "endpoint": null,
+    "enforced": false,
+    "invoke_kwargs": {
+      "max_output_tokens": 65536,
+      "temperature": 1.0
+    },
+    "model": "gemini-2.5-flash-lite",
+    "options": {
+      "reasoning": {
+        "effort": "high"
+      },
+      "temperature": 1.0,
+      "text": {
+        "verbosity": "low"
+      }
+    },
+    "provider": "google",
+    "response_format": "json",
+    "schema": "article_page_summary",
+    "service_tier": "flex"
+  },
+  "response_id": 6,
+  "role": "summary",
+  "run_id": "<run-1>",
+  "submission_id": null,
+  "tool": "autoexcerpter",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 900,
+    "output_tokens": 250,
+    "reasoning_tokens": 0,
+    "total_tokens": 1150
+  }
+}
+{
+  "attempt": 3,
+  "created_at": "<datetime>+00:00",
+  "custom_id": null,
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "http_status": null,
+  "idx": 1,
+  "kind": "summary",
+  "latency": "<seconds>",
+  "model": "gemini-2.5-flash-lite",
+  "provider": "google",
+  "raw": {
+    "additional_kwargs": {},
+    "content": "- Bread prices rose faster than wages after 1550, shifting the economic burden onto **urban households**.\n- The real wage index is defined as $w_t / p_t$, nominal wages deflated by the bread price.\n- A consumer basket weights goods so that $$\\sum_{i=1}^{n} \\omega_i = 1$$ holds in every year.",
+    "id": "lc_run--<uuid>-0",
+    "invalid_tool_calls": [],
+    "name": null,
+    "response_metadata": {
+      "model_name": "gemini-2.5-flash-lite",
+      "status": "completed"
+    },
+    "tool_calls": [],
+    "type": "ai",
+    "usage_metadata": {
+      "input_tokens": 900,
+      "output_tokens": 250,
+      "total_tokens": 1150
+    }
+  },
+  "raw_kind": "sdk",
+  "request": {
+    "base_url": null,
+    "endpoint": null,
+    "enforced": false,
+    "invoke_kwargs": {
+      "max_output_tokens": 65536,
+      "temperature": 1.0
+    },
+    "model": "gemini-2.5-flash-lite",
+    "options": {
+      "reasoning": {
+        "effort": "high"
+      },
+      "temperature": 1.0,
+      "text": {
+        "verbosity": "low"
+      }
+    },
+    "provider": "google",
+    "response_format": "json",
+    "schema": "article_page_summary",
+    "service_tier": "flex"
+  },
+  "response_id": 7,
+  "role": "summary",
+  "run_id": "<run-1>",
+  "submission_id": null,
+  "tool": "autoexcerpter",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 900,
+    "output_tokens": 250,
+    "reasoning_tokens": 0,
+    "total_tokens": 1150
+  }
+}
+{
+  "attempt": 4,
+  "created_at": "<datetime>+00:00",
+  "custom_id": null,
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "http_status": null,
+  "idx": 1,
+  "kind": "summary",
+  "latency": "<seconds>",
+  "model": "gemini-2.5-flash-lite",
+  "provider": "google",
+  "raw": {
+    "additional_kwargs": {},
+    "content": "- Bread prices rose faster than wages after 1550, shifting the economic burden onto **urban households**.\n- The real wage index is defined as $w_t / p_t$, nominal wages deflated by the bread price.\n- A consumer basket weights goods so that $$\\sum_{i=1}^{n} \\omega_i = 1$$ holds in every year.",
+    "id": "lc_run--<uuid>-0",
+    "invalid_tool_calls": [],
+    "name": null,
+    "response_metadata": {
+      "model_name": "gemini-2.5-flash-lite",
+      "status": "completed"
+    },
+    "tool_calls": [],
+    "type": "ai",
+    "usage_metadata": {
+      "input_tokens": 900,
+      "output_tokens": 250,
+      "total_tokens": 1150
+    }
+  },
+  "raw_kind": "sdk",
+  "request": {
+    "base_url": null,
+    "endpoint": null,
+    "enforced": false,
+    "invoke_kwargs": {
+      "max_output_tokens": 65536,
+      "temperature": 1.0
+    },
+    "model": "gemini-2.5-flash-lite",
+    "options": {
+      "reasoning": {
+        "effort": "high"
+      },
+      "temperature": 1.0,
+      "text": {
+        "verbosity": "low"
+      }
+    },
+    "provider": "google",
+    "response_format": "json",
+    "schema": "article_page_summary",
+    "service_tier": "flex"
+  },
+  "response_id": 8,
+  "role": "summary",
+  "run_id": "<run-1>",
+  "submission_id": null,
+  "tool": "autoexcerpter",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 900,
+    "output_tokens": 250,
+    "reasoning_tokens": 0,
+    "total_tokens": 1150
+  }
+}
+{
+  "attempt": 1,
+  "created_at": "<datetime>+00:00",
+  "custom_id": null,
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "http_status": null,
+  "idx": 2,
+  "kind": "summary",
+  "latency": "<seconds>",
+  "model": "gemini-2.5-flash-lite",
+  "provider": "google",
+  "raw": {
+    "additional_kwargs": {},
+    "content": "Bibliography page without summarizable prose.",
+    "id": "lc_run--<uuid>-0",
+    "invalid_tool_calls": [],
+    "name": null,
+    "response_metadata": {
+      "model_name": "gemini-2.5-flash-lite",
+      "status": "completed"
+    },
+    "tool_calls": [],
+    "type": "ai",
+    "usage_metadata": {
+      "input_tokens": 900,
+      "output_tokens": 250,
+      "total_tokens": 1150
+    }
+  },
+  "raw_kind": "sdk",
+  "request": {
+    "base_url": null,
+    "endpoint": null,
+    "enforced": false,
+    "invoke_kwargs": {
+      "max_output_tokens": 65536,
+      "temperature": 1.0
+    },
+    "model": "gemini-2.5-flash-lite",
+    "options": {
+      "reasoning": {
+        "effort": "high"
+      },
+      "temperature": 1.0,
+      "text": {
+        "verbosity": "low"
+      }
+    },
+    "provider": "google",
+    "response_format": "json",
+    "schema": "article_page_summary",
+    "service_tier": "flex"
+  },
+  "response_id": 9,
+  "role": "summary",
+  "run_id": "<run-1>",
+  "submission_id": null,
+  "tool": "autoexcerpter",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 900,
+    "output_tokens": 250,
+    "reasoning_tokens": 0,
+    "total_tokens": 1150
+  }
+}
+{
+  "attempt": 2,
+  "created_at": "<datetime>+00:00",
+  "custom_id": null,
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "http_status": null,
+  "idx": 2,
+  "kind": "summary",
+  "latency": "<seconds>",
+  "model": "gemini-2.5-flash-lite",
+  "provider": "google",
+  "raw": {
+    "additional_kwargs": {},
+    "content": "Bibliography page without summarizable prose.",
+    "id": "lc_run--<uuid>-0",
+    "invalid_tool_calls": [],
+    "name": null,
+    "response_metadata": {
+      "model_name": "gemini-2.5-flash-lite",
+      "status": "completed"
+    },
+    "tool_calls": [],
+    "type": "ai",
+    "usage_metadata": {
+      "input_tokens": 900,
+      "output_tokens": 250,
+      "total_tokens": 1150
+    }
+  },
+  "raw_kind": "sdk",
+  "request": {
+    "base_url": null,
+    "endpoint": null,
+    "enforced": false,
+    "invoke_kwargs": {
+      "max_output_tokens": 65536,
+      "temperature": 1.0
+    },
+    "model": "gemini-2.5-flash-lite",
+    "options": {
+      "reasoning": {
+        "effort": "high"
+      },
+      "temperature": 1.0,
+      "text": {
+        "verbosity": "low"
+      }
+    },
+    "provider": "google",
+    "response_format": "json",
+    "schema": "article_page_summary",
+    "service_tier": "flex"
+  },
+  "response_id": 10,
+  "role": "summary",
+  "run_id": "<run-1>",
+  "submission_id": null,
+  "tool": "autoexcerpter",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 900,
+    "output_tokens": 250,
+    "reasoning_tokens": 0,
+    "total_tokens": 1150
+  }
+}
+{
+  "attempt": 3,
+  "created_at": "<datetime>+00:00",
+  "custom_id": null,
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "http_status": null,
+  "idx": 2,
+  "kind": "summary",
+  "latency": "<seconds>",
+  "model": "gemini-2.5-flash-lite",
+  "provider": "google",
+  "raw": {
+    "additional_kwargs": {},
+    "content": "Bibliography page without summarizable prose.",
+    "id": "lc_run--<uuid>-0",
+    "invalid_tool_calls": [],
+    "name": null,
+    "response_metadata": {
+      "model_name": "gemini-2.5-flash-lite",
+      "status": "completed"
+    },
+    "tool_calls": [],
+    "type": "ai",
+    "usage_metadata": {
+      "input_tokens": 900,
+      "output_tokens": 250,
+      "total_tokens": 1150
+    }
+  },
+  "raw_kind": "sdk",
+  "request": {
+    "base_url": null,
+    "endpoint": null,
+    "enforced": false,
+    "invoke_kwargs": {
+      "max_output_tokens": 65536,
+      "temperature": 1.0
+    },
+    "model": "gemini-2.5-flash-lite",
+    "options": {
+      "reasoning": {
+        "effort": "high"
+      },
+      "temperature": 1.0,
+      "text": {
+        "verbosity": "low"
+      }
+    },
+    "provider": "google",
+    "response_format": "json",
+    "schema": "article_page_summary",
+    "service_tier": "flex"
+  },
+  "response_id": 11,
+  "role": "summary",
+  "run_id": "<run-1>",
+  "submission_id": null,
+  "tool": "autoexcerpter",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 900,
+    "output_tokens": 250,
+    "reasoning_tokens": 0,
+    "total_tokens": 1150
+  }
+}
+{
+  "attempt": 4,
+  "created_at": "<datetime>+00:00",
+  "custom_id": null,
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "http_status": null,
+  "idx": 2,
+  "kind": "summary",
+  "latency": "<seconds>",
+  "model": "gemini-2.5-flash-lite",
+  "provider": "google",
+  "raw": {
+    "additional_kwargs": {},
+    "content": "Bibliography page without summarizable prose.",
+    "id": "lc_run--<uuid>-0",
+    "invalid_tool_calls": [],
+    "name": null,
+    "response_metadata": {
+      "model_name": "gemini-2.5-flash-lite",
+      "status": "completed"
+    },
+    "tool_calls": [],
+    "type": "ai",
+    "usage_metadata": {
+      "input_tokens": 900,
+      "output_tokens": 250,
+      "total_tokens": 1150
+    }
+  },
+  "raw_kind": "sdk",
+  "request": {
+    "base_url": null,
+    "endpoint": null,
+    "enforced": false,
+    "invoke_kwargs": {
+      "max_output_tokens": 65536,
+      "temperature": 1.0
+    },
+    "model": "gemini-2.5-flash-lite",
+    "options": {
+      "reasoning": {
+        "effort": "high"
+      },
+      "temperature": 1.0,
+      "text": {
+        "verbosity": "low"
+      }
+    },
+    "provider": "google",
+    "response_format": "json",
+    "schema": "article_page_summary",
+    "service_tier": "flex"
+  },
+  "response_id": 12,
+  "role": "summary",
+  "run_id": "<run-1>",
+  "submission_id": null,
+  "tool": "autoexcerpter",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 900,
+    "output_tokens": 250,
+    "reasoning_tokens": 0,
+    "total_tokens": 1150
+  }
+}
+{
+  "attempt": 1,
+  "created_at": "<datetime>+00:00",
+  "custom_id": null,
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "http_status": null,
+  "idx": 0,
+  "kind": "transcription",
+  "latency": "<seconds>",
+  "model": "gemini-2.5-flash-lite",
+  "provider": "google",
+  "raw": {
+    "additional_kwargs": {},
+    "content": "# Preface\n\nThis volume brings together **new research** on the *material\nculture* of eating in early modern Europe. Its chapters trace how\nprices, wages and diets changed between 1500 and 1800.[^1]\n\n[^1]: See Braudel (1979) for the classic statement of this view.\n\n<page_number>xi</page_number>",
+    "id": "lc_run--<uuid>-0",
+    "invalid_tool_calls": [],
+    "name": null,
+    "response_metadata": {
+      "model_name": "gemini-2.5-flash-lite",
+      "status": "completed"
+    },
+    "tool_calls": [],
+    "type": "ai",
+    "usage_metadata": {
+      "input_tokens": 1500,
+      "output_tokens": 400,
+      "total_tokens": 1900
+    }
+  },
+  "raw_kind": "sdk",
+  "request": {
+    "base_url": null,
+    "endpoint": null,
+    "enforced": false,
+    "invoke_kwargs": {
+      "max_output_tokens": 65536,
+      "temperature": 1.0
+    },
+    "model": "gemini-2.5-flash-lite",
+    "options": {
+      "reasoning": {
+        "effort": "high"
+      },
+      "temperature": 1.0,
+      "text": {
+        "verbosity": "medium"
+      }
+    },
+    "provider": "google",
+    "response_format": "text",
+    "schema": null,
+    "service_tier": "flex"
+  },
+  "response_id": 13,
+  "role": "transcription",
+  "run_id": "<run-1>",
+  "submission_id": null,
+  "tool": "autoexcerpter",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 1500,
+    "output_tokens": 400,
+    "reasoning_tokens": 0,
+    "total_tokens": 1900
+  }
+}
+{
+  "attempt": 1,
+  "created_at": "<datetime>+00:00",
+  "custom_id": null,
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "http_status": null,
+  "idx": 1,
+  "kind": "transcription",
+  "latency": "<seconds>",
+  "model": "gemini-2.5-flash-lite",
+  "provider": "google",
+  "raw": {
+    "additional_kwargs": {},
+    "content": "## The Price of Bread\n\nBread prices rose faster than wages after 1550, and the eco-\nnomic burden fell on urban households.[^2] The real wage index\nis defined as $w_t / p_t$.\n\n![Image: line chart of bread prices and day wages in Antwerp, 1500-1800; prices rise steeply after 1550 while wages stay flat]\n\n[^2]: Allen, R. C. (2001). The great divergence in European wages and prices from the Middle Ages to the First World War. *Explorations in Economic History, 38*(4), 411-447. https://doi.org/10.1006/exeh.2001.0775\n\n<page_number>1</page_number>",
+    "id": "lc_run--<uuid>-0",
+    "invalid_tool_calls": [],
+    "name": null,
+    "response_metadata": {
+      "model_name": "gemini-2.5-flash-lite",
+      "status": "completed"
+    },
+    "tool_calls": [],
+    "type": "ai",
+    "usage_metadata": {
+      "input_tokens": 1500,
+      "output_tokens": 400,
+      "total_tokens": 1900
+    }
+  },
+  "raw_kind": "sdk",
+  "request": {
+    "base_url": null,
+    "endpoint": null,
+    "enforced": false,
+    "invoke_kwargs": {
+      "max_output_tokens": 65536,
+      "temperature": 1.0
+    },
+    "model": "gemini-2.5-flash-lite",
+    "options": {
+      "reasoning": {
+        "effort": "high"
+      },
+      "temperature": 1.0,
+      "text": {
+        "verbosity": "medium"
+      }
+    },
+    "provider": "google",
+    "response_format": "text",
+    "schema": null,
+    "service_tier": "flex"
+  },
+  "response_id": 14,
+  "role": "transcription",
+  "run_id": "<run-1>",
+  "submission_id": null,
+  "tool": "autoexcerpter",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 1500,
+    "output_tokens": 400,
+    "reasoning_tokens": 0,
+    "total_tokens": 1900
+  }
+}
+{
+  "attempt": 1,
+  "created_at": "<datetime>+00:00",
+  "custom_id": null,
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "http_status": null,
+  "idx": 2,
+  "kind": "transcription",
+  "latency": "<seconds>",
+  "model": "gemini-2.5-flash-lite",
+  "provider": "google",
+  "raw": {
+    "additional_kwargs": {},
+    "content": "## Bibliography\n\nAllen, R. C. (2001). The great divergence in European wages and prices from the Middle Ages to the First World War. *Explorations in Economic History, 38*(4), 411-447.\n\nMontanari, M. (1994). *The Culture of Food*. Oxford: Blackwell.",
+    "id": "lc_run--<uuid>-0",
+    "invalid_tool_calls": [],
+    "name": null,
+    "response_metadata": {
+      "model_name": "gemini-2.5-flash-lite",
+      "status": "completed"
+    },
+    "tool_calls": [],
+    "type": "ai",
+    "usage_metadata": {
+      "input_tokens": 1500,
+      "output_tokens": 400,
+      "total_tokens": 1900
+    }
+  },
+  "raw_kind": "sdk",
+  "request": {
+    "base_url": null,
+    "endpoint": null,
+    "enforced": false,
+    "invoke_kwargs": {
+      "max_output_tokens": 65536,
+      "temperature": 1.0
+    },
+    "model": "gemini-2.5-flash-lite",
+    "options": {
+      "reasoning": {
+        "effort": "high"
+      },
+      "temperature": 1.0,
+      "text": {
+        "verbosity": "medium"
+      }
+    },
+    "provider": "google",
+    "response_format": "text",
+    "schema": null,
+    "service_tier": "flex"
+  },
+  "response_id": 15,
+  "role": "transcription",
+  "run_id": "<run-1>",
+  "submission_id": null,
+  "tool": "autoexcerpter",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 1500,
+    "output_tokens": 400,
+    "reasoning_tokens": 0,
+    "total_tokens": 1900
+  }
+}
+## runs
+{
+  "command": "run",
+  "ended_at": "<datetime>+00:00",
+  "exit_code": 0,
+  "run_id": "<run-1>",
+  "settings_fingerprint": "<sha256>",
   "spec": {
     "citations.openalex": {
       "source": "flag",
@@ -186,76 +1277,20 @@
       "value": "medium"
     }
   },
-  "summary_failures": 0,
-  "summary_model": "gemini-2.5-flash-lite",
-  "tool_version": "<version>",
-  "transcription_model": "gemini-2.5-flash-lite",
-  "updated_at": "<datetime>"
+  "started_at": "<datetime>+00:00",
+  "tool": "autoexcerpter",
+  "tool_version": "<version>"
 }
-## pages
-{
-  "document": "book",
-  "error": null,
-  "error_type": null,
-  "image": "page_001.jpg",
-  "model": "gemini-2.5-flash-lite",
-  "page_index": 0,
-  "pdf_page_index": null,
-  "status": "ok",
-  "text": "# Preface\n\nThis volume brings together **new research** on the *material\nculture* of eating in early modern Europe. Its chapters trace how\nprices, wages and diets changed between 1500 and 1800.[^1]\n\n[^1]: See Braudel (1979) for the classic statement of this view.\n\n<page_number>xi</page_number>\n",
-  "usage": {
-    "cached_tokens": 0,
-    "input_tokens": 1500,
-    "output_tokens": 400,
-    "reasoning_tokens": 0,
-    "total_tokens": 1900
-  }
-}
-{
-  "document": "book",
-  "error": null,
-  "error_type": null,
-  "image": "page_002.jpg",
-  "model": "gemini-2.5-flash-lite",
-  "page_index": 1,
-  "pdf_page_index": null,
-  "status": "ok",
-  "text": "## The Price of Bread\n\nBread prices rose faster than wages after 1550, and the economic burden fell on urban households.[^2] The real wage index\nis defined as $w_t / p_t$.\n\n![Image: line chart of bread prices and day wages in Antwerp, 1500-1800; prices rise steeply after 1550 while wages stay flat]\n\n[^2]: Allen, R. C. (2001). The great divergence in European wages and prices from the Middle Ages to the First World War. *Explorations in Economic History, 38*(4), 411-447. https://doi.org/10.1006/exeh.2001.0775\n\n<page_number>1</page_number>\n",
-  "usage": {
-    "cached_tokens": 0,
-    "input_tokens": 1500,
-    "output_tokens": 400,
-    "reasoning_tokens": 0,
-    "total_tokens": 1900
-  }
-}
-{
-  "document": "book",
-  "error": null,
-  "error_type": null,
-  "image": "page_003.jpg",
-  "model": "gemini-2.5-flash-lite",
-  "page_index": 2,
-  "pdf_page_index": null,
-  "status": "ok",
-  "text": "## Bibliography\n\nAllen, R. C. (2001). The great divergence in European wages and prices from the Middle Ages to the First World War. *Explorations in Economic History, 38*(4), 411-447.\n\nMontanari, M. (1994). *The Culture of Food*. Oxford: Blackwell.\n",
-  "usage": {
-    "cached_tokens": 0,
-    "input_tokens": 1500,
-    "output_tokens": 400,
-    "reasoning_tokens": 0,
-    "total_tokens": 1900
-  }
-}
+## submission_requests
+## submissions
 ## summaries
 {
   "bullet_points": [
     "- The preface introduces new research on the *material culture* of eating in early modern Europe between 1500 and 1800.\n- It frames the chapters around prices, wages and diets and follows Braudel's long-run view of material life."
   ],
-  "document": "book",
-  "error": null,
-  "model": "gemini-2.5-flash-lite",
-  "page_index": 0,
+  "doc_id": 1,
+  "idx": 0,
+  "page": 1,
   "page_information": {
     "is_two_page_spread": false,
     "page_number_integer": null,
@@ -265,24 +1300,15 @@
       "content"
     ]
   },
-  "page_references": null,
-  "status": "ok",
-  "usage": {
-    "cached_tokens": 0,
-    "input_tokens": 3600,
-    "output_tokens": 1000,
-    "reasoning_tokens": 0,
-    "total_tokens": 4600
-  }
+  "page_references": null
 }
 {
   "bullet_points": [
     "- Bread prices rose faster than wages after 1550, shifting the economic burden onto **urban households**.\n- The real wage index is defined as $w_t / p_t$, nominal wages deflated by the bread price.\n- A consumer basket weights goods so that $$\\sum_{i=1}^{n} \\omega_i = 1$$ holds in every year."
   ],
-  "document": "book",
-  "error": null,
-  "model": "gemini-2.5-flash-lite",
-  "page_index": 1,
+  "doc_id": 1,
+  "idx": 1,
+  "page": 2,
   "page_information": {
     "is_two_page_spread": false,
     "page_number_integer": null,
@@ -292,8 +1318,47 @@
       "content"
     ]
   },
-  "page_references": null,
-  "status": "ok",
+  "page_references": null
+}
+{
+  "bullet_points": [
+    "Bibliography page without summarizable prose."
+  ],
+  "doc_id": 1,
+  "idx": 2,
+  "page": 3,
+  "page_information": {
+    "is_two_page_spread": false,
+    "page_number_integer": null,
+    "page_number_integer_end": null,
+    "page_number_type": "none",
+    "page_types": [
+      "content"
+    ]
+  },
+  "page_references": null
+}
+## units
+{
+  "attempts": 4,
+  "content": null,
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "idx": 0,
+  "kind": "summary",
+  "label": "page_001.jpg",
+  "model": "gemini-2.5-flash-lite",
+  "outcome": "ok",
+  "provenance": null,
+  "provider": "google",
+  "response_id": 4,
+  "run_id": "<run-1>",
+  "source_index": "page_001.jpg",
+  "stale": 0,
+  "status": "done",
+  "tool": "autoexcerpter",
+  "updated_at": "<datetime>+00:00",
   "usage": {
     "cached_tokens": 0,
     "input_tokens": 3600,
@@ -303,29 +1368,205 @@
   }
 }
 {
-  "bullet_points": [
-    "Bibliography page without summarizable prose."
-  ],
-  "document": "book",
+  "attempts": 4,
+  "content": null,
+  "doc_id": 1,
   "error": null,
+  "error_type": null,
+  "idx": 1,
+  "kind": "summary",
+  "label": "page_002.jpg",
   "model": "gemini-2.5-flash-lite",
-  "page_index": 2,
-  "page_information": {
-    "is_two_page_spread": false,
-    "page_number_integer": null,
-    "page_number_integer_end": null,
-    "page_number_type": "none",
-    "page_types": [
-      "content"
-    ]
-  },
-  "page_references": null,
-  "status": "ok",
+  "outcome": "ok",
+  "provenance": null,
+  "provider": "google",
+  "response_id": 8,
+  "run_id": "<run-1>",
+  "source_index": "page_002.jpg",
+  "stale": 0,
+  "status": "done",
+  "tool": "autoexcerpter",
+  "updated_at": "<datetime>+00:00",
   "usage": {
     "cached_tokens": 0,
     "input_tokens": 3600,
     "output_tokens": 1000,
     "reasoning_tokens": 0,
     "total_tokens": 4600
+  }
+}
+{
+  "attempts": 4,
+  "content": null,
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "idx": 2,
+  "kind": "summary",
+  "label": "page_003.jpg",
+  "model": "gemini-2.5-flash-lite",
+  "outcome": "ok",
+  "provenance": null,
+  "provider": "google",
+  "response_id": 12,
+  "run_id": "<run-1>",
+  "source_index": "page_003.jpg",
+  "stale": 0,
+  "status": "done",
+  "tool": "autoexcerpter",
+  "updated_at": "<datetime>+00:00",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 3600,
+    "output_tokens": 1000,
+    "reasoning_tokens": 0,
+    "total_tokens": 4600
+  }
+}
+{
+  "attempts": 1,
+  "content": "# Preface\n\nThis volume brings together **new research** on the *material\nculture* of eating in early modern Europe. Its chapters trace how\nprices, wages and diets changed between 1500 and 1800.[^1]\n\n[^1]: See Braudel (1979) for the classic statement of this view.\n\n<page_number>xi</page_number>\n",
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "idx": 0,
+  "kind": "transcription",
+  "label": "page_001.jpg",
+  "model": "gemini-2.5-flash-lite",
+  "outcome": "ok",
+  "provenance": {
+    "image_provenance": {
+      "byte_size": "<bytes>",
+      "cap_policy": "profile-v1",
+      "downscale_reason": "none",
+      "dpi_source": "file",
+      "file_dpi_metadata": null,
+      "format_fallback": false,
+      "height": 1536,
+      "mime_type": "image/jpeg",
+      "payload_format": "jpeg",
+      "render_dpi": null,
+      "sent_dpi": null,
+      "source_dpi_x": null,
+      "source_dpi_y": null,
+      "source_height": 600,
+      "source_sha256": "<sha256>",
+      "source_width": 400,
+      "width": 768
+    },
+    "source_file": "<tmp>/in/book/page_001.jpg"
+  },
+  "provider": "google",
+  "response_id": 13,
+  "run_id": "<run-1>",
+  "source_index": "page_001.jpg",
+  "stale": 0,
+  "status": "done",
+  "tool": "autoexcerpter",
+  "updated_at": "<datetime>+00:00",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 1500,
+    "output_tokens": 400,
+    "reasoning_tokens": 0,
+    "total_tokens": 1900
+  }
+}
+{
+  "attempts": 1,
+  "content": "## The Price of Bread\n\nBread prices rose faster than wages after 1550, and the economic burden fell on urban households.[^2] The real wage index\nis defined as $w_t / p_t$.\n\n![Image: line chart of bread prices and day wages in Antwerp, 1500-1800; prices rise steeply after 1550 while wages stay flat]\n\n[^2]: Allen, R. C. (2001). The great divergence in European wages and prices from the Middle Ages to the First World War. *Explorations in Economic History, 38*(4), 411-447. https://doi.org/10.1006/exeh.2001.0775\n\n<page_number>1</page_number>\n",
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "idx": 1,
+  "kind": "transcription",
+  "label": "page_002.jpg",
+  "model": "gemini-2.5-flash-lite",
+  "outcome": "ok",
+  "provenance": {
+    "image_provenance": {
+      "byte_size": "<bytes>",
+      "cap_policy": "profile-v1",
+      "downscale_reason": "none",
+      "dpi_source": "file",
+      "file_dpi_metadata": null,
+      "format_fallback": false,
+      "height": 1536,
+      "mime_type": "image/jpeg",
+      "payload_format": "jpeg",
+      "render_dpi": null,
+      "sent_dpi": null,
+      "source_dpi_x": null,
+      "source_dpi_y": null,
+      "source_height": 600,
+      "source_sha256": "<sha256>",
+      "source_width": 400,
+      "width": 768
+    },
+    "source_file": "<tmp>/in/book/page_002.jpg"
+  },
+  "provider": "google",
+  "response_id": 14,
+  "run_id": "<run-1>",
+  "source_index": "page_002.jpg",
+  "stale": 0,
+  "status": "done",
+  "tool": "autoexcerpter",
+  "updated_at": "<datetime>+00:00",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 1500,
+    "output_tokens": 400,
+    "reasoning_tokens": 0,
+    "total_tokens": 1900
+  }
+}
+{
+  "attempts": 1,
+  "content": "## Bibliography\n\nAllen, R. C. (2001). The great divergence in European wages and prices from the Middle Ages to the First World War. *Explorations in Economic History, 38*(4), 411-447.\n\nMontanari, M. (1994). *The Culture of Food*. Oxford: Blackwell.\n",
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "idx": 2,
+  "kind": "transcription",
+  "label": "page_003.jpg",
+  "model": "gemini-2.5-flash-lite",
+  "outcome": "ok",
+  "provenance": {
+    "image_provenance": {
+      "byte_size": "<bytes>",
+      "cap_policy": "profile-v1",
+      "downscale_reason": "none",
+      "dpi_source": "file",
+      "file_dpi_metadata": null,
+      "format_fallback": false,
+      "height": 1536,
+      "mime_type": "image/jpeg",
+      "payload_format": "jpeg",
+      "render_dpi": null,
+      "sent_dpi": null,
+      "source_dpi_x": null,
+      "source_dpi_y": null,
+      "source_height": 600,
+      "source_sha256": "<sha256>",
+      "source_width": 400,
+      "width": 768
+    },
+    "source_file": "<tmp>/in/book/page_003.jpg"
+  },
+  "provider": "google",
+  "response_id": 15,
+  "run_id": "<run-1>",
+  "source_index": "page_003.jpg",
+  "stale": 0,
+  "status": "done",
+  "tool": "autoexcerpter",
+  "updated_at": "<datetime>+00:00",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 1500,
+    "output_tokens": 400,
+    "reasoning_tokens": 0,
+    "total_tokens": 1900
   }
 }
