@@ -269,6 +269,14 @@
     {
       "constructor": "ChatGoogleGenerativeAI",
       "kwargs": {
+        "client_args": {
+          "event_hooks": {
+            "response": [
+              "<function>"
+            ]
+          },
+          "transport": "<EitherTransport>"
+        },
         "google_api_key": "<env:GOOGLE_API_KEY>",
         "max_retries": 0,
         "model": "gemini-3.5-flash",
@@ -279,6 +287,14 @@
     {
       "constructor": "ChatGoogleGenerativeAI",
       "kwargs": {
+        "client_args": {
+          "event_hooks": {
+            "response": [
+              "<function>"
+            ]
+          },
+          "transport": "<EitherTransport>"
+        },
         "google_api_key": "<env:GOOGLE_API_KEY>",
         "max_retries": 0,
         "model": "gemini-3.5-flash",

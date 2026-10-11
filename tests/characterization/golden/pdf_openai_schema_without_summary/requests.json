@@ -162,6 +162,8 @@
       "constructor": "ChatOpenAI",
       "kwargs": {
         "api_key": "<env:OPENAI_API_KEY>",
+        "http_async_client": "<_DefaultAsyncHttpxClient>",
+        "http_client": "<_DefaultHttpxClient>",
         "max_retries": 0,
         "model": "gpt-5.6-terra",
         "timeout": {

@@ -9,13 +9,21 @@ on entry or of the request, and decides what the ladder of
 :func:`~autoexcerpter.common.retry.call_with_retry` does next. Committed and
 recovered usage is summed per role in :attr:`CallEnv.usage` and in every open
 :func:`collect_usage` block; retry waits go to :meth:`RunEvents.waiting`.
+
+With a recorder installed (:func:`~autoexcerpter.common.capture.use_recorder`),
+each HTTP attempt runs in its own capture scope, and its
+:class:`~autoexcerpter.common.capture.AttemptRecord`, named by the caller's
+role (``transcription`` or ``summary``), is stored through the recorder
+before the call returns, raises or retries.
 """
 
 from __future__ import annotations
 
 import contextlib
+import itertools
 import logging
-from collections.abc import Callable, Iterator, Sequence
+import time
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any
@@ -23,7 +31,18 @@ from typing import Any
 from langchain_core.language_models import BaseChatModel
 
 from autoexcerpter import ext
+from autoexcerpter.common.capture import (
+    AttemptRecord,
+    CaptureScope,
+    RawKind,
+    capture_attempt,
+    current_recorder,
+    record_attempt,
+    redact_payloads,
+    sdk_dump,
+)
 from autoexcerpter.common.rate_limit import RateLimiterRegistry
+from autoexcerpter.common.responses import unwrap_raw_response
 from autoexcerpter.common.retry import (
     Decision,
     RetryEvent,
@@ -44,9 +63,87 @@ from autoexcerpter.llm.client import build_chat_model, resolve_provider
 from autoexcerpter.llm.types import PhaseModel
 from autoexcerpter.settings import Settings
 
-__all__ = ["CallEnv", "ModelCaller", "collect_usage"]
+__all__ = ["CallEnv", "HttpAttempt", "ModelCaller", "collect_usage"]
 
 logger = logging.getLogger(__name__)
+
+
+class HttpAttempt:
+    """The capture scope and the stored record of one HTTP attempt.
+
+    Without a recorder in the context it captures and stores nothing.
+    *request* returns the request parameters, without media payloads.
+    """
+
+    def __init__(
+        self,
+        *,
+        provider: str,
+        model: str,
+        role: str,
+        attempt: int,
+        label: str | None,
+        request: Callable[[], Mapping[str, Any]],
+    ) -> None:
+        self.active = current_recorder() is not None
+        self._identity = (provider, model, role, attempt, label)
+        self._request = request
+        self._scope: CaptureScope | None = None
+        self._started = time.monotonic()
+
+    @contextlib.contextmanager
+    def capturing(self) -> Iterator[None]:
+        """Capture the responses of the block into this attempt's scope."""
+        self._started = time.monotonic()
+        if not self.active:
+            yield
+            return
+        with capture_attempt() as scope:
+            self._scope = scope
+            yield
+
+    async def store(
+        self,
+        *,
+        response: Any = None,
+        usage: Usage | None = None,
+        error: BaseException | None = None,
+    ) -> None:
+        """Build the attempt's record and await the recorder with it.
+
+        The raw body is the last response captured; without one, the SDK
+        object *response* is dumped and marked ``sdk``.
+        """
+        if not self.active:
+            return
+        latency = time.monotonic() - self._started
+        captured = self._scope.last if self._scope is not None else None
+        raw: str | None = None
+        raw_kind: RawKind | None = None
+        status = getattr(error, "status_code", None)
+        if captured is not None:
+            raw, raw_kind, status = captured.text, "http", captured.status
+        elif response is not None:
+            raw, raw_kind = sdk_dump(unwrap_raw_response(response)), "sdk"
+        provider, model, role, attempt, label = self._identity
+        await record_attempt(
+            AttemptRecord(
+                provider=provider,
+                model=model,
+                role=role,
+                attempt=attempt,
+                label=label,
+                request=self._request(),
+                raw=raw,
+                raw_kind=raw_kind,
+                usage=None if usage is None else usage.as_dict(),
+                error=None if error is None else str(error),
+                error_type=None if error is None else type(error).__name__,
+                http_status=status if isinstance(status, int) else None,
+                latency=latency,
+            )
+        )
+
 
 _SCOPE: ContextVar[tuple[UsageTotals, ...]] = ContextVar("usage_scope", default=())
 
@@ -165,8 +262,10 @@ class ModelCaller:
         Transient errors are retried by the ladder; the last one propagates.
         """
 
+        numbers = itertools.count(1)
+
         async def invoke(prepared: PreparedRequest, sent: Sequence[Any]) -> Any:
-            return await self._with_retries(prepared, sent, label)
+            return await self._with_retries(prepared, sent, label, numbers)
 
         return await structured_call(
             self.model, messages, request, invoke=invoke, stop=stop
@@ -179,10 +278,32 @@ class ModelCaller:
         for scope in _SCOPE.get():
             scope.add(self.role, usage)
 
+    def _request_params(self, prepared: PreparedRequest) -> dict[str, Any]:
+        """Return the request parameters of an attempt record."""
+        phase = self.phase
+        schema = prepared.schema or {}
+        return {
+            "model": phase.name,
+            "provider": phase.provider,
+            "endpoint": phase.endpoint,
+            "base_url": phase.base_url,
+            "service_tier": phase.service_tier,
+            "options": dict(phase.options),
+            "response_format": prepared.response_format,
+            "schema": schema.get("name"),
+            "enforced": prepared.enforced,
+            "invoke_kwargs": redact_payloads(dict(prepared.kwargs)),
+        }
+
     async def _with_retries(
-        self, prepared: PreparedRequest, messages: Sequence[Any], label: str
+        self,
+        prepared: PreparedRequest,
+        messages: Sequence[Any],
+        label: str,
+        numbers: Iterator[int] | None = None,
     ) -> Any:
         decisions: list[Decision] = []
+        counter = numbers if numbers is not None else itertools.count(1)
 
         async def one_attempt() -> Any:
             attempt = self._attempt()
@@ -193,16 +314,28 @@ class ModelCaller:
                     decisions.append(attempt.on_error(exc))
                     self._record(attempt.usage)
                     raise
+                http = HttpAttempt(
+                    provider=self.provider,
+                    model=self.phase.name,
+                    role=self.role,
+                    attempt=next(counter),
+                    label=label,
+                    request=lambda: self._request_params(prepared),
+                )
                 try:
-                    response = await default_invoke(
-                        prepared.for_model(call.client), messages
-                    )
+                    with http.capturing():
+                        response = await default_invoke(
+                            prepared.for_model(call.client), messages
+                        )
                 except Exception as exc:
                     decisions.append(call.on_error(exc))
                     self._record(call.usage)
+                    await http.store(usage=call.usage, error=exc)
                     raise
-                call.commit(usage_from_response(response))
+                usage = usage_from_response(response)
+                call.commit(usage)
                 self._record(call.usage)
+                await http.store(response=response, usage=usage)
                 return response
 
         def decide(exc: BaseException) -> Decision:

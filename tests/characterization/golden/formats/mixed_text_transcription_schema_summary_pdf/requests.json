@@ -250,6 +250,8 @@
       "kwargs": {
         "api_key": "<env:AE_FAKE_CUSTOM_KEY>",
         "base_url": "https://fake-endpoint.invalid/v1/",
+        "http_async_client": "<_DefaultAsyncHttpxClient>",
+        "http_client": "<_DefaultHttpxClient>",
         "max_retries": 0,
         "model": "org/fake-model",
         "timeout": {
@@ -267,6 +269,8 @@
       "constructor": "ChatOpenAI",
       "kwargs": {
         "api_key": "<env:OPENAI_API_KEY>",
+        "http_async_client": "<_DefaultAsyncHttpxClient>",
+        "http_client": "<_DefaultHttpxClient>",
         "max_retries": 0,
         "model": "gpt-5.6-terra",
         "timeout": {

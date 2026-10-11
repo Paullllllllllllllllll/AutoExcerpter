@@ -6,17 +6,33 @@ phase's provider and stripped any ``provider:`` prefix from the model name.
 Provider classes are imported inside the factory functions. SDK retries are
 off (``max_retries=0``): the retry ladder of :mod:`autoexcerpter.llm.caller`
 sees every attempt.
+
+Every chat model sends its requests through httpx clients that carry the
+capture hooks of :mod:`autoexcerpter.common.capture`, so an attempt's
+response bodies reach its capture scope as they came over HTTP:
+``ChatOpenAI`` takes them as ``http_client`` and ``http_async_client``;
+``ChatAnthropic`` gets copies of its cached SDK clients on hooked httpx
+clients; ``ChatGoogleGenerativeAI`` passes ``client_args`` to both httpx
+clients of google-genai, with a transport that keeps async calls on httpx.
 """
 
 from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Awaitable
 from dataclasses import dataclass
 from typing import Any
 
+import httpx
 from langchain_core.language_models import BaseChatModel
 
+from autoexcerpter.common.capture import (
+    acapture_response,
+    async_capture_hooks,
+    capture_hooks,
+    capture_response,
+)
 from autoexcerpter.common.http_timeouts import (
     DEFAULT_CONNECT_TIMEOUT,
     DEFAULT_POOL_TIMEOUT,
@@ -121,6 +137,19 @@ def _apply_per_phase_timeout(kwargs: dict[str, Any], phases: dict[str, Any]) -> 
     kwargs["timeout"] = build_httpx_timeout(kwargs["timeout"], **phases)
 
 
+def _hooked_openai_clients(kwargs: dict[str, Any]) -> None:
+    """Add httpx clients with the capture hooks and the kwargs' timeout."""
+    import openai
+
+    timeout = kwargs["timeout"]
+    kwargs["http_client"] = openai.DefaultHttpxClient(
+        event_hooks=capture_hooks(), timeout=timeout
+    )
+    kwargs["http_async_client"] = openai.DefaultAsyncHttpxClient(
+        event_hooks=async_capture_hooks(), timeout=timeout
+    )
+
+
 def _create_openai_model(
     api_key: str, kwargs: dict[str, Any], phases: dict[str, Any]
 ) -> BaseChatModel:
@@ -135,6 +164,7 @@ def _create_openai_model(
 
     kwargs["api_key"] = api_key
     _apply_per_phase_timeout(kwargs, phases)
+    _hooked_openai_clients(kwargs)
     kwargs["use_responses_api"] = True
     logger.debug("Creating OpenAI model: %s", kwargs.get("model"))
     return ChatOpenAI(**kwargs)
@@ -152,11 +182,78 @@ def _create_anthropic_model(api_key: str, kwargs: dict[str, Any]) -> BaseChatMod
 
     kwargs["api_key"] = api_key
     logger.debug("Creating Anthropic model: %s", kwargs.get("model"))
-    return ChatAnthropic(**kwargs)
+    model = ChatAnthropic(**kwargs)
+    _hook_anthropic(model)
+    return model
+
+
+def _hook_anthropic(model: Any) -> None:
+    """Replace the SDK clients a ``ChatAnthropic`` caches with hooked copies.
+
+    langchain-anthropic builds them in the cached properties ``_client`` and
+    ``_async_client`` on httpx clients shared between instances; the copies
+    keep every SDK option and take httpx clients of their own. A model
+    without these properties (a test stand-in) is left as it is.
+    """
+    import anthropic
+
+    sync_client = getattr(model, "_client", None)
+    async_client = getattr(model, "_async_client", None)
+    if not isinstance(sync_client, anthropic.Client) or not isinstance(
+        async_client, anthropic.AsyncClient
+    ):
+        return
+    model.__dict__["_client"] = sync_client.with_options(
+        http_client=anthropic.DefaultHttpxClient(
+            timeout=sync_client.timeout, event_hooks=capture_hooks()
+        )
+    )
+    model.__dict__["_async_client"] = async_client.with_options(
+        http_client=anthropic.DefaultAsyncHttpxClient(
+            timeout=async_client.timeout, event_hooks=async_capture_hooks()
+        )
+    )
+
+
+def capture_either(response: httpx.Response) -> Awaitable[None] | None:
+    """Capture hook for an ``httpx.Client`` and an ``httpx.AsyncClient`` alike.
+
+    An async client awaits the returned coroutine; a sync client reads the
+    body at once.
+    """
+    if isinstance(response.stream, httpx.AsyncByteStream):
+        return acapture_response(response)
+    capture_response(response)
+    return None
+
+
+class EitherTransport(httpx.BaseTransport, httpx.AsyncBaseTransport):
+    """An HTTP transport that serves a sync and an async httpx client.
+
+    google-genai builds its sync and async httpx clients from one set of
+    ``client_args``; a transport among them also keeps its async calls on
+    httpx where aiohttp is installed.
+    """
+
+    def __init__(self) -> None:
+        self._sync = httpx.HTTPTransport()
+        self._async = httpx.AsyncHTTPTransport()
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        return self._sync.handle_request(request)
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        return await self._async.handle_async_request(request)
+
+    def close(self) -> None:
+        self._sync.close()
+
+    async def aclose(self) -> None:
+        await self._async.aclose()
 
 
 def _create_google_model(api_key: str, kwargs: dict[str, Any]) -> BaseChatModel:
-    """Create a Google Generative AI chat model instance."""
+    """Create a Google Generative AI chat model whose httpx clients capture bodies."""
     try:
         from langchain_google_genai import ChatGoogleGenerativeAI
     except ImportError:
@@ -166,6 +263,10 @@ def _create_google_model(api_key: str, kwargs: dict[str, Any]) -> BaseChatModel:
         ) from None
 
     kwargs["google_api_key"] = api_key
+    kwargs["client_args"] = {
+        "transport": EitherTransport(),
+        "event_hooks": {"response": [capture_either]},
+    }
     logger.debug("Creating Google model: %s", kwargs.get("model"))
     return ChatGoogleGenerativeAI(**kwargs)
 
@@ -185,6 +286,7 @@ def _create_openrouter_model(
     kwargs["api_key"] = api_key
     kwargs["base_url"] = OPENROUTER_BASE_URL
     _apply_per_phase_timeout(kwargs, phases)
+    _hooked_openai_clients(kwargs)
     kwargs["default_headers"] = {
         "HTTP-Referer": "https://github.com/autoexcerpter",
         "X-Title": "AutoExcerpter",
@@ -211,6 +313,7 @@ def _create_custom_model(
     kwargs["api_key"] = api_key
     kwargs["base_url"] = base_url
     _apply_per_phase_timeout(kwargs, phases)
+    _hooked_openai_clients(kwargs)
     logger.debug("Creating custom endpoint model: %s at %s", kwargs["model"], base_url)
     return ChatOpenAI(**kwargs)
 

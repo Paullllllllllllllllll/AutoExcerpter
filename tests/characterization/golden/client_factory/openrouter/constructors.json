@@ -8,6 +8,8 @@
         "HTTP-Referer": "https://github.com/autoexcerpter",
         "X-Title": "AutoExcerpter"
       },
+      "http_async_client": "<_DefaultAsyncHttpxClient>",
+      "http_client": "<_DefaultHttpxClient>",
       "max_retries": 0,
       "model": "anthropic/claude-sonnet-4.5",
       "timeout": {
@@ -30,6 +32,8 @@
         "HTTP-Referer": "https://github.com/autoexcerpter",
         "X-Title": "AutoExcerpter"
       },
+      "http_async_client": "<_DefaultAsyncHttpxClient>",
+      "http_client": "<_DefaultHttpxClient>",
       "max_retries": 0,
       "model": "anthropic/claude-sonnet-4.5",
       "timeout": {
