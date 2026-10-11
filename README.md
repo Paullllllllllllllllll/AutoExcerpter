@@ -473,19 +473,27 @@ database written before the store names the migrate command.
 `summary.jsonl` in each `X_autoexcerpter/` folder, and the rendered files. It
 snapshots each database beside itself (`autoexcerpter.pre-migrate-<time>.sqlite`)
 before its first write and rebuilds a version 1.0 database into the store in one
-transaction, verified by its row counts. The last log record of each page becomes
-its unit; pages a log lacks are planned as pending, so a partial item resumes
-where it stopped. Citations are consolidated from the stored summaries with
-OpenAlex metadata from the cache in `state_dir` (`--settings FILE` names the
-settings file); no request is made. The existing files are registered with their
-hashes, so a later `render` replaces them in place. Old files are only read, and
-a second run imports nothing.
+transaction, verified by its row counts; the pages of a document's `pages_total`
+that its rows lack are planned as pending. Version 1.0 wrote times without a
+time zone; they are read as the local time of the machine that runs migrate and
+stored in UTC. The last log record of each page becomes its unit; pages a log
+lacks are planned as pending, so a partial item resumes where it stopped. Each
+item is written under its lease in one transaction, which first checks that no
+run changed the planned units since migrate read them. Citations are
+consolidated from the stored summaries with OpenAlex metadata from the cache in
+`state_dir` (`--settings FILE` names the settings file); no request is made. An
+existing file that holds its rendering from the store is registered with its
+hash, so a later `render` replaces it in place; a file that differs or cannot be
+read is registered without one, so `render` keeps it unless `--force`. Old files
+are only read, and a second run imports nothing.
 
 Each document is then verified from the store. A unit count or failure count
-that differs from the logs fails the import (exit 1). A re-rendered body that
-differs from the existing file, compared without the header, the
-`<page_break .../>` markers and a missing final newline, is a warning. The report
-counts the documents per resume state before and after the import. Exit code 2
+that differs from the logs fails the import (exit 1), as does a re-rendered body
+that differs from the existing file or a file that cannot be read. Text files are
+compared without the header, the `<page_break .../>` markers and a missing final
+newline; the Word summary by the text of its paragraphs without the metadata
+line. The report counts the documents per resume state before and after the
+import. Exit code 2
 means a database the store refuses: newer, unreadable or of an unknown layout.
 With `--json`, stdout carries one summary line with `databases`, `converted`,
 `documents`, `units`, `citations`, `outputs`, `mismatches`, `warnings` and

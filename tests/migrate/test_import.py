@@ -16,11 +16,12 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from docx import Document
 
 import autoexcerpter.migrate as migrate_module
 from autoexcerpter.common.sqlite import read_rows
 from autoexcerpter.common.store import file_sha256
-from autoexcerpter.migrate import MigrationReport, body_matches, migrate
+from autoexcerpter.migrate import MigrationReport, body_matches, docx_text, migrate
 from autoexcerpter.output.render import render_database
 from autoexcerpter.output.store import DATABASE_NAME, read_only_connection
 from tests.migrate.conftest import METADATA
@@ -147,19 +148,98 @@ def test_render_replaces_the_registered_files_in_place(
     assert text.endswith("Third page.\n")
 
 
-def test_a_changed_body_is_a_warning(item: Item, state_dir: Path) -> None:
+def _hashes(root: Path) -> dict[str, str | None]:
+    return {row["path"]: row["sha256"] for row in _view(root, "outputs")}
+
+
+def test_a_changed_body_fails_and_is_not_taken_as_the_tools_file(
+    item: Item, state_dir: Path
+) -> None:
     transcription = item.paths.transcription
     transcription.write_text(
         transcription.read_text(encoding="utf-8").replace("First", "Edited"),
         encoding="utf-8",
     )
+    edited = transcription.read_bytes()
 
     report = _migrate(item.root, state_dir)
 
-    assert report.exit_code == 0
+    assert report.exit_code == 1
     (document,) = report.documents
-    assert len(document.warnings) == 1
-    assert transcription.name in document.warnings[0]
+    assert len(document.mismatches) == 1
+    assert transcription.name in document.mismatches[0]
+    assert _hashes(item.root)[transcription.name] is None
+    (result,) = asyncio.run(render_database(item.root / DATABASE_NAME))
+    assert result.kept == [transcription]
+    assert transcription.read_bytes() == edited
+    assert _migrate(item.root, state_dir).exit_code == 1
+
+
+@pytest.mark.parametrize("edit", ["paragraph", "unreadable"])
+def test_a_word_summary_is_compared_by_its_text(
+    item: Item, state_dir: Path, edit: str
+) -> None:
+    docx = item.paths.summary_docx
+    if edit == "unreadable":
+        docx.write_bytes(b"PK\x03\x04 not a Word file")
+    else:
+        document = Document(str(docx))
+        document.add_paragraph("A paragraph added by hand.")
+        document.save(str(docx))
+
+    report = _migrate(item.root, state_dir)
+
+    assert report.exit_code == 1
+    (mismatch,) = report.documents[0].mismatches
+    assert docx.name in mismatch
+    assert _hashes(item.root)[docx.name] is None
+
+
+def test_word_text_leaves_the_metadata_line_out(item: Item) -> None:
+    lines = docx_text(item.paths.summary_docx.read_bytes())
+
+    assert lines[0] == "doc"
+    assert not any(line.startswith("Processed ") for line in lines)
+    assert "A point of page 1." in lines
+
+
+def test_a_unit_a_run_stored_after_the_plan_is_left_and_reported(
+    tmp_path: Path, state_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    legacy = make_item(
+        tmp_path / "out", "doc", _pages()[:2], state_dir=state_dir, total=3
+    )
+    write_logs(legacy)
+    _migrate(legacy.root, state_dir)
+    legacy.pages = _pages()
+    write_logs(legacy)
+    apply = migrate_module._apply
+
+    async def run_first(store: Any, changes: Any, run_id: str) -> None:
+        connection = sqlite3.connect(legacy.root / DATABASE_NAME)
+        with connection:
+            connection.execute(
+                "INSERT INTO runs (run_id, tool, tool_version, command, started_at) "
+                "VALUES ('a-run', 'autoexcerpter', '2.0.0', 'run', '2026')"
+            )
+            connection.execute(
+                "UPDATE units SET status = 'done', content = 'From a run.', "
+                "run_id = 'a-run', updated_at = '2026' WHERE idx = 2"
+            )
+        connection.close()
+        await apply(store, changes, run_id)
+
+    monkeypatch.setattr(migrate_module, "_apply", run_first)
+
+    report = _migrate(legacy.root, state_dir)
+
+    assert report.exit_code == 1
+    assert any(
+        "changed while migrate planned it" in m for m in report.documents[0].mismatches
+    )
+    units = {(u["kind"], u["idx"]): u for u in _view(legacy.root, "units")}
+    assert units[("transcription", 2)]["content"] == "From a run."
+    assert units[("transcription", 2)]["run_id"] == "a-run"
 
 
 def test_a_unit_the_store_lacks_is_a_mismatch(

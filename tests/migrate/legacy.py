@@ -19,6 +19,7 @@ from typing import Any
 from autoexcerpter.migrate import offline_citations
 from autoexcerpter.output.paths import ItemPaths
 from autoexcerpter.rendering.citations import CitationManager, OpenAlexCache
+from autoexcerpter.rendering.docx import docx_summary
 from autoexcerpter.rendering.markdown import markdown_summary
 from autoexcerpter.rendering.page_numbering import PageNumberProcessor
 from autoexcerpter.rendering.summary import StoredCitations, prepare_summary_data
@@ -275,8 +276,7 @@ def transcription_file(item: Item, *, markers: bool, final_newline: bool) -> str
     return header + body
 
 
-def summary_file(item: Item) -> str:
-    """Return the version 1.0 Markdown summary of the item."""
+def _summary_parts(item: Item) -> tuple[list[dict[str, Any]], Any, StoredCitations]:
     entries = [_summary_entry(item, idx) for idx in range(len(item.pages))]
     adjusted = PageNumberProcessor().adjust_and_sort_page_numbers(entries)
     data = prepare_summary_data(
@@ -284,9 +284,19 @@ def summary_file(item: Item) -> str:
     )
     fresh = [_summary_entry(item, idx) for idx in range(len(item.pages))]
     citations = offline_citations(fresh, "pdf", OpenAlexCache(item.state_dir))
-    return markdown_summary(
-        adjusted, item.name, StoredCitations(citations), data, generated=OLD_TIME
-    )
+    return adjusted, data, StoredCitations(citations)
+
+
+def summary_file(item: Item) -> str:
+    """Return the version 1.0 Markdown summary of the item."""
+    adjusted, data, citations = _summary_parts(item)
+    return markdown_summary(adjusted, item.name, citations, data, generated=OLD_TIME)
+
+
+def summary_docx(item: Item) -> bytes:
+    """Return the version 1.0 Word summary of the item."""
+    adjusted, data, citations = _summary_parts(item)
+    return docx_summary(adjusted, item.name, citations, data, generated=OLD_TIME)
 
 
 def write_files(
@@ -306,7 +316,7 @@ def write_files(
     )
     if summary:
         paths.summary_md.write_text(summary_file(item), encoding="utf-8", newline="\n")
-        paths.summary_docx.write_bytes(b"PK\x03\x04 version 1.0 docx")
+        paths.summary_docx.write_bytes(summary_docx(item))
 
 
 def make_item(

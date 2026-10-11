@@ -6,17 +6,20 @@
   transcription and summary commit as units the moment they arrive, every
   provider attempt is stored with the response body as received over HTTP, and
   runs lease the documents they work on, so two runs on one folder never write the
-  same document and a reader holding the database only delays writes. Resume reads
+  same document and a reader holding the database delays writes, failing them
+  only once it outlasts the 10-minute lease. Resume reads
   only the store and adds the states `legacy`, `blocked` and `refused`; a model
   switch resumes with a note, and a changed input is processed again. The working
   logs in `X_autoexcerpter/`, the `sqlite` format and `--keep-working-files` are
   gone. Rendered files are reproducible: the header shows the time the document
-  last changed instead of the elapsed time, text files end with one newline and
-  Word files have fixed archive timestamps. The new `render` command writes the
+  last changed, in UTC, instead of the elapsed time, text files end with one
+  newline and Word files have fixed archive timestamps. The new `render` command writes the
   files again without model calls and keeps files changed outside the tool unless
   `--force`; the new `migrate` command converts version 1.0 databases, imports
   their working logs and registers the existing files, consolidates citations from
-  the OpenAlex cache without requests and verifies the import. Outside code reads
+  the OpenAlex cache without requests and verifies the import; a file that
+  differs from its rendering fails the verification and is kept by `render`
+  unless `--force`. Outside code reads
   the store through the views `page_text`, `page_summaries`, `document_citations`,
   `document_status` and `page_attempts`. The guided UI asks for the task first and
   offers render and migrate beside a new run.

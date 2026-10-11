@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sqlite3
+from datetime import UTC
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +26,7 @@ from autoexcerpter.output.store import DATABASE_NAME
 from tests.migrate.conftest import METADATA
 from tests.migrate.legacy import (
     CITATION,
+    OLD_TIME,
     USAGE,
     Item,
     Page,
@@ -118,10 +120,71 @@ def test_stored_citations_are_carried_over(tmp_path: Path, state_dir: Path) -> N
     assert [(row["text"], row["pages"]) for row in rows] == [(CITATION, "p. 1")] * 2
 
 
-def test_the_converted_files_are_registered(root: Path, state_dir: Path) -> None:
+def test_pages_a_version_1_document_lacks_are_planned_pending(
+    tmp_path: Path, state_dir: Path
+) -> None:
+    folder = tmp_path / "out"
+    item = make_item(
+        folder, "doc", [Page("One."), Page("Two.")], state_dir=state_dir, total=4
+    )
+    folder.mkdir()
+    write_database(folder, [item])
+
+    report = _migrate(folder, state_dir)
+
+    assert report.exit_code == 0
+    statuses = {key[1:]: row["status"] for key, row in _units(folder).items()}
+    assert statuses == {
+        (kind, idx): "done" if idx < 2 else "pending"
+        for kind in ("transcription", "summary")
+        for idx in range(4)
+    }
+    (document,) = report.documents
+    assert document.after == "partial"
+
+
+def test_naive_version_1_times_are_read_as_local_and_stored_in_utc(
+    root: Path, state_dir: Path
+) -> None:
     _migrate(root, state_dir)
 
-    outputs = {row["path"] for row in read_rows(root / DATABASE_NAME, "outputs")}
+    expected = OLD_TIME.astimezone().astimezone(UTC).isoformat(timespec="milliseconds")
+    rows = read_rows(root / DATABASE_NAME, "documents")
+    assert {row["updated_at"] for row in rows} == {expected}
+
+
+def test_a_converted_file_that_differs_is_a_mismatch_without_a_hash(
+    tmp_path: Path, state_dir: Path
+) -> None:
+    folder = tmp_path / "out"
+    items = _items(folder, state_dir)
+    summary = items[1].paths.summary_md
+    summary.write_text(
+        summary.read_text(encoding="utf-8").replace("A point", "An edited point"),
+        encoding="utf-8",
+    )
+    write_database(folder, items)
+
+    report = _migrate(folder, state_dir)
+
+    assert report.exit_code == 1
+    assert any(summary.name in m for m in report.documents[1].mismatches)
+    hashes = {
+        row["path"]: row["sha256"]
+        for row in read_rows(folder / DATABASE_NAME, "outputs")
+    }
+    assert hashes[summary.name] is None
+    assert hashes[items[1].paths.transcription.name] is not None
+
+
+def test_the_converted_files_are_registered(root: Path, state_dir: Path) -> None:
+    """The files are registered once the citations are consolidated, so the
+    summaries that cite them hold their rendering and get their hashes."""
+    _migrate(root, state_dir)
+
+    rows = read_rows(root / DATABASE_NAME, "outputs")
+    assert all(row["sha256"] is not None for row in rows)
+    outputs = {row["path"] for row in rows}
     assert outputs == {
         f"{name}{suffix}"
         for name in ("alpha", "beta")

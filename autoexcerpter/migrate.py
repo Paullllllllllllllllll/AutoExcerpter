@@ -16,10 +16,13 @@ database is snapshotted through the SQLite backup API before its first
 write, as ``autoexcerpter.pre-migrate-<time>.sqlite`` beside it. A version
 1.0 database is rebuilt into the store schema in one transaction
 (:func:`convert_versionless_ae`), its row counts verified against the
-snapshot.
+snapshot; the pages of a document's ``pages_total`` that its rows lack are
+planned ``pending``. Naive version 1.0 timestamps are read as this
+machine's local time and stored in UTC.
 
 Per item the import writes, under the document's lease and in one
-transaction:
+transaction that first checks that no run changed the planned units since
+the plan:
 
 - the last record of every page in the transcription log as its
   transcription unit and the last record of the summary log as its summary
@@ -29,16 +32,19 @@ transaction:
 - the image-settings record of the log header, the input path and hash;
 - the citations, consolidated offline from the summaries' references with
   metadata from the OpenAlex cache only, when the store holds none;
-- the existing rendered files with their hashes, so that ``render``
-  replaces them in place.
+- the existing rendered files: one that holds its rendering from the store
+  with its hash, so that ``render`` replaces it in place; one that differs
+  or cannot be read without a hash, so that ``render`` keeps it unless
+  forced.
 
 A unit that a run of the store wrote is kept as it is. A rerun imports
 nothing and changes no row; old files are only read. Each document is then
-verified from the store: unit counts and failures (a difference is a
-mismatch, exit code 1) and the re-rendered bodies, compared without the
-header, the ``<page_break .../>`` markers and one missing final newline (a
-difference is a warning). The report also records each document's resume
-state before and after the import.
+verified from the store: unit counts and failures, and the re-rendered
+bodies, the text formats compared without the header, the
+``<page_break .../>`` markers and one missing final newline, the Word
+summary by its paragraph text without the metadata line. A difference or an
+unreadable file is a mismatch (exit code 1). The report also records each
+document's resume state before and after the import.
 
 Version 1.0 working logs carry a header with ``_format_version`` 2; every
 following line is one page result keyed by ``original_input_order_index``.
@@ -50,6 +56,7 @@ refused.
 
 from __future__ import annotations
 
+import io
 import json
 import logging
 import re
@@ -61,6 +68,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
+
+from docx import Document
 
 from autoexcerpter.common.sqlite import read, snapshot
 from autoexcerpter.common.store import (
@@ -129,7 +138,9 @@ __all__ = [
     "WorkingLog",
     "WorkingLogError",
     "body_matches",
+    "body_problem",
     "convert_versionless_ae",
+    "docx_text",
     "find_items",
     "migrate",
     "offline_citations",
@@ -153,7 +164,7 @@ MARKER: Final = re.compile(r"^<page_break (?:pdf|image)=\"\d+\"/>\n", re.MULTILI
 """A page-break marker line, as version 1.0 and ``add_page_breaks.py`` write it."""
 
 _SUMMARY_LINE: Final = re.compile(r"^\*Summary generated .*\*\n", re.MULTILINE)
-TEXT_FORMATS: Final = (TRANSCRIPTION_MD, TRANSCRIPTION_TXT, SUMMARY_MD)
+_DOCX_METADATA: Final = re.compile(r"^Processed .* content pages \| \d+ total pages$")
 
 _V1_COLUMNS: Final[Mapping[str, frozenset[str]]] = {
     "documents": frozenset(
@@ -190,7 +201,8 @@ ON CONFLICT (doc_id, kind, idx) DO UPDATE SET
     provider = excluded.provider, run_id = excluded.run_id,
     attempts = excluded.attempts, usage = excluded.usage,
     error = excluded.error, error_type = excluded.error_type,
-    provenance = excluded.provenance, stale = 0, updated_at = excluded.updated_at
+    provenance = excluded.provenance, response_id = NULL, stale = 0,
+    updated_at = excluded.updated_at
 """
 _UPSERT_SUMMARY: Final = """
 INSERT INTO summaries (doc_id, idx, page, page_information, bullet_points,
@@ -205,6 +217,11 @@ INSERT INTO units (doc_id, kind, idx, status, source_index, label, tool, model,
     provider, run_id, attempts, stale, updated_at)
 VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, 0, 0, ?)
 ON CONFLICT (doc_id, kind, idx) DO NOTHING
+"""
+_REGISTER_OUTPUT: Final = """
+INSERT INTO outputs (doc_id, path, format, sha256, rendered_at, run_id, stale)
+VALUES (?, ?, ?, ?, ?, ?, 0)
+ON CONFLICT (doc_id, path) DO NOTHING
 """
 
 
@@ -292,6 +309,23 @@ def read_working_log(path: Path) -> WorkingLog | None:
 
 def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="milliseconds")
+
+
+def _utc(stamp: Any) -> str:
+    """Return a version 1.0 timestamp in UTC; now when it is missing or invalid.
+
+    Version 1.0 wrote naive local times, which are read as this machine's
+    local time.
+    """
+    try:
+        moment = datetime.fromisoformat(str(stamp)) if stamp else None
+    except ValueError:
+        moment = None
+    if moment is None:
+        return _now()
+    if moment.tzinfo is None:
+        moment = moment.astimezone()
+    return moment.astimezone(UTC).isoformat(timespec="milliseconds")
 
 
 def _plain(value: Any) -> Any:
@@ -410,6 +444,54 @@ def body_matches(fmt: str, rendered: str, existing: str) -> bool:
     """
     new, old = _body(fmt, rendered), _body(fmt, existing)
     return new in (old, old + "\n")
+
+
+def docx_text(data: bytes) -> list[str]:
+    """Return the text of a Word summary, normalized for comparison.
+
+    One entry per non-empty paragraph, stripped, with the metadata line
+    (``Processed ... | N content pages | M total pages``) left out.
+
+    Raises:
+        Exception: *data* is not a Word document python-docx can read.
+    """
+    document = Document(io.BytesIO(data))
+    lines = []
+    for paragraph in document.paragraphs:
+        text = paragraph.text.strip()
+        if text and not _DOCX_METADATA.match(text):
+            lines.append(text)
+    return lines
+
+
+def body_problem(
+    connection: sqlite3.Connection, doc_id: int, path: Path, fmt: str
+) -> str | None:
+    """Return why the file at *path* does not hold its rendering, or None.
+
+    The rendering comes from *connection*; the text formats are compared by
+    :func:`body_matches`, the Word summary by :func:`docx_text`. A file that
+    cannot be read is a problem.
+    """
+    try:
+        if fmt == SUMMARY_DOCX:
+            existing: str | list[str] = docx_text(path.read_bytes())
+        else:
+            existing = path.read_text(encoding="utf-8")
+    except Exception as exc:  # noqa: BLE001 - any unreadable file is reported
+        return f"{path.name} could not be read: {exc}"
+    rendered = RENDERERS[fmt](connection, doc_id)
+    if isinstance(existing, list):
+        data = rendered if isinstance(rendered, bytes) else rendered.encode("utf-8")
+        same = docx_text(data) == existing
+    else:
+        same = isinstance(rendered, str) and body_matches(fmt, rendered, existing)
+    if same:
+        return None
+    return (
+        f"{path.name} differs from its rendering from the store; it is "
+        "registered without a hash, so render replaces it only with --force."
+    )
 
 
 # =============================================================================
@@ -568,12 +650,11 @@ def _convert_summaries(
 def _convert_document(
     connection: sqlite3.Connection,
     legacy: Mapping[str, str],
-    root: Path,
     doc: Mapping[str, Any],
     run_id: str,
 ) -> None:
     name = str(doc["name"])
-    stamp = _text(doc.get("updated_at")) or _now()
+    stamp = _utc(doc.get("updated_at"))
     kind = document_kind(str(doc.get("kind") or ""))
     (doc_id,) = connection.execute(
         "INSERT INTO documents (name, tool, input_path, input_sha256, kind, "
@@ -587,27 +668,72 @@ def _convert_document(
     }
     pages = _convert_pages(connection, legacy["pages"], doc, context)
     _convert_summaries(connection, legacy["summaries"], doc, context, pages)
+    _plan_missing_pages(connection, doc, context)
     connection.execute(
         "INSERT INTO citations (doc_id, position, text, pages, partial, doi, url, "
         f"metadata) SELECT ?, position, text, pages, partial, doi, url, metadata "
         f"FROM {_ident(legacy['citations'])} WHERE document = ?",
         (doc_id, name),
     )
-    for path, fmt in item_files(name, root):
-        connection.execute(
-            "INSERT INTO outputs (doc_id, path, format, sha256, rendered_at, run_id, "
-            "stale) VALUES (?, ?, ?, ?, ?, ?, 0)",
-            (doc_id, _output_key(path, root), fmt, file_sha256(path), _now(), run_id),
+
+
+def _plan_missing_pages(
+    connection: sqlite3.Connection, doc: Mapping[str, Any], context: Mapping[str, Any]
+) -> None:
+    """Plan the pages of ``pages_total`` the version 1.0 rows lack as pending.
+
+    Summary units are planned when the document recorded a summary model.
+    """
+    total = _int(doc.get("pages_total"))
+    if not total:
+        return
+    unit = context["unit"]
+    models = {KIND_TRANSCRIPTION: _text(doc.get("transcription_model"))}
+    if _text(doc.get("summary_model")):
+        models[KIND_SUMMARY] = _text(doc.get("summary_model"))
+    for kind, model in models.items():
+        name = model or ""
+        connection.executemany(
+            _PLAN_UNIT,
+            [
+                (unit["doc_id"], kind, idx, idx if context["kind"] == "pdf" else None)
+                + (None, TOOL, name, _provider(name), unit["run_id"], unit["now"])
+                for idx in range(total)
+            ],
         )
 
 
+def _register_output(
+    connection: sqlite3.Connection,
+    doc_id: int,
+    path: Path,
+    fmt: str,
+    root: Path,
+    run_id: str,
+) -> None:
+    """Register an existing file; with its hash only when it holds its rendering.
+
+    A file that differs from its rendering, or cannot be read, is registered
+    without a hash, so that ``render`` keeps it unless forced.
+    """
+    digest = None
+    if body_problem(connection, doc_id, path, fmt) is None:
+        digest = file_sha256(path)
+    connection.execute(
+        _REGISTER_OUTPUT,
+        (doc_id, _output_key(path, root), fmt, digest, _now(), run_id),
+    )
+
+
 def _rebuild_versionless_ae(
-    connection: sqlite3.Connection, legacy: Mapping[str, str], root: Path
+    connection: sqlite3.Connection, legacy: Mapping[str, str]
 ) -> None:
     """Copy the version 1.0 rows into the store tables.
 
     One ``runs`` row stands for each distinct effective spec and tool
     version the documents recorded; its command is :data:`CONVERTED_COMMAND`.
+    The existing files are registered by the import that follows, once the
+    document holds everything it renders from.
     """
     documents = _rows(
         connection, f"SELECT * FROM {_ident(legacy['documents'])} ORDER BY name"
@@ -620,7 +746,7 @@ def _rebuild_versionless_ae(
         if run_id is None:
             run_id = str(uuid.uuid4())
             runs[(spec or "", version)] = run_id
-            stamp = _text(doc.get("updated_at")) or _now()
+            stamp = _utc(doc.get("updated_at"))
             connection.execute(
                 "INSERT INTO runs (run_id, tool, tool_version, command, started_at, "
                 "ended_at, spec, settings_fingerprint) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -635,7 +761,7 @@ def _rebuild_versionless_ae(
                     doc.get("settings_fingerprint"),
                 ),
             )
-        _convert_document(connection, legacy, root, doc, run_id)
+        _convert_document(connection, legacy, doc, run_id)
     refresh_documents(connection)
 
 
@@ -644,7 +770,7 @@ def _counts(connection: sqlite3.Connection, store: bool) -> dict[str, Any]:
         sql = (
             "SELECT d.name AS document, u.kind AS kind, count(*) AS total, "
             "sum(u.status = 'failed') AS failed FROM units AS u JOIN documents AS d "
-            "ON d.doc_id = u.doc_id GROUP BY d.name, u.kind"
+            "ON d.doc_id = u.doc_id WHERE u.status != 'pending' GROUP BY d.name, u.kind"
         )
         citations = (
             "SELECT d.name, count(*) FROM citations AS c JOIN documents AS d "
@@ -670,16 +796,66 @@ def _counts(connection: sqlite3.Connection, store: bool) -> dict[str, Any]:
     }
 
 
+def _expected_coverage(connection: sqlite3.Connection) -> dict[tuple[str, str], int]:
+    """Return the units each version 1.0 document needs, per kind.
+
+    A document needs its stored pages and the first ``pages_total`` pages as
+    transcription units, and as summary units its stored summaries and,
+    when it recorded a summary model, the first ``pages_total`` pages.
+    """
+    stored: dict[tuple[str, str], set[int]] = {}
+    for table, kind in (("pages", KIND_TRANSCRIPTION), ("summaries", KIND_SUMMARY)):
+        for document, idx in connection.execute(
+            f"SELECT document, page_index FROM {table}"
+        ):
+            stored.setdefault((str(document), kind), set()).add(int(idx))
+    coverage: dict[tuple[str, str], int] = {}
+    for doc in _rows(connection, "SELECT * FROM documents"):
+        name, total = str(doc["name"]), _int(doc.get("pages_total")) or 0
+        summarized = bool(_text(doc.get("summary_model")))
+        for kind, needed in (
+            (KIND_TRANSCRIPTION, total),
+            (KIND_SUMMARY, total if summarized else 0),
+        ):
+            count = len(stored.get((name, kind), set()) | set(range(needed)))
+            if count:
+                coverage[(name, kind)] = count
+    return coverage
+
+
+def _coverage(connection: sqlite3.Connection) -> dict[tuple[str, str], int]:
+    return {
+        (str(name), str(kind)): int(count)
+        for name, kind, count in connection.execute(
+            "SELECT d.name, u.kind, count(*) FROM units AS u JOIN documents AS d "
+            "ON d.doc_id = u.doc_id GROUP BY d.name, u.kind"
+        )
+    }
+
+
 def _verify_versionless_ae(connection: sqlite3.Connection, saved: Path) -> None:
-    """Compare the converted row counts with the snapshot of the old tables."""
-    old = read(saved, lambda snapshot_connection: _counts(snapshot_connection, False))
+    """Compare the converted rows with the snapshot of the old tables.
+
+    The done and failed units, their failures and the citations must equal
+    the old rows; with the pending units, every document must hold the
+    units its ``pages_total`` needs.
+    """
+
+    def before(snapshot_connection: sqlite3.Connection) -> dict[str, Any]:
+        counts = _counts(snapshot_connection, False)
+        counts["coverage"] = _expected_coverage(snapshot_connection)
+        return counts
+
+    old = read(saved, before)
     new = _counts(connection, True)
+    new["coverage"] = _coverage(connection)
     if old != new:
         raise MigrationError(
             f"The converted database does not hold the rows of {saved.name}: "
             f"{old['documents']} documents before, {new['documents']} after; "
             f"units per document {old['units']} before, {new['units']} after; "
-            f"citations {old['citations']} before, {new['citations']} after."
+            f"citations {old['citations']} before, {new['citations']} after; "
+            f"expected units {old['coverage']}, stored {new['coverage']}."
         )
 
 
@@ -694,11 +870,10 @@ def convert_versionless_ae(database: Path, saved: Path) -> ConversionResult:
         UnrecognizedSchemaError: Another versionless layout.
         MigrationError: The converted row counts differ; nothing changed.
     """
-    root = database.parent
     converter = Converter(
         "autoexcerpter-1.0",
         _versionless_matches,
-        lambda connection, legacy: _rebuild_versionless_ae(connection, legacy, root),
+        _rebuild_versionless_ae,
         _verify_versionless_ae,
     )
     return convert_versionless(
@@ -860,7 +1035,6 @@ class LegacyDocument:
     summaries: dict[int, SummaryRow] = field(default_factory=dict)
     pending: dict[str, list[PlannedUnit]] = field(default_factory=dict)
     venues: dict[str, tuple[str, str]] = field(default_factory=dict)
-    outputs: list[tuple[Path, str]] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
 
@@ -991,7 +1165,6 @@ def legacy_document(item: LegacyItem) -> LegacyDocument | None:
         image_settings=(
             image_settings_record(config) if isinstance(config, Mapping) else None
         ),
-        outputs=item_files(name, item.root),
         warnings=warnings,
     )
     for log in (transcription_log, summary_log):
@@ -1182,6 +1355,9 @@ class _Changes:
     outputs: list[tuple[Path, str]] = field(default_factory=list)
     kept: set[tuple[str, int]] = field(default_factory=set)
     create: bool = False
+    seen: dict[tuple[str, int], tuple[Any, ...] | None] = field(default_factory=dict)
+    """The stored state of each unit the import writes, as the plan read it."""
+    seen_citations: int = 0
 
     @property
     def empty(self) -> bool:
@@ -1219,6 +1395,13 @@ def _summary_differs(row: SummaryRow, stored: Mapping[str, Any] | None) -> bool:
     )
 
 
+def _identity(row: Mapping[str, Any] | None) -> tuple[Any, ...] | None:
+    """Return what identifies a unit row's state: status, run and time."""
+    if row is None:
+        return None
+    return (row["status"], row["run_id"], row["updated_at"])
+
+
 def _unit_changes(
     changes: _Changes, document: LegacyDocument, existing: _Existing, runs: set[str]
 ) -> None:
@@ -1229,6 +1412,7 @@ def _unit_changes(
             changes.kept.add(key)
             continue
         merged = _merged(unit, row)
+        changes.seen[key] = _identity(row)
         if unit.kind == KIND_TRANSCRIPTION:
             if row is None or merged.differs(row):
                 changes.transcriptions.append(merged)
@@ -1324,11 +1508,12 @@ def _plan_document(
         ):
             changes.image_settings = document.image_settings
         _unit_changes(changes, document, existing, state.migrate_runs)
-        changes.outputs = [
-            (path, fmt)
-            for path, fmt in document.outputs
-            if _output_key(path, root) not in existing.outputs
-        ]
+    changes.outputs = [
+        (path, fmt)
+        for path, fmt in item_files(name, root)
+        if _output_key(path, root) not in existing.outputs
+    ]
+    changes.seen_citations = existing.citations
     owned = doc is None or doc.get("first_run_id") in state.migrate_runs
     if owned and not existing.citations:
         kind = changes.kind or (doc or {}).get("kind")
@@ -1389,13 +1574,43 @@ def _plan_root(entry: _Root, cache: OpenAlexCache) -> list[_Changes]:
 # =============================================================================
 
 
+class _ChangedError(Exception):
+    """The document changed between the plan and the leased write."""
+
+
+def _revalidate(connection: sqlite3.Connection, changes: _Changes, doc_id: int) -> None:
+    """Raise :class:`_ChangedError` when the planned rows changed since the plan."""
+    current = {
+        (row["kind"], row["idx"]): _identity(row)
+        for row in _rows(
+            connection,
+            "SELECT kind, idx, status, run_id, updated_at FROM units WHERE doc_id = ?",
+            (doc_id,),
+        )
+    }
+    changed = sorted(
+        key for key, seen in changes.seen.items() if current.get(key) != seen
+    )
+    (citations,) = connection.execute(
+        "SELECT count(*) FROM citations WHERE doc_id = ?", (doc_id,)
+    ).fetchone()
+    if changed or citations != changes.seen_citations:
+        units = ", ".join(f"{kind} {idx}" for kind, idx in changed) or "citations"
+        raise _ChangedError(
+            f"'{changes.name}' changed while migrate planned it ({units}); it was "
+            "not imported. Run migrate again."
+        )
+
+
 def _write_document(
     connection: sqlite3.Connection, changes: _Changes, doc_id: int, run_id: str
 ) -> None:
+    _revalidate(connection, changes, doc_id)
     now = _now()
     if changes.image_settings is not None:
         connection.execute(
-            "UPDATE documents SET image_settings = ? WHERE doc_id = ?",
+            "UPDATE documents SET image_settings = ? WHERE doc_id = ? "
+            "AND image_settings IS NULL",
             (_json(changes.image_settings), doc_id),
         )
     for unit in changes.transcriptions:
@@ -1451,10 +1666,16 @@ def _write_document(
             "UPDATE documents SET last_run_id = ?, updated_at = ? WHERE doc_id = ?",
             (run_id, now, doc_id),
         )
+    for path, fmt in changes.outputs:
+        _register_output(connection, doc_id, path, fmt, changes.root, run_id)
 
 
 async def _apply(store: Store, changes: _Changes, run_id: str) -> None:
-    """Write one document's changes under its lease."""
+    """Write one document's changes under its lease.
+
+    The plan is checked again inside the leased write: a document a run
+    changed since the plan is left as it is and reported as a mismatch.
+    """
     doc_id = await store.ensure_document(
         changes.name,
         input_path=changes.fields.get("input_path"),
@@ -1472,8 +1693,9 @@ async def _apply(store: Store, changes: _Changes, run_id: str) -> None:
             lease,
             lambda connection: _write_document(connection, changes, doc_id, run_id),
         )
-        for path, fmt in changes.outputs:
-            await store.register_output(lease, path, format=fmt)
+    except _ChangedError as exc:
+        await store.add_note(str(exc), doc_id=doc_id)
+        changes.report.mismatches.append(str(exc))
     finally:
         await store.release(lease)
 
@@ -1505,20 +1727,9 @@ def _verify_bodies(
     report: DocumentReport,
 ) -> None:
     for path, fmt in outputs:
-        if fmt not in TEXT_FORMATS:
-            continue
-        try:
-            existing = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError) as exc:
-            report.warnings.append(f"{path} could not be read: {exc}")
-            continue
-        rendered = RENDERERS[fmt](connection, doc_id)
-        if not isinstance(rendered, str) or not body_matches(fmt, rendered, existing):
-            report.warnings.append(
-                f"{path.name} differs from its rendering from the store "
-                f"({len(existing)} characters on disk, {len(rendered)} rendered); "
-                "render --force replaces it."
-            )
+        problem = body_problem(connection, doc_id, path, fmt)
+        if problem is not None:
+            report.mismatches.append(problem)
 
 
 def _verify_units(
