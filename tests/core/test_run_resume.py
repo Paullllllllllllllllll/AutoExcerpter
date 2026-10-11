@@ -30,6 +30,9 @@ import autoexcerpter.run as core
 from autoexcerpter.common.sqlite import read_rows
 from autoexcerpter.output.paths import ItemPaths
 from autoexcerpter.output.store import DATABASE_NAME
+from autoexcerpter.pipeline.item import ItemFiles, ItemProcessor
+from autoexcerpter.pipeline.outputs import OutputStatus
+from autoexcerpter.pipeline.units import DocumentHandle
 from tests.conftest import make_settings, make_spec
 from tests.recording_events import RecordingEvents
 
@@ -51,6 +54,7 @@ class Offline:
     before: dict[int, Callable[[], Any]] = field(default_factory=dict)
     transcribed: list[int] = field(default_factory=list)
     summarized: list[int] = field(default_factory=list)
+    references: list[dict[str, Any]] | None = None
 
     async def transcribe(self, payload: Any) -> dict[str, Any]:
         index = payload.number - 1
@@ -80,7 +84,7 @@ class Offline:
                 "page_types": ["content"],
             },
             "bullet_points": ["A point."],
-            "references": None,
+            "references": self.references,
             "processing_time": 0.01,
             "provider": "openai",
         }
@@ -274,6 +278,96 @@ def test_a_second_run_resumes_from_each_start_state(
         )
     if case.state in ("blocked", "legacy", "complete"):
         assert result.skipped == ("doc",)
+
+
+# ============================================================================
+# Interruptions between a run's writes
+# ============================================================================
+async def _interrupted(*args: Any, **kwargs: Any) -> Any:
+    raise RuntimeError("interrupted")
+
+
+def _interrupt(
+    offline: Offline, monkeypatch: pytest.MonkeyPatch, owner: Any, name: str
+) -> None:
+    """Run once with *owner.name* raising, as an interruption there does."""
+    original = getattr(owner, name)
+    monkeypatch.setattr(owner, name, _interrupted)
+    _, result, _ = offline.run()
+    monkeypatch.setattr(owner, name, original)
+    assert result.failed == 1
+
+
+def test_a_repair_interrupted_before_its_render_renders_its_files_again(
+    offline: Offline, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    offline.run(fail={1})
+    transcription = ItemPaths.for_item("doc", offline.out).transcription
+    with_failure = transcription.read_bytes()
+    _interrupt(offline, monkeypatch, ItemProcessor, "_write_outputs")
+    assert transcription.read_bytes() == with_failure
+
+    run_plan, result, _ = offline.run()
+
+    assert [planned.name for planned in run_plan.render_only] == ["doc"]
+    assert result.failed == 0
+    assert transcription.read_bytes() != with_failure
+
+
+def test_an_input_change_interrupted_before_its_reset_is_detected_again(
+    offline: Offline, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _input_changed(offline)
+    _interrupt(offline, monkeypatch, DocumentHandle, "reset")
+
+    run_plan, _, _ = offline.run()
+
+    assert _planned_state(run_plan) == "none"
+    assert sorted(offline.transcribed) == BOTH
+
+
+def test_citations_interrupted_in_their_enrichment_are_stored_by_the_render(
+    offline: Offline, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    citation = "Smith, J. (2020). A Cited Work. Journal of Tests, 1, 1-2."
+    offline.references = [{"citation": citation, "is_partial": False}]
+    _interrupt(offline, monkeypatch, ItemFiles, "store_citations")
+
+    run_plan, result, _ = offline.run()
+
+    assert [planned.name for planned in run_plan.render_only] == ["doc"]
+    assert result.failed == 0
+    assert [row["text"] for row in read_rows(offline.db, "citations")] == [citation]
+    summary = ItemPaths.for_item("doc", offline.out).summary_md
+    assert citation in summary.read_text(encoding="utf-8")
+
+
+def test_a_forced_run_without_summaries_succeeds_on_a_summarized_item(
+    offline: Offline,
+) -> None:
+    offline.run()
+
+    _, result, _ = offline.run(force=True, summarize=False)
+
+    assert (result.complete, result.failed) == (1, 0)
+
+
+def test_a_file_the_render_cannot_write_fails_the_run(
+    offline: Offline, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    offline.run()
+    ItemPaths.for_item("doc", offline.out).summary_md.unlink()
+
+    async def unwritable(self: ItemFiles) -> OutputStatus:
+        return OutputStatus(summaries_ok=False)
+
+    monkeypatch.setattr(ItemFiles, "write", unwritable)
+
+    _, result, _ = offline.run()
+
+    assert result.failed == 1
+    assert result.items[0].name == "doc"
+    assert result.skipped == ()
 
 
 # ============================================================================

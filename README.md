@@ -412,7 +412,8 @@ the page summaries, the consolidated citations, and the rendered files with thei
 hashes. Each unit commits in its own short transaction as its page finishes, so
 an interrupted run loses at most the pages in flight. A run leases each document
 it works on, so two runs on one folder never write the same document; a lease
-that is not renewed expires after 10 minutes.
+that is not renewed expires after 10 minutes, and a write that starts after the
+expiry fails.
 
 Outside code reads the store through five views, which stay stable across
 versions while the tables behind them may change:
@@ -445,7 +446,9 @@ finally:
 ```
 
 A reader that holds a transaction open delays the run's writes, which wait and
-warn once a minute but never fail a page. A database with a newer schema, an
+warn once a minute. A wait shorter than the 10-minute lease fails no page; after
+a longer one the item stops, and its stored pages and provider responses stay
+for the next run. A database with a newer schema, an
 unreadable file and a database written before the store stop the run with exit
 code 2 and are left as they are.
 
@@ -456,7 +459,8 @@ below `PATH` (a folder or one `autoexcerpter.sqlite`) again, without model calls
 Without `--formats` each document gets the formats it was rendered in before;
 `--formats` takes `transcription-md`, `transcription-txt`, `summary-md` and
 `summary-docx`. A file that matches neither its recorded hash nor the new
-rendering was changed outside the tool and is left as it is unless `--force`.
+rendering was changed outside the tool and is left as it is unless `--force`; so
+is a file that changes while the render waits for the database.
 `--dry-run` reports what would be written. Exit codes: 0 when every file holds
 its rendering or was left as edited, 1 when a file could not be replaced or
 another run holds a document, 2 for a usage error or a refused database; a
@@ -504,7 +508,7 @@ Resume is the default. Each item is classified from the store alone
 | `none` | no stored units | process from scratch |
 | `partial` | pages are pending or failed | transcribe them, then summarize them |
 | `transcription_only` | every page is transcribed, some summaries are missing, failed or stale | summarize those pages from the stored text |
-| `complete` | every unit is stored | skip (`items_skipped`); missing files are rendered again without model calls |
+| `complete` | every unit is stored | skip (`items_skipped`); missing files and files rendered before a later run worked the item are rendered again without model calls, after the citations are consolidated again; a file that cannot be written counts the item failed |
 | `legacy` | output files or version 1.0 working logs exist without stored units | skip and list; `migrate` imports them, `--force` processes the item again |
 | `blocked` | another live run holds the document's lease | skip and list |
 | `refused` | pages remain to transcribe, but the stored pages used other image settings | count failed; name the changed keys |

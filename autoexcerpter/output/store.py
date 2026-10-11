@@ -528,11 +528,9 @@ def _json(value: Any) -> str | None:
 async def write_summary(
     store: Store, lease: Lease, result: UnitResult, row: SummaryRow | None
 ) -> None:
-    """Commit a page's ``summaries`` row, then its summary unit.
+    """Commit a page's ``summaries`` row and its summary unit in one transaction.
 
-    The row commits first: a crash between the two leaves the unit pending,
-    and the next run summarizes the page again. *row* None (a failed call
-    without a placeholder) removes the page's row.
+    *row* None (a failed call without a placeholder) removes the page's row.
     """
     if result.kind != KIND_SUMMARY or (row is not None and row.idx != result.idx):
         raise ValueError("write_summary takes a summary unit and its own row.")
@@ -561,8 +559,7 @@ async def write_summary(
             ),
         )
 
-    await store.write(lease, upsert)
-    await store.write_unit(lease, result)
+    await store.write_unit(lease, result, extra=upsert)
 
 
 async def write_citations(

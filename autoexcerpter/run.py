@@ -678,13 +678,15 @@ class _ItemRun:
     events: RunEvents
 
     async def lease(self) -> tuple[Store, int, Lease] | None:
-        """Ensure the item's document and lease it; None when another holds it."""
+        """Ensure the item's document and lease it; None when another holds it.
+
+        The input hash is recorded later, under the lease (:meth:`reset`).
+        """
         planned = self.planned
         store = await self.stores.get(planned.output_dir)
         doc_id = await store.ensure_document(
             planned.name,
             input_path=planned.item.path,
-            input_sha256=planned.input_sha256,
             kind=document_kind(planned.item.kind),
         )
         lease = await store.acquire(doc_id)
@@ -718,13 +720,29 @@ class _ItemRun:
         """Reset the units this run works again: all of them under ``--force``
         or after an input change, the transcriptions under ``--retranscribe``.
 
-        A reset transcription marks its page's summary stale.
+        A reset transcription marks its page's summary stale. The input hash
+        is recorded after the reset, so that an interruption between the two
+        leaves the change detected, and the document's files are marked
+        stale: they are rendered again once its units are stored.
         """
         planned, spec = self.planned, self.run_plan.spec
         if spec.run.force or planned.resume.reset:
             await handle.reset()
         elif spec.run.retranscribe and planned.resume.state in _RESUMABLE:
             await handle.reset(KIND_TRANSCRIPTION)
+        digest, doc_id = planned.input_sha256, handle.doc_id
+
+        def prepare(connection: sqlite3.Connection) -> None:
+            if digest is not None:
+                connection.execute(
+                    "UPDATE documents SET input_sha256 = ? WHERE doc_id = ?",
+                    (digest, doc_id),
+                )
+            connection.execute(
+                "UPDATE outputs SET stale = 1 WHERE doc_id = ?", (doc_id,)
+            )
+
+        await handle.store.write(handle.lease, prepare)
 
 
 async def _run_item(
@@ -785,13 +803,20 @@ async def _run_item(
 
 async def _render_only(
     run_plan: RunPlan, planned: PlannedItem, env: CallEnv, stores: _Stores
-) -> None:
-    """Write a complete item's missing files from the store; no model call."""
+) -> ItemResult | None:
+    """Write a complete item's missing or stale files from the store.
+
+    No model is called. The citations are consolidated and stored again
+    first, since a run interrupted during their enrichment left its units
+    complete. Returns a failed result when a file could not be written,
+    else None.
+    """
     item_run = _ItemRun(run_plan, planned, stores, env.events)
     leased = await item_run.lease()
     if leased is None:
-        return
+        return None
     store, doc_id, lease = leased
+    ok = False
     try:
         files = ItemFiles(
             planned.item,
@@ -800,7 +825,9 @@ async def _render_only(
             item_run.handle(store, doc_id, lease),
             events=env.events,
         )
-        await files.write()
+        if await files.store_citations():
+            status = await files.write()
+            ok = status.transcription_ok and status.summaries_ok
     except (LeaseLostError, OSError) as exc:
         await _note(
             store, doc_id, f"'{planned.name}' was not rendered: {exc}", env.events
@@ -808,6 +835,7 @@ async def _render_only(
     finally:
         with contextlib.suppress(sqlite3.Error):
             await store.release(lease)
+    return None if ok else ItemResult(planned.name, False, planned.paths)
 
 
 def _check_clients(run_plan: RunPlan, env: CallEnv) -> None:
@@ -872,7 +900,10 @@ async def run(run_plan: RunPlan, events: RunEvents | None = None) -> RunResult:
     exit_code: int = ExitCode.FAILURE
     try:
         for planned in run_plan.render_only:
-            await _render_only(run_plan, planned, env, stores)
+            failure = await _render_only(run_plan, planned, env, stores)
+            if failure is not None:
+                skipped.remove(planned.name)
+                results.append(failure)
         for index, planned in enumerate(run_plan.to_process, start=1):
             result = await _run_item(run_plan, planned, index, env, stores)
             if result is None:

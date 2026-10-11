@@ -508,7 +508,9 @@ class ItemProcessor:
         elapsed_s = time.time() - self.started_at
         units = self.document.units()
         transcriptions = [u for u in units if u.kind == KIND_TRANSCRIPTION]
-        summaries = [u for u in units if u.kind == KIND_SUMMARY]
+        # Summary units of an earlier run stay stored when this run does not
+        # summarize; only the requested work decides the outcome.
+        summaries = [u for u in units if u.kind == KIND_SUMMARY and self.job.summarize]
         pages_ok = sum(1 for u in transcriptions if u.status == "done")
         pages_failed = sum(1 for u in transcriptions if u.status == "failed")
         pages_deferred = sum(1 for u in transcriptions if u.status == "pending")

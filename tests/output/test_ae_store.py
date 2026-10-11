@@ -8,6 +8,7 @@ failed and pending units included.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 import sqlite3
 from collections.abc import Sequence
@@ -311,29 +312,23 @@ def test_page_summaries_join_the_units_and_their_rows(tmp_path: Path) -> None:
     ]  # fmt: skip
 
 
-def test_a_summary_row_commits_before_its_unit(tmp_path: Path) -> None:
+def test_a_summary_row_and_its_unit_commit_together(tmp_path: Path) -> None:
     async def main() -> None:
         async with open_store(tmp_path) as store:
             await store.begin_run("run")
-            lease = await seed_document(store, [page(0)])
-            calls: list[str] = []
-            original = store.write_unit
-
-            async def failing(lease: Lease, result: UnitResult, **_: object) -> None:
-                calls.append(result.kind)
-                raise sqlite3.OperationalError("disk I/O error")
-
-            store.write_unit = failing  # type: ignore[method-assign]
-            with pytest.raises(sqlite3.OperationalError):
-                await write_summary(store, lease, summary(0), summary_row(0))
-            store.write_unit = original  # type: ignore[method-assign]
-            assert calls == [KIND_SUMMARY]
+            lease = await seed_document(store, [page(0)], summaries=[0])
+            refused = dataclasses.replace(summary(0), status="no-such-status")
+            row = dataclasses.replace(summary_row(0), bullet_points=["Lost."])
+            with pytest.raises(sqlite3.IntegrityError):
+                await write_summary(store, lease, refused, row)
             with pytest.raises(ValueError, match="summary unit"):
                 await write_summary(store, lease, transcription(page(0)), None)
 
     asyncio.run(main())
-    _, rows = query(database_path(tmp_path), "SELECT page, status FROM page_summaries")
-    assert rows == [(1, "pending")]
+    _, rows = query(
+        database_path(tmp_path), "SELECT bullet_points, model FROM page_summaries"
+    )
+    assert rows == [(json.dumps(["Point of page 1."]), SUMMARY_MODEL)]
 
 
 def test_a_changed_transcription_marks_its_summary_stale(tmp_path: Path) -> None:
