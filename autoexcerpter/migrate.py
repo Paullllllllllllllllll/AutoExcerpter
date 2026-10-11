@@ -42,7 +42,8 @@ nothing and changes no row; old files are only read. Each document is then
 verified from the store: unit counts and failures, and the re-rendered
 bodies, the text formats compared without the header, the
 ``<page_break .../>`` markers and one missing final newline, the Word
-summary by its paragraph text without the metadata line. A difference or an
+summary by its paragraph, table and equation text without the metadata
+line (:func:`docx_text`). A difference or an
 unreadable file is a mismatch (exit code 1). The report also records each
 document's resume state before and after the import.
 
@@ -70,6 +71,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from docx import Document
+from docx.oxml.ns import qn
 
 from autoexcerpter.common.sqlite import read, snapshot
 from autoexcerpter.common.store import (
@@ -165,6 +167,9 @@ MARKER: Final = re.compile(r"^<page_break (?:pdf|image)=\"\d+\"/>\n", re.MULTILI
 
 _SUMMARY_LINE: Final = re.compile(r"^\*Summary generated .*\*\n", re.MULTILINE)
 _DOCX_METADATA: Final = re.compile(r"^Processed .* content pages \| \d+ total pages$")
+_W_P: Final = qn("w:p")
+_W_T: Final = qn("w:t")
+_M_MATH: Final = frozenset({qn("m:oMath"), qn("m:oMathPara")})
 
 _V1_COLUMNS: Final[Mapping[str, frozenset[str]]] = {
     "documents": frozenset(
@@ -446,19 +451,44 @@ def body_matches(fmt: str, rendered: str, existing: str) -> bool:
     return new in (old, old + "\n")
 
 
-def docx_text(data: bytes) -> list[str]:
-    """Return the text of a Word summary, normalized for comparison.
+def _math(element: Any) -> str:
+    """Return an equation as its element names and texts, properties left out."""
+    name = element.tag.rpartition("}")[2]
+    if name.endswith("Pr"):
+        return ""
+    text = (element.text or "") if name == "t" else ""
+    inner = "".join(_math(child) for child in element)
+    return f"<{name}>{text}{inner}</{name}>"
 
-    One entry per non-empty paragraph, stripped, with the metadata line
-    (``Processed ... | N content pages | M total pages``) left out.
+
+def _paragraph_text(element: Any) -> str:
+    """Return a paragraph's run texts and equations in document order."""
+    parts = []
+    for child in element:
+        if child.tag == _W_T:
+            parts.append(child.text or "")
+        elif child.tag in _M_MATH:
+            parts.append(_math(child))
+        else:
+            parts.append(_paragraph_text(child))
+    return "".join(parts)
+
+
+def docx_text(data: bytes) -> list[str]:
+    """Return the content of a Word summary, normalized for comparison.
+
+    One entry per non-empty paragraph of the body in document order, table
+    cells included, stripped: its texts and its equations (as their OMML
+    element names and texts, properties left out). The metadata line
+    (``Processed ... | N content pages | M total pages``) is left out.
 
     Raises:
         Exception: *data* is not a Word document python-docx can read.
     """
     document = Document(io.BytesIO(data))
     lines = []
-    for paragraph in document.paragraphs:
-        text = paragraph.text.strip()
+    for paragraph in document.element.body.iter(_W_P):
+        text = _paragraph_text(paragraph).strip()
         if text and not _DOCX_METADATA.match(text):
             lines.append(text)
     return lines
@@ -471,7 +501,7 @@ def body_problem(
 
     The rendering comes from *connection*; the text formats are compared by
     :func:`body_matches`, the Word summary by :func:`docx_text`. A file that
-    cannot be read is a problem.
+    cannot be read, or a Word summary that cannot be compared, is a problem.
     """
     try:
         if fmt == SUMMARY_DOCX:
@@ -483,7 +513,10 @@ def body_problem(
     rendered = RENDERERS[fmt](connection, doc_id)
     if isinstance(existing, list):
         data = rendered if isinstance(rendered, bytes) else rendered.encode("utf-8")
-        same = docx_text(data) == existing
+        try:
+            same = docx_text(data) == existing
+        except Exception as exc:  # noqa: BLE001 - an unverified file stays unhashed
+            return f"{path.name} could not be compared: {exc}"
     else:
         same = isinstance(rendered, str) and body_matches(fmt, rendered, existing)
     if same:
@@ -1396,10 +1429,10 @@ def _summary_differs(row: SummaryRow, stored: Mapping[str, Any] | None) -> bool:
 
 
 def _identity(row: Mapping[str, Any] | None) -> tuple[Any, ...] | None:
-    """Return what identifies a unit row's state: status, run and time."""
+    """Return what identifies a unit row's state: status, run, time and stale."""
     if row is None:
         return None
-    return (row["status"], row["run_id"], row["updated_at"])
+    return (row["status"], row["run_id"], row["updated_at"], row["stale"])
 
 
 def _unit_changes(
@@ -1422,6 +1455,10 @@ def _unit_changes(
             ) != (merged.status, merged.content):
                 retouched.add(unit.idx)
             continue
+        # A summary depends on its page's transcription: a run that changes
+        # it after the plan makes the imported summary outdated.
+        page = (KIND_TRANSCRIPTION, unit.idx)
+        changes.seen.setdefault(page, _identity(existing.units.get(page)))
         summary = document.summaries[unit.idx]
         if (
             row is None
@@ -1584,7 +1621,8 @@ def _revalidate(connection: sqlite3.Connection, changes: _Changes, doc_id: int) 
         (row["kind"], row["idx"]): _identity(row)
         for row in _rows(
             connection,
-            "SELECT kind, idx, status, run_id, updated_at FROM units WHERE doc_id = ?",
+            "SELECT kind, idx, status, run_id, updated_at, stale FROM units "
+            "WHERE doc_id = ?",
             (doc_id,),
         )
     }
@@ -1607,6 +1645,17 @@ def _write_document(
 ) -> None:
     _revalidate(connection, changes, doc_id)
     now = _now()
+    connection.execute(
+        "UPDATE documents SET input_path = COALESCE(input_path, ?), "
+        "input_sha256 = COALESCE(input_sha256, ?), kind = COALESCE(kind, ?) "
+        "WHERE doc_id = ?",
+        (
+            changes.fields.get("input_path"),
+            changes.fields.get("input_sha256"),
+            changes.kind,
+            doc_id,
+        ),
+    )
     if changes.image_settings is not None:
         connection.execute(
             "UPDATE documents SET image_settings = ? WHERE doc_id = ? "
@@ -1674,14 +1723,11 @@ async def _apply(store: Store, changes: _Changes, run_id: str) -> None:
     """Write one document's changes under its lease.
 
     The plan is checked again inside the leased write: a document a run
-    changed since the plan is left as it is and reported as a mismatch.
+    changed since the plan is left as it is and reported as a mismatch. Only
+    the document's name is ensured before the lease; its input fields and
+    kind are filled, where missing, inside the leased write.
     """
-    doc_id = await store.ensure_document(
-        changes.name,
-        input_path=changes.fields.get("input_path"),
-        input_sha256=changes.fields.get("input_sha256"),
-        kind=changes.kind,
-    )
+    doc_id = await store.ensure_document(changes.name)
     lease = await store.acquire(doc_id)
     if lease is None:
         message = f"'{changes.name}' is leased by another run; it was not imported."

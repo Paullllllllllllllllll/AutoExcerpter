@@ -10,6 +10,7 @@ replaces the files in place.
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 import sqlite3
 from pathlib import Path
@@ -17,6 +18,7 @@ from typing import Any
 
 import pytest
 from docx import Document
+from docx.oxml import parse_xml
 
 import autoexcerpter.migrate as migrate_module
 from autoexcerpter.common.sqlite import read_rows
@@ -36,6 +38,8 @@ from tests.migrate.legacy import (
     write_files,
     write_logs,
 )
+
+MATH = "http://schemas.openxmlformats.org/officeDocument/2006/math"
 
 
 def _pages() -> list[Page]:
@@ -175,7 +179,7 @@ def test_a_changed_body_fails_and_is_not_taken_as_the_tools_file(
     assert _migrate(item.root, state_dir).exit_code == 1
 
 
-@pytest.mark.parametrize("edit", ["paragraph", "unreadable"])
+@pytest.mark.parametrize("edit", ["paragraph", "table", "unreadable"])
 def test_a_word_summary_is_compared_by_its_text(
     item: Item, state_dir: Path, edit: str
 ) -> None:
@@ -184,7 +188,10 @@ def test_a_word_summary_is_compared_by_its_text(
         docx.write_bytes(b"PK\x03\x04 not a Word file")
     else:
         document = Document(str(docx))
-        document.add_paragraph("A paragraph added by hand.")
+        if edit == "table":
+            document.add_table(rows=1, cols=1).cell(0, 0).text = "Added by hand."
+        else:
+            document.add_paragraph("A paragraph added by hand.")
         document.save(str(docx))
 
     report = _migrate(item.root, state_dir)
@@ -193,6 +200,29 @@ def test_a_word_summary_is_compared_by_its_text(
     (mismatch,) = report.documents[0].mismatches
     assert docx.name in mismatch
     assert _hashes(item.root)[docx.name] is None
+
+
+def _with_equation(path: Path, symbol: str) -> bytes:
+    document = Document(str(path))
+    paragraph = document.add_paragraph("Equation:")
+    paragraph._p.append(
+        parse_xml(
+            f'<m:oMath xmlns:m="{MATH}"><m:sSup><m:e><m:r><m:t>{symbol}</m:t>'
+            "</m:r></m:e><m:sup><m:r><m:t>2</m:t></m:r></m:sup></m:sSup></m:oMath>"
+        )
+    )
+    buffer = io.BytesIO()
+    document.save(buffer)
+    return buffer.getvalue()
+
+
+def test_word_text_keeps_the_equations(item: Item) -> None:
+    docx = item.paths.summary_docx
+
+    x, y = _with_equation(docx, "x"), _with_equation(docx, "y")
+
+    assert docx_text(x) != docx_text(y)
+    assert docx_text(x) != docx_text(docx.read_bytes())
 
 
 def test_word_text_leaves_the_metadata_line_out(item: Item) -> None:
@@ -240,6 +270,109 @@ def test_a_unit_a_run_stored_after_the_plan_is_left_and_reported(
     units = {(u["kind"], u["idx"]): u for u in _view(legacy.root, "units")}
     assert units[("transcription", 2)]["content"] == "From a run."
     assert units[("transcription", 2)]["run_id"] == "a-run"
+
+
+def _before_apply(
+    monkeypatch: pytest.MonkeyPatch, root: Path, *statements: str
+) -> None:
+    """Run *statements* as another run would, between the plan and the write."""
+    apply = migrate_module._apply
+
+    async def run_first(store: Any, changes: Any, run_id: str) -> None:
+        connection = sqlite3.connect(root / DATABASE_NAME)
+        with connection:
+            connection.execute(
+                "INSERT OR IGNORE INTO runs (run_id, tool, tool_version, command, "
+                "started_at) VALUES ('a-run', 'autoexcerpter', '2.0.0', 'run', '2026')"
+            )
+            for statement in statements:
+                connection.execute(statement)
+        connection.close()
+        await apply(store, changes, run_id)
+
+    monkeypatch.setattr(migrate_module, "_apply", run_first)
+
+
+def _changed(report: MigrationReport) -> bool:
+    return any(
+        "changed while migrate planned it" in m for m in report.documents[0].mismatches
+    )
+
+
+def test_an_input_hash_a_run_recorded_after_the_plan_is_kept(
+    item: Item, state_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _migrate(item.root, state_dir)
+    connection = sqlite3.connect(item.root / DATABASE_NAME)
+    with connection:
+        connection.execute("UPDATE documents SET input_sha256 = NULL")
+    connection.close()
+    _before_apply(monkeypatch, item.root, "UPDATE documents SET input_sha256 = 'newer'")
+
+    _migrate(item.root, state_dir)
+
+    (document,) = _view(item.root, "documents")
+    assert document["input_sha256"] == "newer"
+
+
+def test_a_summary_marked_stale_after_the_plan_is_left_and_reported(
+    tmp_path: Path, state_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    legacy = make_item(
+        tmp_path / "out", "doc", _pages()[:2], state_dir=state_dir, total=3
+    )
+    write_logs(legacy)
+    _migrate(legacy.root, state_dir)
+    legacy.pages = _pages()
+    write_logs(legacy)
+    _before_apply(
+        monkeypatch,
+        legacy.root,
+        "UPDATE units SET stale = 1 WHERE kind = 'summary' AND idx = 2",
+    )
+
+    report = _migrate(legacy.root, state_dir)
+
+    assert _changed(report)
+    units = {(u["kind"], u["idx"]): u for u in _view(legacy.root, "units")}
+    assert (units[("summary", 2)]["status"], units[("summary", 2)]["stale"]) == (
+        "pending",
+        1,
+    )
+
+
+def test_a_summary_whose_transcription_a_run_changed_is_left_and_reported(
+    tmp_path: Path, state_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    legacy = make_item(tmp_path / "out", "doc", _pages(), state_dir=state_dir)
+    write_logs(legacy)
+    summary_log = legacy.paths.legacy_logs()[1]
+    lines = summary_log.read_text(encoding="utf-8").splitlines(keepends=True)
+    summary_log.write_text("".join(lines[:-1]), encoding="utf-8")
+    _migrate(legacy.root, state_dir)
+    connection = sqlite3.connect(legacy.root / DATABASE_NAME)
+    with connection:
+        connection.execute(
+            "INSERT INTO runs (run_id, tool, tool_version, command, started_at) "
+            "VALUES ('a-run', 'autoexcerpter', '2.0.0', 'run', '2026')"
+        )
+        connection.execute(
+            "UPDATE units SET run_id = 'a-run' WHERE kind = 'transcription' AND idx = 2"
+        )
+    connection.close()
+    write_logs(legacy)
+    _before_apply(
+        monkeypatch,
+        legacy.root,
+        "UPDATE units SET content = 'Again.', updated_at = '2027' "
+        "WHERE kind = 'transcription' AND idx = 2",
+    )
+
+    report = _migrate(legacy.root, state_dir)
+
+    assert _changed(report)
+    units = {(u["kind"], u["idx"]): u for u in _view(legacy.root, "units")}
+    assert units[("summary", 2)]["status"] == "pending"
 
 
 def test_a_unit_the_store_lacks_is_a_mismatch(

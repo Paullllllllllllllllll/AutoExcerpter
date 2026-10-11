@@ -491,13 +491,12 @@ Each document is then verified from the store. A unit count or failure count
 that differs from the logs fails the import (exit 1), as does a re-rendered body
 that differs from the existing file or a file that cannot be read. Text files are
 compared without the header, the `<page_break .../>` markers and a missing final
-newline; the Word summary by the text of its paragraphs without the metadata
-line. The report counts the documents per resume state before and after the
-import. Exit code 2
-means a database the store refuses: newer, unreadable or of an unknown layout.
-With `--json`, stdout carries one summary line with `databases`, `converted`,
-`documents`, `units`, `citations`, `outputs`, `mismatches`, `warnings` and
-`snapshots`.
+newline; the Word summary by the text of its paragraphs, table cells and
+equations without the metadata line. The report counts the documents per resume
+state before and after the import. Exit code 2 means a database the store
+refuses: newer, unreadable or of an unknown layout. With `--json`, stdout
+carries one summary line with `databases`, `converted`, `documents`, `units`,
+`citations`, `outputs`, `mismatches`, `warnings` and `snapshots`.
 
 ## Batch Processing
 
