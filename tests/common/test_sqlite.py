@@ -1,4 +1,4 @@
-"""The single-owner SQLite writer: concurrency, upserts, rollback and WAL."""
+"""The single-owner SQLite writer: concurrency, upserts, rollback and pragmas."""
 
 from __future__ import annotations
 
@@ -11,9 +11,11 @@ from typing import Any
 
 import pytest
 
+from autoexcerpter.common import sqlite as sqlite_module
 from autoexcerpter.common.sqlite import (
     SqliteWriter,
     TableSpec,
+    read,
     read_rows,
     table_names,
     to_sql_value,
@@ -38,6 +40,7 @@ PAGES = TableSpec(
     key=("doc_hash", "page_index"),
 )
 TABLES = (DOCUMENTS, PAGES)
+PRAGMAS = ("journal_mode", "synchronous", "foreign_keys", "busy_timeout")
 
 
 def _page(doc: str, index: int, status: str = "done", **extra: Any) -> dict[str, Any]:
@@ -52,6 +55,19 @@ async def _write_document(
         for index in range(pages):
             await asyncio.sleep(0)
             tx.upsert("pages", _page(doc, index, status, tokens=index))
+
+
+def _pragmas(connection: sqlite3.Connection) -> dict[str, Any]:
+    return {
+        name: connection.execute(f"PRAGMA {name}").fetchone()[0] for name in PRAGMAS
+    }
+
+
+def _assert_store_pragmas(values: dict[str, Any]) -> None:
+    assert values["journal_mode"] == "delete"
+    assert values["synchronous"] == 2
+    assert values["foreign_keys"] == 1
+    assert values["busy_timeout"] > 0
 
 
 def test_concurrent_documents_from_many_tasks_land_without_loss(
@@ -148,7 +164,9 @@ def test_database_error_mid_document_rolls_back_the_whole_document(
     assert [row["doc_hash"] for row in read_rows(db, "pages")] == ["after"]
 
 
-def test_two_writers_share_one_file_under_wal(tmp_path: Path) -> None:
+def test_two_writers_share_one_file_under_the_rollback_journal(
+    tmp_path: Path,
+) -> None:
     db = tmp_path / "tool.sqlite"
 
     async def main() -> None:
@@ -165,7 +183,7 @@ def test_two_writers_share_one_file_under_wal(tmp_path: Path) -> None:
 
     with contextlib.closing(sqlite3.connect(db)) as connection:
         mode = connection.execute("PRAGMA journal_mode").fetchone()[0]
-    assert mode == "wal"
+    assert mode == "delete"
     assert len(read_rows(db, "documents")) == 20
     assert len(read_rows(db, "pages")) == 100
 
@@ -228,7 +246,7 @@ def test_delete_keeps_the_listed_rows(tmp_path: Path) -> None:
     ]
 
 
-def test_reading_leaves_no_wal_files_beside_the_database(tmp_path: Path) -> None:
+def test_writing_and_reading_leave_only_the_database_file(tmp_path: Path) -> None:
     folder = tmp_path / "out"
     db = folder / "tool.sqlite"
 
@@ -237,6 +255,7 @@ def test_reading_leaves_no_wal_files_beside_the_database(tmp_path: Path) -> None
             await _write_document(writer, "a", 1)
 
     asyncio.run(main())
+    assert [path.name for path in folder.iterdir()] == ["tool.sqlite"]
     assert read_rows(db, "documents")[0]["doc_hash"] == "a"
     assert table_names(db) == ["documents", "pages"]
 
@@ -277,6 +296,8 @@ def test_writer_must_be_open(tmp_path: Path) -> None:
 
     with pytest.raises(RuntimeError, match="not open"):
         asyncio.run(writer.upsert("documents", [{"doc_hash": "a"}]))
+    with pytest.raises(RuntimeError, match="not open"):
+        asyncio.run(writer.transaction(lambda connection: None))
 
 
 def test_reopening_keeps_rows_and_lists_tables(tmp_path: Path) -> None:
@@ -291,3 +312,150 @@ def test_reopening_keeps_rows_and_lists_tables(tmp_path: Path) -> None:
 
     assert table_names(db) == ["documents", "pages"]
     assert [row["doc_hash"] for row in read_rows(db, "documents")] == ["a", "b"]
+
+
+def test_transaction_returns_the_result_of_the_function(tmp_path: Path) -> None:
+    db = tmp_path / "tool.sqlite"
+
+    def insert(connection: sqlite3.Connection) -> int:
+        cursor = connection.execute(
+            "INSERT INTO documents (doc_hash, path) VALUES ('a', 'a.pdf')"
+        )
+        assert connection.in_transaction
+        return int(cursor.lastrowid or 0)
+
+    async def main() -> int:
+        async with SqliteWriter(db, TABLES) as writer:
+            return await writer.transaction(insert)
+
+    assert asyncio.run(main()) == 1
+    assert read_rows(db, "documents")[0]["path"] == "a.pdf"
+
+
+def test_transaction_rolls_back_and_reraises(tmp_path: Path) -> None:
+    db = tmp_path / "tool.sqlite"
+
+    def fail(connection: sqlite3.Connection) -> None:
+        connection.execute("INSERT INTO documents (doc_hash) VALUES ('lost')")
+        raise LookupError("no such page")
+
+    async def main() -> None:
+        async with SqliteWriter(db, TABLES) as writer:
+            with pytest.raises(LookupError, match="no such page"):
+                await writer.transaction(fail)
+            await writer.upsert("documents", [{"doc_hash": "kept"}])
+
+    asyncio.run(main())
+
+    assert [row["doc_hash"] for row in read_rows(db, "documents")] == ["kept"]
+
+
+def test_writer_connection_uses_the_rollback_journal(tmp_path: Path) -> None:
+    db = tmp_path / "tool.sqlite"
+
+    async def main() -> dict[str, Any]:
+        async with SqliteWriter(db, TABLES, busy_timeout=2.0) as writer:
+            return await writer.transaction(_pragmas)
+
+    values = asyncio.run(main())
+
+    _assert_store_pragmas(values)
+    assert values["busy_timeout"] == 2000
+
+
+def test_read_helper_opens_read_only_connections_with_the_pragmas(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db = tmp_path / "tool.sqlite"
+
+    async def main() -> None:
+        async with SqliteWriter(db, TABLES) as writer:
+            await _write_document(writer, "a", 1)
+
+    asyncio.run(main())
+    targets: list[tuple[Any, bool]] = []
+    real_connect = sqlite3.connect
+
+    def connect(database: Any, *args: Any, **kwargs: Any) -> sqlite3.Connection:
+        targets.append((database, kwargs.get("uri", False)))
+        return real_connect(database, *args, **kwargs)
+
+    monkeypatch.setattr(sqlite_module.sqlite3, "connect", connect)
+
+    _assert_store_pragmas(read(db, _pragmas))
+    with pytest.raises(sqlite3.OperationalError, match="readonly"):
+        read(db, lambda c: c.execute("INSERT INTO documents (doc_hash) VALUES ('x')"))
+    read_rows(db, "documents")
+    table_names(db)
+
+    assert len(targets) == 4
+    for database, uri in targets:
+        assert uri is True
+        assert str(database).startswith("file:")
+        assert str(database).endswith("?mode=ro")
+    assert [row["doc_hash"] for row in read_rows(db, "documents")] == ["a"]
+
+
+def test_writer_switches_a_wal_database_to_the_rollback_journal(
+    tmp_path: Path,
+) -> None:
+    folder = tmp_path / "out"
+    folder.mkdir()
+    db = folder / "tool.sqlite"
+    with contextlib.closing(sqlite3.connect(db)) as connection:
+        assert connection.execute("PRAGMA journal_mode = WAL").fetchone()[0] == "wal"
+        connection.execute(DOCUMENTS.ddl)
+        connection.execute("INSERT INTO documents (doc_hash) VALUES ('old')")
+        connection.commit()
+    assert db.read_bytes()[18:20] == b"\x02\x02"
+
+    async def main() -> dict[str, Any]:
+        async with SqliteWriter(db, TABLES) as writer:
+            await writer.upsert("documents", [{"doc_hash": "new"}])
+            return await writer.transaction(_pragmas)
+
+    _assert_store_pragmas(asyncio.run(main()))
+
+    assert db.read_bytes()[18:20] == b"\x01\x01"
+    assert [path.name for path in folder.iterdir()] == ["tool.sqlite"]
+    assert [row["doc_hash"] for row in read_rows(db, "documents")] == ["old", "new"]
+
+
+def test_read_helper_switches_an_idle_wal_database(tmp_path: Path) -> None:
+    folder = tmp_path / "out"
+    folder.mkdir()
+    db = folder / "legacy.sqlite"
+    with contextlib.closing(sqlite3.connect(db)) as connection:
+        connection.execute("PRAGMA journal_mode = WAL")
+        connection.execute(DOCUMENTS.ddl)
+        connection.execute("INSERT INTO documents (doc_hash) VALUES ('old')")
+        connection.commit()
+
+    assert read(db, _pragmas)["journal_mode"] == "delete"
+    assert [path.name for path in folder.iterdir()] == ["legacy.sqlite"]
+
+
+def test_foreign_keys_are_enforced_on_the_writer(tmp_path: Path) -> None:
+    db = tmp_path / "tool.sqlite"
+    child = TableSpec(
+        name="children",
+        ddl=(
+            "CREATE TABLE IF NOT EXISTS children (id INTEGER PRIMARY KEY, "
+            "doc_hash TEXT NOT NULL REFERENCES documents (doc_hash))"
+        ),
+        key=("id",),
+    )
+
+    async def main() -> None:
+        async with SqliteWriter(db, (*TABLES, child)) as writer:
+            with pytest.raises(sqlite3.IntegrityError, match="FOREIGN KEY"):
+                await writer.upsert("children", [{"id": 1, "doc_hash": "none"}])
+
+    asyncio.run(main())
+
+    assert read_rows(db, "children") == []
+
+
+def test_queue_size_must_be_positive(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="queue_size"):
+        SqliteWriter(tmp_path / "tool.sqlite", TABLES, queue_size=0)

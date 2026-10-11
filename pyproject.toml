@@ -56,6 +56,20 @@ python_version = "3.13"
 strict = true
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+# Store tests copied from ChronoTranscriber with the package name changed;
+# ChronoTranscriber does not type-check its tests.
+module = [
+    "tests.common.sqlite_child",
+    "tests.common.test_sqlite",
+    "tests.common.test_sqlite_robustness",
+    "tests.common.test_store",
+    "tests.common.test_store_leases",
+]
+disable_error_code = [
+    "arg-type", "attr-defined", "func-returns-value", "misc", "no-any-return",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["autoexcerpter"]
 
@@ -80,6 +94,8 @@ max-args = 8
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["PLR0913"]
+# Child processes of the store tests report to their parent on stdout.
+"tests/common/*_child.py" = ["T201"]
 "autoexcerpter/cli/**" = ["T201"]
 "autoexcerpter/ui/**" = ["T201"]
 

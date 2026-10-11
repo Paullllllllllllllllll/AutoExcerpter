@@ -171,7 +171,7 @@ class TestResumeLogRewrite:
             replaced.append(Path(dst))
             original(src, dst)
 
-        monkeypatch.setattr("autoexcerpter.common.jsonl.os.replace", counting_replace)
+        monkeypatch.setattr("autoexcerpter.pipeline.jsonl.os.replace", counting_replace)
 
         processor._load_resume_state(source)
         processor._init_transcription_log(source)
@@ -194,7 +194,7 @@ class TestResumeLogRewrite:
         def boom(_src: Any, _dst: Any) -> None:
             raise OSError("simulated replace failure")
 
-        monkeypatch.setattr("autoexcerpter.common.jsonl.os.replace", boom)
+        monkeypatch.setattr("autoexcerpter.pipeline.jsonl.os.replace", boom)
 
         processor._load_resume_state(source)
         with pytest.raises(RuntimeError, match="Could not initialize"):

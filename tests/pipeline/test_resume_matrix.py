@@ -18,7 +18,7 @@ from typing import Any
 import pytest
 
 from autoexcerpter import __main__ as entry
-from autoexcerpter.common.jsonl import file_identity, folder_identity
+from autoexcerpter.pipeline.jsonl import file_identity, folder_identity
 from autoexcerpter.pipeline.log import (
     LogHeader,
     append_to_log,

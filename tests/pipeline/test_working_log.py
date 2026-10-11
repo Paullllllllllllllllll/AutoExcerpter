@@ -229,7 +229,7 @@ class TestInitializeLogAtomicWrite:
         def boom(_src: Any, _dst: Any) -> None:
             raise OSError("simulated replace failure")
 
-        monkeypatch.setattr("autoexcerpter.common.jsonl.os.replace", boom)
+        monkeypatch.setattr("autoexcerpter.pipeline.jsonl.os.replace", boom)
 
         ok = log_mod.initialize_log_file(
             log_path,

@@ -27,12 +27,12 @@ from pathlib import Path
 from typing import Any
 
 from autoexcerpter.common.images import IMAGE_EXTENSIONS
-from autoexcerpter.common.jsonl import input_changed, read_header
 from autoexcerpter.common.native import (
     MODEL_DERIVED_IMAGE_KEYS,
     changed_image_settings,
     image_settings_fingerprint,
 )
+from autoexcerpter.pipeline.jsonl import input_changed, read_header
 from autoexcerpter.pipeline.log import LOG_FORMAT, PAGE_KEY, WorkingLog, read_log
 from autoexcerpter.pipeline.paths import ItemPaths
 from autoexcerpter.rendering.sqlite import DATABASE_NAME, complete_documents
@@ -88,7 +88,7 @@ def input_changed_since_log(header: dict[str, Any] | None) -> bool:
 
     Compares the header's ``file_provenance`` with the input through the
     cheap size and image-set identity of
-    :func:`~autoexcerpter.common.jsonl.input_changed`; False when no change
+    :func:`~autoexcerpter.pipeline.jsonl.input_changed`; False when no change
     can be proven.
     """
     if not isinstance(header, dict):

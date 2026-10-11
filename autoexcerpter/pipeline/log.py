@@ -1,4 +1,4 @@
-"""The working logs of an item: versioned JSONL written through common/jsonl.
+"""The working logs of an item: versioned JSONL written through pipeline/jsonl.
 
 The first line of a log is a header carrying ``_format_version``; every
 following line is one page result. A crash mid-write can at most truncate the
@@ -15,14 +15,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from autoexcerpter.common.jsonl import (
+from autoexcerpter.constants import LOG_FORMAT_VERSION, OPENAI_MODEL_PREFIXES
+from autoexcerpter.pipeline.jsonl import (
     JsonlFormat,
     JsonlFormatError,
     JsonlWriter,
     read_jsonl,
     write_jsonl,
 )
-from autoexcerpter.constants import LOG_FORMAT_VERSION, OPENAI_MODEL_PREFIXES
 
 logger = logging.getLogger(__name__)
 

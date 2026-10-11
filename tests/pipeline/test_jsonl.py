@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from autoexcerpter.common.jsonl import (
+from autoexcerpter.pipeline.jsonl import (
     JsonlFormat,
     JsonlFormatError,
     JsonlWriter,
