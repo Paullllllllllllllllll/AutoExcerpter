@@ -89,11 +89,11 @@ CONTEXT_NONE = "none"
 
 MODEL_SUGGESTIONS: Mapping[str, tuple[str, ...]] = {
     "openai": (DEFAULT_MODEL, "gpt-5.6-terra", "gpt-5.6-sol", "gpt-5.5"),
-    "anthropic": ("claude-opus-5-5", "claude-sonnet-5", "claude-haiku-4-5"),
+    "anthropic": ("claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"),
     "google": ("gemini-3.7-flash", "gemini-3.1-pro", "gemini-3.5-flash"),
     "openrouter": (
         "openai/gpt-5.6-luna",
-        "anthropic/claude-sonnet-5",
+        "anthropic/claude-sonnet-5-5",
         "google/gemini-3.1-pro",
     ),
 }

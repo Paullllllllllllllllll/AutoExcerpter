@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 
+from autoexcerpter.llm.capabilities import TABLE
 from autoexcerpter.llm.options import (
     build_invoke_kwargs,
     request_service_tier,
@@ -157,6 +158,55 @@ def test_top_p_is_sent_only_when_given_and_supported() -> None:
         "anthropic", "claude-haiku-4-5", {"top_p": 0.5, "reasoning": {"effort": "none"}}
     )
     assert "top_p" not in rejected
+
+
+def _effort_sent(model: str, effort: str) -> str | None:
+    kwargs = build_invoke_kwargs("anthropic", model, {"reasoning": {"effort": effort}})
+    effort_sent: str | None = kwargs.get("output_config", {}).get("effort")
+    return effort_sent
+
+
+@pytest.mark.parametrize(
+    ("model", "effort", "expected"),
+    [
+        ("claude-opus-4-5", "xhigh", "high"),
+        ("claude-opus-4-5", "max", None),
+        ("claude-opus-4-6", "xhigh", "high"),
+        ("claude-opus-4-6", "max", "max"),
+        ("claude-sonnet-4-6", "xhigh", "high"),
+        ("claude-opus-4-7", "xhigh", "xhigh"),
+        ("claude-opus-5-5", "max", "max"),
+        ("claude-haiku-5-5", "minimal", "low"),
+        ("claude-haiku-5-5", "xhigh", "xhigh"),
+        ("claude-haiku-5-5", "max", "max"),
+        ("claude-haiku-5-5", "none", None),
+        ("claude-sonnet-4-5", "high", None),
+        ("claude-haiku-4-5", "high", None),
+    ],
+)
+def test_anthropic_effort_steps_down_to_a_level_the_family_has(
+    model: str, effort: str, expected: str | None
+) -> None:
+    assert _effort_sent(model, effort) == expected
+
+
+def test_opus_45_sends_its_effort_beside_the_thinking_budget() -> None:
+    kwargs = build_invoke_kwargs(
+        "anthropic", "claude-opus-4-5", {"reasoning": {"effort": "medium"}}
+    )
+    assert kwargs["thinking"] == {"type": "enabled", "budget_tokens": 4096}
+    assert kwargs["output_config"] == {"effort": "medium"}
+
+
+def test_every_adaptive_claude_family_takes_an_effort() -> None:
+    adaptive = [
+        rule.prefixes[0]
+        for rule in TABLE.families
+        if rule.fields.get("provider_name") == "anthropic"
+        and rule.fields.get("uses_adaptive_thinking")
+    ]
+    assert adaptive
+    assert all(_effort_sent(model, "high") == "high" for model in adaptive)
 
 
 def test_anthropic_effort_copied_onto_the_model_merges_with_the_format() -> None:

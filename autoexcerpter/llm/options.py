@@ -42,15 +42,39 @@ _ANTHROPIC_EFFORT_TO_BUDGET: Mapping[str, int] = {
     "xhigh": 16384,
 }
 
-# Adaptive-thinking Claude models reject thinking.budget_tokens; they take
-# output_config.effort. "none" is absent: no parameter is sent.
-_ANTHROPIC_ADAPTIVE_EFFORT: Mapping[str, str] = {
+# Anthropic's output_config.effort level for each reasoning effort.
+# Adaptive-thinking Claude models reject thinking.budget_tokens and take only
+# the effort. "none" is absent: no parameter is sent.
+_ANTHROPIC_EFFORTS: Mapping[str, str] = {
     "minimal": "low",
     "low": "low",
     "medium": "medium",
     "high": "high",
     "xhigh": "xhigh",
     "max": "max",
+}
+
+_ANTHROPIC_EFFORT_ORDER = ("low", "medium", "high", "xhigh", "max")
+
+# The effort levels of each Claude family that takes output_config.effort. A
+# level a family lacks steps down to the next lower level it has; families
+# not listed send no effort.
+_ANTHROPIC_EFFORT_LEVELS: Mapping[str, tuple[str, ...]] = {
+    "claude-opus-4.5": ("low", "medium", "high"),
+    "claude-opus-4.6": ("low", "medium", "high", "max"),
+    "claude-sonnet-4.6": ("low", "medium", "high", "max"),
+    **dict.fromkeys(
+        (
+            "claude-opus-4.7",
+            "claude-opus-4.8",
+            "claude-opus-5",
+            "claude-fable-5",
+            "claude-sonnet-5",
+            "claude-opus-5.5",
+            "claude-haiku-5.5",
+        ),
+        _ANTHROPIC_EFFORT_ORDER,
+    ),
 }
 
 _GOOGLE_EFFORT_TO_BUDGET: Mapping[str, int] = {
@@ -147,6 +171,21 @@ def _max_tokens(
     return {key: max_tokens}
 
 
+def _anthropic_effort(family: str, effort: str) -> str | None:
+    """Return the effort level *family* takes for *effort*, or None for none.
+
+    The level maps through :data:`_ANTHROPIC_EFFORTS` and steps down to the
+    next lower level the family has.
+    """
+    levels = _ANTHROPIC_EFFORT_LEVELS.get(family)
+    wanted = _ANTHROPIC_EFFORTS.get(effort)
+    if levels is None or wanted is None:
+        return None
+    rank = _ANTHROPIC_EFFORT_ORDER.index(wanted)
+    lower = reversed(_ANTHROPIC_EFFORT_ORDER[: rank + 1])
+    return next((level for level in lower if level in levels), None)
+
+
 def _reasoning(
     provider: str, model_name: str, caps: ProviderCapabilities, effort: str | None
 ) -> dict[str, Any]:
@@ -160,12 +199,14 @@ def _reasoning(
     if provider == "anthropic" and (adaptive or extended):
         if effort is None:
             return {}
+        level = _anthropic_effort(caps.family, effort)
+        output_config = {"output_config": {"effort": level}} if level else {}
         if adaptive:
-            level = _ANTHROPIC_ADAPTIVE_EFFORT.get(effort)
-            return {"output_config": {"effort": level}} if level else {}
+            return output_config
         budget = _ANTHROPIC_EFFORT_TO_BUDGET.get(effort)
         if budget:
-            return {"thinking": {"type": "enabled", "budget_tokens": budget}}
+            thinking = {"type": "enabled", "budget_tokens": budget}
+            return {"thinking": thinking, **output_config}
         return {}
     if provider == "google" and reasoning and family == "google":
         if effort is None:
