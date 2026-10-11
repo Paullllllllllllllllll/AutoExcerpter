@@ -806,10 +806,10 @@ async def _render_only(
 ) -> ItemResult | None:
     """Write a complete item's missing or stale files from the store.
 
-    No model is called. The citations are consolidated and stored again
-    first, since a run interrupted during their enrichment left its units
-    complete. Returns a failed result when a file could not be written,
-    else None.
+    No model and no OpenAlex request is made. A document without stored
+    citations, as a run interrupted during their enrichment leaves it, gets
+    them consolidated first, with metadata from the OpenAlex cache alone.
+    Returns a failed result when a file could not be written, else None.
     """
     item_run = _ItemRun(run_plan, planned, stores, env.events)
     leased = await item_run.lease()
@@ -825,7 +825,7 @@ async def _render_only(
             item_run.handle(store, doc_id, lease),
             events=env.events,
         )
-        if await files.store_citations():
+        if files.has_citations() or await files.store_citations(offline=True):
             status = await files.write()
             ok = status.transcription_ok and status.summaries_ok
     except (LeaseLostError, OSError) as exc:

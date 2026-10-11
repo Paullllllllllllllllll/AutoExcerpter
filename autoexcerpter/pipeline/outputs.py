@@ -61,17 +61,19 @@ def collect_citations(
     item_type_label: str,
     job: ItemJob,
     stop: threading.Event | None = None,
+    offline: bool = False,
 ) -> list[CitationRow] | None:
     """Return the item's citations, consolidated and OpenAlex-enriched.
 
-    None when *stop* was set during the enrichment.
+    *offline* takes the metadata from the OpenAlex cache alone, with no
+    request. None when *stop* was set during the enrichment.
     """
     adjusted = PageNumberProcessor().adjust_and_sort_page_numbers(summaries)
     manager, _ = build_render_context(
         adjusted,
         position_label=_position_label(item_type_label),
         openalex_enabled=job.openalex_enabled and job.openalex is not None,
-        max_requests=job.openalex_max_requests,
+        max_requests=0 if offline else job.openalex_max_requests,
         openalex=job.openalex,
         stop=stop,
     )

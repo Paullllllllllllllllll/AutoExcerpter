@@ -25,6 +25,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+import autoexcerpter.pipeline.item as item_module
 import autoexcerpter.pipeline.managers as managers_module
 import autoexcerpter.run as core
 from autoexcerpter.common.sqlite import read_rows
@@ -33,6 +34,7 @@ from autoexcerpter.output.store import DATABASE_NAME
 from autoexcerpter.pipeline.item import ItemFiles, ItemProcessor
 from autoexcerpter.pipeline.outputs import OutputStatus
 from autoexcerpter.pipeline.units import DocumentHandle
+from autoexcerpter.rendering.citations import OpenAlexClient
 from tests.conftest import make_settings, make_spec
 from tests.recording_events import RecordingEvents
 
@@ -90,8 +92,8 @@ class Offline:
         }
 
     def plan(self, **flags: Any) -> core.RunPlan:
-        spec = make_spec(self.pdf, output=self.out, openalex=False, **flags)
-        return core.plan(spec, make_settings())
+        spec = make_spec(self.pdf, output=self.out, **{"openalex": False, **flags})
+        return core.plan(spec, make_settings(state_dir=self.out.parent / "state"))
 
     def run(
         self, fail: set[int] | None = None, **flags: Any
@@ -326,20 +328,46 @@ def test_an_input_change_interrupted_before_its_reset_is_detected_again(
     assert sorted(offline.transcribed) == BOTH
 
 
+def _no_lookup(self: OpenAlexClient, citation_text: str) -> Any:
+    raise AssertionError(f"OpenAlex was asked about {citation_text!r}")
+
+
 def test_citations_interrupted_in_their_enrichment_are_stored_by_the_render(
     offline: Offline, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     citation = "Smith, J. (2020). A Cited Work. Journal of Tests, 1, 1-2."
     offline.references = [{"citation": citation, "is_partial": False}]
     _interrupt(offline, monkeypatch, ItemFiles, "store_citations")
+    monkeypatch.setattr(OpenAlexClient, "lookup", _no_lookup)
 
-    run_plan, result, _ = offline.run()
+    run_plan, result, _ = offline.run(openalex=True)
 
     assert [planned.name for planned in run_plan.render_only] == ["doc"]
     assert result.failed == 0
     assert [row["text"] for row in read_rows(offline.db, "citations")] == [citation]
     summary = ItemPaths.for_item("doc", offline.out).summary_md
     assert citation in summary.read_text(encoding="utf-8")
+
+
+def test_a_render_only_item_with_citations_leaves_them(
+    offline: Offline, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    offline.references = [{"citation": "Smith (2020).", "is_partial": False}]
+    offline.run()
+    ItemPaths.for_item("doc", offline.out).summary_md.unlink()
+    consolidated: list[str] = []
+    monkeypatch.setattr(
+        item_module,
+        "collect_citations",
+        lambda *args, **kwargs: consolidated.append("called"),
+    )
+    monkeypatch.setattr(OpenAlexClient, "lookup", _no_lookup)
+
+    _, result, _ = offline.run(openalex=True)
+
+    assert result.failed == 0
+    assert consolidated == []
+    assert ItemPaths.for_item("doc", offline.out).summary_md.is_file()
 
 
 def test_a_forced_run_without_summaries_succeeds_on_a_summarized_item(

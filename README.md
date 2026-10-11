@@ -515,7 +515,7 @@ Resume is the default. Each item is classified from the store alone
 | `none` | no stored units | process from scratch |
 | `partial` | pages are pending or failed | transcribe them, then summarize them |
 | `transcription_only` | every page is transcribed, some summaries are missing, failed or stale | summarize those pages from the stored text |
-| `complete` | every unit is stored | skip (`items_skipped`); missing files and files rendered before a later run worked the item are rendered again without model calls, after the citations are consolidated again; a file that cannot be written counts the item failed |
+| `complete` | every unit is stored | skip (`items_skipped`); missing files and files rendered before a later run worked the item are rendered again without model calls or OpenAlex requests (a document without stored citations gets them from the OpenAlex cache); a file that cannot be written counts the item failed |
 | `legacy` | output files or version 1.0 working logs exist without stored units | skip and list; `migrate` imports them, `--force` processes the item again |
 | `blocked` | another live run holds the document's lease | skip and list |
 | `refused` | pages remain to transcribe, but the stored pages used other image settings | count failed; name the changed keys |

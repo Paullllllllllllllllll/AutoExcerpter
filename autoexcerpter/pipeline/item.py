@@ -156,10 +156,23 @@ class ItemFiles:
 
         return read(self.document.store.path, query)
 
-    async def store_citations(self) -> bool:
+    def has_citations(self) -> bool:
+        """Return whether the store holds citations for the document."""
+        doc_id = self.document.doc_id
+
+        def query(connection: sqlite3.Connection) -> bool:
+            row = connection.execute(
+                "SELECT 1 FROM citations WHERE doc_id = ? LIMIT 1", (doc_id,)
+            ).fetchone()
+            return row is not None
+
+        return read(self.document.store.path, query)
+
+    async def store_citations(self, *, offline: bool = False) -> bool:
         """Consolidate, enrich and store the citations of the stored summaries.
 
-        Returns False when :attr:`stop` was set during the enrichment.
+        *offline* takes the metadata from the OpenAlex cache alone. Returns
+        False when :attr:`stop` was set during the enrichment.
         """
         if not self.job.summarize:
             return True
@@ -173,6 +186,7 @@ class ItemFiles:
                 item_type_label=self.type_label,
                 job=self.job,
                 stop=self.stop,
+                offline=offline,
             )
         )
         if citations is None:
