@@ -7,8 +7,8 @@ failed units in page order (pending units are left out), the ``summaries``
 rows and the stored citations; OpenAlex is never asked here, since the item
 worker enriches the citations before it stores them. The transcription
 header and the summaries' metadata line show the document's ``updated_at``
-in local time, so a document renders to the same bytes until its units
-change. The header notes a resume with another model when a run that wrote
+in UTC, so a document renders to the same bytes on any machine until its
+units change. The header notes a resume with another model when a run that wrote
 one of the document's current units recorded it. Text files end with
 exactly one newline; the DOCX archive is reproducible
 (:func:`~autoexcerpter.rendering.docx.docx_summary`).
@@ -95,6 +95,11 @@ _SUMMARIES = (
     "ON s.doc_id = u.doc_id AND s.idx = u.idx "
     "WHERE u.doc_id = ? AND u.kind = ? AND u.status != 'pending'"
 )
+_STALE = (
+    "INSERT INTO outputs (doc_id, path, format, sha256, rendered_at, run_id, stale) "
+    "VALUES (?, ?, ?, NULL, NULL, ?, 1) "
+    "ON CONFLICT (doc_id, path) DO UPDATE SET stale = 1"
+)
 _MODEL_NOTES = (
     "SELECT message FROM notes WHERE doc_id = ? AND substr(message, 1, ?) = ? "
     "AND run_id IN (SELECT run_id FROM units WHERE doc_id = ?) ORDER BY note_id"
@@ -118,10 +123,16 @@ class _Document:
 
 
 def _processed(updated_at: str | None) -> datetime:
-    """Return *updated_at* in local time; the epoch when it is missing."""
+    """Return *updated_at* in UTC; the epoch when it is missing.
+
+    The store writes aware UTC times; a naive one is read as UTC.
+    """
     if not updated_at:
-        return datetime.fromtimestamp(0, tz=UTC).astimezone()
-    return datetime.fromisoformat(updated_at).astimezone()
+        return datetime.fromtimestamp(0, tz=UTC)
+    moment = datetime.fromisoformat(updated_at)
+    if moment.tzinfo is None:
+        return moment.replace(tzinfo=UTC)
+    return moment.astimezone(UTC)
 
 
 def _document(connection: sqlite3.Connection, doc_id: int) -> _Document:
@@ -250,8 +261,8 @@ async def render_item(
     summary. The files are rendered first, each on its own, then replaced
     in one transaction: a renderer that raises leaves its file as it is
     while the others are written, and a file that cannot be replaced is
-    marked stale. Both are listed as stale with a warning; a later call
-    replaces them.
+    left as well. Both are marked stale in ``outputs`` and listed as stale
+    with a warning, so that a later run renders them again.
 
     Raises:
         LeaseLostError: The lease on the document was lost.
@@ -263,7 +274,7 @@ async def render_item(
         if name not in SUMMARY_FORMATS or has_summaries(store, lease.doc_id)
     ]
     rendered: list[RenderTarget] = []
-    failed: list[tuple[Path, Exception]] = []
+    failed: list[tuple[Path, str, Exception]] = []
 
     def render_each(connection: sqlite3.Connection) -> None:
         for target in item_targets(paths, chosen):
@@ -272,16 +283,43 @@ async def render_item(
             except sqlite3.Error:
                 raise
             except Exception as exc:  # noqa: BLE001 - one format fails alone
-                failed.append((target.path, exc))
+                failed.append((target.path, target.format, exc))
                 continue
             rendered.append(RenderTarget(target.path, target.format, _fixed(content)))
 
     read(store.path, render_each)
     report = await store.render(lease, rendered, force=force)
-    for path, exc in failed:
+    if failed:
+        await _mark_stale(store, lease, [(path, fmt) for path, fmt, _ in failed])
+    for path, _, exc in failed:
         report.stale.append(path)
         report.warnings.append(f"{path} could not be rendered: {exc}")
     return report
+
+
+async def _mark_stale(
+    store: Store, lease: Lease, targets: Sequence[tuple[Path, str]]
+) -> None:
+    """Record *targets* as stale under *lease*, keeping a registered hash.
+
+    A target without a row is registered without a hash, so that an existing
+    file there is not taken for the tool's own.
+    """
+    root = store.path.resolve().parent
+    rows = []
+    for path, fmt in targets:
+        resolved = path.resolve()
+        key = (
+            resolved.relative_to(root).as_posix()
+            if resolved.is_relative_to(root)
+            else str(resolved)
+        )
+        rows.append((lease.doc_id, key, fmt, store.run_id))
+
+    def mark(connection: sqlite3.Connection) -> None:
+        connection.executemany(_STALE, rows)
+
+    await store.write(lease, mark)
 
 
 def _fixed(content: str | bytes) -> Renderer:

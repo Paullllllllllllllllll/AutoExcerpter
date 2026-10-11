@@ -23,13 +23,15 @@ import autoexcerpter.pipeline.managers as managers_module
 import autoexcerpter.run as core
 from autoexcerpter import __main__ as entry
 from autoexcerpter.common.sqlite import read_rows
+from autoexcerpter.common.store import RenderReport
 from autoexcerpter.output.paths import ItemPaths
 from autoexcerpter.output.render import (
     RENDERERS,
     preview_database,
     render_database,
+    render_item,
 )
-from autoexcerpter.output.store import DATABASE_NAME, read_only_connection
+from autoexcerpter.output.store import DATABASE_NAME, open_store, read_only_connection
 from tests.conftest import make_settings, make_spec
 
 MakePdf = Callable[..., Path]
@@ -120,6 +122,54 @@ def test_the_transcription_header_shows_the_document_time(stored: ItemPaths) -> 
     assert "# Processed on: " in text
     assert "Total processing time" not in text
     assert text.endswith("Text of page 2.\n")
+
+
+def test_the_header_time_is_the_document_time_in_utc(stored: ItemPaths) -> None:
+    connection = sqlite3.connect(stored.output_dir / DATABASE_NAME)
+    with connection:
+        connection.execute(
+            "UPDATE documents SET updated_at = '2026-01-01T10:00:00.000+02:00'"
+        )
+    connection.close()
+
+    text = str(_rendered(stored.output_dir, "transcription-md"))
+    summary = str(_rendered(stored.output_dir, "summary-md"))
+
+    assert "# Processed on: 2026-01-01 08:00:00\n" in text
+    assert "*Summary generated 2026-01-01 08:00 " in summary
+
+
+def test_a_renderer_that_raises_marks_its_output_stale(
+    stored: ItemPaths, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database = stored.output_dir / DATABASE_NAME
+    before = {row["path"]: row["sha256"] for row in read_rows(database, "outputs")}
+
+    def broken(connection: sqlite3.Connection, doc_id: int) -> str:
+        raise ValueError("broken renderer")
+
+    monkeypatch.setitem(RENDERERS, "summary-md", broken)
+
+    async def main() -> RenderReport:
+        async with open_store(stored.output_dir) as store:
+            await store.begin_run("render")
+            lease = await store.acquire(1)
+            assert lease is not None
+            try:
+                return await render_item(
+                    store, lease, stored, ["transcription-md", "summary-md"]
+                )
+            finally:
+                await store.release(lease)
+
+    report = asyncio.run(main())
+
+    assert report.stale == [stored.summary_md]
+    assert "broken renderer" in report.warnings[-1]
+    rows = {row["path"]: row for row in read_rows(database, "outputs")}
+    summary = rows[stored.summary_md.name]
+    assert (summary["stale"], summary["sha256"]) == (1, before[stored.summary_md.name])
+    assert rows[stored.transcription.name]["stale"] == 0
 
 
 def test_the_summaries_render_the_stored_citations(stored: ItemPaths) -> None:

@@ -391,9 +391,9 @@ links references matched in OpenAlex.
 
 The files are rendered from the store once an item has every unit stored, each
 replaced atomically and recorded with its hash. A document renders to the same
-bytes until its units change: the transcription header shows the time the
-document last changed, and the Word file has fixed archive timestamps. Text files
-end with exactly one newline.
+bytes until its units change, on any machine: the transcription header and the
+summaries' metadata line show the time the document last changed, in UTC, and the
+Word file has fixed archive timestamps. Text files end with exactly one newline.
 
 When an item's longest path would exceed the Windows path limit,
 `output/paths.py` shortens the item name and appends an 8-character hash of the
