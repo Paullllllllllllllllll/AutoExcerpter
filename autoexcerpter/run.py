@@ -352,7 +352,9 @@ def _image_record(
     if name is None:
         provider, name = model.provider, model.name
     try:
-        settings, _, _ = resolve_image_settings(provider, name, job.images)
+        settings, _, _ = resolve_image_settings(
+            provider, name, job.images, job.original_max_side_px
+        )
     except ValueError:
         return None
     return image_settings_record(settings)

@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from autoexcerpter.common.native import image_settings_fingerprint
+from autoexcerpter.common.native import (
+    image_settings_fingerprint,
+    resolve_target_size,
+)
 from autoexcerpter.imaging.settings import IMAGE_PROCESSING, resolve_image_settings
 from autoexcerpter.spec import ImageSpec, recommended_images
 
@@ -108,6 +111,44 @@ def test_run_options_override_the_section() -> None:
     openai, _, _ = resolve_image_settings("openai", "gpt-5.6-terra", images)
     assert openai["request_detail"] == "low"
     assert openai["llm_detail"] == "low"
+
+
+def test_luna_original_pages_are_limited_to_3000_px() -> None:
+    settings, _, _ = resolve_image_settings("openai", "gpt-6-luna")
+    assert settings["original_max_side_px"] == 3000
+    size, reason = resolve_target_size(
+        4000, 6000, "openai", "gpt-6-luna", "original", settings
+    )
+    assert (size, reason) == ((2000, 3000), "model_cap")
+
+
+@pytest.mark.parametrize(
+    "model,provider,detail",
+    [
+        ("gpt-6.1-sol", "openai", None),
+        ("gpt-6-astra", "openai", None),
+        ("gpt-5.6-luna", "openai", None),
+        ("gpt-6-luna", "openai", "high"),
+        ("openai/gpt-6-luna", "openrouter", None),
+        ("claude-opus-5", "anthropic", None),
+    ],
+)
+def test_other_models_and_details_keep_their_sizing(
+    model: str, provider: str, detail: str | None
+) -> None:
+    settings, _, _ = resolve_image_settings(provider, model, ImageSpec(detail=detail))
+    assert "original_max_side_px" not in settings
+
+
+def test_the_setting_overrides_the_model_default() -> None:
+    def side(model: str, value: int | None) -> int | None:
+        settings = resolve_image_settings("openai", model, None, value)[0]
+        return settings.get("original_max_side_px")
+
+    assert side("gpt-6-luna", 2500) == 2500
+    assert side("gpt-6.1-sol", 2000) == 2000
+    assert side("gpt-6-luna", None) == 3000
+    assert side("gpt-6.1-sol", None) is None
 
 
 def test_unset_options_keep_the_section_values() -> None:

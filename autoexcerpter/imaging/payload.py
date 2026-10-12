@@ -40,9 +40,10 @@ class PdfPayloadSource(PdfPageSource):
         provider: str | None = "openai",
         model_name: str | None = "",
         images: ImageSpec | None = None,
+        original_max_side_px: int | None = None,
     ) -> None:
         img_cfg, model_type, section = resolve_image_settings(
-            provider, model_name, images
+            provider, model_name, images, original_max_side_px
         )
         super().__init__(pdf_path, img_cfg, model_type, section=section)
 
@@ -56,9 +57,10 @@ class FolderPayloadSource(FolderPageSource):
         provider: str | None = "openai",
         model_name: str | None = "",
         images: ImageSpec | None = None,
+        original_max_side_px: int | None = None,
     ) -> None:
         img_cfg, model_type, section = resolve_image_settings(
-            provider, model_name, images
+            provider, model_name, images, original_max_side_px
         )
         super().__init__(
             folder_path,

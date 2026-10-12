@@ -12,6 +12,7 @@ from autoexcerpter.common.retry import RetryPolicy
 from autoexcerpter.settings import (
     EXAMPLE_SETTINGS_PATH,
     Endpoint,
+    Images,
     RetryRule,
     Settings,
     SettingsError,
@@ -84,6 +85,21 @@ def test_partial_file_keeps_code_values(settings_paths: Path) -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("images:\n  original_max_side_px: 2500\n", 2500),
+        ("images:\n  original_max_side_px: null\n", None),
+        ("images: {}\n", None),
+    ],
+)
+def test_original_max_side_setting(
+    settings_paths: Path, text: str, expected: int | None
+) -> None:
+    _write(settings_paths / "settings.yaml", text)
+    assert load().images == Images(expected)
+
+
 def test_endpoints_and_key_variables(settings_paths: Path) -> None:
     _write(
         settings_paths / "settings.yaml",
@@ -113,6 +129,9 @@ def test_endpoints_and_key_variables(settings_paths: Path) -> None:
         "rate_limits:\n  - [10, 0]\n",
         "endpoints:\n  local:\n    base_url: http://x/\n",
         "openalex:\n  max_requests: -1\n",
+        "images:\n  max_side_px: 3000\n",
+        "images:\n  original_max_side_px: 0\n",
+        "images:\n  original_max_side_px: wide\n",
         "defaults:\n  modle: gpt-5.6-terra\n",
         "defaults:\n  dry_run: true\n",
         "defaults:\n  force: true\n",

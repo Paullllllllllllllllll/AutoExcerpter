@@ -3,7 +3,8 @@
 ``data/capability_expectations.json`` was generated once from the static
 registry the family table replaced, with these changes: the vendors' output
 limits for the GPT-5 chat-latest ids, the Gemini 3 image models, gpt-4.1-mini
-and gemini-2.5-flash-lite, and the ``gpt-6.1-sol`` family. It covers every
+and gemini-2.5-flash-lite, the ``gpt-6.1-sol`` family and the original-detail
+side limit of ``gpt-6-luna`` (its ``extras``). It covers every
 registry prefix, dated
 variants, and unknown ids: bare, ``provider:``-prefixed, ``vendor/model``
 and ``models/gemini-*``.
@@ -33,12 +34,13 @@ def test_family_table_matches_recorded_capabilities(row: dict[str, Any]) -> None
     expected = dict(row)
     model = expected.pop("model")
     provider = expected.pop("provider")
+    extras = expected.pop("extras", {})
     caps = detect_capabilities(model)
 
     assert detect_provider(model) == provider
     assert caps.model_name == model
     assert {name: getattr(caps, name) for name in expected} == expected
-    assert dict(caps.extras) == {}
+    assert dict(caps.extras) == extras
 
 
 def test_expectations_cover_every_kind_of_id() -> None:

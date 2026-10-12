@@ -14,7 +14,11 @@ from typing import Any, Literal
 
 from autoexcerpter.common.images import DEFAULT_JPEG_QUALITY
 from autoexcerpter.common.native import model_image_cap, validate_image_settings
-from autoexcerpter.llm.capabilities import detect_capabilities, detect_provider
+from autoexcerpter.llm.capabilities import (
+    ORIGINAL_MAX_SIDE,
+    detect_capabilities,
+    detect_provider,
+)
 from autoexcerpter.llm.image_detail import resolve_request_detail
 from autoexcerpter.spec import ImageSpec, recommended_images
 
@@ -165,8 +169,13 @@ def resolve_image_settings(
     provider: str | None,
     model_name: str | None,
     images: ImageSpec | None = None,
+    original_max_side_px: int | None = None,
 ) -> tuple[dict[str, Any], ModelType, str]:
-    """Resolve section settings, wire detail, caps and rendering options."""
+    """Resolve section settings, wire detail, caps and rendering options.
+
+    OpenAI pages at ``original`` detail are limited on the long side to
+    *original_max_side_px*, else to the model's default limit, if any.
+    """
     model = model_name or ""
     provider = (provider or detect_provider(model)).lower()
     model_type = detect_model_type(provider, model)
@@ -232,6 +241,12 @@ def resolve_image_settings(
     # The OpenAI section's llm_detail reports the effective local detail.
     if model_type == "openai":
         result["llm_detail"] = result["resolved_detail"]
+    if provider == "openai" and result["resolved_detail"] == "original":
+        side = original_max_side_px
+        if side is None:
+            side = caps.extra(ORIGINAL_MAX_SIDE)
+        if side is not None:
+            result["original_max_side_px"] = int(side)
     cap = model_image_cap(model_type, model, result["resolved_detail"], result)
     result["cap_policy"] = cap.policy if cap else "profile-v1"
     if (

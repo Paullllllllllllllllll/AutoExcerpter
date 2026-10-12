@@ -266,6 +266,7 @@ retry:
       validation_failure: {enabled: true, max_attempts: 3, backoff_base: 0.5, backoff_multiplier: 1.5}
 state_dir: ''                       # '' means ~/.autoexcerpter
 openalex: {email: '', api_key_env: OPENALEX_API_KEY, max_requests: 300}
+images: {original_max_side_px: null}   # null keeps the model's default
 defaults:
   model: gpt-5.6-terra
   reasoning_effort: high
@@ -286,7 +287,8 @@ multiplier^n` plus jitter, at most `backoff_cap` seconds, a server's
 `Retry-After` included. `schema_retries` covers retries driven by the model
 output: invalid JSON (`validation_failure`) or a flag the model sets on a page.
 `state_dir` and `openalex` are described under
-[Citations and OpenAlex](#citations-and-openalex).
+[Citations and OpenAlex](#citations-and-openalex), `images` under
+[Providers and Response Formats](#providers-and-response-formats).
 
 The `defaults:` block holds run defaults keyed by option names. Unknown keys,
 options that only the command line can set and invalid values are errors.
@@ -371,10 +373,12 @@ OpenAI); custom endpoints use the custom preset.
 
 `native` renders each PDF page at the density of its scan; pages without a
 page-spanning scan render at 300 DPI. Payloads are sized to the model's documented
-limits. `--image-detail` is the request detail for OpenAI models and selects the
-local resize profile for the others (the media resolution for Google). An
-oversized PNG falls back to JPEG with a warning; a JPEG over the cap fails the
-page.
+limits. At `original` detail, gpt-6-luna pages are limited to 3,000 px on the long
+side, since larger scans led it to invent text; `images.original_max_side_px` in the
+settings sets this limit for every OpenAI model. `--image-detail` is the request
+detail for OpenAI models and selects the local resize profile for the others (the
+media resolution for Google). An oversized PNG falls back to JPEG with a warning; a
+JPEG over the cap fails the page.
 
 ## Output Contract
 

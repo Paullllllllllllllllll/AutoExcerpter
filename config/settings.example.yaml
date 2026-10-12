@@ -84,6 +84,11 @@ openalex:
   api_key_env: OPENALEX_API_KEY  # variable holding the key; unset sends none
   max_requests: 300  # citations looked up per document
 
+# Long-side limit in pixels of OpenAI pages sent at original detail; null
+# keeps the model's default (3000 for gpt-6-luna, none for other models).
+images:
+  original_max_side_px: null
+
 # Run defaults keyed by option name (flags override them), for example:
 # defaults:
 #   model: gpt-5.6-terra

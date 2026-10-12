@@ -28,6 +28,7 @@ __all__ = [
     "DEFAULT_SETTINGS_PATH",
     "EXAMPLE_SETTINGS_PATH",
     "Endpoint",
+    "Images",
     "OpenAlexSettings",
     "RetryRule",
     "RetrySettings",
@@ -142,6 +143,17 @@ class OpenAlexSettings:
 
 
 @dataclass(frozen=True)
+class Images:
+    """Page image limits besides the run's image options.
+
+    ``original_max_side_px`` limits the long side of OpenAI pages sent at
+    ``original`` detail; None takes the model's default limit, if any.
+    """
+
+    original_max_side_px: int | None = None
+
+
+@dataclass(frozen=True)
 class Settings:
     """Machine values, the optional run defaults and any extra blocks.
 
@@ -158,6 +170,7 @@ class Settings:
     retry: RetrySettings = field(default_factory=RetrySettings)
     state_dir: Path | None = None
     openalex: OpenAlexSettings = field(default_factory=OpenAlexSettings)
+    images: Images = field(default_factory=Images)
     defaults: Mapping[str, Any] = field(default_factory=lambda: MappingProxyType({}))
     source: Path | None = None
     extensions: Mapping[str, Any] = field(default_factory=lambda: MappingProxyType({}))
@@ -233,6 +246,7 @@ class Settings:
             retry=_retry(reader, data.get("retry")),
             state_dir=Path(state_dir) if state_dir else None,
             openalex=_openalex(reader, data.get("openalex")),
+            images=_images(reader, data.get("images")),
             defaults=MappingProxyType(dict(defaults or {})),
             source=source,
             extensions=_extensions(reader, data, blocks),
@@ -248,6 +262,7 @@ _TOP_KEYS = frozenset(
         "retry",
         "state_dir",
         "openalex",
+        "images",
     }
 )
 
@@ -471,6 +486,17 @@ def _openalex(reader: _Reader, raw: Any) -> OpenAlexSettings:
             section, "max_requests", base.max_requests, "openalex."
         ),
     )
+
+
+def _images(reader: _Reader, raw: Any) -> Images:
+    section = reader.section(raw, "images")
+    reader.keys(section, frozenset({"original_max_side_px"}), "images")
+    if section.get("original_max_side_px") is None:
+        return Images()
+    side = reader.integer(section, "original_max_side_px", 0, "images.")
+    if side < 1:
+        raise reader.fail("images.original_max_side_px", "must be at least 1")
+    return Images(original_max_side_px=side)
 
 
 def _extensions(

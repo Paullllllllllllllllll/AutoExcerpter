@@ -332,6 +332,7 @@ class ItemProcessor:
             provider=model.provider,
             model_name=model.name,
             images=self.job.images,
+            original_max_side_px=self.job.original_max_side_px,
         )
 
     async def _run(self, source: PayloadSource) -> bool:

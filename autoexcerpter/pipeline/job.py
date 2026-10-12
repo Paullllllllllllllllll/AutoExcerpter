@@ -26,6 +26,7 @@ class ItemJob:
     lookups are off. Citations are looked up only when *openalex_enabled* is
     set and *openalex* holds a client, at most *openalex_max_requests* per
     item. *transcription_format* is the transcription file's extension.
+    *original_max_side_px* is the ``images`` setting of that name.
     """
 
     transcription: PhaseModel
@@ -42,6 +43,7 @@ class ItemJob:
     openalex_max_requests: int = 300
     images: ImageSpec | None = None
     openalex: OpenAlexClient | None = None
+    original_max_side_px: int | None = None
 
 
 def _seconds(value: float) -> float:
@@ -142,6 +144,7 @@ def job_from_spec(spec: RunSpec, settings: Settings) -> ItemJob:
         openalex_max_requests=settings.openalex.max_requests,
         images=spec.images,
         openalex=openalex,
+        original_max_side_px=settings.images.original_max_side_px,
     )
 
 

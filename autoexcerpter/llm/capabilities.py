@@ -32,6 +32,10 @@ ProviderType = Literal[
 
 ProviderCapabilities = Capabilities
 
+ORIGINAL_MAX_SIDE = "image_original_max_side_px"
+"""The ``Capabilities.extras`` key of the default long-side limit in pixels of
+OpenAI pages sent at ``original`` detail."""
+
 _Fields = Mapping[str, Any]
 
 _TEXT_AND_IMAGES: _Fields = {
@@ -188,7 +192,8 @@ _GEMINI_TAIL = _last_segment_or("gemini", "google/")
 _LLAMA_TAIL = _last_segment_or("llama", "meta/")
 
 _FAMILIES: tuple[FamilyRule, ...] = (
-    *_same(_GPT56, "gpt-6.1-sol", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna"),
+    *_same(_GPT56, "gpt-6.1-sol", "gpt-6-astra", "gpt-6-sol"),
+    *_same({**_GPT56, "extras": {ORIGINAL_MAX_SIDE: 3000}}, "gpt-6-luna"),
     *_same(_GPT56, "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"),
     FamilyRule("gpt-5.6-sol", _GPT56, ("gpt-5.6",)),
     *_same(_gpt5(1050000), "gpt-5.5-pro"),
@@ -394,6 +399,7 @@ def ensure_image_support(model_name: str, capabilities: ProviderCapabilities) ->
 
 
 __all__ = [
+    "ORIGINAL_MAX_SIDE",
     "TABLE",
     "CapabilityError",
     "ImageDetail",
