@@ -59,14 +59,21 @@ PROVIDER_CLASSES = (
 _COMMAND_HEADER = "Equivalent command:"
 _RUN_TIME_RE = re.compile(r"^Run time: \d+(?:\.\d+)?s$", re.MULTILINE)
 _ASYNC_SLEEP = asyncio.sleep
+HEARTBEAT_TASK = "lease-heartbeat"
 
 
 def _no_sleep(_seconds: float) -> None:
     """Stand-in for ``time.sleep`` that returns at once."""
 
 
-async def _yield_only(_delay: float, result: Any = None) -> Any:
-    """Stand-in for ``asyncio.sleep`` that only yields to the event loop."""
+async def _yield_only(delay: float, result: Any = None) -> Any:
+    """Stand-in for ``asyncio.sleep`` that only yields to the event loop.
+
+    The store's lease heartbeat keeps its real interval, so it does not spin.
+    """
+    task = asyncio.current_task()
+    if task is not None and task.get_name() == HEARTBEAT_TASK:
+        return await _ASYNC_SLEEP(delay, result)
     await _ASYNC_SLEEP(0)
     return result
 
