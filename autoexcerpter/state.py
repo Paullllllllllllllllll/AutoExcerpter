@@ -72,13 +72,16 @@ def write_json_atomic(path: Path, data: dict[str, Any]) -> None:
         logger.warning("Could not create parent dir for %s: %s", path, exc)
         return
 
+    # One dumps call runs the C encoder; json.dump encodes chunk by chunk in
+    # Python.
+    text = json.dumps(data, ensure_ascii=False, indent=2)
     tmp = path.with_name(f"{path.name}.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp")
     last_exc: OSError | None = None
     try:
         for attempt in range(_ATOMIC_WRITE_ATTEMPTS):
             try:
                 with tmp.open("w", encoding="utf-8") as f:
-                    json.dump(data, f, ensure_ascii=False, indent=2)
+                    f.write(text)
                 os.replace(tmp, path)
                 return
             except (PermissionError, FileNotFoundError) as exc:
