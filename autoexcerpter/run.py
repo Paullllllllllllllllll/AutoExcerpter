@@ -19,6 +19,7 @@ used other image settings is ``refused`` and counts failed.
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import contextlib
 import functools
 import logging
@@ -103,6 +104,8 @@ BUSY_WARN_INTERVAL: float = DEFAULT_WARN_INTERVAL
 """Seconds between two warnings about the same busy database."""
 
 _RESUMABLE = (ItemState.PARTIAL, ItemState.TRANSCRIPTION_ONLY)
+# Inputs hashed at once while planning; the threads overlap the file reads.
+_HASH_WORKERS = 8
 
 
 class PlanError(Exception):
@@ -396,8 +399,13 @@ class _Classifier:
     job: ItemJob
     image: Mapping[str, Any] | None
 
-    def planned(self, item: ItemSpec, output_dir: Path) -> PlannedItem:
+    def planned(
+        self, item: ItemSpec, output_dir: Path, digest: str | None
+    ) -> PlannedItem:
         """Return *item* planned with its resume state; write nothing.
+
+        *digest* is the input's hash (see
+        :func:`~autoexcerpter.pipeline.item.input_sha256`).
 
         Raises:
             StoreRefusedError: The folder's database is refused.
@@ -407,7 +415,6 @@ class _Classifier:
         paths = ItemPaths.for_item(
             item.output_stem, output_dir, job.transcription_format
         )
-        digest = input_sha256(item)
         request = ResumeRequest(
             outputs=_expected_outputs(paths, job),
             legacy=paths.legacy_logs(),
@@ -487,10 +494,12 @@ def plan(
     _guard_duplicate_outputs(selected, base)
 
     classifier = _Classifier(spec, job, _image_record(job))
+    with concurrent.futures.ThreadPoolExecutor(_HASH_WORKERS) as pool:
+        digests = list(pool.map(input_sha256, selected))
     groups: dict[ItemState, list[PlannedItem]] = {state: [] for state in ItemState}
-    for item in selected:
+    for item, digest in zip(selected, digests, strict=True):
         try:
-            planned = classifier.planned(item, _item_output_dir(item, base))
+            planned = classifier.planned(item, _item_output_dir(item, base), digest)
         except PlanError as exc:
             exc.items_total = len(selected)
             raise
