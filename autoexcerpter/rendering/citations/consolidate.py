@@ -173,11 +173,17 @@ def find_merge_target(
         ):
             # Different volumes are genuinely different works.
             continue
-        ratio = SequenceMatcher(
-            None, candidate.comparison_text, survivor.comparison_text
-        ).ratio()
-        similarity = jaccard(candidate.comparison_text, survivor.comparison_text)
-        if ratio >= merge_ratio or similarity >= merge_jaccard:
+        text, other = candidate.comparison_text, survivor.comparison_text
+        if jaccard(text, other) >= merge_jaccard:
+            return survivor
+        # The quick ratios are upper bounds of ratio(); the full comparison
+        # runs only when both clear the gate.
+        matcher = SequenceMatcher(None, text, other)
+        if (
+            matcher.real_quick_ratio() >= merge_ratio
+            and matcher.quick_ratio() >= merge_ratio
+            and matcher.ratio() >= merge_ratio
+        ):
             return survivor
     return None
 
