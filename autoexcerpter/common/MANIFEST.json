@@ -10,7 +10,7 @@
     "images.py": "4435ff217caae9bd52ed9c326850fcca8a8541adc3b099129f1be886d1c0329d",
     "log_setup.py": "48827f90abb16c8abb9f47cb2a0ac10d398f7fa65e07a51105dc8d64ac06955c",
     "native.py": "67ee3442afd53ed4e8f2fe2e7a389967b76a966633a015eb1c66f743b6e8f0ff",
-    "options.py": "d22fbdf321471d4a1493ac6b51f67a2c0d1321571d463b8917d40552bc176ca9",
+    "options.py": "bfd7e5f9a737fb9cfcd83b6e3d83d07eed48b13f1bb907be8aa6b13fae5df64f",
     "prompts.py": "81263e0aa216bd5b3bed79c32d7ce77adf2754d33990a125822dff55458aecdc",
     "rate_limit.py": "9218ce12aba7a5acf0ca55895ad9a8df5e379ad07dd9f1a93de211902214f98d",
     "responses.py": "e84bde65d1d38ac92ab868c9af474c615351ebe3d91da1134b593610fcc2a124",
@@ -22,6 +22,6 @@
     "structured.py": "cce3ed067fce9a1dad91636688070a362eb875a788a42a360ea38a841ccf6712",
     "testing.py": "b2f898bd7df3ab1de9b9b55089475e66c497e59b8c2627aef3a925cc8c2070f8",
     "usage.py": "f251f386abca8400d2e8514130c53fe72ba1cc3caddcaac3f601a649c014dafd",
-    "wizard.py": "e102618f5d4385e1f45a1671eba74bcfa76c7fd455b2115da568ee079ab86eff"
+    "wizard.py": "f100ea2faf5564b992dde2cf3074720426a05bc50aec9a76d845abb315a803ff"
   }
 }

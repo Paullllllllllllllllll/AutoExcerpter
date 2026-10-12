@@ -116,11 +116,12 @@ class Option:
 
     ``kind`` decides the argparse form: VALUE takes an argument, SWITCH adds
     ``--name/--no-name``, FLAG is ``store_true``, LIST takes a comma-separated
-    value. ``type`` converts one string; ``choices`` restricts the converted
-    values; ``choice_provider`` lists suggestions that are not enforced (for
-    example model names). ``target`` is the dotted field path the value fills
-    in the caller's run specification; ``settable`` allows the option in a
-    settings defaults block.
+    value and accumulates when given more than once. VALUE and LIST accept
+    ``--flag value`` and ``--flag=value`` alike. ``type`` converts one string;
+    ``choices`` restricts the converted values; ``choice_provider`` lists
+    suggestions that are not enforced (for example model names). ``target`` is
+    the dotted field path the value fills in the caller's run specification;
+    ``settable`` allows the option in a settings defaults block.
     """
 
     name: str
@@ -173,20 +174,31 @@ class Option:
             parts = list(raw)
         else:
             raise OptionError(f"{self.flag}: expected a list, got {raw!r}")
-        values = [self._convert_one(part) for part in parts if part != ""]
+        return self._ordered([self._convert_one(part) for part in parts if part != ""])
+
+    def _ordered(self, values: Sequence[Any]) -> tuple[Any, ...]:
+        """Return converted list items without duplicates, in choice order."""
         if self.choices is not None:
             return tuple(choice for choice in self.choices if choice in values)
         return tuple(dict.fromkeys(values))
 
     def format(self, value: Any) -> list[str]:
-        """Return the argument tokens that set ``value``."""
+        """Return the argument tokens that set ``value``.
+
+        A value that begins with ``-`` is written as ``--flag=value``, since
+        argparse would read it as a flag on its own.
+        """
         if self.kind is Kind.SWITCH:
             return [self.flag if value else self.negative_flag]
         if self.kind is Kind.FLAG:
             return [self.flag] if value else []
         if self.kind is Kind.LIST:
-            return [self.flag, ",".join(str(item) for item in value)]
-        return [self.flag, str(value)]
+            text = ",".join(str(item) for item in value)
+        else:
+            text = str(value)
+        if text.startswith("-"):
+            return [f"{self.flag}={text}"]
+        return [self.flag, text]
 
     @property
     def negative_flag(self) -> str:
@@ -449,6 +461,26 @@ class OptionTable:
         ]
 
 
+class _Accumulate(argparse.Action):
+    """Store a list option, merged with the values of its earlier mentions."""
+
+    def __init__(self, *args: Any, option: Option, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.option = option
+
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: Any,
+        option_string: str | None = None,
+    ) -> None:
+        earlier = getattr(namespace, self.dest, None)
+        if earlier is not None:
+            values = self.option._ordered((*earlier, *values))
+        setattr(namespace, self.dest, values)
+
+
 def _add_argument(container: Any, option: Option) -> None:
     common: dict[str, Any] = {
         "dest": option.name,
@@ -465,6 +497,8 @@ def _add_argument(container: Any, option: Option) -> None:
         metavar = option.metavar
         if metavar is None and option.kind is Kind.VALUE and option.choices:
             metavar = "{" + ",".join(str(choice) for choice in option.choices) + "}"
+        if option.kind is Kind.LIST:
+            common.update(action=_Accumulate, option=option)
         container.add_argument(
             option.flag,
             type=option._argparse_type,

@@ -228,11 +228,11 @@ Equivalent command:
 
 The command spells out every value that differs from the code default, settings
 defaults included, so it reproduces the run on another machine. On Windows it is
-quoted for `cmd`; in PowerShell a `$` inside a double-quoted value is expanded,
-so check such values before pasting. Run shows progress bars and ends with a
-summary table. Edit a step returns to one step. Copy command and quit prints the
-command on stdout and copies it to the clipboard where one is available. Quit
-exits. When items are already complete, the review offers to reprocess them
+quoted for PowerShell (single quotes), elsewhere for a POSIX shell. Run shows
+progress bars and ends with a summary table. Edit a step returns to one step;
+the answers of steps it turns off come back when they apply again. Copy command
+and quit prints the command on stdout and copies it to the clipboard where one is
+available. Quit exits. When items are already complete, the review offers to reprocess them
 (`--force`). Run is withheld while the plan fails or a needed API key variable is
 unset; the review names the variable. The UI needs an interactive terminal on
 stdin and stdout; anything else exits with code 2.

@@ -4,13 +4,15 @@ A :class:`Wizard` runs hand-ordered :class:`Step` objects, each naming the
 options it may set, against a :class:`State` that resolves its answers like
 command-line flags over the settings defaults. The review screen shows
 tool-supplied lines, marks values taken from settings defaults and prints the
-equivalent command. All screen input and output goes through a
+equivalent command, quoted for PowerShell on Windows and for a POSIX shell
+elsewhere. All screen input and output goes through a
 :class:`Prompter`; this module imports no prompt library.
 """
 
 from __future__ import annotations
 
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -557,7 +559,9 @@ class Wizard:
     """Run steps with Back navigation, then the review screen.
 
     ``command`` returns the words of the equivalent command; a ValueError
-    from it is shown instead and withholds Copy.
+    from it is shown instead and withholds Copy. The answers of a step that
+    stops applying are set aside, not lost: they return when the step
+    applies again, unless the option was answered in the meantime.
     """
 
     def __init__(
@@ -581,6 +585,7 @@ class Wizard:
         self.command = command
         self.width = width
         self.visited: set[str] = set()
+        self._parked: dict[str, Any] = {}
         names = [step.name for step in self.steps]
         if len(set(names)) != len(names):
             raise ValueError(f"duplicate step names in {names}")
@@ -618,9 +623,10 @@ class Wizard:
                 continue
             step = self.steps[index]
             if not step.applies(self.state):
-                self._clear_owned(step)
+                self._park(step)
                 index += 1
                 continue
+            self._unpark(step)
             if self._ask(step) is DONE:
                 history.append(index)
                 index += 1
@@ -652,16 +658,43 @@ class Wizard:
         )
         return answer == "quit"
 
-    def _clear_owned(self, skipped: Step) -> None:
+    def _park(self, skipped: Step) -> None:
+        """Set aside the answers of options only inapplicable steps set."""
         kept = {name for step in self.applicable() for name in step.sets}
+        answers = self.state.answers
         for name in skipped.sets:
-            if name not in kept:
+            if name not in kept and name in answers:
+                self._parked[name] = answers[name]
                 self.state.clear(name)
 
-    def _prune(self) -> None:
+    def _unpark(self, step: Step) -> None:
+        """Restore the set-aside answers of an applicable step.
+
+        An answer is dropped instead when its option, or another member of
+        its exclusive group, was answered after it was set aside.
+        """
+        for name in step.sets:
+            if name not in self._parked:
+                continue
+            value = self._parked.pop(name)
+            group = self.state.table[name].exclusive
+            answered = self.state.answers
+            if name in answered or (
+                group is not None
+                and any(
+                    self.state.table[other].exclusive == group for other in answered
+                )
+            ):
+                continue
+            self.state.set(name, value)
+
+    def _settle(self) -> None:
+        """Park the answers of inapplicable steps, restore those applying again."""
         for step in self.steps:
-            if not step.applies(self.state):
-                self._clear_owned(step)
+            if step.applies(self.state):
+                self._unpark(step)
+            else:
+                self._park(step)
 
     def _command(self) -> tuple[tuple[str, ...] | None, str | None]:
         if self.command is None:
@@ -673,7 +706,7 @@ class Wizard:
 
     def _review_loop(self) -> Outcome | None:
         while True:
-            self._prune()
+            self._settle()
             review = self.review(self.state)
             words, error = self._command()
             display = command_display(words, width=self.width) if words else []
@@ -730,9 +763,11 @@ class Wizard:
         if self._ask(step) is BACK:
             return
         for pending in self.steps:
-            if pending.name in self.visited or not pending.applies(self.state):
+            if not pending.applies(self.state):
+                self._park(pending)
                 continue
-            if self._ask(pending) is BACK:
+            self._unpark(pending)
+            if pending.name not in self.visited and self._ask(pending) is BACK:
                 return
 
 
@@ -740,17 +775,41 @@ def _is_windows(windows: bool | None) -> bool:
     return os.name == "nt" if windows is None else windows
 
 
+_POWERSHELL_PLAIN = re.compile(r"[A-Za-z0-9_./\\:=+-]+(,[A-Za-z0-9_./\\:=+-]+)*")
+_POWERSHELL_OPTION = re.compile(r"--?[A-Za-z][A-Za-z0-9-]*")
+_POWERSHELL_QUOTES = re.compile("(['‘’‚‛])")
+
+
+def _powershell_quote(word: str) -> str:
+    """Quote ``word`` for PowerShell unless it reads literally as it is.
+
+    Words left bare hold only letters, digits and ``_./\\:=+-`` and inner
+    commas, and do not begin with ``-`` unless they are a plain option name,
+    since PowerShell splits ``-a.b`` at the dot. Any other word goes in single
+    quotes, in which only a single quote is special; PowerShell also reads
+    the typographic single quotes as one, so each of them is doubled.
+    """
+    if _POWERSHELL_PLAIN.fullmatch(word) and (
+        not word.startswith("-") or _POWERSHELL_OPTION.fullmatch(word)
+    ):
+        return word
+    return "'" + _POWERSHELL_QUOTES.sub(r"\1\1", word) + "'"
+
+
 def quote_word(word: str, *, windows: bool | None = None) -> str:
-    """Quote one word for the shell of the current platform."""
+    """Quote one word for PowerShell on Windows, for a POSIX shell elsewhere."""
     if _is_windows(windows):
-        return subprocess.list2cmdline([word])
+        return _powershell_quote(word)
     return shlex.quote(word)
 
 
 def command_line(words: Sequence[str], *, windows: bool | None = None) -> str:
-    """Return ``words`` as one command line for the current platform."""
+    """Return ``words`` as one command line for the current platform.
+
+    On Windows the line is quoted for PowerShell, elsewhere for a POSIX shell.
+    """
     if _is_windows(windows):
-        return subprocess.list2cmdline(list(words))
+        return " ".join(_powershell_quote(word) for word in words)
     return shlex.join(words)
 
 

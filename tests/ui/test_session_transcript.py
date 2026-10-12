@@ -132,12 +132,24 @@ def _command_block(lines: Sequence[str]) -> tuple[int, int]:
     return start, end
 
 
+_POWERSHELL_WORD = re.compile(r"'((?:[^']|'')*)'|(\S+)")
+
+
 def _split(line: str) -> list[str]:
-    """Split a command line printed for the current platform into words."""
+    """Split a command line printed for the current platform into words.
+
+    On Windows the words are quoted for PowerShell: bare, or in single quotes
+    with each inner single quote doubled.
+    """
     if os.name != "nt":
         return shlex.split(line)
-    words = shlex.split(line, posix=False)
-    return [w[1:-1] if len(w) > 1 and w[0] == w[-1] == '"' else w for w in words]
+    return [
+        bare if quoted is None else quoted.replace("''", "'")
+        for quoted, bare in (
+            (match.group(1), match.group(2))
+            for match in _POWERSHELL_WORD.finditer(line)
+        )
+    ]
 
 
 def _spec_of(words: Sequence[str]) -> RunSpec:

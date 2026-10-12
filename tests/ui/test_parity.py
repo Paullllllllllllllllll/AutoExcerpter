@@ -12,8 +12,8 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import json
+import re
 import shlex
-import sys
 from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from pathlib import Path
 from types import MappingProxyType
@@ -534,66 +534,24 @@ def workspace(
     return Workspace(tmp_path, make_pdf, monkeypatch)
 
 
+_POWERSHELL_WORD = re.compile(r"'((?:[^']|'')*)'|(\S+)")
+
+
 def split_windows(line: str) -> list[str]:
-    """Split *line* by the rules ``subprocess.list2cmdline`` quotes for."""
+    """Split *line* into words quoted for PowerShell.
+
+    A word is bare, or in single quotes with each inner single quote doubled.
+    """
     words: list[str] = []
-    word: list[str] = []
-    in_word = quoted = False
-    index = 0
-    while index < len(line):
-        char = line[index]
-        if char == "\\":
-            end = index
-            while end < len(line) and line[end] == "\\":
-                end += 1
-            count = end - index
-            if end < len(line) and line[end] == '"':
-                word.append("\\" * (count // 2))
-                if count % 2:
-                    word.append('"')
-                    end += 1
-            else:
-                word.append("\\" * count)
-            in_word = True
-            index = end
-            continue
-        if char == '"':
-            quoted = not quoted
-            in_word = True
-        elif char in " \t" and not quoted:
-            if in_word:
-                words.append("".join(word))
-                word, in_word = [], False
-        else:
-            word.append(char)
-            in_word = True
-        index += 1
-    if in_word:
-        words.append("".join(word))
+    for match in _POWERSHELL_WORD.finditer(line):
+        quoted, bare = match.group(1), match.group(2)
+        words.append(bare if quoted is None else quoted.replace("''", "'"))
     return words
 
 
 def split_line(line: str, *, windows: bool) -> list[str]:
     """Split a command line with the quoting rules of the platform."""
     return split_windows(line) if windows else shlex.split(line)
-
-
-def _windows_api_split(line: str) -> list[str]:
-    """Split *line* with ``CommandLineToArgvW``; Windows only."""
-    if sys.platform != "win32":
-        raise RuntimeError("CommandLineToArgvW exists only on Windows")
-    import ctypes
-    from ctypes import wintypes
-
-    to_argv = ctypes.windll.shell32.CommandLineToArgvW
-    to_argv.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(ctypes.c_int)]
-    to_argv.restype = ctypes.POINTER(wintypes.LPWSTR)
-    count = ctypes.c_int()
-    argv = to_argv(line, ctypes.byref(count))
-    try:
-        return [str(argv[index]) for index in range(count.value)]
-    finally:
-        ctypes.windll.kernel32.LocalFree(argv)
 
 
 def _subparser(name: str) -> argparse.ArgumentParser:
@@ -697,8 +655,6 @@ def _check_lines(played: Played) -> None:
         display = command_display(words, width=WIDTH, windows=windows)
         joined = " ".join(part.strip() for part in display)
         assert split_line(joined, windows=windows) == words
-        if windows and sys.platform == "win32":
-            assert _windows_api_split(line) == words
     shown = command_display(words, width=WIDTH)
     lines = played.prompter.lines
     start = len(lines) - lines[::-1].index("Equivalent command:")

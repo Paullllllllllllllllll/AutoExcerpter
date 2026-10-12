@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import json
+import shutil
+import subprocess
+import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
@@ -604,6 +608,43 @@ class TestReview:
             "Tool | new run   step 4 of 5",
         ]
 
+    def test_edit_keeps_the_answers_of_a_step_turned_off_and_on(self) -> None:
+        wizard, prompter = _wizard(
+            [
+                "a.pdf",
+                "beside",
+                True,
+                "s1",
+                ["docx"],
+                "edit",
+                "summary",
+                False,
+                "edit",
+                "summary",
+                True,
+                "run",
+            ]
+        )
+        with prompter:
+            outcome = wizard.run()
+
+        assert outcome.answers["summary_model"] == "s1"
+        assert outcome.answers["formats"] == ("docx",)
+        assert "summarize" not in outcome.answers
+        asked = [line for line in prompter.lines if line.startswith("? Summary model")]
+        assert asked == ["? Summary model: s1"]
+
+    def test_back_to_a_step_turned_off_and_on_restores_its_answers(self) -> None:
+        wizard, prompter = _wizard(
+            ["a.pdf", "beside", True, "s1", BACK, BACK, False, BACK, True]
+            + [KEEP, KEEP, "run"]
+        )
+        with prompter:
+            outcome = wizard.run()
+
+        assert outcome.answers["summary_model"] == "s1"
+        assert "? Summary model: [s1] s1" in prompter.lines
+
     def test_back_while_editing_returns_to_the_review(self) -> None:
         wizard, prompter = _wizard(
             [
@@ -746,11 +787,19 @@ class TestCommand:
         ("word", "windows", "quoted"),
         [
             ("plain", True, "plain"),
-            ("with space", True, '"with space"'),
-            ('say "hi"', True, '"say \\"hi\\""'),
-            ("C:\\dir with space\\", True, '"C:\\dir with space\\\\"'),
+            ("with space", True, "'with space'"),
+            ('say "hi"', True, "'say \"hi\"'"),
+            ("C:\\dir with space\\", True, "'C:\\dir with space\\'"),
             ("C:\\plain\\path", True, "C:\\plain\\path"),
-            ("", True, '""'),
+            ("", True, "''"),
+            ("it's", True, "'it''s'"),
+            ("it\u2019s", True, "'it\u2019\u2019s'"),
+            ("a;b", True, "'a;b'"),
+            ("$HOME", True, "'$HOME'"),
+            ("back`tick", True, "'back`tick'"),
+            ("-x.y", True, "'-x.y'"),
+            ("--formats", True, "--formats"),
+            ("md,sqlite", True, "md,sqlite"),
             ("plain", False, "plain"),
             ("with space", False, "'with space'"),
             ("it's", False, "'it'\"'\"'s'"),
@@ -762,7 +811,7 @@ class TestCommand:
 
     def test_command_line(self) -> None:
         words = ["tool", "run", "--input", "C:\\a b\\x.pdf"]
-        assert command_line(words, windows=True) == 'tool run --input "C:\\a b\\x.pdf"'
+        assert command_line(words, windows=True) == "tool run --input 'C:\\a b\\x.pdf'"
         assert command_line(words, windows=False) == (
             "tool run --input 'C:\\a b\\x.pdf'"
         )
@@ -784,13 +833,35 @@ class TestCommand:
         lines = command_display(words, width=50, windows=True)
 
         assert lines == [
-            '  tool run --input "C:\\scans\\cookbook 1791"',
+            "  tool run --input 'C:\\scans\\cookbook 1791'",
             "    --model gpt-5.6-terra --beside-input",
             "    --reasoning-effort high --formats md,sqlite",
         ]
 
     def test_display_of_a_short_command_is_one_line(self) -> None:
         assert command_display(["tool", "ui"], windows=False) == ["  tool ui"]
+
+    @pytest.mark.skipif(shutil.which("pwsh") is None, reason="needs PowerShell 7")
+    def test_powershell_passes_the_quoted_words_unchanged(self, tmp_path: Path) -> None:
+        words = ["C:\\a b\\x.pdf", "a;b", "$HOME", "back`tick", 'say "hi"']
+        words += ["it's", "it\u2019s", "", "--model=-x", "-x.y", "@list", "<tmp>"]
+        probe = tmp_path / "argv.py"
+        probe.write_text(
+            "import json, sys\nprint(json.dumps(sys.argv[1:]))\n", encoding="utf-8"
+        )
+        script = tmp_path / "paste.ps1"
+        line = command_line([sys.executable, str(probe), *words], windows=True)
+        script.write_text("& " + line + "\n", encoding="utf-8")
+        result = subprocess.run(
+            ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(script)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=False,
+            timeout=60,
+        )
+        assert result.returncode == 0, result.stderr
+        assert json.loads(result.stdout.strip().splitlines()[-1]) == words
 
 
 class TestClipboard:

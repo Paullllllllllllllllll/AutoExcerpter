@@ -136,6 +136,38 @@ def test_to_argv_round_trips(values: dict[str, object]) -> None:
     assert table.parse(table.to_argv(values)) == values
 
 
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["--formats", "c", "--formats", "a,c"],
+        ["--formats=c", "--formats=a,c"],
+        ["--formats", "c", "--formats=a,c"],
+    ],
+)
+def test_a_repeated_list_option_accumulates_in_both_spellings(
+    argv: list[str],
+) -> None:
+    assert _table().parse(argv) == {"formats": ("a", "c")}
+
+
+def test_the_equals_spelling_parses_like_the_spaced_one() -> None:
+    spaced = ["--path", "a.pdf", "--formats", "b", "--provider", "y"]
+    joined = ["--path=a.pdf", "--formats=b", "--provider=y"]
+    flags = ["--no-summarize", "--dry"]
+    assert _table().parse(joined + flags) == _table().parse(spaced + flags)
+
+
+@pytest.mark.parametrize(
+    "values",
+    [{"path": Path("-x")}, {"path": Path("--foo.pdf")}, {"config": Path("-c")}],
+)
+def test_values_that_begin_with_a_dash_round_trip(values: dict[str, object]) -> None:
+    table = _table()
+    argv = table.to_argv(values)
+    assert len(argv) == 1
+    assert table.parse(argv) == values
+
+
 def test_to_argv_rejects_unknown_names() -> None:
     with pytest.raises(OptionError):
         _table().to_argv({"nope": 1})

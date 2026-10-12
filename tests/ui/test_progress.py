@@ -176,6 +176,32 @@ def test_summary_table_lists_items_totals_and_usage() -> None:
     assert "2,000" in totals[1] and "2,500" in totals[1]
 
 
+def test_tables_and_bars_show_bracketed_names_literally(
+    tmp_path: Path, make_pdf: Callable[..., Path]
+) -> None:
+    paths = ItemPaths.for_item("x", Path("out"), "md")
+    result = core.RunResult(items=(core.ItemResult("[red]draft", False, paths),))
+    assert "[red]draft" in _render(summary_table(result))
+    make_pdf("alpha.pdf", num_pages=1)
+    planned = core.PlannedItem(
+        ItemSpec("image_folder", tmp_path / "[red]scans"),
+        tmp_path,
+        Classification(ItemState.NONE, "[red]scans"),
+    )
+    run_plan = dataclasses.replace(
+        core.plan(make_spec(tmp_path, all=True), make_settings()),
+        to_process=(planned,),
+        skipped=(planned,),
+    )
+    assert _render(plan_table(run_plan)).count("[red]scans") == 2
+    console = Console(
+        file=io.StringIO(), width=100, force_terminal=True, color_system=None
+    )
+    with RichProgress(console) as progress:
+        progress.item_started(ItemStarted("[bold]alpha", "pdf", 1, 1))
+        assert "[bold]alpha" in _render(progress._render())
+
+
 def test_summary_table_without_usage_or_skips() -> None:
     output = _render(summary_table(core.RunResult(items=())))
     assert "Token usage: none reported" in output

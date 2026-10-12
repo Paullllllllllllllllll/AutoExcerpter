@@ -56,10 +56,10 @@ class RichProgress:
     def __init__(self, console: Console | None = None) -> None:
         self.console = console if console is not None else Console(stderr=True)
         self._progress = Progress(
-            TextColumn("{task.description}"),
+            TextColumn("{task.description}", markup=False),
             BarColumn(),
             MofNCompleteColumn(),
-            TextColumn("{task.fields[note]}"),
+            TextColumn("{task.fields[note]}", markup=False),
             TimeElapsedColumn(),
             console=self.console,
             auto_refresh=False,
@@ -219,7 +219,7 @@ def summary_table(result: RunResult) -> RenderableType:
         counts = [_count(item.report, key) for key in _PAGE_KEYS]
         totals = [a + b for a, b in zip(totals, counts, strict=True)]
         table.add_row(
-            item.name,
+            Text(item.name),
             Text(
                 "complete" if item.success else "incomplete",
                 style="green" if item.success else "red",
@@ -263,7 +263,7 @@ def plan_table(plan: RunPlan) -> Table:
     for index, planned in enumerate(plan.to_process, start=1):
         table.add_row(
             str(index),
-            planned.name,
+            Text(planned.name),
             _kind_label(planned.item.kind),
             planned.state.replace("_", " "),
             str(planned.completed_pages),
@@ -273,7 +273,7 @@ def plan_table(plan: RunPlan) -> Table:
         for planned in plan.skipped:
             table.add_row(
                 "-",
-                planned.name,
+                Text(planned.name),
                 _kind_label(planned.item.kind),
                 "complete (skip)",
                 "-",
