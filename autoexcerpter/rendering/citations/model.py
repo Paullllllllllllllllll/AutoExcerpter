@@ -146,8 +146,10 @@ def fold(text: str) -> str:
     if not text:
         return ""
     text = text.translate(_CURLY_TRANSLATION)
-    text = unicodedata.normalize("NFKD", text)
-    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    if not text.isascii():
+        # ASCII text is its own NFKD form and has no combining marks.
+        text = unicodedata.normalize("NFKD", text)
+        text = "".join(ch for ch in text if not unicodedata.combining(ch))
     text = text.casefold()
     text = text.replace("&", " and ")
     return text
