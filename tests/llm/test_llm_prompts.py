@@ -160,6 +160,22 @@ class TestReplaceSchemaAtMarker:
         assert '"new": "schema"' in result
         assert "End." in result
 
+    def test_marker_block_ends_at_its_own_brace(self) -> None:
+        """A closing brace in text after the schema block stays in place."""
+        prompt = (
+            'The JSON schema:\n{"old": {"nested": 1}}\n'
+            "Write sums as {a+b}; never emit a lone }.\n"
+            "{{CONTEXT}}"
+        )
+
+        result = render_prompt_with_schema(
+            prompt, {"new": "schema"}, context="Context."
+        )
+
+        assert result.startswith('The JSON schema:\n{\n  "new": "schema"\n}\n')
+        assert result.endswith("Write sums as {a+b}; never emit a lone }.\nContext.")
+        assert '"old"' not in result
+
     def test_marker_no_opening_brace_appends(self) -> None:
         """Schema is appended when no opening brace follows marker."""
         prompt = "Instructions.\nThe JSON schema:\nNo braces here."
@@ -171,10 +187,6 @@ class TestReplaceSchemaAtMarker:
 
     def test_marker_no_closing_brace_appends(self) -> None:
         """Schema appended when opening brace exists but no closing brace after it."""
-        # This scenario: rfind("}") returns -1 or <= start_brace
-        # We need a case where there's an opening brace but the only closing
-        # brace is before it (rfind returns something <= start_brace).
-        # Actually, rfind("}") == -1 means no } at all.
         prompt = "The JSON schema:\n{incomplete schema without closing"
 
         new_schema = '{"complete": true}'

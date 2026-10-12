@@ -86,6 +86,20 @@ def render_prompt_with_schema(
     return prompt_text + f"\n\n{SCHEMA_MARKER}\n" + schema_str
 
 
+def _closing_brace(text: str, start: int) -> int:
+    """Return the index of the brace closing the one at *start*, or -1."""
+    depth = 0
+    for index in range(start, len(text)):
+        char = text[index]
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return index
+    return -1
+
+
 def _replace_schema_at_marker(prompt_text: str, schema_str: str) -> str:
     """Replace the brace block after the schema marker, or append the schema."""
     marker_idx = prompt_text.find(SCHEMA_MARKER)
@@ -97,7 +111,7 @@ def _replace_schema_at_marker(prompt_text: str, schema_str: str) -> str:
     if start_brace == -1:
         return prompt_text + "\n" + schema_str
 
-    end_brace = prompt_text.rfind("}")
+    end_brace = _closing_brace(prompt_text, start_brace)
 
     if end_brace == -1 or end_brace <= start_brace:
         return prompt_text + "\n" + schema_str
