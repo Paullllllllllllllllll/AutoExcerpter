@@ -13,6 +13,7 @@ properties record the given time.
 
 from __future__ import annotations
 
+import copy
 import io
 import logging
 import re
@@ -491,6 +492,10 @@ def _write_page_summaries(
             )
 
 
+# The w:pPr and w:rPr elements of the reference formats, keyed by format.
+type _Formats = dict[tuple[Any, ...], Any]
+
+
 def _write_references(
     document: Any, citation_manager: CitationSource, style_ids: _StyleIds
 ) -> None:
@@ -519,23 +524,67 @@ def _write_references(
     note_run.font.size = Pt(METADATA_FONT_PT)
     note_run.font.color.rgb = _rgb(COLOR_METADATA_GRAY)
 
+    formats: _Formats = {}
     for idx, (citation, page_range_str) in enumerate(citations_with_pages, start=1):
-        _write_reference(document, idx, citation, page_range_str)
+        _write_reference(document, idx, citation, page_range_str, formats)
 
 
-def _write_reference(
-    document: Any, idx: int, citation: Citation, page_range_str: str
-) -> None:
-    """Write one numbered reference with its pages and OpenAlex metadata."""
-    ref_paragraph = document.add_paragraph()
-    rpf = ref_paragraph.paragraph_format
+def _reference_paragraph(document: Any, formats: _Formats) -> Any:
+    """Add a reference paragraph with the hanging indent of the references.
+
+    The first one sets its properties through python-docx; later ones get a
+    copy of the resulting ``w:pPr``, the same XML at a fraction of the cost.
+    """
+    paragraph = document.add_paragraph()
+    ppr = formats.get(("paragraph",))
+    if ppr is not None:
+        paragraph._p.insert(0, copy.deepcopy(ppr))
+        return paragraph
+    rpf = paragraph.paragraph_format
     rpf.left_indent = Cm(REF_HANGING_INDENT_CM)
     rpf.first_line_indent = -Cm(REF_HANGING_INDENT_CM)
     rpf.space_after = Pt(REF_SPACE_AFTER_PT)
+    formats[("paragraph",)] = copy.deepcopy(paragraph._p.pPr)
+    return paragraph
 
-    num_run = ref_paragraph.add_run(f"[{idx}] ")
-    num_run.bold = True
-    num_run.font.size = Pt(REF_FONT_PT)
+
+def _reference_run(
+    paragraph: Any,
+    text: str,
+    formats: _Formats,
+    *,
+    size_pt: float,
+    bold: bool = False,
+    italic: bool = False,
+    color: int | None = None,
+) -> None:
+    """Add a run of *text*, its ``w:rPr`` built once per format and then copied."""
+    run = paragraph.add_run(text)
+    key = (size_pt, bold, italic, color)
+    rpr = formats.get(key)
+    if rpr is not None:
+        run._r.insert(0, copy.deepcopy(rpr))
+        return
+    if bold:
+        run.bold = True
+    if italic:
+        run.italic = True
+    run.font.size = Pt(size_pt)
+    if color is not None:
+        run.font.color.rgb = _rgb(color)
+    formats[key] = copy.deepcopy(run._r.rPr)
+
+
+def _write_reference(
+    document: Any,
+    idx: int,
+    citation: Citation,
+    page_range_str: str,
+    formats: _Formats,
+) -> None:
+    """Write one numbered reference with its pages and OpenAlex metadata."""
+    ref_paragraph = _reference_paragraph(document, formats)
+    _reference_run(ref_paragraph, f"[{idx}] ", formats, size_pt=REF_FONT_PT, bold=True)
 
     citation_text = sanitize_for_xml(collapse_internal_newlines(citation.raw_text))
 
@@ -549,17 +598,23 @@ def _write_reference(
         )
     else:
         for kind, content in parse_markdown_emphasis(citation_text):
-            text_run = ref_paragraph.add_run(content)
-            text_run.font.size = Pt(REF_FONT_PT)
-            if kind in ("italic", "bold_italic"):
-                text_run.italic = True
-            if kind in ("bold", "bold_italic"):
-                text_run.bold = True
+            _reference_run(
+                ref_paragraph,
+                content,
+                formats,
+                size_pt=REF_FONT_PT,
+                bold=kind in ("bold", "bold_italic"),
+                italic=kind in ("italic", "bold_italic"),
+            )
 
     if page_range_str:
-        page_run = ref_paragraph.add_run(f" ({page_range_str})")
-        page_run.italic = True
-        page_run.font.size = Pt(REF_FONT_PT)
+        _reference_run(
+            ref_paragraph,
+            f" ({page_range_str})",
+            formats,
+            size_pt=REF_FONT_PT,
+            italic=True,
+        )
 
     if citation.metadata:
         meta_info_parts = []
@@ -569,10 +624,14 @@ def _write_reference(
             meta_info_parts.append(f"Year: {citation.metadata['publication_year']}")
 
         if meta_info_parts:
-            meta_run = ref_paragraph.add_run(f" [{', '.join(meta_info_parts)}]")
-            meta_run.font.size = Pt(REF_META_FONT_PT)
-            meta_run.italic = True
-            meta_run.font.color.rgb = _rgb(COLOR_REF_META_GRAY)
+            _reference_run(
+                ref_paragraph,
+                f" [{', '.join(meta_info_parts)}]",
+                formats,
+                size_pt=REF_META_FONT_PT,
+                italic=True,
+                color=COLOR_REF_META_GRAY,
+            )
 
 
 def _archive(document: Any, generated: datetime) -> bytes:
