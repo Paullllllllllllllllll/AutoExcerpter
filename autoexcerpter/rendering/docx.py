@@ -60,11 +60,7 @@ from autoexcerpter.constants import (
     TITLE_FONT_PT,
     TITLE_SPACE_AFTER_PT,
 )
-from autoexcerpter.rendering.citations import (
-    Citation,
-    CitationManager,
-    enrich_if_enabled,
-)
+from autoexcerpter.rendering.citations import CitationManager, enrich_if_enabled
 from autoexcerpter.rendering.equations import (
     add_math_to_paragraph,
     parse_latex_in_text,
@@ -74,6 +70,7 @@ from autoexcerpter.rendering.summary import (
     STRUCTURE_PAGE_TYPE_ORDER,
     CitationSource,
     PageRenderData,
+    RenderedCitation,
     SummaryData,
     collapse_internal_newlines,
     format_structure_page_range,
@@ -578,7 +575,7 @@ def _reference_run(
 def _write_reference(
     document: Any,
     idx: int,
-    citation: Citation,
+    citation: RenderedCitation,
     page_range_str: str,
     formats: _Formats,
 ) -> None:

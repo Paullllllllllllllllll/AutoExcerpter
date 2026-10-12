@@ -10,14 +10,13 @@ from __future__ import annotations
 import logging
 import re
 import threading
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from autoexcerpter.constants import ERROR_MARKERS
 from autoexcerpter.rendering.citations import (
     DEFAULT_MAX_API_REQUESTS,
-    Citation,
     CitationManager,
     OpenAlexClient,
 )
@@ -30,10 +29,26 @@ from autoexcerpter.rendering.locators import (
 logger = logging.getLogger(__name__)
 
 
+class RenderedCitation(Protocol):
+    """What a summary writer reads of one citation."""
+
+    @property
+    def raw_text(self) -> str: ...
+
+    @property
+    def doi(self) -> str | None: ...
+
+    @property
+    def url(self) -> str | None: ...
+
+    @property
+    def metadata(self) -> Mapping[str, Any] | None: ...
+
+
 class CitationSource(Protocol):
     """The consolidated citations a summary writer renders, in order."""
 
-    def get_citations_with_pages(self) -> list[tuple[Citation, str]]: ...
+    def get_citations_with_pages(self) -> Sequence[tuple[RenderedCitation, str]]: ...
 
 
 class CitationRecord(Protocol):
@@ -58,25 +73,34 @@ class CitationRecord(Protocol):
     def metadata(self) -> Mapping[str, Any] | None: ...
 
 
+@dataclass(frozen=True)
+class StoredCitation:
+    """A stored citation as the writers render it; no keys are derived."""
+
+    raw_text: str
+    doi: str | None
+    url: str | None
+    metadata: dict[str, Any] | None
+
+
 class StoredCitations:
     """Citations read back from the store, in their stored order."""
 
     def __init__(self, records: Iterable[CitationRecord]) -> None:
         self._pairs = [
             (
-                Citation(
+                StoredCitation(
                     raw_text=record.text,
-                    metadata=dict(record.metadata) if record.metadata else None,
                     doi=record.doi,
                     url=record.url,
-                    partial=record.partial,
+                    metadata=dict(record.metadata) if record.metadata else None,
                 ),
                 record.pages or "",
             )
             for record in records
         ]
 
-    def get_citations_with_pages(self) -> list[tuple[Citation, str]]:
+    def get_citations_with_pages(self) -> list[tuple[StoredCitation, str]]:
         """Return ``(citation, page range)`` pairs in stored order."""
         return list(self._pairs)
 

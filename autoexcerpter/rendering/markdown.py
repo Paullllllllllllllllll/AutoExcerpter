@@ -6,16 +6,13 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from autoexcerpter.rendering.citations import (
-    Citation,
-    CitationManager,
-    enrich_if_enabled,
-)
+from autoexcerpter.rendering.citations import CitationManager, enrich_if_enabled
 from autoexcerpter.rendering.summary import (
     PAGE_TYPE_LABELS,
     STRUCTURE_PAGE_TYPE_ORDER,
     CitationSource,
     PageRenderData,
+    RenderedCitation,
     SummaryData,
     collapse_internal_newlines,
     format_structure_page_range,
@@ -141,7 +138,7 @@ def _reference_lines(citation_manager: CitationSource) -> list[str]:
     return lines
 
 
-def _reference_line(idx: int, citation: Citation, page_range_str: str) -> str:
+def _reference_line(idx: int, citation: RenderedCitation, page_range_str: str) -> str:
     """Return one numbered reference with its pages and OpenAlex metadata."""
     citation_text = sanitize_for_xml(collapse_internal_newlines(citation.raw_text))
 
