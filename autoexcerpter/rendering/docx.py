@@ -556,7 +556,14 @@ def _reference_run(
     color: int | None = None,
 ) -> None:
     """Add a run of *text*, its ``w:rPr`` built once per format and then copied."""
-    run = paragraph.add_run(text)
+    if "\t" in text or "\r" in text or "\n" in text:
+        run = paragraph.add_run(text)
+    else:
+        # The single w:t that python-docx writes for text without tabs or
+        # breaks, without its per-character scan.
+        run = paragraph.add_run()
+        if text:
+            run._r.add_t(text)
     key = (size_pt, bold, italic, color)
     rpr = formats.get(key)
     if rpr is not None:
