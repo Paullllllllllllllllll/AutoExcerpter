@@ -134,6 +134,32 @@ def test_the_pool_bounds_pages_in_flight(
     assert state["peak"] == 2
 
 
+@pytest.mark.parametrize(
+    ("provider", "alone"), [("anthropic", True), ("openai", False)]
+)
+def test_anthropic_runs_the_first_page_alone_to_warm_the_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, provider: str, alone: bool
+) -> None:
+    processor = _processor(tmp_path, 4, pages=4)
+    processor.runner.transcribe_manager = SimpleNamespace(provider=provider)
+    events: list[str] = []
+
+    async def run(idx: int, *args: Any) -> str:
+        events.append(f"start {idx}")
+        await asyncio.sleep(0.01)
+        events.append(f"end {idx}")
+        return await _fake_run(idx, *args)
+
+    monkeypatch.setattr(processor.runner, "run", run)
+
+    asyncio.run(_pool(processor, list(range(4))))
+
+    assert (events[:2] == ["start 0", "end 0"]) is alone
+    assert sorted(events) == sorted(
+        f"{e} {i}" for i in range(4) for e in ("start", "end")
+    )
+
+
 def test_cancelling_the_item_cancels_its_pages(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

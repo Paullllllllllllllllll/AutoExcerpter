@@ -11,10 +11,9 @@
         "service_tier": "flex",
         "text": {
           "format": {
-            "digest": "3f51c29d92d00a90",
+            "digest": "70d0e417577650db",
             "name": "markdown_transcription_schema",
             "properties": [
-              "image_analysis",
               "no_transcribable_text",
               "transcription",
               "transcription_not_possible"
@@ -22,14 +21,14 @@
             "strict": true,
             "type": "json_schema"
           },
-          "verbosity": "medium"
+          "verbosity": "high"
         }
       },
       "messages": [
         {
           "text": {
-            "chars": 4157,
-            "digest": "0fdf86688a8d19a5"
+            "chars": 3690,
+            "digest": "ae9a319f0c2b4661"
           },
           "type": "system"
         },
@@ -63,10 +62,9 @@
         "service_tier": "flex",
         "text": {
           "format": {
-            "digest": "3f51c29d92d00a90",
+            "digest": "70d0e417577650db",
             "name": "markdown_transcription_schema",
             "properties": [
-              "image_analysis",
               "no_transcribable_text",
               "transcription",
               "transcription_not_possible"
@@ -74,14 +72,14 @@
             "strict": true,
             "type": "json_schema"
           },
-          "verbosity": "medium"
+          "verbosity": "high"
         }
       },
       "messages": [
         {
           "text": {
-            "chars": 4157,
-            "digest": "0fdf86688a8d19a5"
+            "chars": 3690,
+            "digest": "ae9a319f0c2b4661"
           },
           "type": "system"
         },
@@ -115,10 +113,9 @@
         "service_tier": "flex",
         "text": {
           "format": {
-            "digest": "3f51c29d92d00a90",
+            "digest": "70d0e417577650db",
             "name": "markdown_transcription_schema",
             "properties": [
-              "image_analysis",
               "no_transcribable_text",
               "transcription",
               "transcription_not_possible"
@@ -126,14 +123,14 @@
             "strict": true,
             "type": "json_schema"
           },
-          "verbosity": "medium"
+          "verbosity": "high"
         }
       },
       "messages": [
         {
           "text": {
-            "chars": 4157,
-            "digest": "0fdf86688a8d19a5"
+            "chars": 3690,
+            "digest": "ae9a319f0c2b4661"
           },
           "type": "system"
         },
@@ -167,7 +164,7 @@
         "service_tier": "flex",
         "text": {
           "format": {
-            "digest": "12f10d914c0830f8",
+            "digest": "3feb40d2c56008de",
             "name": "article_page_summary",
             "properties": [
               "bullet_points",
@@ -183,8 +180,8 @@
       "messages": [
         {
           "text": {
-            "chars": 7680,
-            "digest": "19d077973451ec81"
+            "chars": 5932,
+            "digest": "f4ccaa329d6b6bba"
           },
           "type": "system"
         },
@@ -216,7 +213,7 @@
         "service_tier": "flex",
         "text": {
           "format": {
-            "digest": "12f10d914c0830f8",
+            "digest": "3feb40d2c56008de",
             "name": "article_page_summary",
             "properties": [
               "bullet_points",
@@ -232,8 +229,8 @@
       "messages": [
         {
           "text": {
-            "chars": 7680,
-            "digest": "19d077973451ec81"
+            "chars": 5932,
+            "digest": "f4ccaa329d6b6bba"
           },
           "type": "system"
         },
@@ -265,7 +262,7 @@
         "service_tier": "flex",
         "text": {
           "format": {
-            "digest": "12f10d914c0830f8",
+            "digest": "3feb40d2c56008de",
             "name": "article_page_summary",
             "properties": [
               "bullet_points",
@@ -281,8 +278,8 @@
       "messages": [
         {
           "text": {
-            "chars": 7680,
-            "digest": "19d077973451ec81"
+            "chars": 5932,
+            "digest": "f4ccaa329d6b6bba"
           },
           "type": "system"
         },
@@ -314,10 +311,9 @@
         "service_tier": "flex",
         "text": {
           "format": {
-            "digest": "3f51c29d92d00a90",
+            "digest": "70d0e417577650db",
             "name": "markdown_transcription_schema",
             "properties": [
-              "image_analysis",
               "no_transcribable_text",
               "transcription",
               "transcription_not_possible"
@@ -325,14 +321,14 @@
             "strict": true,
             "type": "json_schema"
           },
-          "verbosity": "medium"
+          "verbosity": "high"
         }
       },
       "messages": [
         {
           "text": {
-            "chars": 4157,
-            "digest": "0fdf86688a8d19a5"
+            "chars": 3690,
+            "digest": "ae9a319f0c2b4661"
           },
           "type": "system"
         },
@@ -366,10 +362,9 @@
         "service_tier": "flex",
         "text": {
           "format": {
-            "digest": "3f51c29d92d00a90",
+            "digest": "70d0e417577650db",
             "name": "markdown_transcription_schema",
             "properties": [
-              "image_analysis",
               "no_transcribable_text",
               "transcription",
               "transcription_not_possible"
@@ -377,14 +372,14 @@
             "strict": true,
             "type": "json_schema"
           },
-          "verbosity": "medium"
+          "verbosity": "high"
         }
       },
       "messages": [
         {
           "text": {
-            "chars": 4157,
-            "digest": "0fdf86688a8d19a5"
+            "chars": 3690,
+            "digest": "ae9a319f0c2b4661"
           },
           "type": "system"
         },
@@ -418,10 +413,9 @@
         "service_tier": "flex",
         "text": {
           "format": {
-            "digest": "3f51c29d92d00a90",
+            "digest": "70d0e417577650db",
             "name": "markdown_transcription_schema",
             "properties": [
-              "image_analysis",
               "no_transcribable_text",
               "transcription",
               "transcription_not_possible"
@@ -429,14 +423,14 @@
             "strict": true,
             "type": "json_schema"
           },
-          "verbosity": "medium"
+          "verbosity": "high"
         }
       },
       "messages": [
         {
           "text": {
-            "chars": 4157,
-            "digest": "0fdf86688a8d19a5"
+            "chars": 3690,
+            "digest": "ae9a319f0c2b4661"
           },
           "type": "system"
         },
@@ -470,7 +464,7 @@
         "service_tier": "flex",
         "text": {
           "format": {
-            "digest": "12f10d914c0830f8",
+            "digest": "3feb40d2c56008de",
             "name": "article_page_summary",
             "properties": [
               "bullet_points",
@@ -486,8 +480,8 @@
       "messages": [
         {
           "text": {
-            "chars": 7680,
-            "digest": "19d077973451ec81"
+            "chars": 5932,
+            "digest": "f4ccaa329d6b6bba"
           },
           "type": "system"
         },
@@ -519,7 +513,7 @@
         "service_tier": "flex",
         "text": {
           "format": {
-            "digest": "12f10d914c0830f8",
+            "digest": "3feb40d2c56008de",
             "name": "article_page_summary",
             "properties": [
               "bullet_points",
@@ -535,8 +529,8 @@
       "messages": [
         {
           "text": {
-            "chars": 7680,
-            "digest": "19d077973451ec81"
+            "chars": 5932,
+            "digest": "f4ccaa329d6b6bba"
           },
           "type": "system"
         },
@@ -568,7 +562,7 @@
         "service_tier": "flex",
         "text": {
           "format": {
-            "digest": "12f10d914c0830f8",
+            "digest": "3feb40d2c56008de",
             "name": "article_page_summary",
             "properties": [
               "bullet_points",
@@ -584,8 +578,8 @@
       "messages": [
         {
           "text": {
-            "chars": 7680,
-            "digest": "19d077973451ec81"
+            "chars": 5932,
+            "digest": "f4ccaa329d6b6bba"
           },
           "type": "system"
         },

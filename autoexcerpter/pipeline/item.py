@@ -478,6 +478,8 @@ class ItemProcessor:
         reported as a :class:`~autoexcerpter.events.PageDone` event. A page
         error that escapes the page runner propagates after the remaining
         pages are cancelled; cancellation of the item cancels every page.
+        When a phase runs on Anthropic, the first page runs alone before the
+        others start, so that they read its cached system prompt.
         """
         progress = PageProgress(
             len(pending),
@@ -492,20 +494,28 @@ class ItemProcessor:
             async with semaphore:
                 return index, await self.runner.run(index, source, progress)
 
-        tasks = [asyncio.ensure_future(run_page(idx)) for idx in pending]
+        managers = (self.runner.transcribe_manager, self.runner.summary_manager)
+        warm = any(getattr(m, "provider", None) == "anthropic" for m in managers)
+        batches = [pending[:1], pending[1:]] if warm else [pending]
+        tasks: list[asyncio.Future[tuple[int, str]]] = []
+        done = 0
         try:
-            for done, finished in enumerate(asyncio.as_completed(tasks), start=1):
-                index, status = await finished
-                self.events.page_done(
-                    PageDone(
-                        item=self.name,
-                        page=index,
-                        status=status,
-                        done=done,
-                        total=len(tasks),
-                        already_complete=already_complete,
+            for batch in batches:
+                started = [asyncio.ensure_future(run_page(idx)) for idx in batch]
+                tasks.extend(started)
+                for finished in asyncio.as_completed(started):
+                    index, status = await finished
+                    done += 1
+                    self.events.page_done(
+                        PageDone(
+                            item=self.name,
+                            page=index,
+                            status=status,
+                            done=done,
+                            total=len(pending),
+                            already_complete=already_complete,
+                        )
                     )
-                )
         finally:
             for task in tasks:
                 task.cancel()

@@ -99,6 +99,9 @@ def test_anthropic_and_google_image_blocks(monkeypatch: pytest.MonkeyPatch) -> N
         "type": "image",
         "source": {"type": "base64", "media_type": "image/png", "data": "QUJD"},
     }
+    system = script.requests[0].messages[0].content
+    assert isinstance(system, list) and isinstance(system[0], dict)
+    assert system[0]["cache_control"] == {"type": "ephemeral"}
 
     google, script = _manager(
         monkeypatch,
@@ -223,20 +226,14 @@ def test_a_recoverable_answer_survives_exhausted_validation(
 def test_transcription_not_possible_is_retried_then_kept(
     monkeypatch: pytest.MonkeyPatch, sleeps: Sleeps
 ) -> None:
-    flagged = _answer(
-        transcription=None,
-        transcription_not_possible=True,
-        image_analysis="Blurred scan.",
-    )
+    flagged = _answer(transcription=None, transcription_not_possible=True)
     manager, script = _manager(monkeypatch, [flagged])
 
     result = _transcribe(manager)
 
     assert len(script.requests) == 4
     assert result["schema_retries"]["transcription_not_possible"] == 3
-    assert result["transcription"] == (
-        f"[{NAME}: transcription not possible — Blurred scan.]"
-    )
+    assert result["transcription"] == f"[{NAME}: transcription not possible]"
     assert "error" not in result
 
 
@@ -249,9 +246,7 @@ def test_no_transcribable_text_is_not_retried_by_default(
     result = _transcribe(manager)
 
     assert len(script.requests) == 1
-    assert result["transcription"] == (
-        f"[{NAME}: no transcribable text — Single column.]"
-    )
+    assert result["transcription"] == f"[{NAME}: no transcribable text]"
 
 
 @pytest.mark.parametrize(
@@ -412,11 +407,8 @@ def test_page_text(text: str, data: Any, plain: bool, expected: str) -> None:
     assert page_text(text, NAME, data, plain=plain) == expected
 
 
-def test_page_text_flags_name_the_image_and_shorten_the_analysis() -> None:
-    analysis = "word " * 40
-    text = page_text(
-        "", "", {"no_transcribable_text": True, "image_analysis": analysis}
-    )
-    assert text.startswith("[unknown_image: no transcribable text — word")
-    assert text.endswith("...]")
-    assert len(text) < 150
+def test_page_text_reads_answers_of_the_earlier_schema() -> None:
+    legacy = {"image_analysis": "Single column.", "transcription": "Old page."}
+    assert page_text("", NAME, legacy) == "Old page."
+    flagged = {"image_analysis": "Blank.", "no_transcribable_text": True}
+    assert page_text("", "", flagged) == "[unknown_image: no transcribable text]"

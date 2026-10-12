@@ -3,22 +3,22 @@
   "created_at": "<datetime>+00:00",
   "kind": "summary_prompt",
   "run_id": "<run-1>",
-  "sha256": "66e28711e28a8ca4ae80aacbfe4703032974d50881b910b8a99fad665e2df4f3",
-  "text": "<7259 characters>"
+  "sha256": "b353fff5eec4227f076c98ba22f0b376216202d3bfdaea996a5276db711cb058",
+  "text": "<5751 characters>"
 }
 {
   "created_at": "<datetime>+00:00",
   "kind": "summary_schema",
   "run_id": "<run-1>",
-  "sha256": "1ecfed652ead1e92c94f1d0d5729f53ced3c17818d47c1329bd3ff8675436812",
-  "text": "<5199 characters>"
+  "sha256": "0bc58a02aaf99fff031fb171ee83cf3e5800a238e3128b7529b4134ba02942fb",
+  "text": "<5427 characters>"
 }
 {
   "created_at": "<datetime>+00:00",
   "kind": "transcription_prompt",
   "run_id": "<run-1>",
-  "sha256": "ef8e49d8ec141a07e14da422db9978bf17ad3ef004acff63d03f6b82cc7ca3ce",
-  "text": "<1455 characters>"
+  "sha256": "4f88f65c97fb1d86c03f5fd4c16a137e25dc37b0427596c3ef2db806c57f3512",
+  "text": "<2348 characters>"
 }
 ## citations
 ## documents
@@ -956,7 +956,7 @@
       },
       "temperature": 1.0,
       "text": {
-        "verbosity": "medium"
+        "verbosity": "high"
       }
     },
     "provider": "openrouter",
@@ -1023,7 +1023,7 @@
       },
       "temperature": 1.0,
       "text": {
-        "verbosity": "medium"
+        "verbosity": "high"
       }
     },
     "provider": "openrouter",
@@ -1090,7 +1090,7 @@
       },
       "temperature": 1.0,
       "text": {
-        "verbosity": "medium"
+        "verbosity": "high"
       }
     },
     "provider": "openrouter",
@@ -1280,7 +1280,7 @@
     },
     "transcription_model.verbosity": {
       "source": "default",
-      "value": "medium"
+      "value": "high"
     }
   },
   "started_at": "<datetime>+00:00",

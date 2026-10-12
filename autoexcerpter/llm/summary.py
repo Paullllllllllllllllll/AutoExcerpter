@@ -17,7 +17,7 @@ import random
 import time
 from typing import Any
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage
 
 from autoexcerpter.common.responses import get_response_metadata, inspect_response
 from autoexcerpter.common.structured import (
@@ -32,6 +32,7 @@ from autoexcerpter.llm.prompts import (
     SCHEMAS_DIR,
     render_prompt_with_schema,
     strip_markdown_code_block,
+    system_message,
 )
 from autoexcerpter.llm.transcription import (
     EMPTY_RESPONSE_BACKOFF_S,
@@ -174,7 +175,7 @@ class SummaryManager:
             user = HumanMessage(content=[{"type": "text", "text": transcription}])
         else:
             user = HumanMessage(content=transcription)
-        return [SystemMessage(content=self.system_prompt), user]
+        return [system_message(self.system_prompt, self.provider), user]
 
     def _request(self, used: int, calls_left: int) -> StructuredRequest:
         rule = self.rule

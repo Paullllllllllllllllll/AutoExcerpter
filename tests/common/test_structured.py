@@ -32,13 +32,11 @@ TRANSCRIPTION_SPEC: dict[str, Any] = {
     "schema": {
         "type": "object",
         "properties": {
-            "image_analysis": {"type": "string"},
             "transcription": {"type": ["string", "null"]},
             "no_transcribable_text": {"type": "boolean"},
             "transcription_not_possible": {"type": "boolean"},
         },
         "required": [
-            "image_analysis",
             "transcription",
             "no_transcribable_text",
             "transcription_not_possible",
@@ -48,7 +46,6 @@ TRANSCRIPTION_SPEC: dict[str, Any] = {
 }
 
 ANSWER = {
-    "image_analysis": "Single column.",
     "transcription": "Bread prices rose.",
     "no_transcribable_text": False,
     "transcription_not_possible": False,
@@ -432,8 +429,7 @@ def test_json_validation_budget_exhausted_reports_reason() -> None:
     assert len(model.log) == 2
     assert not result.ok
     assert result.error == (
-        "missing keys: image_analysis, no_transcribable_text, "
-        "transcription_not_possible"
+        "missing keys: no_transcribable_text, transcription_not_possible"
     )
     assert result.data == {"transcription": "x"}
 

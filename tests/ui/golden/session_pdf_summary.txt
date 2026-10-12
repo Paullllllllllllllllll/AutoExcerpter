@@ -98,7 +98,7 @@ AutoExcerpter | new run   step 7 of 10
    Back
   answer: Automatic
 ? Model parameters:
- > Recommended  verbosity medium, model's output limit, tier priority (s)
+ > Recommended  verbosity high, model's output limit, tier priority (s)
    Customize
    Back
   answer: Recommended

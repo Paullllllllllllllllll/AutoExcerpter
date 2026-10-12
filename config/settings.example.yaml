@@ -88,6 +88,7 @@ openalex:
 # defaults:
 #   model: gpt-5.6-terra
 #   reasoning_effort: high
+#   transcription_verbosity: high
 #   summary_verbosity: low
 #   service_tier: flex
 #   transcription_format: md  # X_transcription.md; txt writes X_transcription.txt

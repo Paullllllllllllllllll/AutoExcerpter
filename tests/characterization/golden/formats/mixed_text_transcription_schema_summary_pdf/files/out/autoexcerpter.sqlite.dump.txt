@@ -3,22 +3,22 @@
   "created_at": "<datetime>+00:00",
   "kind": "summary_prompt",
   "run_id": "<run-1>",
-  "sha256": "66e28711e28a8ca4ae80aacbfe4703032974d50881b910b8a99fad665e2df4f3",
-  "text": "<7259 characters>"
+  "sha256": "b353fff5eec4227f076c98ba22f0b376216202d3bfdaea996a5276db711cb058",
+  "text": "<5751 characters>"
 }
 {
   "created_at": "<datetime>+00:00",
   "kind": "summary_schema",
   "run_id": "<run-1>",
-  "sha256": "1ecfed652ead1e92c94f1d0d5729f53ced3c17818d47c1329bd3ff8675436812",
-  "text": "<5199 characters>"
+  "sha256": "0bc58a02aaf99fff031fb171ee83cf3e5800a238e3128b7529b4134ba02942fb",
+  "text": "<5427 characters>"
 }
 {
   "created_at": "<datetime>+00:00",
   "kind": "transcription_prompt",
   "run_id": "<run-1>",
-  "sha256": "ef8e49d8ec141a07e14da422db9978bf17ad3ef004acff63d03f6b82cc7ca3ce",
-  "text": "<1455 characters>"
+  "sha256": "4f88f65c97fb1d86c03f5fd4c16a137e25dc37b0427596c3ef2db806c57f3512",
+  "text": "<2348 characters>"
 }
 ## citations
 {
@@ -187,7 +187,7 @@
             "additionalProperties": false,
             "properties": {
               "bullet_points": {
-                "description": "<756 characters>",
+                "description": "<988 characters>",
                 "items": {
                   "type": "string"
                 },
@@ -198,28 +198,28 @@
               },
               "page_information": {
                 "additionalProperties": false,
-                "description": "Comprehensive page metadata including page number and content classification.",
+                "description": "The page's printed number and its classification.",
                 "properties": {
                   "is_two_page_spread": {
-                    "description": "True when the scanned image shows a two-page spread (two facing pages side by side); false for a single page.",
+                    "description": "True when the transcription covers two facing pages, shown by two consecutive <page_number> tags or by text that clearly belongs to two pages; false for a single page.",
                     "type": "boolean"
                   },
                   "page_number_integer": {
-                    "description": "<216 characters>",
+                    "description": "<308 characters>",
                     "type": [
                       "integer",
                       "null"
                     ]
                   },
                   "page_number_integer_end": {
-                    "description": "For a two-page spread, the integer page number of the RIGHT page (Roman numerals converted to integers, same as page_number_integer); null for single pages or unnumbered spreads.",
+                    "description": "For a two-page spread, the right page's number from its <page_number> tag, converted like page_number_integer; null for a single page or when the right page has no tag.",
                     "type": [
                       "integer",
                       "null"
                     ]
                   },
                   "page_number_type": {
-                    "description": "Numbering system: 'roman' for Roman numerals, 'arabic' for standard numerals, 'none' if no page number is visible.",
+                    "description": "The numbering system of page_number_integer as printed: 'roman' or 'arabic'; 'none' when page_number_integer is null.",
                     "enum": [
                       "roman",
                       "arabic",
@@ -228,7 +228,7 @@
                     "type": "string"
                   },
                   "page_types": {
-                    "description": "<595 characters>",
+                    "description": "<420 characters>",
                     "items": {
                       "enum": [
                         "content",
@@ -261,16 +261,16 @@
                 "type": "object"
               },
               "references": {
-                "description": "Bibliographic citations in APA style. Extract from ALL page types. Set to null only if no citations present.",
+                "description": "Every bibliographic citation on the page, from pages of any type, in APA style; null when the page cites nothing.",
                 "items": {
                   "additionalProperties": false,
                   "properties": {
                     "citation": {
-                      "description": "The citation in APA style, exactly as reconstructable from the page. Never invent or paraphrase a title; record only bibliographic data the page actually states.",
+                      "description": "<232 characters>",
                       "type": "string"
                     },
                     "is_partial": {
-                      "description": "<219 characters>",
+                      "description": "True when the page gives only an in-text pointer, such as author and year, op. cit. or ibid., without title and venue; false for a complete reference, such as a bibliography entry or a full footnote.",
                       "type": "boolean"
                     }
                   },
@@ -378,7 +378,7 @@
             "additionalProperties": false,
             "properties": {
               "bullet_points": {
-                "description": "<756 characters>",
+                "description": "<988 characters>",
                 "items": {
                   "type": "string"
                 },
@@ -389,28 +389,28 @@
               },
               "page_information": {
                 "additionalProperties": false,
-                "description": "Comprehensive page metadata including page number and content classification.",
+                "description": "The page's printed number and its classification.",
                 "properties": {
                   "is_two_page_spread": {
-                    "description": "True when the scanned image shows a two-page spread (two facing pages side by side); false for a single page.",
+                    "description": "True when the transcription covers two facing pages, shown by two consecutive <page_number> tags or by text that clearly belongs to two pages; false for a single page.",
                     "type": "boolean"
                   },
                   "page_number_integer": {
-                    "description": "<216 characters>",
+                    "description": "<308 characters>",
                     "type": [
                       "integer",
                       "null"
                     ]
                   },
                   "page_number_integer_end": {
-                    "description": "For a two-page spread, the integer page number of the RIGHT page (Roman numerals converted to integers, same as page_number_integer); null for single pages or unnumbered spreads.",
+                    "description": "For a two-page spread, the right page's number from its <page_number> tag, converted like page_number_integer; null for a single page or when the right page has no tag.",
                     "type": [
                       "integer",
                       "null"
                     ]
                   },
                   "page_number_type": {
-                    "description": "Numbering system: 'roman' for Roman numerals, 'arabic' for standard numerals, 'none' if no page number is visible.",
+                    "description": "The numbering system of page_number_integer as printed: 'roman' or 'arabic'; 'none' when page_number_integer is null.",
                     "enum": [
                       "roman",
                       "arabic",
@@ -419,7 +419,7 @@
                     "type": "string"
                   },
                   "page_types": {
-                    "description": "<595 characters>",
+                    "description": "<420 characters>",
                     "items": {
                       "enum": [
                         "content",
@@ -452,16 +452,16 @@
                 "type": "object"
               },
               "references": {
-                "description": "Bibliographic citations in APA style. Extract from ALL page types. Set to null only if no citations present.",
+                "description": "Every bibliographic citation on the page, from pages of any type, in APA style; null when the page cites nothing.",
                 "items": {
                   "additionalProperties": false,
                   "properties": {
                     "citation": {
-                      "description": "The citation in APA style, exactly as reconstructable from the page. Never invent or paraphrase a title; record only bibliographic data the page actually states.",
+                      "description": "<232 characters>",
                       "type": "string"
                     },
                     "is_partial": {
-                      "description": "<219 characters>",
+                      "description": "True when the page gives only an in-text pointer, such as author and year, op. cit. or ibid., without title and venue; false for a complete reference, such as a bibliography entry or a full footnote.",
                       "type": "boolean"
                     }
                   },
@@ -569,7 +569,7 @@
             "additionalProperties": false,
             "properties": {
               "bullet_points": {
-                "description": "<756 characters>",
+                "description": "<988 characters>",
                 "items": {
                   "type": "string"
                 },
@@ -580,28 +580,28 @@
               },
               "page_information": {
                 "additionalProperties": false,
-                "description": "Comprehensive page metadata including page number and content classification.",
+                "description": "The page's printed number and its classification.",
                 "properties": {
                   "is_two_page_spread": {
-                    "description": "True when the scanned image shows a two-page spread (two facing pages side by side); false for a single page.",
+                    "description": "True when the transcription covers two facing pages, shown by two consecutive <page_number> tags or by text that clearly belongs to two pages; false for a single page.",
                     "type": "boolean"
                   },
                   "page_number_integer": {
-                    "description": "<216 characters>",
+                    "description": "<308 characters>",
                     "type": [
                       "integer",
                       "null"
                     ]
                   },
                   "page_number_integer_end": {
-                    "description": "For a two-page spread, the integer page number of the RIGHT page (Roman numerals converted to integers, same as page_number_integer); null for single pages or unnumbered spreads.",
+                    "description": "For a two-page spread, the right page's number from its <page_number> tag, converted like page_number_integer; null for a single page or when the right page has no tag.",
                     "type": [
                       "integer",
                       "null"
                     ]
                   },
                   "page_number_type": {
-                    "description": "Numbering system: 'roman' for Roman numerals, 'arabic' for standard numerals, 'none' if no page number is visible.",
+                    "description": "The numbering system of page_number_integer as printed: 'roman' or 'arabic'; 'none' when page_number_integer is null.",
                     "enum": [
                       "roman",
                       "arabic",
@@ -610,7 +610,7 @@
                     "type": "string"
                   },
                   "page_types": {
-                    "description": "<595 characters>",
+                    "description": "<420 characters>",
                     "items": {
                       "enum": [
                         "content",
@@ -643,16 +643,16 @@
                 "type": "object"
               },
               "references": {
-                "description": "Bibliographic citations in APA style. Extract from ALL page types. Set to null only if no citations present.",
+                "description": "Every bibliographic citation on the page, from pages of any type, in APA style; null when the page cites nothing.",
                 "items": {
                   "additionalProperties": false,
                   "properties": {
                     "citation": {
-                      "description": "The citation in APA style, exactly as reconstructable from the page. Never invent or paraphrase a title; record only bibliographic data the page actually states.",
+                      "description": "<232 characters>",
                       "type": "string"
                     },
                     "is_partial": {
-                      "description": "<219 characters>",
+                      "description": "True when the page gives only an in-text pointer, such as author and year, op. cit. or ibid., without title and venue; false for a complete reference, such as a bibliography entry or a full footnote.",
                       "type": "boolean"
                     }
                   },
@@ -756,7 +756,7 @@
       },
       "temperature": 1.0,
       "text": {
-        "verbosity": "medium"
+        "verbosity": "high"
       }
     },
     "provider": "custom",
@@ -823,7 +823,7 @@
       },
       "temperature": 1.0,
       "text": {
-        "verbosity": "medium"
+        "verbosity": "high"
       }
     },
     "provider": "custom",
@@ -890,7 +890,7 @@
       },
       "temperature": 1.0,
       "text": {
-        "verbosity": "medium"
+        "verbosity": "high"
       }
     },
     "provider": "custom",
@@ -1080,7 +1080,7 @@
     },
     "transcription_model.verbosity": {
       "source": "default",
-      "value": "medium"
+      "value": "high"
     }
   },
   "started_at": "<datetime>+00:00",

@@ -11,8 +11,8 @@
       "messages": [
         {
           "text": {
-            "chars": 4157,
-            "digest": "0fdf86688a8d19a5"
+            "chars": 3690,
+            "digest": "ae9a319f0c2b4661"
           },
           "type": "system"
         },
@@ -36,9 +36,8 @@
         "include_raw": true,
         "method": "function_calling",
         "schema": {
-          "digest": "5991a54c5b74e533",
+          "digest": "3c34af82f5571a3c",
           "properties": [
-            "image_analysis",
             "no_transcribable_text",
             "transcription",
             "transcription_not_possible"
@@ -60,8 +59,8 @@
       "messages": [
         {
           "text": {
-            "chars": 7680,
-            "digest": "19d077973451ec81"
+            "chars": 5932,
+            "digest": "f4ccaa329d6b6bba"
           },
           "type": "system"
         },
@@ -84,7 +83,7 @@
         "include_raw": true,
         "method": "function_calling",
         "schema": {
-          "digest": "1c4182bebd809632",
+          "digest": "1b1d2f78f5fe9719",
           "properties": [
             "bullet_points",
             "page_information",
@@ -107,8 +106,8 @@
       "messages": [
         {
           "text": {
-            "chars": 4157,
-            "digest": "0fdf86688a8d19a5"
+            "chars": 3690,
+            "digest": "ae9a319f0c2b4661"
           },
           "type": "system"
         },
@@ -132,9 +131,8 @@
         "include_raw": true,
         "method": "function_calling",
         "schema": {
-          "digest": "5991a54c5b74e533",
+          "digest": "3c34af82f5571a3c",
           "properties": [
-            "image_analysis",
             "no_transcribable_text",
             "transcription",
             "transcription_not_possible"
@@ -156,8 +154,8 @@
       "messages": [
         {
           "text": {
-            "chars": 7680,
-            "digest": "19d077973451ec81"
+            "chars": 5932,
+            "digest": "f4ccaa329d6b6bba"
           },
           "type": "system"
         },
@@ -180,7 +178,7 @@
         "include_raw": true,
         "method": "function_calling",
         "schema": {
-          "digest": "1c4182bebd809632",
+          "digest": "1b1d2f78f5fe9719",
           "properties": [
             "bullet_points",
             "page_information",
@@ -203,8 +201,8 @@
       "messages": [
         {
           "text": {
-            "chars": 4157,
-            "digest": "0fdf86688a8d19a5"
+            "chars": 3690,
+            "digest": "ae9a319f0c2b4661"
           },
           "type": "system"
         },
@@ -228,9 +226,8 @@
         "include_raw": true,
         "method": "function_calling",
         "schema": {
-          "digest": "5991a54c5b74e533",
+          "digest": "3c34af82f5571a3c",
           "properties": [
-            "image_analysis",
             "no_transcribable_text",
             "transcription",
             "transcription_not_possible"
@@ -252,8 +249,8 @@
       "messages": [
         {
           "text": {
-            "chars": 7680,
-            "digest": "19d077973451ec81"
+            "chars": 5932,
+            "digest": "f4ccaa329d6b6bba"
           },
           "type": "system"
         },
@@ -276,7 +273,7 @@
         "include_raw": true,
         "method": "function_calling",
         "schema": {
-          "digest": "1c4182bebd809632",
+          "digest": "1b1d2f78f5fe9719",
           "properties": [
             "bullet_points",
             "page_information",

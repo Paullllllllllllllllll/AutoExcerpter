@@ -87,7 +87,7 @@ PHASES = ("transcription", "summary")
 
 DEFAULT_MODEL = "gpt-5.6-luna"
 DEFAULT_REASONING_EFFORT = "high"
-DEFAULT_VERBOSITY = {"transcription": "medium", "summary": "low"}
+DEFAULT_VERBOSITY = {"transcription": "high", "summary": "low"}
 DEFAULT_TEMPERATURE = 1.0
 DEFAULT_SERVICE_TIER = "flex"
 DEFAULT_CONCURRENCY = 16

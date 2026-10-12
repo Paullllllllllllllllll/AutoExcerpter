@@ -13,6 +13,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from langchain_core.messages import SystemMessage
+
 logger = logging.getLogger(__name__)
 
 __all__ = [
@@ -21,6 +23,7 @@ __all__ = [
     "SCHEMAS_DIR",
     "render_prompt_with_schema",
     "strip_markdown_code_block",
+    "system_message",
 ]
 
 RESOURCES_DIR = Path(__file__).resolve().parents[1] / "resources"
@@ -46,6 +49,19 @@ def strip_markdown_code_block(text: str) -> str:
     if stripped.endswith("```"):
         stripped = stripped[:-3]
     return stripped.strip()
+
+
+def system_message(prompt: str, provider: str) -> SystemMessage:
+    """Return the system message of a request.
+
+    For Anthropic the prompt is one text block with a cache breakpoint, so
+    the system prompt and its schema, identical across a phase's pages, are
+    read from the prompt cache after the first request.
+    """
+    if provider == "anthropic":
+        block = {"type": "text", "text": prompt, "cache_control": {"type": "ephemeral"}}
+        return SystemMessage(content=[block])
+    return SystemMessage(content=prompt)
 
 
 def render_prompt_with_schema(

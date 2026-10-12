@@ -19,7 +19,7 @@ import time
 from collections.abc import Mapping
 from typing import Any
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage
 
 from autoexcerpter.common.images import PagePayload
 from autoexcerpter.common.responses import inspect_response
@@ -37,6 +37,7 @@ from autoexcerpter.llm.prompts import (
     SCHEMAS_DIR,
     render_prompt_with_schema,
     strip_markdown_code_block,
+    system_message,
 )
 from autoexcerpter.llm.types import PhaseModel
 from autoexcerpter.settings import RetryRule
@@ -55,7 +56,6 @@ SYSTEM_PROMPT_FILE = "transcription_system_prompt.txt"
 PLAIN_TEXT_PROMPT_FILE = "transcription_plain_text_prompt.txt"
 
 TRANSCRIPTION_REQUIRED_KEYS = (
-    "image_analysis",
     "transcription",
     "no_transcribable_text",
     "transcription_not_possible",
@@ -76,20 +76,6 @@ MAX_PAGE_CALLS = 6
 def stops_page(response: Any) -> bool:
     """Whether a response ends the page at once (content filter, refusal)."""
     return inspect_response(response).stops_page
-
-
-def _truncate(text: Any, max_chars: int = 100) -> str:
-    """Shorten an image analysis to about *max_chars* at a word boundary."""
-    if not text:
-        return "no details available"
-    value = str(text).strip()
-    if len(value) <= max_chars:
-        return value
-    truncated = value[:max_chars]
-    last_space = truncated.rfind(" ")
-    if last_space > max_chars * 0.7:
-        truncated = truncated[:last_space]
-    return truncated.rstrip(".,;:") + "..."
 
 
 def _salvage(text: str) -> Any:
@@ -117,7 +103,9 @@ def page_text(
     *plain* answers are the text itself, minus a code fence; the two
     sentinels become status messages. JSON answers use *data* when given,
     else the parsed text; flags and a null transcription become status
-    messages, and an answer without a transcription stays as given.
+    messages, and an answer without a transcription stays as given. Keys
+    outside the schema, such as the ``image_analysis`` of earlier schema
+    versions, are ignored.
     """
     stripped = strip_markdown_code_block(text)
     name = image_name or "unknown_image"
@@ -135,11 +123,9 @@ def page_text(
         if not isinstance(obj, dict):
             return stripped
     if obj.get("no_transcribable_text") is True:
-        reason = _truncate(obj.get("image_analysis", ""))
-        return f"[{name}: no transcribable text — {reason}]"
+        return f"[{name}: no transcribable text]"
     if obj.get("transcription_not_possible") is True:
-        reason = _truncate(obj.get("image_analysis", ""))
-        return f"[{name}: transcription not possible — {reason}]"
+        return f"[{name}: transcription not possible]"
     transcription = obj.get("transcription")
     if isinstance(transcription, str):
         return transcription
@@ -223,7 +209,7 @@ class TranscriptionManager:
                 image_url["detail"] = detail
             block = {"type": "image_url", "image_url": image_url}
         return [
-            SystemMessage(content=self.system_prompt),
+            system_message(self.system_prompt, self.provider),
             HumanMessage(content=[block]),
         ]
 

@@ -18,10 +18,13 @@
       },
       "messages": [
         {
-          "text": {
-            "chars": 4157,
-            "digest": "0fdf86688a8d19a5"
-          },
+          "blocks": [
+            {
+              "chars": 3690,
+              "digest": "ae9a319f0c2b4661",
+              "type": "text"
+            }
+          ],
           "type": "system"
         },
         {
@@ -45,9 +48,8 @@
         "include_raw": true,
         "method": "json_schema",
         "schema": {
-          "digest": "317b2a7619ba7dfc",
+          "digest": "885dfb0ef160c1ad",
           "properties": [
-            "image_analysis",
             "no_transcribable_text",
             "transcription",
             "transcription_not_possible"
@@ -76,10 +78,13 @@
       },
       "messages": [
         {
-          "text": {
-            "chars": 7680,
-            "digest": "19d077973451ec81"
-          },
+          "blocks": [
+            {
+              "chars": 5932,
+              "digest": "f4ccaa329d6b6bba",
+              "type": "text"
+            }
+          ],
           "type": "system"
         },
         {
@@ -98,7 +103,7 @@
         "include_raw": true,
         "method": "json_schema",
         "schema": {
-          "digest": "9e6a570caf9d7153",
+          "digest": "e4b44e8200595a00",
           "properties": [
             "bullet_points",
             "page_information",
@@ -128,10 +133,13 @@
       },
       "messages": [
         {
-          "text": {
-            "chars": 4157,
-            "digest": "0fdf86688a8d19a5"
-          },
+          "blocks": [
+            {
+              "chars": 3690,
+              "digest": "ae9a319f0c2b4661",
+              "type": "text"
+            }
+          ],
           "type": "system"
         },
         {
@@ -155,9 +163,8 @@
         "include_raw": true,
         "method": "json_schema",
         "schema": {
-          "digest": "317b2a7619ba7dfc",
+          "digest": "885dfb0ef160c1ad",
           "properties": [
-            "image_analysis",
             "no_transcribable_text",
             "transcription",
             "transcription_not_possible"
@@ -186,10 +193,13 @@
       },
       "messages": [
         {
-          "text": {
-            "chars": 7680,
-            "digest": "19d077973451ec81"
-          },
+          "blocks": [
+            {
+              "chars": 5932,
+              "digest": "f4ccaa329d6b6bba",
+              "type": "text"
+            }
+          ],
           "type": "system"
         },
         {
@@ -208,7 +218,7 @@
         "include_raw": true,
         "method": "json_schema",
         "schema": {
-          "digest": "9e6a570caf9d7153",
+          "digest": "e4b44e8200595a00",
           "properties": [
             "bullet_points",
             "page_information",
@@ -238,10 +248,13 @@
       },
       "messages": [
         {
-          "text": {
-            "chars": 4157,
-            "digest": "0fdf86688a8d19a5"
-          },
+          "blocks": [
+            {
+              "chars": 3690,
+              "digest": "ae9a319f0c2b4661",
+              "type": "text"
+            }
+          ],
           "type": "system"
         },
         {
@@ -265,9 +278,8 @@
         "include_raw": true,
         "method": "json_schema",
         "schema": {
-          "digest": "317b2a7619ba7dfc",
+          "digest": "885dfb0ef160c1ad",
           "properties": [
-            "image_analysis",
             "no_transcribable_text",
             "transcription",
             "transcription_not_possible"
@@ -296,10 +308,13 @@
       },
       "messages": [
         {
-          "text": {
-            "chars": 7680,
-            "digest": "19d077973451ec81"
-          },
+          "blocks": [
+            {
+              "chars": 5932,
+              "digest": "f4ccaa329d6b6bba",
+              "type": "text"
+            }
+          ],
           "type": "system"
         },
         {
@@ -318,7 +333,7 @@
         "include_raw": true,
         "method": "json_schema",
         "schema": {
-          "digest": "9e6a570caf9d7153",
+          "digest": "e4b44e8200595a00",
           "properties": [
             "bullet_points",
             "page_information",

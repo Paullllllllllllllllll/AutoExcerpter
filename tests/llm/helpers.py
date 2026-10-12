@@ -30,7 +30,6 @@ from autoexcerpter.settings import RetryRule, RetrySettings, Settings
 USAGE = {"input_tokens": 100, "output_tokens": 20, "total_tokens": 120}
 
 TRANSCRIPTION_ANSWER: dict[str, Any] = {
-    "image_analysis": "Single column.",
     "transcription": "Bread prices rose.",
     "no_transcribable_text": False,
     "transcription_not_possible": False,

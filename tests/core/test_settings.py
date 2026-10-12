@@ -146,7 +146,7 @@ def test_precedence_flag_then_settings_default_then_code_default(
     assert spec.summary_model.verbosity == "medium"
     assert sources["summary_model.verbosity"] is Source.SETTINGS
     assert spec.output.formats == ("summary-md",)
-    assert spec.transcription_model.verbosity == "medium"
+    assert spec.transcription_model.verbosity == "high"
     assert sources["transcription_model.verbosity"] is Source.DEFAULT
     assert spec.transcription_model.reasoning_effort == "high"
     assert sources["transcription_model.reasoning_effort"] is Source.DEFAULT

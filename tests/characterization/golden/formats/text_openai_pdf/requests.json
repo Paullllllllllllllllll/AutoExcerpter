@@ -10,14 +10,14 @@
         },
         "service_tier": "flex",
         "text": {
-          "verbosity": "medium"
+          "verbosity": "high"
         }
       },
       "messages": [
         {
           "text": {
-            "chars": 1455,
-            "digest": "ef8e49d8ec141a07"
+            "chars": 2348,
+            "digest": "4f88f65c97fb1d86"
           },
           "type": "system"
         },
@@ -56,8 +56,8 @@
       "messages": [
         {
           "text": {
-            "chars": 7259,
-            "digest": "66e28711e28a8ca4"
+            "chars": 5751,
+            "digest": "b353fff5eec4227f"
           },
           "type": "system"
         },
@@ -94,8 +94,8 @@
       "messages": [
         {
           "text": {
-            "chars": 7259,
-            "digest": "66e28711e28a8ca4"
+            "chars": 5751,
+            "digest": "b353fff5eec4227f"
           },
           "type": "system"
         },
@@ -132,8 +132,8 @@
       "messages": [
         {
           "text": {
-            "chars": 7259,
-            "digest": "66e28711e28a8ca4"
+            "chars": 5751,
+            "digest": "b353fff5eec4227f"
           },
           "type": "system"
         },
@@ -170,8 +170,8 @@
       "messages": [
         {
           "text": {
-            "chars": 7259,
-            "digest": "66e28711e28a8ca4"
+            "chars": 5751,
+            "digest": "b353fff5eec4227f"
           },
           "type": "system"
         },
@@ -202,14 +202,14 @@
         },
         "service_tier": "flex",
         "text": {
-          "verbosity": "medium"
+          "verbosity": "high"
         }
       },
       "messages": [
         {
           "text": {
-            "chars": 1455,
-            "digest": "ef8e49d8ec141a07"
+            "chars": 2348,
+            "digest": "4f88f65c97fb1d86"
           },
           "type": "system"
         },
@@ -248,8 +248,8 @@
       "messages": [
         {
           "text": {
-            "chars": 7259,
-            "digest": "66e28711e28a8ca4"
+            "chars": 5751,
+            "digest": "b353fff5eec4227f"
           },
           "type": "system"
         },
@@ -286,8 +286,8 @@
       "messages": [
         {
           "text": {
-            "chars": 7259,
-            "digest": "66e28711e28a8ca4"
+            "chars": 5751,
+            "digest": "b353fff5eec4227f"
           },
           "type": "system"
         },
@@ -324,8 +324,8 @@
       "messages": [
         {
           "text": {
-            "chars": 7259,
-            "digest": "66e28711e28a8ca4"
+            "chars": 5751,
+            "digest": "b353fff5eec4227f"
           },
           "type": "system"
         },
@@ -362,8 +362,8 @@
       "messages": [
         {
           "text": {
-            "chars": 7259,
-            "digest": "66e28711e28a8ca4"
+            "chars": 5751,
+            "digest": "b353fff5eec4227f"
           },
           "type": "system"
         },
@@ -394,14 +394,14 @@
         },
         "service_tier": "flex",
         "text": {
-          "verbosity": "medium"
+          "verbosity": "high"
         }
       },
       "messages": [
         {
           "text": {
-            "chars": 1455,
-            "digest": "ef8e49d8ec141a07"
+            "chars": 2348,
+            "digest": "4f88f65c97fb1d86"
           },
           "type": "system"
         },
@@ -440,8 +440,8 @@
       "messages": [
         {
           "text": {
-            "chars": 7259,
-            "digest": "66e28711e28a8ca4"
+            "chars": 5751,
+            "digest": "b353fff5eec4227f"
           },
           "type": "system"
         },
@@ -478,8 +478,8 @@
       "messages": [
         {
           "text": {
-            "chars": 7259,
-            "digest": "66e28711e28a8ca4"
+            "chars": 5751,
+            "digest": "b353fff5eec4227f"
           },
           "type": "system"
         },
@@ -516,8 +516,8 @@
       "messages": [
         {
           "text": {
-            "chars": 7259,
-            "digest": "66e28711e28a8ca4"
+            "chars": 5751,
+            "digest": "b353fff5eec4227f"
           },
           "type": "system"
         },
@@ -554,8 +554,8 @@
       "messages": [
         {
           "text": {
-            "chars": 7259,
-            "digest": "66e28711e28a8ca4"
+            "chars": 5751,
+            "digest": "b353fff5eec4227f"
           },
           "type": "system"
         },

@@ -77,6 +77,32 @@ def test_user_message_shape_per_provider(
         assert content == TEXT
 
 
+@pytest.mark.parametrize(
+    ("provider", "model"),
+    [("anthropic", "claude-sonnet-4-5"), ("openai", "gpt-5.6-terra")],
+)
+def test_only_anthropic_marks_the_system_prompt_for_caching(
+    monkeypatch: pytest.MonkeyPatch, provider: str, model: str
+) -> None:
+    manager, script = _manager(
+        monkeypatch, [SUMMARY_ANSWER], name=model, provider=provider
+    )
+
+    _summarize(manager)
+
+    content = script.requests[0].messages[0].content
+    if provider == "anthropic":
+        assert content == [
+            {
+                "type": "text",
+                "text": manager.system_prompt,
+                "cache_control": {"type": "ephemeral"},
+            }
+        ]
+    else:
+        assert content == manager.system_prompt
+
+
 def test_context_enters_the_system_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
     manager, script = _manager(
         monkeypatch, [SUMMARY_ANSWER], context="Grain prices, Wages"
@@ -105,9 +131,10 @@ def test_the_prompt_follows_the_transcription_format(
 
     _summarize(manager)
 
-    first_line = (PROMPTS_DIR / prompt_file).read_text(encoding="utf-8")
+    prompt = (PROMPTS_DIR / prompt_file).read_text(encoding="utf-8")
+    (input_line,) = [line for line in prompt.splitlines() if "The input is" in line]
     system = str(script.requests[0].messages[0].content)
-    assert system.splitlines()[0] == first_line.splitlines()[0]
+    assert input_line in system
     assert "page_information" in system
 
 

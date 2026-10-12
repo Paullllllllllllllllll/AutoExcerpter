@@ -1,5 +1,16 @@
 # Changelog
 
+- **v2.1.0** (12 October 2026) -- The transcription and summary rules move into
+  the field descriptions of the JSON schemas, written in plain wording, and each
+  system prompt becomes one short frame for all providers that points to the
+  schema and adds the purpose, the input conventions, the topic context and the
+  language rule. The transcription schema drops `image_analysis` (stored answers
+  that still carry it load as before) and marks unreadable text as `[illegible]`
+  and the uncertain part of a word as `[?]`. Summaries become shorter: two to six
+  bullets of 10 to 25 words per page, at most about a quarter of the page's text.
+  Anthropic calls cache the system prompt and schema, and the first page of each
+  item runs alone so the other pages read the cache. The default transcription
+  verbosity is now high.
 - **v2.0.0** (11 October 2026) -- Major release: the output folder's
   `autoexcerpter.sqlite` becomes the single source of truth of every run, and the
   transcription and summary files become views rendered from it. Each page's

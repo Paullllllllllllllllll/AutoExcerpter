@@ -67,7 +67,7 @@ transcription model:
   --transcription-reasoning-effort {none,minimal,low,medium,high,xhigh,max}
                         reasoning effort; default: high
   --transcription-verbosity {low,medium,high}
-                        output verbosity; default: medium
+                        output verbosity; default: high
   --transcription-max-output-tokens N
                         maximum output tokens; default: the model's output limit
   --transcription-temperature T

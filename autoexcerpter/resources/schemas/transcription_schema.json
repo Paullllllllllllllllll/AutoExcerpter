@@ -4,25 +4,20 @@
   "schema": {
     "type": "object",
     "properties": {
-      "image_analysis": {
-        "type": "string",
-        "description": "A brief layout note only: number of columns, header and footer, and the positions of page numbers and footnotes. Do not transcribe any text here."
-      },
       "transcription": {
         "type": ["string", "null"],
-        "description": "- Task: Return a **markdown-converted, verbatim transcription** of the provided image.\n- Scope — include everything: Transcribe **all** visible text and structural elements: headers; footers; page numbers; tables; etc.\n- Markdown formatting: Use markdown formatting for transcribing text, e.g., `*italic*` or `**bold**`; `# Heading 1`, `## Heading 2`, etc.\n- Equations: LaTeX, delimited as the instructions specify.\n- Page numbers — exact format: Write page numbers appearing on headers and footers (not in the main text or tables) like this example: `<page_number>9</page_number>`.\n- Footnotes: Format footnotes (in the main text and in footers) like in this example: `[^1]: My reference`.\n- Images or diagrams: Indicate their presence with a detailed description in square brackets, e.g., `![Image: diagram of a cell, showing the nucleus, mitochondria, endoplasmic reticulum, Golgi apparatus, and cell membrane; labels identify each organelle, and arrows indicate the flow of proteins through the cell]`.\n- Layout preservation: **Preserve all line breaks** exactly as in the image.\n- Multi-column text: Transcribe column by column (finish column 1 before column 2, etc.), keep line breaks within columns intact.\n- Cross-page continuity: This is likely one page of a multi-page document. **Preserve any sentences that continue from the previous or to the next page exactly as shown.**\n- Output format: Provide **only** the transcription. If **no transcribable text** is found, output `null`.\n- No fabrication: **Do not hallucinate.** Keep spelling, punctuation, and wording **verbatim**."
+        "description": "The page's text as Markdown, transcribed in reading order. Text: always transcribe verbatim, keeping the wording, spelling, punctuation, capitalization, numbers and names exactly as printed, errors and archaic forms included, since readers check the text against the scan and search it for exact terms. Write only text visible in the image and never add, complete or correct anything. Illegible text: write [illegible] for a word or passage you cannot read, and [?] in place of the uncertain part of a partly legible word. Scope: include all visible text, headers, footers, margin text, captions and tables among it. Line breaks: keep each line break where the image has one. Columns: transcribe multi-column text column by column, finishing one column before starting the next. Markdown: mark headings with # by level, italic type as *text*, bold type as **text**, and write tables as Markdown tables. Page numbers: wrap the printed page number of a header or footer in tags, as <page_number>N</page_number>, where it appears; numbers in the body text and in tables stay untagged. Footnotes: write a note marker in the text as [^N] and the note itself, in the body or the footer, as [^N]: followed by its text, N being the printed marker. Formulas: wrap math inside a sentence in single dollar signs, $...$, and an equation set on its own line in double dollar signs, $$...$$, which are for display equations only. Use only these two delimiters, not \\(...\\) or \\[...\\]. Apart from note markers, which follow the footnote rule, write every subscript and superscript, affiliation marks included, as _ or ^ inside $...$, not as HTML tags such as <sub> and <sup> and not as a bare ^ outside math. Keep every relation and symbol exactly as printed: > stays >, < stays <, a definition with \\equiv keeps \\equiv, and the layout of an equation stays as set. Use standard LaTeX commands such as \\frac{}{}, \\sqrt{}, \\sum, \\int and Greek letters, and \\mathrm{} for upright text in math; balance every \\left with a \\right, using \\left. or \\right. for a one-sided delimiter. Images: describe each image, chart or diagram where it appears as ![Image: description], naming what it shows, its labels and any trend it conveys. Two-page spreads: when the image shows two facing pages, transcribe the left page in full, then the right page, and tag each page's printed number. Cross-page continuity: the page is usually one of many, so transcribe a sentence that begins on the previous page or ends on the next exactly as far as this page shows it. Use null when the image holds no transcribable text."
       },
       "no_transcribable_text": {
         "type": "boolean",
-        "description": "True **if and only if** the image contains no transcribable text; otherwise, false."
+        "description": "True only when the image holds no text at all, such as a blank or purely pictorial page; false whenever any text can be transcribed, even in part."
       },
       "transcription_not_possible": {
         "type": "boolean",
-        "description": "True *if and only if* transcription is entirely impossible; otherwise, false."
+        "description": "True only when the image cannot be transcribed at all, such as a corrupted or entirely unreadable scan; false whenever any part can be transcribed, even with [illegible] markers."
       }
     },
     "required": [
-      "image_analysis",
       "transcription",
       "no_transcribable_text",
       "transcription_not_possible"

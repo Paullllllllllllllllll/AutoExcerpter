@@ -327,7 +327,7 @@ def custom_images_and_parameters(ws: Workspace) -> Script:
         "low",
         "text",
         "customize",
-        "high",
+        "medium",
         "12000",
         "priority",
     ]

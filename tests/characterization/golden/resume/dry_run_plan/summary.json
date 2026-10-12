@@ -167,7 +167,7 @@
       },
       "transcription_model.verbosity": {
         "source": "default",
-        "value": "medium"
+        "value": "high"
       }
     },
     "to_process": [

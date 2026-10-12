@@ -131,9 +131,8 @@ BRAUDEL_FULL = (
 MONTANARI_FULL = "Montanari, M. (1994). *The Culture of Food*. Oxford: Blackwell."
 
 
-def _transcription(analysis: str, text: str) -> dict[str, Any]:
+def _transcription(text: str) -> dict[str, Any]:
     return {
-        "image_analysis": analysis,
         "transcription": text,
         "no_transcribable_text": False,
         "transcription_not_possible": False,
@@ -187,10 +186,7 @@ def default_page(index: int) -> PageScript:
         )
         return PageScript(
             key="# Preface",
-            transcription=_transcription(
-                "Single column; page number centered in the footer; one footnote.",
-                text,
-            ),
+            transcription=_transcription(text),
             summary=_summary(
                 11,
                 "roman",
@@ -217,11 +213,7 @@ def default_page(index: int) -> PageScript:
         )
         return PageScript(
             key="## The Price of Bread",
-            transcription=_transcription(
-                "Single column; page number in the footer; one figure and one"
-                " footnote.",
-                text,
-            ),
+            transcription=_transcription(text),
             summary=_summary(
                 1,
                 "arabic",
@@ -241,9 +233,7 @@ def default_page(index: int) -> PageScript:
         text = f"## Bibliography\n\n{ALLEN_BIBLIOGRAPHY}\n\n{MONTANARI_FULL}"
         return PageScript(
             key="## Bibliography",
-            transcription=_transcription(
-                "Single column bibliography; no page number visible.", text
-            ),
+            transcription=_transcription(text),
             summary=_summary(
                 None,
                 "none",
@@ -263,7 +253,7 @@ def default_page(index: int) -> PageScript:
     )
     return PageScript(
         key=key,
-        transcription=_transcription("Single column; page number in the footer.", text),
+        transcription=_transcription(text),
         summary=_summary(
             printed,
             "arabic",
@@ -648,7 +638,7 @@ class FakeLLM:
         if role in self.text_roles:
             return "Unrecognized page."
         if role == TRANSCRIPTION:
-            payload = _transcription("Unrecognized page.", "Unrecognized page.")
+            payload = _transcription("Unrecognized page.")
         else:
             payload = _summary(None, "none", ["other"], None, None)
         return json.dumps(payload, ensure_ascii=False)

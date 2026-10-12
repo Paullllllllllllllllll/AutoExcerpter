@@ -1,4 +1,4 @@
-# AutoExcerpter v2.0.0
+# AutoExcerpter v2.1.0
 
 AutoExcerpter transcribes PDFs and folders of page images with vision-language
 models, summarizes each page and builds a consolidated bibliography whose entries
@@ -134,7 +134,7 @@ option, for example as `model` or `summary_verbosity`.
 | model name; a provider: prefix (anthropic:NAME) selects the provider | `NAME` | `--model`: per phase | `--transcription-model`: gpt-5.6-luna | `--summary-model`: gpt-5.6-luna |
 | named custom endpoint from the settings (implies provider custom) | `NAME` | `--endpoint`: none | `--transcription-endpoint`: none | `--summary-endpoint`: none |
 | reasoning effort | `{none,minimal,low,medium,high,xhigh,max}` | `--reasoning-effort`: per phase | `--transcription-reasoning-effort`: high | `--summary-reasoning-effort`: high |
-| output verbosity | `{low,medium,high}` | `--verbosity`: per phase | `--transcription-verbosity`: medium | `--summary-verbosity`: low |
+| output verbosity | `{low,medium,high}` | `--verbosity`: per phase | `--transcription-verbosity`: high | `--summary-verbosity`: low |
 | maximum output tokens | `N` | `--max-output-tokens`: the model's output limit | `--transcription-max-output-tokens`: the model's output limit | `--summary-max-output-tokens`: the model's output limit |
 | sampling temperature, 0.0 to 2.0 | `T` | `--temperature`: per phase | `--transcription-temperature`: 1.0 | `--summary-temperature`: 1.0 |
 | nucleus sampling, 0.0 to 1.0; sent only when given and supported | `P` | `--top-p`: not sent | `--transcription-top-p`: not sent | `--summary-top-p`: not sent |
@@ -269,6 +269,7 @@ openalex: {email: '', api_key_env: OPENALEX_API_KEY, max_requests: 300}
 defaults:
   model: gpt-5.6-terra
   reasoning_effort: high
+  transcription_verbosity: high
   summary_verbosity: low
   service_tier: flex
   transcription_format: md
@@ -322,6 +323,21 @@ otherwise; a custom endpoint uses `schema` when it declares `supports_schema`. A
 requested `schema` on a model without structured output falls back to `json`
 with a warning. The summary always asks for the summary schema; with `text` it
 keeps a plain answer that fails validation as one bullet point.
+
+Each phase sends one system prompt to every provider
+(`autoexcerpter/resources/prompts/`). The prompt is a short frame: it points to
+the JSON schema it embeds, states the purpose of the output and, for the summary,
+describes the input, the summary context and the language of the bullets. The
+rules themselves sit in the field descriptions of the transcription and summary
+schemas (`resources/schemas/`). The transcription schema asks for the verbatim
+page text as Markdown (null for a page without text) and the two flags
+`no_transcribable_text` and `transcription_not_possible`; unreadable words become
+`[illegible]`, and the uncertain part of a partly legible word becomes `[?]`. The
+summary has a prompt variant for plain-text transcriptions, and the transcription
+in the `text` format uses a plain-text prompt without schema. For Anthropic
+models the system prompt carries a cache breakpoint, and an item's first page
+runs alone before the others start, so later pages read the prompt and schema
+from the prompt cache; `cached_tokens` counts these reads.
 
 Reasoning effort reaches OpenAI reasoning models as `reasoning.effort`. Claude
 models with adaptive thinking receive an effort level, other Claude reasoning

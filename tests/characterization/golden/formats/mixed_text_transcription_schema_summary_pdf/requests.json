@@ -9,8 +9,8 @@
       "messages": [
         {
           "text": {
-            "chars": 1455,
-            "digest": "ef8e49d8ec141a07"
+            "chars": 2348,
+            "digest": "4f88f65c97fb1d86"
           },
           "type": "system"
         },
@@ -43,7 +43,7 @@
         "service_tier": "flex",
         "text": {
           "format": {
-            "digest": "12f10d914c0830f8",
+            "digest": "3feb40d2c56008de",
             "name": "article_page_summary",
             "properties": [
               "bullet_points",
@@ -59,8 +59,8 @@
       "messages": [
         {
           "text": {
-            "chars": 7259,
-            "digest": "66e28711e28a8ca4"
+            "chars": 5751,
+            "digest": "b353fff5eec4227f"
           },
           "type": "system"
         },
@@ -90,8 +90,8 @@
       "messages": [
         {
           "text": {
-            "chars": 1455,
-            "digest": "ef8e49d8ec141a07"
+            "chars": 2348,
+            "digest": "4f88f65c97fb1d86"
           },
           "type": "system"
         },
@@ -124,7 +124,7 @@
         "service_tier": "flex",
         "text": {
           "format": {
-            "digest": "12f10d914c0830f8",
+            "digest": "3feb40d2c56008de",
             "name": "article_page_summary",
             "properties": [
               "bullet_points",
@@ -140,8 +140,8 @@
       "messages": [
         {
           "text": {
-            "chars": 7259,
-            "digest": "66e28711e28a8ca4"
+            "chars": 5751,
+            "digest": "b353fff5eec4227f"
           },
           "type": "system"
         },
@@ -171,8 +171,8 @@
       "messages": [
         {
           "text": {
-            "chars": 1455,
-            "digest": "ef8e49d8ec141a07"
+            "chars": 2348,
+            "digest": "4f88f65c97fb1d86"
           },
           "type": "system"
         },
@@ -205,7 +205,7 @@
         "service_tier": "flex",
         "text": {
           "format": {
-            "digest": "12f10d914c0830f8",
+            "digest": "3feb40d2c56008de",
             "name": "article_page_summary",
             "properties": [
               "bullet_points",
@@ -221,8 +221,8 @@
       "messages": [
         {
           "text": {
-            "chars": 7259,
-            "digest": "66e28711e28a8ca4"
+            "chars": 5751,
+            "digest": "b353fff5eec4227f"
           },
           "type": "system"
         },

@@ -3,29 +3,29 @@
   "created_at": "<datetime>+00:00",
   "kind": "summary_prompt",
   "run_id": "<run-1>",
-  "sha256": "19d077973451ec81fd22b41718ba937475d3d6beb7d1fb153f1f46bdd86a8b52",
-  "text": "<7680 characters>"
+  "sha256": "f4ccaa329d6b6bba15b6f02fba5d080f32ae1b1ba80c216846b33f13afb67cc7",
+  "text": "<5932 characters>"
 }
 {
   "created_at": "<datetime>+00:00",
   "kind": "summary_schema",
   "run_id": "<run-1>",
-  "sha256": "1ecfed652ead1e92c94f1d0d5729f53ced3c17818d47c1329bd3ff8675436812",
-  "text": "<5199 characters>"
+  "sha256": "0bc58a02aaf99fff031fb171ee83cf3e5800a238e3128b7529b4134ba02942fb",
+  "text": "<5427 characters>"
 }
 {
   "created_at": "<datetime>+00:00",
   "kind": "transcription_prompt",
   "run_id": "<run-1>",
-  "sha256": "0fdf86688a8d19a503f47dff4e0cd824b33f9ec25217e9aee6e3c115bc2774c5",
-  "text": "<4157 characters>"
+  "sha256": "ae9a319f0c2b46616a4ec1f492a6ebd2af6560482e8096f020b960c9f9bdfa62",
+  "text": "<3690 characters>"
 }
 {
   "created_at": "<datetime>+00:00",
   "kind": "transcription_schema",
   "run_id": "<run-1>",
-  "sha256": "7655345ceca247fc2d3c60a5b4406f6a855c07514816f5a57d949e6b584b7c79",
-  "text": "<2614 characters>"
+  "sha256": "e5b5bfa70ecf479eff64f1b886a2be45f913f19e2f6be29b806b4fc4c4ee9f37",
+  "text": "<3520 characters>"
 }
 ## citations
 {
@@ -184,7 +184,7 @@
             "additionalProperties": false,
             "properties": {
               "bullet_points": {
-                "description": "<756 characters>",
+                "description": "<988 characters>",
                 "items": {
                   "type": "string"
                 },
@@ -195,28 +195,28 @@
               },
               "page_information": {
                 "additionalProperties": false,
-                "description": "Comprehensive page metadata including page number and content classification.",
+                "description": "The page's printed number and its classification.",
                 "properties": {
                   "is_two_page_spread": {
-                    "description": "True when the scanned image shows a two-page spread (two facing pages side by side); false for a single page.",
+                    "description": "True when the transcription covers two facing pages, shown by two consecutive <page_number> tags or by text that clearly belongs to two pages; false for a single page.",
                     "type": "boolean"
                   },
                   "page_number_integer": {
-                    "description": "<216 characters>",
+                    "description": "<308 characters>",
                     "type": [
                       "integer",
                       "null"
                     ]
                   },
                   "page_number_integer_end": {
-                    "description": "For a two-page spread, the integer page number of the RIGHT page (Roman numerals converted to integers, same as page_number_integer); null for single pages or unnumbered spreads.",
+                    "description": "For a two-page spread, the right page's number from its <page_number> tag, converted like page_number_integer; null for a single page or when the right page has no tag.",
                     "type": [
                       "integer",
                       "null"
                     ]
                   },
                   "page_number_type": {
-                    "description": "Numbering system: 'roman' for Roman numerals, 'arabic' for standard numerals, 'none' if no page number is visible.",
+                    "description": "The numbering system of page_number_integer as printed: 'roman' or 'arabic'; 'none' when page_number_integer is null.",
                     "enum": [
                       "roman",
                       "arabic",
@@ -225,7 +225,7 @@
                     "type": "string"
                   },
                   "page_types": {
-                    "description": "<595 characters>",
+                    "description": "<420 characters>",
                     "items": {
                       "enum": [
                         "content",
@@ -258,16 +258,16 @@
                 "type": "object"
               },
               "references": {
-                "description": "Bibliographic citations in APA style. Extract from ALL page types. Set to null only if no citations present.",
+                "description": "Every bibliographic citation on the page, from pages of any type, in APA style; null when the page cites nothing.",
                 "items": {
                   "additionalProperties": false,
                   "properties": {
                     "citation": {
-                      "description": "The citation in APA style, exactly as reconstructable from the page. Never invent or paraphrase a title; record only bibliographic data the page actually states.",
+                      "description": "<232 characters>",
                       "type": "string"
                     },
                     "is_partial": {
-                      "description": "<219 characters>",
+                      "description": "True when the page gives only an in-text pointer, such as author and year, op. cit. or ibid., without title and venue; false for a complete reference, such as a bibliography entry or a full footnote.",
                       "type": "boolean"
                     }
                   },
@@ -375,7 +375,7 @@
             "additionalProperties": false,
             "properties": {
               "bullet_points": {
-                "description": "<756 characters>",
+                "description": "<988 characters>",
                 "items": {
                   "type": "string"
                 },
@@ -386,28 +386,28 @@
               },
               "page_information": {
                 "additionalProperties": false,
-                "description": "Comprehensive page metadata including page number and content classification.",
+                "description": "The page's printed number and its classification.",
                 "properties": {
                   "is_two_page_spread": {
-                    "description": "True when the scanned image shows a two-page spread (two facing pages side by side); false for a single page.",
+                    "description": "True when the transcription covers two facing pages, shown by two consecutive <page_number> tags or by text that clearly belongs to two pages; false for a single page.",
                     "type": "boolean"
                   },
                   "page_number_integer": {
-                    "description": "<216 characters>",
+                    "description": "<308 characters>",
                     "type": [
                       "integer",
                       "null"
                     ]
                   },
                   "page_number_integer_end": {
-                    "description": "For a two-page spread, the integer page number of the RIGHT page (Roman numerals converted to integers, same as page_number_integer); null for single pages or unnumbered spreads.",
+                    "description": "For a two-page spread, the right page's number from its <page_number> tag, converted like page_number_integer; null for a single page or when the right page has no tag.",
                     "type": [
                       "integer",
                       "null"
                     ]
                   },
                   "page_number_type": {
-                    "description": "Numbering system: 'roman' for Roman numerals, 'arabic' for standard numerals, 'none' if no page number is visible.",
+                    "description": "The numbering system of page_number_integer as printed: 'roman' or 'arabic'; 'none' when page_number_integer is null.",
                     "enum": [
                       "roman",
                       "arabic",
@@ -416,7 +416,7 @@
                     "type": "string"
                   },
                   "page_types": {
-                    "description": "<595 characters>",
+                    "description": "<420 characters>",
                     "items": {
                       "enum": [
                         "content",
@@ -449,16 +449,16 @@
                 "type": "object"
               },
               "references": {
-                "description": "Bibliographic citations in APA style. Extract from ALL page types. Set to null only if no citations present.",
+                "description": "Every bibliographic citation on the page, from pages of any type, in APA style; null when the page cites nothing.",
                 "items": {
                   "additionalProperties": false,
                   "properties": {
                     "citation": {
-                      "description": "The citation in APA style, exactly as reconstructable from the page. Never invent or paraphrase a title; record only bibliographic data the page actually states.",
+                      "description": "<232 characters>",
                       "type": "string"
                     },
                     "is_partial": {
-                      "description": "<219 characters>",
+                      "description": "True when the page gives only an in-text pointer, such as author and year, op. cit. or ibid., without title and venue; false for a complete reference, such as a bibliography entry or a full footnote.",
                       "type": "boolean"
                     }
                   },
@@ -531,7 +531,7 @@
   "provider": "openai",
   "raw": {
     "additional_kwargs": {},
-    "content": "{\"image_analysis\": \"Single column; page number centered in the footer; one footnote.\", \"transcription\": \"# Preface\\n\\nThis volume brings together **new research** on the *material\\nculture* of eating in early modern Europe. Its chapters trace how\\nprices, wages and diets changed between 1500 and 1800.[^1]\\n\\n[^1]: See Braudel (1979) for the classic statement of this view.\\n\\n<page_number>xi</page_number>\", \"no_transcribable_text\": false, \"transcription_not_possible\": false}",
+    "content": "{\"transcription\": \"# Preface\\n\\nThis volume brings together **new research** on the *material\\nculture* of eating in early modern Europe. Its chapters trace how\\nprices, wages and diets changed between 1500 and 1800.[^1]\\n\\n[^1]: See Braudel (1979) for the classic statement of this view.\\n\\n<page_number>xi</page_number>\", \"no_transcribable_text\": false, \"transcription_not_possible\": false}",
     "id": "lc_run--<uuid>-0",
     "invalid_tool_calls": [],
     "name": null,
@@ -564,28 +564,23 @@
           "schema": {
             "additionalProperties": false,
             "properties": {
-              "image_analysis": {
-                "description": "A brief layout note only: number of columns, header and footer, and the positions of page numbers and footnotes. Do not transcribe any text here.",
-                "type": "string"
-              },
               "no_transcribable_text": {
-                "description": "True **if and only if** the image contains no transcribable text; otherwise, false.",
+                "description": "True only when the image holds no text at all, such as a blank or purely pictorial page; false whenever any text can be transcribed, even in part.",
                 "type": "boolean"
               },
               "transcription": {
-                "description": "<1588 characters>",
+                "description": "<2582 characters>",
                 "type": [
                   "string",
                   "null"
                 ]
               },
               "transcription_not_possible": {
-                "description": "True *if and only if* transcription is entirely impossible; otherwise, false.",
+                "description": "True only when the image cannot be transcribed at all, such as a corrupted or entirely unreadable scan; false whenever any part can be transcribed, even with [illegible] markers.",
                 "type": "boolean"
               }
             },
             "required": [
-              "image_analysis",
               "transcription",
               "no_transcribable_text",
               "transcription_not_possible"
@@ -595,7 +590,7 @@
           "strict": true,
           "type": "json_schema"
         },
-        "verbosity": "medium"
+        "verbosity": "high"
       }
     },
     "model": "gpt-5.6-terra",
@@ -606,7 +601,7 @@
       },
       "temperature": 1.0,
       "text": {
-        "verbosity": "medium"
+        "verbosity": "high"
       }
     },
     "provider": "openai",
@@ -642,7 +637,7 @@
   "provider": "openai",
   "raw": {
     "additional_kwargs": {},
-    "content": "{\"image_analysis\": \"Single column; page number in the footer; one figure and one footnote.\", \"transcription\": \"## The Price of Bread\\n\\nBread prices rose faster than wages after 1550, and the eco-\\nnomic burden fell on urban households.[^2] The real wage index\\nis defined as $w_t / p_t$.\\n\\n![Image: line chart of bread prices and day wages in Antwerp, 1500-1800; prices rise steeply after 1550 while wages stay flat]\\n\\n[^2]: Allen, R. C. (2001). The great divergence in European wages and prices from the Middle Ages to the First World War. *Explorations in Economic History, 38*(4), 411-447. https://doi.org/10.1006/exeh.2001.0775\\n\\n<page_number>1</page_number>\", \"no_transcribable_text\": false, \"transcription_not_possible\": false}",
+    "content": "{\"transcription\": \"## The Price of Bread\\n\\nBread prices rose faster than wages after 1550, and the eco-\\nnomic burden fell on urban households.[^2] The real wage index\\nis defined as $w_t / p_t$.\\n\\n![Image: line chart of bread prices and day wages in Antwerp, 1500-1800; prices rise steeply after 1550 while wages stay flat]\\n\\n[^2]: Allen, R. C. (2001). The great divergence in European wages and prices from the Middle Ages to the First World War. *Explorations in Economic History, 38*(4), 411-447. https://doi.org/10.1006/exeh.2001.0775\\n\\n<page_number>1</page_number>\", \"no_transcribable_text\": false, \"transcription_not_possible\": false}",
     "id": "lc_run--<uuid>-0",
     "invalid_tool_calls": [],
     "name": null,
@@ -675,28 +670,23 @@
           "schema": {
             "additionalProperties": false,
             "properties": {
-              "image_analysis": {
-                "description": "A brief layout note only: number of columns, header and footer, and the positions of page numbers and footnotes. Do not transcribe any text here.",
-                "type": "string"
-              },
               "no_transcribable_text": {
-                "description": "True **if and only if** the image contains no transcribable text; otherwise, false.",
+                "description": "True only when the image holds no text at all, such as a blank or purely pictorial page; false whenever any text can be transcribed, even in part.",
                 "type": "boolean"
               },
               "transcription": {
-                "description": "<1588 characters>",
+                "description": "<2582 characters>",
                 "type": [
                   "string",
                   "null"
                 ]
               },
               "transcription_not_possible": {
-                "description": "True *if and only if* transcription is entirely impossible; otherwise, false.",
+                "description": "True only when the image cannot be transcribed at all, such as a corrupted or entirely unreadable scan; false whenever any part can be transcribed, even with [illegible] markers.",
                 "type": "boolean"
               }
             },
             "required": [
-              "image_analysis",
               "transcription",
               "no_transcribable_text",
               "transcription_not_possible"
@@ -706,7 +696,7 @@
           "strict": true,
           "type": "json_schema"
         },
-        "verbosity": "medium"
+        "verbosity": "high"
       }
     },
     "model": "gpt-5.6-terra",
@@ -717,7 +707,7 @@
       },
       "temperature": 1.0,
       "text": {
-        "verbosity": "medium"
+        "verbosity": "high"
       }
     },
     "provider": "openai",
@@ -907,7 +897,7 @@
     },
     "transcription_model.verbosity": {
       "source": "default",
-      "value": "medium"
+      "value": "high"
     }
   },
   "started_at": "<datetime>+00:00",

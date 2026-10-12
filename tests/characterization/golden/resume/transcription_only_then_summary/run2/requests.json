@@ -11,7 +11,7 @@
         "service_tier": "flex",
         "text": {
           "format": {
-            "digest": "12f10d914c0830f8",
+            "digest": "3feb40d2c56008de",
             "name": "article_page_summary",
             "properties": [
               "bullet_points",
@@ -27,8 +27,8 @@
       "messages": [
         {
           "text": {
-            "chars": 7680,
-            "digest": "19d077973451ec81"
+            "chars": 5932,
+            "digest": "f4ccaa329d6b6bba"
           },
           "type": "system"
         },
@@ -60,7 +60,7 @@
         "service_tier": "flex",
         "text": {
           "format": {
-            "digest": "12f10d914c0830f8",
+            "digest": "3feb40d2c56008de",
             "name": "article_page_summary",
             "properties": [
               "bullet_points",
@@ -76,8 +76,8 @@
       "messages": [
         {
           "text": {
-            "chars": 7680,
-            "digest": "19d077973451ec81"
+            "chars": 5932,
+            "digest": "f4ccaa329d6b6bba"
           },
           "type": "system"
         },
@@ -109,7 +109,7 @@
         "service_tier": "flex",
         "text": {
           "format": {
-            "digest": "12f10d914c0830f8",
+            "digest": "3feb40d2c56008de",
             "name": "article_page_summary",
             "properties": [
               "bullet_points",
@@ -125,8 +125,8 @@
       "messages": [
         {
           "text": {
-            "chars": 7680,
-            "digest": "19d077973451ec81"
+            "chars": 5932,
+            "digest": "f4ccaa329d6b6bba"
           },
           "type": "system"
         },

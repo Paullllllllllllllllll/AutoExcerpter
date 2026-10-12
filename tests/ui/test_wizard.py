@@ -161,7 +161,7 @@ def test_pdf_session_with_summary_runs_with_recommended_values(pdf: Path) -> Non
     assert spec.input.path == pdf
     assert spec.summary.enabled
     assert spec.summary_model.verbosity == "low"
-    same = dataclasses.replace(spec.summary_model, verbosity="medium")
+    same = dataclasses.replace(spec.summary_model, verbosity="high")
     assert same == spec.transcription_model
     assert run.outcome.command == ("autoexcerpter", "run", "--input", str(pdf))
     assert "Plan: 1 new, 0 partial, 0 complete" in run.prompter.lines

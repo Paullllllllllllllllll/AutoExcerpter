@@ -12,10 +12,13 @@
       },
       "messages": [
         {
-          "text": {
-            "chars": 4157,
-            "digest": "0fdf86688a8d19a5"
-          },
+          "blocks": [
+            {
+              "chars": 3690,
+              "digest": "ae9a319f0c2b4661",
+              "type": "text"
+            }
+          ],
           "type": "system"
         },
         {
@@ -49,10 +52,13 @@
       },
       "messages": [
         {
-          "text": {
-            "chars": 7680,
-            "digest": "19d077973451ec81"
-          },
+          "blocks": [
+            {
+              "chars": 5932,
+              "digest": "f4ccaa329d6b6bba",
+              "type": "text"
+            }
+          ],
           "type": "system"
         },
         {
@@ -81,10 +87,13 @@
       },
       "messages": [
         {
-          "text": {
-            "chars": 4157,
-            "digest": "0fdf86688a8d19a5"
-          },
+          "blocks": [
+            {
+              "chars": 3690,
+              "digest": "ae9a319f0c2b4661",
+              "type": "text"
+            }
+          ],
           "type": "system"
         },
         {
@@ -118,10 +127,13 @@
       },
       "messages": [
         {
-          "text": {
-            "chars": 4157,
-            "digest": "0fdf86688a8d19a5"
-          },
+          "blocks": [
+            {
+              "chars": 3690,
+              "digest": "ae9a319f0c2b4661",
+              "type": "text"
+            }
+          ],
           "type": "system"
         },
         {
@@ -155,10 +167,13 @@
       },
       "messages": [
         {
-          "text": {
-            "chars": 7680,
-            "digest": "19d077973451ec81"
-          },
+          "blocks": [
+            {
+              "chars": 5932,
+              "digest": "f4ccaa329d6b6bba",
+              "type": "text"
+            }
+          ],
           "type": "system"
         },
         {
@@ -187,10 +202,13 @@
       },
       "messages": [
         {
-          "text": {
-            "chars": 4157,
-            "digest": "0fdf86688a8d19a5"
-          },
+          "blocks": [
+            {
+              "chars": 3690,
+              "digest": "ae9a319f0c2b4661",
+              "type": "text"
+            }
+          ],
           "type": "system"
         },
         {
@@ -224,10 +242,13 @@
       },
       "messages": [
         {
-          "text": {
-            "chars": 7680,
-            "digest": "19d077973451ec81"
-          },
+          "blocks": [
+            {
+              "chars": 5932,
+              "digest": "f4ccaa329d6b6bba",
+              "type": "text"
+            }
+          ],
           "type": "system"
         },
         {
@@ -256,10 +277,13 @@
       },
       "messages": [
         {
-          "text": {
-            "chars": 7680,
-            "digest": "19d077973451ec81"
-          },
+          "blocks": [
+            {
+              "chars": 5932,
+              "digest": "f4ccaa329d6b6bba",
+              "type": "text"
+            }
+          ],
           "type": "system"
         },
         {
