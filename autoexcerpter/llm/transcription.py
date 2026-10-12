@@ -19,8 +19,6 @@ import time
 from collections.abc import Mapping
 from typing import Any
 
-from langchain_core.messages import HumanMessage
-
 from autoexcerpter.common.images import PagePayload
 from autoexcerpter.common.responses import inspect_response
 from autoexcerpter.common.structured import (
@@ -192,6 +190,8 @@ class TranscriptionManager:
 
     def messages(self, payload: PagePayload) -> list[Any]:
         """Return the system and user messages for one page image."""
+        from langchain_core.messages import HumanMessage
+
         data = payload.base64
         mime = payload.mime_type
         block: dict[str, Any]

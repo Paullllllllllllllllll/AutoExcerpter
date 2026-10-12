@@ -27,9 +27,7 @@ import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import Any
-
-from langchain_core.language_models import BaseChatModel
+from typing import TYPE_CHECKING, Any
 
 from autoexcerpter import ext
 from autoexcerpter.common.capture import (
@@ -63,6 +61,9 @@ from autoexcerpter.events import NullEvents, RunEvents, Waiting
 from autoexcerpter.llm.client import build_chat_model, resolve_provider
 from autoexcerpter.llm.types import PhaseModel
 from autoexcerpter.settings import Settings
+
+if TYPE_CHECKING:
+    from langchain_core.language_models import BaseChatModel
 
 __all__ = ["CallEnv", "HttpAttempt", "ModelCaller", "collect_usage"]
 

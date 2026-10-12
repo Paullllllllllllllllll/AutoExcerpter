@@ -22,8 +22,6 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from langchain_core.messages import AIMessage
-
 logger = logging.getLogger(__name__)
 
 ResponseFormat = Literal["schema", "json", "text"]
@@ -220,6 +218,10 @@ def is_schema_rejection(exc: BaseException) -> bool:
 
 
 def _from_aimessage(data: Any) -> str | None:
+    # Imported on first use, so that commands without model calls (render,
+    # migrate) do not load LangChain at startup.
+    from langchain_core.messages import AIMessage
+
     if not isinstance(data, AIMessage):
         return None
     parts: list[str] = []

@@ -11,9 +11,10 @@ import json
 import logging
 import re
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from langchain_core.messages import SystemMessage
+if TYPE_CHECKING:
+    from langchain_core.messages import SystemMessage
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +59,10 @@ def system_message(prompt: str, provider: str) -> SystemMessage:
     the system prompt and its schema, identical across a phase's pages, are
     read from the prompt cache after the first request.
     """
+    # Imported on first use, so that commands without model calls (render,
+    # migrate) do not load LangChain at startup.
+    from langchain_core.messages import SystemMessage
+
     if provider == "anthropic":
         block = {"type": "text", "text": prompt, "cache_control": {"type": "ephemeral"}}
         return SystemMessage(content=[block])

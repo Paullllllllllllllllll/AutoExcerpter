@@ -17,8 +17,6 @@ import random
 import time
 from typing import Any
 
-from langchain_core.messages import HumanMessage
-
 from autoexcerpter.common.responses import get_response_metadata, inspect_response
 from autoexcerpter.common.structured import (
     ResponseFormat,
@@ -170,6 +168,8 @@ class SummaryManager:
 
     def messages(self, transcription: str) -> list[Any]:
         """Return the system and user messages for one page's text."""
+        from langchain_core.messages import HumanMessage
+
         user: HumanMessage
         if self.provider in ("openai", "openrouter", "custom"):
             user = HumanMessage(content=[{"type": "text", "text": transcription}])

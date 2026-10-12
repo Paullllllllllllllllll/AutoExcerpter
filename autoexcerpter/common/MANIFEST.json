@@ -19,7 +19,7 @@
     "settings_loader.py": "2148461c53a5cc6a04b77c732bbfdbb7e9071e2cf5670aae36fe0851dfcd7729",
     "sqlite.py": "73b6ed83a32d0013e9010274569b4c3cf35fc2c821b03e1521f909e3a6c0d2f9",
     "store.py": "2f48a9773968e109e09aa21191aecf70c42012f88ade7371e2640b58e3efc664",
-    "structured.py": "cce3ed067fce9a1dad91636688070a362eb875a788a42a360ea38a841ccf6712",
+    "structured.py": "5810fd1b1f2ba0630e16acf4d7998ab144b9ff6b95b94426bafc023a07d46f1f",
     "testing.py": "b2f898bd7df3ab1de9b9b55089475e66c497e59b8c2627aef3a925cc8c2070f8",
     "usage.py": "f251f386abca8400d2e8514130c53fe72ba1cc3caddcaac3f601a649c014dafd",
     "wizard.py": "f100ea2faf5564b992dde2cf3074720426a05bc50aec9a76d845abb315a803ff"

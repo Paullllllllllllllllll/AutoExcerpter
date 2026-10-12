@@ -24,10 +24,9 @@ import os
 import ssl
 from collections.abc import Awaitable
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
-from langchain_core.language_models import BaseChatModel
 
 from autoexcerpter.common.capture import (
     acapture_response,
@@ -44,6 +43,9 @@ from autoexcerpter.common.http_timeouts import (
 from autoexcerpter.llm.types import PhaseModel
 from autoexcerpter.providers import PROVIDERS
 from autoexcerpter.settings import DEFAULT_API_KEYS, Timeouts
+
+if TYPE_CHECKING:
+    from langchain_core.language_models import BaseChatModel
 
 logger = logging.getLogger(__name__)
 
