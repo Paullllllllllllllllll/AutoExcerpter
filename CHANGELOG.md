@@ -1,5 +1,13 @@
 # Changelog
 
+- **v2.1.1** (12 October 2026) -- A resume with a transcription model from
+  another provider family, for example after a provider's content filter refused
+  some pages, now transcribes only the missing pages instead of skipping the item
+  for changed image settings: the stored settings are compared with what the run's
+  options give the stored model, so only image settings the user changed stop the
+  item. The GLM vision models on OpenRouter (glm-5.3-flash and its siblings, glm-5v,
+  glm-4.6v and glm-4.5v) get capability profiles with image input and, where the
+  endpoint offers it, structured output.
 - **v2.1.0** (12 October 2026) -- The transcription and summary rules move into
   the field descriptions of the JSON schemas, written in plain wording, and each
   system prompt becomes one short frame for all providers that points to the

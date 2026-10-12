@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import functools
 import logging
 import os
 import sqlite3
@@ -335,15 +336,20 @@ def _context(item: ItemSpec, job: ItemJob) -> str | None:
         raise ConfigurationError(str(exc)) from exc
 
 
-def _image_record(job: ItemJob) -> dict[str, Any] | None:
+def _image_record(
+    job: ItemJob, provider: str | None = None, name: str | None = None
+) -> dict[str, Any] | None:
     """Return the run's image-settings record; None when it cannot be resolved.
 
-    An image setting that cannot be resolved fails the item when its source
-    opens.
+    *provider* and *name* resolve the run's image options for another model
+    than the transcription model. An image setting that cannot be resolved
+    fails the item when its source opens.
     """
     model = job.transcription
+    if name is None:
+        provider, name = model.provider, model.name
     try:
-        settings, _, _ = resolve_image_settings(model.provider, model.name, job.images)
+        settings, _, _ = resolve_image_settings(provider, name, job.images)
     except ValueError:
         return None
     return image_settings_record(settings)
@@ -411,6 +417,7 @@ class _Classifier:
             model=job.transcription.name,
             summary_model=job.summary.name if job.summarize else None,
             summarize=job.summarize,
+            settings_for=functools.partial(_image_record, job),
         )
         try:
             state = classify(output_dir, item.output_stem, request)

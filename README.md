@@ -1,4 +1,4 @@
-# AutoExcerpter v2.1.0
+# AutoExcerpter v2.1.1
 
 AutoExcerpter transcribes PDFs and folders of page images with vision-language
 models, summarizes each page and builds a consolidated bibliography whose entries
@@ -550,7 +550,8 @@ responses stay in the store. `--retranscribe` keeps resume but transcribes the
 stored pages again and summarizes them again. The image settings are compared key
 by key with the record stored with the document. Switching the transcription
 model on resume is allowed: the model and the settings derived from it (detail
-resolution, image cap) are not compared, the run records a note, and the
+resolution, image cap, the defaults of its model family) are not compared, the
+run records a note, and the
 transcription file names both models. Each unit names the model that produced
 it.
 

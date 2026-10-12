@@ -5,7 +5,8 @@ match wins, so specific prefixes precede general ones. Ids keep their
 ``provider:`` and ``models/`` prefixes, and ``vendor/model`` ids resolve
 through the OpenRouter rules. The output limits of the GPT-5 chat-latest ids,
 the Gemini 3 image models, gpt-4.1-mini and gemini-2.5-flash-lite are the
-vendors' published maximums. Unmatched ids get the conservative profile:
+vendors' published maximums; the GLM vision models follow OpenRouter's model
+list. Unmatched ids get the conservative profile:
 no image input and no structured output.
 """
 
@@ -153,6 +154,28 @@ def _has(*parts: str) -> Callable[[str], bool]:
     return lambda name: any(part in name for part in parts)
 
 
+def _glm(context: int, output: int, **extra: Any) -> _Fields:
+    """A Z.ai GLM vision model as OpenRouter lists it.
+
+    The fields follow OpenRouter's model list: image input, a
+    ``response_format`` parameter and reasoning on every model; structured
+    outputs, reasoning effort and the penalties where *extra* sets them.
+    """
+    return {
+        "supports_vision": True,
+        "supports_json_mode": True,
+        "is_reasoning_model": True,
+        "max_context_tokens": context,
+        "max_output_tokens": output,
+        **extra,
+    }
+
+
+_GLM_53_FLASH: _Fields = {
+    "supports_structured_output": True,
+    "supports_reasoning_effort": True,
+    **_PENALTIES,
+}
 _OPENROUTER_OPENAI_REASONING = {**_DETAIL, **_REASONING, **_NO_SAMPLING}
 _OPENROUTER_GEMINI = {
     "supports_media_resolution": True,
@@ -278,6 +301,25 @@ _FAMILIES: tuple[FamilyRule, ...] = (
     *_dotted({**_GOOGLE, "max_context_tokens": 2000000}, "gemini-1.5-pro"),
     *_dotted(_GOOGLE, "gemini-1.5-flash"),
     *_same(_GOOGLE, "gemini"),
+    # Matched without a provider so that the bare model segment resolves too.
+    FamilyRule(
+        "glm-5.3-flashx",
+        _glm(1048576, 131072, supports_reasoning_effort=True),
+        contains=("glm-5.3-flashx",),
+    ),
+    FamilyRule(
+        "glm-5.3-flash",
+        _glm(1048576, 131072, **_GLM_53_FLASH),
+        contains=("glm-5.3-flash:batch",),
+    ),
+    FamilyRule(
+        "glm-5.3-flash",
+        _glm(1048576, 943718, **_GLM_53_FLASH),
+        contains=("glm-5.3-flash", "glm-flash-latest"),
+    ),
+    FamilyRule("glm-5v-turbo", _glm(202752, 131072), contains=("glm-5v-turbo",)),
+    FamilyRule("glm-4.6v", _glm(131072, 32768, **_PENALTIES), contains=("glm-4.6v",)),
+    FamilyRule("glm-4.5v", _glm(65536, 16384, **_PENALTIES), contains=("glm-4.5v",)),
     _openrouter(
         "openrouter-deepseek", _REASONING, "deepseek", predicate=_has("r1", "terminus")
     ),

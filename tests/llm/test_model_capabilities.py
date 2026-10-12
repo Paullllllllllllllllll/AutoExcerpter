@@ -75,6 +75,39 @@ def test_longer_prefix_wins_over_shorter_family(model: str) -> None:
     assert detect_capabilities("gpt-5.4").family == "gpt-5.4"
 
 
+@pytest.mark.parametrize("model", ["z-ai/glm-5.3-flash", "glm-5.3-flash"])
+def test_glm_5_3_flash_takes_its_openrouter_profile(
+    model: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The OpenRouter id and the bare model segment both match, silently."""
+    with caplog.at_level("WARNING"):
+        caps = detect_capabilities(model)
+
+    assert caps.family == "glm-5.3-flash"
+    assert caps.supports_vision and caps.supports_structured_output
+    assert caps.supports_reasoning_effort
+    assert (caps.max_context_tokens, caps.max_output_tokens) == (1048576, 943718)
+    assert "No exact capability profile" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("model", "family"),
+    [
+        ("z-ai/glm-5.3-flashx", "glm-5.3-flashx"),
+        ("z-ai/glm-5v-turbo", "glm-5v-turbo"),
+        ("z-ai/glm-4.6v", "glm-4.6v"),
+        ("z-ai/glm-4.5v", "glm-4.5v"),
+    ],
+)
+def test_glm_vision_siblings_take_prompted_json(model: str, family: str) -> None:
+    """OpenRouter lists no structured outputs for the other GLM vision ids."""
+    caps = detect_capabilities(model)
+
+    assert caps.family == family
+    assert caps.supports_vision and caps.supports_json_mode
+    assert not caps.supports_structured_output
+
+
 class TestCapabilityError:
     """Test CapabilityError and ensure_image_support."""
 

@@ -852,6 +852,9 @@ class ResumeRequest:
     its pre-store working files (the v1.0.x logs). *image_settings* is this
     run's image-settings record, *model* and *summary_model* the models of
     the two roles; *summarize* False leaves summary units out.
+    *settings_for* returns the record this run's image options give another
+    model, named by its ``provider`` and ``model_name``, or None when they do
+    not resolve.
     """
 
     outputs: Sequence[Path] = ()
@@ -862,6 +865,7 @@ class ResumeRequest:
     model: str | None = None
     summary_model: str | None = None
     summarize: bool = True
+    settings_for: Callable[[str, str], Mapping[str, Any] | None] | None = None
 
 
 def _blocked(resume: ResumeState, holder: str | None, now: float | None) -> str | None:
@@ -882,7 +886,12 @@ def _blocked(resume: ResumeState, holder: str | None, now: float | None) -> str 
 
 
 def _image_check(recorded: Any, request: ResumeRequest) -> tuple[list[str], bool]:
-    """Return the changed user image settings and whether derived keys differ."""
+    """Return the changed user image settings and whether derived keys differ.
+
+    After a change of model the recorded settings are compared with those
+    this run's options give the recorded model, so the defaults of another
+    model family's section do not count as changed settings.
+    """
     if not isinstance(recorded, Mapping) or request.image_settings is None:
         return [], False
     before = _plain(recorded)
@@ -890,6 +899,20 @@ def _image_check(recorded: Any, request: ResumeRequest) -> tuple[list[str], bool
     changed = changed_image_settings(
         before, current, model_derived_keys(before, current)
     )
+    provider, model = before.get("provider"), before.get("model_name")
+    if (
+        changed
+        and request.settings_for is not None
+        and isinstance(provider, str)
+        and isinstance(model, str)
+        and (provider, model) != (current.get("provider"), current.get("model_name"))
+    ):
+        replayed = request.settings_for(provider, model)
+        if replayed is not None:
+            again = _plain(replayed)
+            changed = changed_image_settings(
+                before, again, model_derived_keys(before, again)
+            )
     return changed, not changed and before != current
 
 

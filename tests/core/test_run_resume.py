@@ -125,6 +125,7 @@ def offline(
     mock_image_processing: dict[str, Any],
 ) -> Offline:
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     runner = Offline(make_pdf("doc.pdf", num_pages=2), tmp_path / "out")
     transcriber = MagicMock()
     transcriber.transcribe_payload = AsyncMock(side_effect=runner.transcribe)
@@ -208,6 +209,11 @@ class Case:
 
 
 BOTH = [0, 1]
+# A model whose family resolves its image settings from another section.
+ANTHROPIC = {
+    "transcription_provider": "anthropic",
+    "transcription_model": "claude-haiku-5-5",
+}
 CASES: dict[str, Case] = {
     "fresh": Case(_fresh, {}, "none", BOTH, BOTH),
     "complete": Case(_complete, {}, "complete", [], [], processed=False),
@@ -223,6 +229,16 @@ CASES: dict[str, Case] = {
     "input_changed": Case(_input_changed, {}, "none", BOTH, BOTH),
     "model_changed": Case(
         _page_failed, {"transcription_model": "gpt-5-mini"}, "partial", [1], [1]
+    ),
+    "model_family_changed": Case(_page_failed, ANTHROPIC, "partial", [1], [1]),
+    "model_family_and_image_setting_changed": Case(
+        _page_failed,
+        {**ANTHROPIC, "jpeg_quality": 80},
+        "refused",
+        [],
+        [],
+        processed=False,
+        failed=True,
     ),
     "image_setting_changed": Case(
         _page_failed,
@@ -272,9 +288,9 @@ def test_a_second_run_resumes_from_each_start_state(
     paths = ItemPaths.for_item("doc", offline.out)
     if name == "complete_file_missing":
         assert paths.summary_md.is_file()
-    if name == "model_changed":
+    if name in ("model_changed", "model_family_changed"):
         assert any("Resume with another model" in m for m in events.of("warning"))
-    if name == "image_setting_changed":
+    if name in ("image_setting_changed", "model_family_and_image_setting_changed"):
         assert any(
             "Image settings changed: jpeg_quality" in m for m in events.of("warning")
         )
