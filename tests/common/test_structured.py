@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -12,10 +13,14 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from autoexcerpter.common.structured import (
+    ANTHROPIC_UNION_LIMIT,
     PreparedRequest,
     StructuredRequest,
+    anthropic_output_schema,
+    anthropic_union_count,
     default_invoke,
     extract_output_text,
+    fit_response_format,
     parse_json_object,
     prepare_request,
     sanitize_schema_for_anthropic,
@@ -306,7 +311,10 @@ def test_anthropic_schema_is_sanitized_without_mutating_the_spec() -> None:
     run(structured_call(model, MESSAGES, request))
 
     sent = model.log[0]["structured"]["schema"]
-    assert sent["properties"]["transcription"]["type"] == "string"
+    assert sent["properties"]["transcription"]["anyOf"] == [
+        {"type": "string"},
+        {"type": "null"},
+    ]
     assert sent["title"] == "markdown_transcription_schema"
     assert json.dumps(TRANSCRIPTION_SPEC, sort_keys=True) == original
 
@@ -321,7 +329,7 @@ def test_existing_schema_title_is_kept() -> None:
     assert model.log[0]["structured"]["schema_title"] == "Page Summary"
 
 
-def test_sanitize_reduces_nested_union_types() -> None:
+def test_sanitize_turns_nested_nullable_types_into_any_of() -> None:
     schema: dict[str, Any] = {
         "type": "object",
         "properties": {
@@ -331,9 +339,132 @@ def test_sanitize_reduces_nested_union_types() -> None:
 
     result = sanitize_schema_for_anthropic(schema)
 
-    assert result["properties"]["items"]["type"] == "array"
-    assert result["properties"]["items"]["items"]["type"] == "string"
+    assert result["properties"]["items"]["anyOf"] == [
+        {"type": "array", "items": {"type": "string"}},
+        {"type": "null"},
+    ]
     assert schema["properties"]["items"]["type"] == ["array", "null"]
+
+
+def test_sanitize_keeps_the_description_outside_and_the_enum_on_the_branch() -> None:
+    field = {
+        "type": ["string", "null"],
+        "enum": ["Catholic", "Protestant", None],
+        "description": "Use null if unknown.",
+        "title": "Confession",
+    }
+    rating = {"type": ["integer", "null"], "minimum": 1, "maximum": 7}
+
+    result = sanitize_schema_for_anthropic(
+        {"type": "object", "properties": {"field": field, "rating": rating}}
+    )
+
+    assert result["properties"]["field"] == {
+        "anyOf": [
+            {"type": "string", "enum": ["Catholic", "Protestant"]},
+            {"type": "null"},
+        ],
+        "title": "Confession",
+        "description": "Use null if unknown.",
+    }
+    assert result["properties"]["rating"]["anyOf"][0] == {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 7,
+    }
+
+
+def test_sanitize_reduces_a_type_list_without_null_to_its_first_type() -> None:
+    result = sanitize_schema_for_anthropic({"type": ["integer", "string"]})
+
+    assert result == {"type": "integer"}
+
+
+def test_sanitize_adds_no_null_branch_where_the_enum_excludes_null() -> None:
+    result = sanitize_schema_for_anthropic(
+        {"type": ["string", "null"], "enum": ["yes", "no"]}
+    )
+
+    assert result == {"type": "string", "enum": ["yes", "no"]}
+
+
+def test_the_anthropic_output_schema_moves_unsupported_keywords() -> None:
+    spec = {
+        "name": "ratings",
+        "schema": {
+            "type": "object",
+            "properties": {
+                "rating": {"type": ["integer", "null"], "minimum": 1, "maximum": 7},
+                "lines": {"type": "array", "items": {"type": "string"}, "maxItems": 3},
+            },
+        },
+    }
+
+    schema = anthropic_output_schema(spec)
+
+    sent = json.dumps(schema)
+    assert all(f'"{key}"' not in sent for key in ("minimum", "maximum", "maxItems"))
+    assert schema["title"] == "ratings"
+    assert schema["properties"]["rating"]["anyOf"][1] == {"type": "null"}
+    assert "minimum: 1" in schema["properties"]["rating"]["anyOf"][0]["description"]
+
+
+def _nullables(count: int, name: str) -> dict[str, Any]:
+    properties: dict[str, Any] = {
+        f"f{index}": {"type": ["string", "null"]} for index in range(count)
+    }
+    properties["kind"] = {"anyOf": [{"type": "string"}, {"type": "integer"}]}
+    return {"name": name, "schema": {"type": "object", "properties": properties}}
+
+
+def test_union_parameters_count_created_and_existing_any_of() -> None:
+    assert anthropic_union_count(_nullables(3, "three")) == 4
+
+
+def test_a_schema_the_sdk_cannot_transform_is_still_counted() -> None:
+    spec = _nullables(ANTHROPIC_UNION_LIMIT, "untyped")
+    spec["schema"]["properties"]["code"] = {"enum": ["a", "b"]}
+
+    assert fit_response_format("anthropic", "schema", spec) == "json"
+
+
+@pytest.mark.parametrize(
+    ("count", "expected"),
+    [(ANTHROPIC_UNION_LIMIT - 1, "schema"), (ANTHROPIC_UNION_LIMIT, "json")],
+)
+def test_an_anthropic_schema_over_the_union_limit_is_prompted(
+    count: int, expected: str
+) -> None:
+    spec = _nullables(count, f"limit_{count}")
+
+    assert fit_response_format("anthropic", "schema", spec) == expected
+    assert fit_response_format("openai", "schema", spec) == "schema"
+    assert fit_response_format("anthropic", "json", spec) == "json"
+
+
+def test_the_union_limit_switch_is_logged_once(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    spec = _nullables(ANTHROPIC_UNION_LIMIT, "logged_once")
+    caplog.set_level(logging.INFO, logger="autoexcerpter.common.structured")
+
+    fit_response_format("anthropic", "schema", spec)
+    fit_response_format("anthropic", "schema", spec)
+
+    notes = [r for r in caplog.records if "union parameters" in r.getMessage()]
+    assert len(notes) == 1 and notes[0].levelno == logging.INFO
+
+
+def test_a_schema_over_the_union_limit_is_never_sent() -> None:
+    spec = _nullables(ANTHROPIC_UNION_LIMIT, "never_sent")
+    model = FakeModel([json.dumps({"kind": "a"})])
+    request = StructuredRequest("anthropic", "schema", spec)
+
+    result = run(structured_call(model, MESSAGES, request))
+
+    assert len(model.log) == 1
+    assert model.log[0]["structured"] is None
+    assert result.fallback and not result.enforced and result.ok
 
 
 def test_schema_format_requires_a_schema() -> None:

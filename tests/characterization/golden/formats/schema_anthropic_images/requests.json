@@ -48,7 +48,7 @@
         "include_raw": true,
         "method": "json_schema",
         "schema": {
-          "digest": "885dfb0ef160c1ad",
+          "digest": "7396e4f8370db9a0",
           "properties": [
             "no_transcribable_text",
             "transcription",
@@ -103,7 +103,7 @@
         "include_raw": true,
         "method": "json_schema",
         "schema": {
-          "digest": "e4b44e8200595a00",
+          "digest": "aee763e6c5576534",
           "properties": [
             "bullet_points",
             "page_information",
@@ -163,7 +163,7 @@
         "include_raw": true,
         "method": "json_schema",
         "schema": {
-          "digest": "885dfb0ef160c1ad",
+          "digest": "7396e4f8370db9a0",
           "properties": [
             "no_transcribable_text",
             "transcription",
@@ -218,7 +218,7 @@
         "include_raw": true,
         "method": "json_schema",
         "schema": {
-          "digest": "e4b44e8200595a00",
+          "digest": "aee763e6c5576534",
           "properties": [
             "bullet_points",
             "page_information",
@@ -278,7 +278,7 @@
         "include_raw": true,
         "method": "json_schema",
         "schema": {
-          "digest": "885dfb0ef160c1ad",
+          "digest": "7396e4f8370db9a0",
           "properties": [
             "no_transcribable_text",
             "transcription",
@@ -333,7 +333,7 @@
         "include_raw": true,
         "method": "json_schema",
         "schema": {
-          "digest": "e4b44e8200595a00",
+          "digest": "aee763e6c5576534",
           "properties": [
             "bullet_points",
             "page_information",

@@ -9,6 +9,10 @@ the prepared request and can rebuild it for another client instance.
 
 A schema spec is either a bare JSON schema or a mapping with ``name``,
 ``strict`` and ``schema`` keys.
+
+Anthropic gets nullable fields as ``anyOf`` with ``null`` and its SDK's
+transform of the schema; a schema with more union parameters than
+:data:`ANTHROPIC_UNION_LIMIT` goes out as prompted JSON instead.
 """
 
 from __future__ import annotations
@@ -36,6 +40,10 @@ _ANTHROPIC_SCHEMA_LIMITS = (
     "too many parameters with union types",
     "parameters with unions",
 )
+
+ANTHROPIC_UNION_LIMIT = 16
+"""The most parameters with ``anyOf`` or a type list Anthropic compiles."""
+_LOGGED_UNION_SCHEMAS: set[str] = set()
 
 _FENCED_BLOCK_RE = re.compile(r"```(?:json|JSON)?\s*\n(.*?)\n\s*```", re.DOTALL)
 _MAX_SALVAGE_CANDIDATES = 1000
@@ -86,15 +94,48 @@ def build_response_format(spec: Mapping[str, Any] | None) -> dict[str, Any] | No
     }
 
 
+def _nullable(node: dict[str, Any], type_: str) -> None:
+    """Rewrite *node* in place as ``anyOf`` of *type_* and ``null``.
+
+    The title and description stay on the node; every other keyword moves to
+    the *type_* branch, whose enum loses its ``null`` value.
+    """
+    outer: dict[str, Any] = {
+        key: node.pop(key) for key in ("title", "description") if key in node
+    }
+    node.pop("type")
+    branch: dict[str, Any] = {"type": type_, **node}
+    if isinstance(branch.get("enum"), list):
+        branch["enum"] = [value for value in branch["enum"] if value is not None]
+    node.clear()
+    node["anyOf"] = [branch, {"type": "null"}]
+    node.update(outer)
+
+
 def sanitize_schema_for_anthropic(schema: Mapping[str, Any]) -> dict[str, Any]:
-    """Return a copy of *schema* with union types reduced to their first non-null
-    type, which Anthropic's ``json_schema`` method requires."""
+    """Return a copy of *schema* without type lists, which Anthropic rejects.
+
+    A type list with ``null`` becomes ``anyOf`` of its first other type and
+    ``null``, unless an ``enum`` or ``const`` on the node excludes ``null``;
+    any other type list is reduced to its first type.
+    """
     result: dict[str, Any] = copy.deepcopy(dict(schema))
+
+    def _admits_null(node: dict[str, Any]) -> bool:
+        if "null" not in node["type"]:
+            return False
+        if "const" in node and node["const"] is not None:
+            return False
+        enum = node.get("enum")
+        return not isinstance(enum, list) or None in enum
 
     def _walk(node: dict[str, Any]) -> None:
         if isinstance(node.get("type"), list):
             non_null = [t for t in node["type"] if t != "null"]
-            node["type"] = non_null[0] if non_null else "string"
+            if non_null and _admits_null(node):
+                _nullable(node, non_null[0])
+            else:
+                node["type"] = non_null[0] if non_null else "string"
         for value in node.values():
             if isinstance(value, dict):
                 _walk(value)
@@ -148,6 +189,82 @@ def _titled(body: dict[str, Any], spec: Mapping[str, Any]) -> dict[str, Any]:
     return {**body, "title": spec.get("name", "structured_output")}
 
 
+def _anthropic_input(body: dict[str, Any], spec: Mapping[str, Any]) -> dict[str, Any]:
+    return _titled(sanitize_schema_for_anthropic(body), spec)
+
+
+def anthropic_output_schema(spec: Mapping[str, Any]) -> dict[str, Any]:
+    """Return the schema of Anthropic's ``output_config.format`` for *spec*.
+
+    This is the schema the synchronous ``json_schema`` request sends: the
+    sanitized and titled schema after the Anthropic SDK's ``transform_schema``,
+    which moves unsupported keywords such as ``minimum`` into the description.
+
+    Raises:
+        ValueError: *spec* holds no JSON schema.
+    """
+    # Imported on first use, like LangChain, to keep the SDK off startup.
+    from anthropic import transform_schema
+
+    body = schema_body(spec)
+    if body is None:
+        raise ValueError("An Anthropic output format needs a JSON schema")
+    return transform_schema(_anthropic_input(body, spec))
+
+
+def anthropic_union_count(spec: Mapping[str, Any]) -> int:
+    """Return the number of union parameters Anthropic counts in *spec*.
+
+    Anthropic counts every parameter with ``anyOf`` or a type list against
+    :data:`ANTHROPIC_UNION_LIMIT`. The count runs on the sanitized schema, so
+    it includes the ``anyOf`` of nullable fields, and counts ``oneOf``, which
+    the SDK sends as ``anyOf``. It needs no SDK transform, so a schema the
+    transform rejects is still counted.
+    """
+
+    def _count(node: Any) -> int:
+        if isinstance(node, list):
+            return sum(_count(item) for item in node)
+        if not isinstance(node, dict):
+            return 0
+        own = int(
+            "anyOf" in node or "oneOf" in node or isinstance(node.get("type"), list)
+        )
+        return own + sum(_count(value) for value in node.values())
+
+    body = schema_body(spec)
+    return 0 if body is None else _count(sanitize_schema_for_anthropic(body))
+
+
+def fit_response_format(
+    provider: str, response_format: ResponseFormat, spec: Mapping[str, Any] | None
+) -> ResponseFormat:
+    """Return *response_format*, or ``json`` where Anthropic would reject the
+    schema of *spec* for having more than :data:`ANTHROPIC_UNION_LIMIT` union
+    parameters.
+
+    The switch is logged once per schema at info level.
+    """
+    if provider != "anthropic" or response_format != "schema":
+        return response_format
+    if spec is None or schema_body(spec) is None:
+        return response_format
+    count = anthropic_union_count(spec)
+    if count <= ANTHROPIC_UNION_LIMIT:
+        return response_format
+    key = json.dumps(spec, sort_keys=True, default=str)
+    if key not in _LOGGED_UNION_SCHEMAS:
+        _LOGGED_UNION_SCHEMAS.add(key)
+        logger.info(
+            "Schema %s has %d union parameters, more than Anthropic's %d; "
+            "using prompted JSON",
+            spec.get("name", "structured_output"),
+            count,
+            ANTHROPIC_UNION_LIMIT,
+        )
+    return "json"
+
+
 def prepare_request(
     model: Any,
     provider: str,
@@ -197,7 +314,7 @@ def prepare_request(
         kwargs.setdefault("response_schema", body)
         return prepared(model, True)
     if provider == "anthropic":
-        anthropic_schema = _titled(sanitize_schema_for_anthropic(body), schema)
+        anthropic_schema = _anthropic_input(body, schema)
         runnable = _bind(model, kwargs).with_structured_output(
             anthropic_schema, method="json_schema", include_raw=True
         )
@@ -484,8 +601,9 @@ class StructuredResult:
     ``text`` is the answer text (a JSON string for the JSON formats); ``data``
     the parsed object; ``error`` the validation failure of the last answer.
     ``responses`` holds every response received, for usage totals.
-    ``fallback`` marks an Anthropic schema that was rejected as too complex
-    and replaced by prompted JSON; ``stopped`` an answer the caller's stop
+    ``fallback`` marks an Anthropic schema that was rejected as too complex,
+    or has more union parameters than :data:`ANTHROPIC_UNION_LIMIT`, and was
+    replaced by prompted JSON; ``stopped`` an answer the caller's stop
     predicate ended.
     """
 
@@ -560,11 +678,16 @@ async def structured_call(
     answer return at once. A JSON answer that fails validation is requested
     again up to ``request.validation_retries`` times. Exceptions from
     *invoke* propagate, except an Anthropic schema rejection, which falls
-    back to prompted JSON.
+    back to prompted JSON. An Anthropic schema over
+    :data:`ANTHROPIC_UNION_LIMIT` union parameters uses prompted JSON from
+    the first call.
     """
     call = invoke or default_invoke
     responses: list[Any] = []
-    fallback = False
+    fallback = (
+        fit_response_format(request.provider, request.response_format, request.schema)
+        != request.response_format
+    )
     retries = 0
     while True:
         response, prepared, fallback = await _invoke_once(
@@ -611,16 +734,20 @@ async def structured_call(
 
 
 __all__ = [
+    "ANTHROPIC_UNION_LIMIT",
     "RESPONSE_FORMATS",
     "Invoker",
     "PreparedRequest",
     "ResponseFormat",
     "StructuredRequest",
     "StructuredResult",
+    "anthropic_output_schema",
+    "anthropic_union_count",
     "build_response_format",
     "build_text_format",
     "default_invoke",
     "extract_output_text",
+    "fit_response_format",
     "is_schema_rejection",
     "parse_json_object",
     "prepare_request",
