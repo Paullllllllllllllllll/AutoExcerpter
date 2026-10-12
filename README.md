@@ -566,9 +566,11 @@ and never mixed in one range: `pp. 5-7; PDF p. 12`, `pp. x-xii`, `Image 7`, and
 
 Each unique citation without a cached result is looked up by DOI when the text
 holds one, else by title filtered to the cited year plus or minus one, else by a
-free-text search. A candidate links only when its title overlaps the citation and
-its year or an author surname confirms the match. A lookup ends in one of four
-outcomes:
+free-text search. The DOIs of a document are queried 50 per request. Four
+lookups run at once; requests start at least 0.1 s apart (at most ten per
+second), and results apply in citation order. A candidate links only when its
+title overlaps the citation and its year or an author surname confirms the match.
+A lookup ends in one of four outcomes:
 
 | Outcome | Cached in `state_dir` | Effect |
 | --- | --- | --- |

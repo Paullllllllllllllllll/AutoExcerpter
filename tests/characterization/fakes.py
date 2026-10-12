@@ -11,7 +11,8 @@ summary request, matched by the page key in its text. Neither depends on the
 thread or task that sends the request.
 
 ``FakeOpenAlex`` stands in for ``requests.Session`` and ``requests.get`` and
-serves the hand-built payloads in ``fixtures/openalex``.
+serves the hand-built payloads in ``fixtures/openalex``, DOI batch queries
+(a ``doi:`` filter) included.
 """
 
 from __future__ import annotations
@@ -733,6 +734,22 @@ class FakeOpenAlex:
             for key, value in params.items()
             if key not in ("mailto", "api_key")
         }
+        batch = self._doi_batch(url, params)
+        if batch is not None:
+            names = ",".join(fixture.name for fixture in batch) or None
+            with self._lock:
+                self.requests.append(
+                    {
+                        "url": url,
+                        "params": _jsonable(recorded),
+                        "fixture": names,
+                        "status": 200,
+                    }
+                )
+            results = [fixture.body for fixture in batch]
+            return FakeResponse(
+                url, 200, {"meta": {"count": len(results)}, "results": results}
+            )
         fixture, kind = self._match(url, params)
         status = fixture.status if fixture else (404 if kind == "doi" else 200)
         body: Any
@@ -752,6 +769,24 @@ class FakeOpenAlex:
                 }
             )
         return FakeResponse(url, status, body)
+
+    def _doi_batch(
+        self, url: str, params: Mapping[str, Any]
+    ) -> list[OpenAlexFixture] | None:
+        """Return the found DOI fixtures of a ``doi:`` filter query, else None."""
+        filters = str(params.get("filter", ""))
+        if url != f"{_OPENALEX_BASE}/works" or not filters.startswith("doi:"):
+            return None
+        wanted = {
+            value.removeprefix("https://doi.org/").casefold()
+            for value in filters.removeprefix("doi:").split("|")
+        }
+        return [
+            fixture
+            for fixture in self.fixtures
+            if fixture.status == 200
+            and str(fixture.match.get("doi", "")).casefold() in wanted
+        ]
 
     def _match(
         self, url: str, params: Mapping[str, Any]

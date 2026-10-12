@@ -54,7 +54,11 @@ REFERENCES = [
 
 
 class GatedOpenAlex(OpenAlexClient):
-    """Find every citation; lookup number *gate_at* waits for ``release``."""
+    """Find every citation; reference number *gate_at* waits for ``release``.
+
+    A citation's number is its position in ``REFERENCES``, since lookups run
+    on several threads.
+    """
 
     def __init__(self, state_dir: Path, gate_at: int) -> None:
         super().__init__(state_dir=state_dir)
@@ -65,7 +69,7 @@ class GatedOpenAlex(OpenAlexClient):
 
     def lookup(self, citation_text: str) -> LookupResult:
         self.looked_up.append(citation_text)
-        number = len(self.looked_up)
+        number = REFERENCES.index(citation_text) + 1
         if number == self.gate_at:
             self.entered.set()
             if not self.release.wait(10):
@@ -138,12 +142,16 @@ def _found_dois(state_dir: Path) -> set[str]:
 
 
 def _assert_stopped_cleanly(paths: ItemPaths, client: GatedOpenAlex) -> None:
-    assert len(client.looked_up) == 2
+    numbers = sorted(REFERENCES.index(text) + 1 for text in client.looked_up)
+    assert numbers[:2] == [1, 2]
     assert not paths.summary_docx.exists()
     assert not paths.summary_md.exists()
     assert statuses(paths.output_dir) == ["done"]
     assert statuses(paths.output_dir, "summary") == ["done"]
-    assert _found_dois(client.cache.state_dir or Path()) == {"10.1/1", "10.1/2"}
+    # Every lookup that ended, the released one included, is saved.
+    assert _found_dois(client.cache.state_dir or Path()) == {
+        f"10.1/{number}" for number in numbers
+    }
 
 
 def test_the_loop_keeps_running_while_a_lookup_blocks(

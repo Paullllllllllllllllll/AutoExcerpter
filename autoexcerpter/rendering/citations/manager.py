@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections import deque
 from collections.abc import Sequence
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -18,11 +20,9 @@ from autoexcerpter.rendering.citations.consolidate import (
 )
 from autoexcerpter.rendering.citations.model import Citation
 from autoexcerpter.rendering.citations.openalex import (
-    API_POLITE_DELAY,
     LookupOutcome,
     LookupResult,
     OpenAlexClient,
-    sleep_unless_stopped,
 )
 from autoexcerpter.rendering.locators import Locator
 
@@ -30,8 +30,10 @@ logger = logging.getLogger(__name__)
 
 # Citations looked up per document unless the settings say otherwise.
 DEFAULT_MAX_API_REQUESTS = 300
-PROGRESS_LOG_INTERVAL = 5  # Log progress every N citations
+PROGRESS_LOG_INTERVAL = 5  # Log progress every N lookups
 CHECKPOINT_INTERVAL = 25  # Write the cache every N lookups
+# Lookups run at once; the client's request pacing keeps them polite.
+LOOKUP_WORKERS = 4
 
 
 class CitationManager:
@@ -154,15 +156,19 @@ class CitationManager:
 
         Cached results are always served. A citation without a cached result
         is looked up unless the run's budget is exhausted or *max_requests*
-        lookups (None: unlimited) were made in this call. One lookup runs a
-        DOI query and/or a search, each retried on transient failures, so a
-        single citation can issue several HTTP requests. Citations that
+        lookups (None: unlimited) were made in this call. The DOIs of the
+        citations to look up are planned as batch queries; the lookups then
+        run on up to ``LOOKUP_WORKERS`` threads, the first one alone, and
+        their results are recorded and applied in citation order. One lookup
+        runs a DOI query and/or a search, each retried on transient failures,
+        so a single citation can issue several HTTP requests. Citations that
         resolve to the same work are merged afterwards.
 
         The cache is checkpointed every ``CHECKPOINT_INTERVAL`` lookups and
         when the method ends, also by an exception, so recorded results
-        survive an interruption. Once ``self.stop`` is set, no further
-        citation is processed and the method returns.
+        survive an interruption. Once ``self.stop`` is set, no further lookup
+        starts; the lookups already running are recorded as they end, and the
+        method returns.
         """
         logger.info("Enriching %d unique citations with metadata", len(self.citations))
         openalex = self.openalex
@@ -189,50 +195,77 @@ class CitationManager:
     def _enrich_all(
         self, openalex: OpenAlexClient, tally: _Tally, max_requests: int | None
     ) -> bool:
-        """Enrich every citation in turn; return False when stopped early."""
-        stop = self.stop
-        for processed, citation in enumerate(self.citations.values(), 1):
-            if stop is not None and stop.is_set():
-                logger.warning(
-                    "OpenAlex enrichment stopped after %d lookup(s).",
-                    tally.lookups_made,
-                )
-                return False
-            if processed % PROGRESS_LOG_INTERVAL == 0:
-                logger.info(
-                    "Processed %d/%d citations, enriched %d with metadata",
-                    processed,
-                    len(self.citations),
-                    tally.cache_hits + tally.api_enriched,
-                )
-            self._enrich_one(citation, openalex, tally, max_requests)
+        """Serve the cache, then look the rest up; return False when stopped."""
+        if self._stopped(tally):
+            return False
+        cache = openalex.cache
+        pending: list[Citation] = []
+        for citation in self.citations.values():
+            cached = cache.get(citation.normalized_key)
+            if cached is not None:
+                if cached.metadata is not None:
+                    _apply_metadata(citation, cached.metadata)
+                    tally.cache_hits += 1
+                else:
+                    tally.cached_misses += 1
+            elif _may_look_up(openalex, tally, max_requests, len(pending)):
+                pending.append(citation)
+            else:
+                # A skipped lookup does not end the loop, so later citations
+                # still get their cached results.
+                tally.skipped_api += 1
+        if not pending:
+            return True
+        openalex.plan_doi_batches(citation.raw_text for citation in pending)
+        return self._look_up(pending, openalex, tally)
+
+    def _stopped(self, tally: _Tally) -> bool:
+        """Return whether ``self.stop`` is set; log it when it is."""
+        if self.stop is None or not self.stop.is_set():
+            return False
+        logger.warning(
+            "OpenAlex enrichment stopped after %d lookup(s).", tally.lookups_made
+        )
         return True
 
-    def _enrich_one(
-        self,
-        citation: Citation,
-        openalex: OpenAlexClient,
-        tally: _Tally,
-        max_requests: int | None,
-    ) -> None:
-        cache = openalex.cache
-        cached = cache.get(citation.normalized_key)
-        if cached is not None:
-            if cached.metadata is not None:
-                _apply_metadata(citation, cached.metadata)
-                tally.cache_hits += 1
-            else:
-                tally.cached_misses += 1
-            return
+    def _look_up(
+        self, pending: list[Citation], openalex: OpenAlexClient, tally: _Tally
+    ) -> bool:
+        """Look *pending* up on worker threads; return False when stopped.
 
-        # A skipped lookup does not end the loop, so later citations still
-        # get their cached results.
-        if not _may_look_up(openalex, tally, max_requests):
-            tally.skipped_api += 1
-            return
+        The first lookup runs alone, so that an exhausted budget shows before
+        the others start. Results are recorded in the order of *pending*,
+        whatever order the lookups end in.
+        """
+        queue: deque[tuple[Citation, Future[LookupResult]]] = deque()
+        remaining = iter(pending)
+        stopped = False
+        with ThreadPoolExecutor(LOOKUP_WORKERS, "autoexcerpter-openalex") as pool:
+            try:
+                while True:
+                    window = LOOKUP_WORKERS if tally.lookups_made else 1
+                    while len(queue) < window and not stopped:
+                        stopped = self._stopped(tally)
+                        citation = None if stopped else next(remaining, None)
+                        if citation is None:
+                            break
+                        if _may_look_up(openalex, tally, None, 0):
+                            queue.append((citation, pool.submit(self.lookup, citation)))
+                        else:
+                            tally.skipped_api += 1
+                    if not queue:
+                        break
+                    citation, future = queue.popleft()
+                    self._record(citation, future.result(), tally)
+            finally:
+                for _, future in queue:
+                    future.cancel()
+        return not stopped
 
+    def _record(self, citation: Citation, result: LookupResult, tally: _Tally) -> None:
+        """Cache and apply one lookup's result; checkpoint at every interval."""
+        cache = self.openalex.cache
         # Every lookup counts against the cap, found or not.
-        result = self.lookup(citation)
         tally.lookups_made += 1
         cache.record(citation.normalized_key, result)
         if result.outcome is LookupOutcome.FOUND and result.metadata:
@@ -240,7 +273,12 @@ class CitationManager:
             tally.api_enriched += 1
         if tally.lookups_made % CHECKPOINT_INTERVAL == 0:
             cache.checkpoint()
-        sleep_unless_stopped(API_POLITE_DELAY, self.stop)
+        if tally.lookups_made % PROGRESS_LOG_INTERVAL == 0:
+            logger.info(
+                "Looked up %d citations, enriched %d with metadata",
+                tally.lookups_made,
+                tally.cache_hits + tally.api_enriched,
+            )
 
     def get_sorted_citations(self) -> list[Citation]:
         """Return the citations in a stable, accent-folded order."""
@@ -268,9 +306,12 @@ class _Tally:
 
 
 def _may_look_up(
-    openalex: OpenAlexClient, tally: _Tally, max_requests: int | None
+    openalex: OpenAlexClient, tally: _Tally, max_requests: int | None, planned: int
 ) -> bool:
-    """Return whether a lookup may run; log the first refusal of each kind."""
+    """Return whether one more lookup may run after *planned* ones.
+
+    Logs the first refusal of each kind.
+    """
     if openalex.budget_exhausted:
         if not tally.budget_notified:
             logger.warning(
@@ -279,7 +320,7 @@ def _may_look_up(
             )
             tally.budget_notified = True
         return False
-    if max_requests is not None and tally.lookups_made >= max_requests:
+    if max_requests is not None and planned >= max_requests:
         if not tally.cap_notified:
             logger.info(
                 "Reached the citation lookup cap (%d citations "
@@ -317,6 +358,7 @@ def enrich_if_enabled(citation_manager: CitationManager) -> None:
 __all__ = [
     "CHECKPOINT_INTERVAL",
     "DEFAULT_MAX_API_REQUESTS",
+    "LOOKUP_WORKERS",
     "CitationManager",
     "enrich_if_enabled",
 ]

@@ -8,6 +8,9 @@ malformed payloads and the enrichment options of the manager.
 
 from __future__ import annotations
 
+import itertools
+import threading
+import time
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, call, patch
@@ -109,25 +112,51 @@ class TestRetryAfterParsing:
 class TestWaits:
     """Every wait of the client, one test per behavior."""
 
-    @pytest.mark.parametrize(
-        "result",
-        [_found({"doi": None, "url": None}), _NOT_FOUND],
-        ids=["found", "not-found"],
-    )
-    def test_polite_delay_follows_every_lookup(self, result: LookupResult) -> None:
-        manager = CitationManager()
-        manager.add_citations(_full("Aaa, A. (2001). First Work. Press."), 1)
-        manager.add_citations(_full("Bbb, B. (2002). Second Work. Press."), 2)
+    def test_requests_in_a_session_start_a_polite_delay_apart(self) -> None:
+        client = OpenAlexClient()
 
         with (
-            patch.object(manager, "lookup", return_value=result) as mock_lookup,
+            patch.object(
+                requests.Session, "get", return_value=_mock_200({"results": []})
+            ) as mock_get,
+            patch(f"{_OPENALEX}.time.monotonic", return_value=100.0),
             patch(f"{_OPENALEX}.time.sleep") as mock_sleep,
-            patch.object(manager.openalex.cache, "checkpoint"),
+            client.session(),
         ):
-            manager.enrich_with_metadata(max_requests=10)
+            client._request(_URL, {}, "first")
+            client._request(_URL, {}, "second")
 
-        assert mock_lookup.call_count == 2
-        assert mock_sleep.call_args_list == [call(API_POLITE_DELAY)] * 2
+        assert mock_get.call_count == 2
+        assert len(mock_sleep.call_args_list) == 1
+        assert mock_sleep.call_args.args[0] == pytest.approx(API_POLITE_DELAY)
+
+    def test_concurrent_lookups_keep_the_polite_rate(self) -> None:
+        """Lookups overlap, yet no two requests start closer than the delay."""
+        starts: list[float] = []
+        lock = threading.Lock()
+
+        def slow_get(url: str, **_: Any) -> MagicMock:
+            with lock:
+                starts.append(time.monotonic())
+            time.sleep(0.3)
+            return _mock_200({"results": []})
+
+        manager = CitationManager()
+        for index in range(8):
+            manager.add_citations(
+                _full(f"Author{index}, A. ({2000 + index}). Work number {index}."), 1
+            )
+
+        began = time.monotonic()
+        with patch.object(requests.Session, "get", side_effect=slow_get):
+            manager.enrich_with_metadata(max_requests=None)
+        elapsed = time.monotonic() - began
+
+        gaps = [later - earlier for earlier, later in itertools.pairwise(starts)]
+        assert len(starts) == 8
+        assert min(gaps) >= API_POLITE_DELAY * 0.95
+        # Sequential lookups would take at least 8 x 0.3 s.
+        assert elapsed < 8 * 0.3 * 0.75
 
     @pytest.mark.parametrize(
         ("response", "seconds"),
@@ -586,6 +615,62 @@ class TestEnrichment:
         with patch.object(disabled, "enrich_with_metadata") as enrich:
             enrich_if_enabled(disabled)
         enrich.assert_not_called()
+
+    def test_dois_are_queried_in_one_batch(self) -> None:
+        """One request answers every DOI; a DOI it lacks goes on to a search."""
+        manager = CitationManager()
+        manager.add_citations(
+            _full(
+                "Aaa, A. (2001). First Work. https://doi.org/10.1234/A",
+                "Bbb, B. (2002). Second Work. doi: 10.1234/b",
+                "Ccc, C. (2003). Third Missing Work. https://doi.org/10.1234/c",
+            ),
+            1,
+        )
+        works = [
+            {"doi": f"https://doi.org/10.1234/{name}", "title": name, "id": name}
+            for name in ("a", "b")
+        ]
+
+        def get(url: str, params: Any = None, **_: Any) -> MagicMock:
+            if str((params or {}).get("filter", "")).startswith("doi:"):
+                return _mock_200({"results": works})
+            return _mock_200({"results": []})
+
+        with (
+            patch.object(requests.Session, "get", side_effect=get) as mock_get,
+            patch(f"{_OPENALEX}.time.sleep"),
+        ):
+            manager.enrich_with_metadata(max_requests=None)
+
+        filters = [kwargs["params"]["filter"] for _, kwargs in mock_get.call_args_list]
+        batch = "|".join(f"https://doi.org/10.1234/{name}" for name in "abc")
+        # The batch and the third work's title search.
+        assert filters == [f"doi:{batch}", filters[1]]
+        assert filters[1].startswith("title.search:")
+        dois = sorted(str(c.doi) for c in manager.citations.values())
+        assert dois == ["10.1234/a", "10.1234/b", "None"]
+
+    def test_a_failed_batch_falls_back_to_single_queries(self) -> None:
+        manager = CitationManager()
+        manager.add_citations(_full("Aaa, A. (2001). Lone Work. doi: 10.1234/a"), 1)
+        work = {"doi": "https://doi.org/10.1234/a", "title": "Lone Work", "id": "a"}
+        failure = MagicMock(status_code=500)
+
+        def get(url: str, params: Any = None, **_: Any) -> MagicMock:
+            if "filter" in (params or {}):
+                return failure
+            return _mock_200(work)
+
+        with (
+            patch.object(requests.Session, "get", side_effect=get) as mock_get,
+            patch(f"{_OPENALEX}.time.sleep"),
+        ):
+            manager.enrich_with_metadata(max_requests=None)
+
+        assert mock_get.call_count == MAX_API_RETRIES + 1
+        assert mock_get.call_args.args[0].endswith("/works/https://doi.org/10.1234/a")
+        assert next(iter(manager.citations.values())).doi == "10.1234/a"
 
     def test_cache_lives_in_the_given_state_dir(self, tmp_path: Path) -> None:
         state_dir = tmp_path / "state-elsewhere"

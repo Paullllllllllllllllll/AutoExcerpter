@@ -346,9 +346,12 @@
   "openalex": [
     {
       "fixture": "allen_2001_doi",
-      "params": {},
+      "params": {
+        "filter": "doi:https://doi.org/10.1006/exeh.2001.0775",
+        "per-page": 200
+      },
       "status": 200,
-      "url": "https://api.openalex.org/works/https://doi.org/10.1006/exeh.2001.0775"
+      "url": "https://api.openalex.org/works"
     },
     {
       "fixture": "braudel_1979_title_search",

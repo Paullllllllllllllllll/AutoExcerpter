@@ -7,6 +7,10 @@ makes no further requests. :class:`OpenAlexCache` keeps found metadata and
 not-found keys, nothing else, and persists them only on ``checkpoint()``.
 A stop signal given to :meth:`OpenAlexClient.session` ends retry and
 rate-limit waits early; the interrupted lookup ends as a transient failure.
+Inside a session the requests of all threads start at least
+``API_POLITE_DELAY`` apart, and DOIs announced with
+:meth:`OpenAlexClient.plan_doi_batches` are queried ``DOI_BATCH_SIZE`` at a
+time.
 """
 
 from __future__ import annotations
@@ -15,7 +19,7 @@ import logging
 import re
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import StrEnum
@@ -46,13 +50,21 @@ OPENALEX_API_BASE = "https://api.openalex.org"
 API_REQUEST_TIMEOUT = 10
 API_RETRY_DELAY = 1.0
 MAX_API_RETRIES = 3
-API_POLITE_DELAY = 0.1  # Pause after every lookup
+# Least gap between two request starts inside a session: at most ten requests
+# per second, the polite-pool limit of OpenAlex.
+API_POLITE_DELAY = 0.1
 # A 429 whose retryAfter (seconds) is at or below this is slept off and
 # retried; a longer wait cannot be absorbed by a run, so the lookup ends as
 # budget exhausted.
 RATE_LIMIT_MAX_SLEEP = 30
 SEARCH_RESULTS_PER_PAGE = 5  # Candidates fetched per search; first matching wins
 STOP_POLL_INTERVAL = 0.1  # Longest sleep slice between two stop checks
+# DOIs per batch query; OpenAlex accepts up to 100 OR values in one filter.
+DOI_BATCH_SIZE = 50
+DOI_BATCH_PER_PAGE = 200  # The page size limit; room for duplicate DOIs
+DOI_URL_PREFIX = "https://doi.org/"
+# Characters that separate filters or OR values; such a DOI is queried alone.
+_FILTER_SYNTAX_RE = re.compile(r"[,|\s]")
 
 CACHE_FILE = "openalex_cache.json"
 MISSES_FILE = "openalex_misses.json"
@@ -77,6 +89,29 @@ def sleep_unless_stopped(seconds: float, stop: threading.Event | None) -> bool:
         time.sleep(step)
         remaining -= step
     return not stop.is_set()
+
+
+class _Pacer:
+    """Start requests at least *interval* seconds apart, across threads.
+
+    A thread waits for its slot while it holds the lock, so the waits queue
+    in arrival order.
+    """
+
+    def __init__(self, interval: float) -> None:
+        self.interval = interval
+        self._lock = threading.Lock()
+        self._last: float | None = None
+
+    def wait(self, stop: threading.Event | None) -> bool:
+        """Wait for the next start; return False when *stop* ends the wait."""
+        with self._lock:
+            if self._last is not None:
+                delay = self._last + self.interval - time.monotonic()
+                if delay > 0 and not sleep_unless_stopped(delay, stop):
+                    return False
+            self._last = time.monotonic()
+            return True
 
 
 class LookupOutcome(StrEnum):
@@ -212,7 +247,8 @@ class OpenAlexClient:
 
     The client holds the lookup cache and the budget state of the run: once a
     lookup ends as budget exhausted, every later :meth:`lookup` returns that
-    outcome without a request. The API key is redacted from every log line.
+    outcome without a request. Lookups may run on several threads inside one
+    :meth:`session`. The API key is redacted from every log line.
     """
 
     def __init__(
@@ -241,6 +277,12 @@ class OpenAlexClient:
         # case requests go through the module-level requests.get.
         self._session: requests.Session | None = None
         self._stop: threading.Event | None = None
+        self._pacer: _Pacer | None = None
+        # DOI (lowercase) -> its planned batch, until the batch is queried;
+        # then DOI -> its metadata, or None when OpenAlex has no such DOI.
+        self._doi_batches: dict[str, tuple[str, ...]] = {}
+        self._doi_results: dict[str, dict[str, Any] | None] = {}
+        self._doi_lock = threading.Lock()
 
     @property
     def budget_exhausted(self) -> bool:
@@ -251,10 +293,12 @@ class OpenAlexClient:
     def session(self, stop: threading.Event | None = None) -> Iterator[None]:
         """Share one connection pool among the lookups inside the block.
 
+        The requests of the block start at least ``API_POLITE_DELAY`` apart.
         Once *stop* is set, no further request starts and retry waits end;
-        the lookup in progress ends as a transient failure.
+        the lookups in progress end as transient failures.
         """
         self._stop = stop
+        self._pacer = _Pacer(API_POLITE_DELAY)
         try:
             with requests.Session() as session:
                 self._session = session
@@ -262,16 +306,69 @@ class OpenAlexClient:
         finally:
             self._session = None
             self._stop = None
+            self._pacer = None
 
     def _stopped(self) -> bool:
         return self._stop is not None and self._stop.is_set()
 
+    def plan_doi_batches(self, citation_texts: Iterable[str]) -> None:
+        """Group the DOIs of *citation_texts* into batch queries.
+
+        The DOIs are split, in order, into batches of ``DOI_BATCH_SIZE``. A
+        batch is queried when a lookup first needs one of its DOIs; the DOIs
+        it does not return count as not found. When the batch query fails,
+        its DOIs are queried one by one. A DOI already planned or queried,
+        or one holding filter syntax, is left out.
+        """
+        planned: dict[str, None] = {}
+        for text in citation_texts:
+            doi = extract_doi(text)
+            if doi is None:
+                continue
+            key = doi.lower()
+            if (
+                key in self._doi_batches
+                or key in self._doi_results
+                or _FILTER_SYNTAX_RE.search(key)
+            ):
+                continue
+            planned[key] = None
+        keys = list(planned)
+        with self._doi_lock:
+            for start in range(0, len(keys), DOI_BATCH_SIZE):
+                batch = tuple(keys[start : start + DOI_BATCH_SIZE])
+                for key in batch:
+                    self._doi_batches[key] = batch
+
+    def _query_doi_batch(self, batch: tuple[str, ...]) -> None:
+        """Query the DOIs of *batch* in one request and keep the answers."""
+        params: dict[str, Any] = {
+            "filter": "doi:" + "|".join(DOI_URL_PREFIX + key for key in batch),
+            "per-page": DOI_BATCH_PER_PAGE,
+            **self._request_params(),
+        }
+        outcome, data = self._request(
+            f"{OPENALEX_API_BASE}/works", params, f"{len(batch)} DOIs"
+        )
+        results = data.get("results") if data else None
+        if outcome is not LookupOutcome.FOUND or not isinstance(results, list):
+            return
+        found: dict[str, dict[str, Any]] = {}
+        for work in results:
+            doi = work.get("doi") if isinstance(work, dict) else None
+            if isinstance(doi, str):
+                key = doi.lower().removeprefix(DOI_URL_PREFIX)
+                found.setdefault(key, extract_metadata(work))
+        for key in batch:
+            self._doi_results[key] = found.get(key)
+
     def lookup(self, citation_text: str) -> LookupResult:
         """Look *citation_text* up and return the outcome.
 
-        A DOI in the text is queried first; when it finds nothing, a title
-        search (or a free-text search for citations without an isolable
-        title) follows. The method neither reads nor writes the cache.
+        A DOI in the text is queried first, in its batch when one is planned;
+        when it finds nothing, a title search (or a free-text search for
+        citations without an isolable title) follows. The method neither
+        reads nor writes the cache.
         Subclasses may override it to skip or record lookups.
         """
         if self._budget_exhausted:
@@ -318,7 +415,24 @@ class OpenAlexClient:
         return re.sub(r"(api_key=)[^&\s'\"]+", r"\1***", text)
 
     def _query_by_doi(self, doi: str) -> LookupResult:
-        """Look a work up by DOI."""
+        """Look a work up by DOI, through its batch when one is planned."""
+        key = doi.lower()
+        if key in self._doi_batches:
+            # The DOIs leave the planned batches only after their answers are
+            # kept, so a thread needing one meanwhile waits here for them.
+            with self._doi_lock:
+                batch = self._doi_batches.get(key)
+                if batch is not None:
+                    try:
+                        self._query_doi_batch(batch)
+                    finally:
+                        for planned in batch:
+                            self._doi_batches.pop(planned, None)
+        if key in self._doi_results:
+            metadata = self._doi_results[key]
+            if metadata is None:
+                return _NOT_FOUND
+            return LookupResult(LookupOutcome.FOUND, metadata)
         url = f"{OPENALEX_API_BASE}/works/https://doi.org/{doi}"
         outcome, data = self._request(url, self._request_params(), f"DOI {doi}")
         if outcome is not LookupOutcome.FOUND:
@@ -398,10 +512,16 @@ class OpenAlexClient:
 
         session = self._session
         http_get = requests.get if session is None else session.get
+        pacer = self._pacer
 
         for attempt in range(MAX_API_RETRIES):
             if self._stopped():
                 return _TRANSIENT_REPLY
+            if pacer is not None and not pacer.wait(self._stop):
+                return _TRANSIENT_REPLY
+            if self._budget_exhausted:
+                # Another thread's request spent the budget meanwhile.
+                return LookupOutcome.BUDGET_EXHAUSTED, None
             try:
                 response = http_get(url, params=params, timeout=API_REQUEST_TIMEOUT)
                 if attempt == 0 and response.status_code != 200:
@@ -538,7 +658,9 @@ class OpenAlexClient:
 
 
 __all__ = [
+    "API_POLITE_DELAY",
     "CACHE_FILE",
+    "DOI_BATCH_SIZE",
     "MAX_API_RETRIES",
     "MISSES_FILE",
     "LookupOutcome",

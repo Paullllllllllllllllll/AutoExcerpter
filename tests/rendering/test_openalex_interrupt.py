@@ -1,9 +1,10 @@
 """Interruptible OpenAlex waits and the enrichment's cache checkpoints.
 
-A stop signal ends the polite delay and the client's retry and 429 waits
+A stop signal ends the request pacing and the client's retry and 429 waits
 within 0.1 s while they still sleep through ``time.sleep``. The enrichment
-checks the signal before every lookup and checkpoints the cache every
-``CHECKPOINT_INTERVAL`` lookups and when it ends, also by an exception.
+checks the signal before it starts each lookup, saves every lookup that
+ended, and checkpoints the cache every ``CHECKPOINT_INTERVAL`` lookups and
+when it ends, also by an exception.
 """
 
 from __future__ import annotations
@@ -25,7 +26,10 @@ from autoexcerpter.rendering.citations import (
     LookupResult,
     OpenAlexClient,
 )
-from autoexcerpter.rendering.citations.manager import CHECKPOINT_INTERVAL
+from autoexcerpter.rendering.citations.manager import (
+    CHECKPOINT_INTERVAL,
+    LOOKUP_WORKERS,
+)
 from autoexcerpter.rendering.citations.openalex import (
     CACHE_FILE,
     MISSES_FILE,
@@ -178,7 +182,11 @@ class TestClientWaits:
 
 
 class Recording(CitationManager):
-    """Answer lookups in order: found, not found, then whatever *then* does."""
+    """Answer by citation position: found, not found, then what *then* does.
+
+    Lookups run on several threads, so the answer depends on the citation's
+    position, not on the order the lookups run in.
+    """
 
     def __init__(
         self,
@@ -189,10 +197,12 @@ class Recording(CitationManager):
         super().__init__(state_dir=state_dir, **kwargs)
         self.then = then
         self.looked_up: list[str] = []
+        self._lock = threading.Lock()
 
     def lookup(self, citation: Citation) -> LookupResult:
-        self.looked_up.append(citation.raw_text)
-        number = len(self.looked_up)
+        with self._lock:
+            self.looked_up.append(citation.raw_text)
+        number = list(self.citations).index(citation.normalized_key) + 1
         if number == 1:
             return LookupResult(LookupOutcome.FOUND, {"doi": "10.1/a", "url": None})
         if number == 2 or self.then is None:
@@ -227,14 +237,20 @@ class TestEnrichmentStop:
 
         state_dir = tmp_path / "state"
         manager = Recording(state_dir, then=stop_now, stop=stop)
-        manager.add_citations(_citations(5), 1)
+        citations = _citations(12)
+        manager.add_citations(citations, 1)
+        first = citations[0][0]
 
         manager.enrich_with_metadata()
 
-        assert len(manager.looked_up) == 3
-        assert set(read_json(state_dir / CACHE_FILE)) == {_key(manager.looked_up[0])}
+        # The lookups already running when the stop came still end; no
+        # further one starts, and every lookup that ended is saved.
+        assert 3 <= len(manager.looked_up) <= 2 + LOOKUP_WORKERS
+        assert set(read_json(state_dir / CACHE_FILE)) == {_key(first)}
         assert read_json(state_dir / MISSES_FILE) == {
-            "not_found": sorted(_key(text) for text in manager.looked_up[1:])
+            "not_found": sorted(
+                _key(text) for text in manager.looked_up if text != first
+            )
         }
 
 
@@ -246,13 +262,14 @@ class TestEnrichmentCheckpoints:
 
         state_dir = tmp_path / "state"
         manager = Recording(state_dir, then=fail)
-        manager.add_citations(_citations(4), 1)
+        citations = _citations(4)
+        manager.add_citations(citations, 1)
 
         with pytest.raises(RuntimeError, match="lookup exploded"):
             manager.enrich_with_metadata()
 
-        assert len(manager.looked_up) == 3
-        first, second = manager.looked_up[:2]
+        assert len(manager.looked_up) >= 3
+        first, second = (text for text, _ in citations[:2])
         assert set(read_json(state_dir / CACHE_FILE)) == {_key(first)}
         assert read_json(state_dir / MISSES_FILE) == {"not_found": [_key(second)]}
 
@@ -261,10 +278,12 @@ class TestEnrichmentCheckpoints:
         manager = Recording(state_dir)
         manager.add_citations(_citations(CHECKPOINT_INTERVAL + 1), 1)
         written: list[int] = []
-        checkpoint = manager.openalex.cache.checkpoint
+        cache = manager.openalex.cache
+        checkpoint = cache.checkpoint
+        keys = list(manager.citations)
 
         def spy() -> None:
-            written.append(len(manager.looked_up))
+            written.append(sum(key in cache for key in keys))
             checkpoint()
 
         manager.openalex.cache.checkpoint = spy  # type: ignore[method-assign]

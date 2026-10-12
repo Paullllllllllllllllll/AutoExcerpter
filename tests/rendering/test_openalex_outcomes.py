@@ -217,20 +217,23 @@ class TestEnrichmentCache:
         self, server: RecordedOpenAlex, state_dir: Path
     ) -> None:
         manager = CitationManager(state_dir=state_dir)
-        manager.add_citations(_full(ALLEN, UNKNOWN, FLAKY, LIMITED, BRAUDEL), 1)
-
+        manager.add_citations(_full(ALLEN, UNKNOWN, FLAKY), 1)
         manager.enrich_with_metadata(max_requests=None)
+        # The exhausted budget gets a run of its own: lookups run
+        # concurrently, so it would decide which of the others are made.
+        limited = CitationManager(state_dir=state_dir)
+        limited.add_citations(_full(LIMITED), 1)
+        limited.enrich_with_metadata(max_requests=None)
 
         assert set(read_json(state_dir / CACHE_FILE)) == {_key(ALLEN)}
         assert read_json(state_dir / MISSES_FILE) == {"not_found": [_key(UNKNOWN)]}
-        # The exhausted budget stopped the lookups before Braudel.
-        assert server.asked("Civilisation") == 0
+        assert limited.openalex.budget_exhausted is True
 
     def test_next_run_serves_the_cache_and_retries_the_rest(
         self, server: RecordedOpenAlex, state_dir: Path
     ) -> None:
         first = CitationManager(state_dir=state_dir)
-        first.add_citations(_full(ALLEN, UNKNOWN, FLAKY, LIMITED, BRAUDEL), 1)
+        first.add_citations(_full(ALLEN, UNKNOWN, FLAKY), 1)
         first.enrich_with_metadata(max_requests=None)
         server.requests.clear()
 
