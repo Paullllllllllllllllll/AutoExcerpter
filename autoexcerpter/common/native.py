@@ -10,6 +10,7 @@ import math
 from dataclasses import dataclass
 from typing import Any, Literal
 
+import fitz
 from PIL import Image
 
 logger = logging.getLogger(__name__)
@@ -62,7 +63,11 @@ def native_page_dpi(page: Any, fallback_dpi: int) -> NativeDpi:
     """Find the densest scan covering at least half the visible page."""
     rect = page.rect * page.derotation_matrix
     candidates = []
-    for info in page.get_image_info(xrefs=True):
+    # Decoding each image keeps a page with an undecodable image failing;
+    # get_image_info(xrefs=True) did that too, but also hashed every image.
+    for item in page.get_images():
+        fitz.Pixmap(page.parent, item[0])
+    for info in page.get_image_info():
         a, b, c, d, e, f = info["transform"]
         x_length, y_length = math.hypot(a, b), math.hypot(c, d)
         if not x_length or not y_length:

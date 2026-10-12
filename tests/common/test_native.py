@@ -98,6 +98,16 @@ def test_native_fallback(kind: str) -> None:
         assert result.dpi == 240
 
 
+def test_undecodable_image_fails_the_page() -> None:
+    with fitz.open() as doc:
+        page = scan_page(doc)
+        xref = page.get_images()[0][0]
+        doc.xref_set_key(xref, "Filter", "/JPXDecode")
+        page = doc.reload_page(page)
+        with pytest.raises(fitz.mupdf.FzErrorBase, match="JPX"):
+            native_page_dpi(page, 300)
+
+
 def test_anthropic_published_resize() -> None:
     assert resized_size(1075, 1520, 1568, 1568) == (924, 1307)
 
