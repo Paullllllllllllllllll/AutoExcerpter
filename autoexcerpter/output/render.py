@@ -56,7 +56,6 @@ from autoexcerpter.output.store import (
     read_pages,
     read_store,
 )
-from autoexcerpter.rendering.citations import CitationManager
 from autoexcerpter.rendering.docx import docx_summary
 from autoexcerpter.rendering.markdown import markdown_summary
 from autoexcerpter.rendering.page_numbering import PageNumberProcessor
@@ -173,11 +172,7 @@ def _summary_parts(
     document = _document(connection, doc_id)
     _, summaries = read_pages(connection, doc_id)
     adjusted = PageNumberProcessor().adjust_and_sort_page_numbers(summaries)
-    data = prepare_summary_data(
-        adjusted,
-        CitationManager(openalex_enabled=False),
-        position_label=document.position_label,
-    )
+    data = prepare_summary_data(adjusted, None, position_label=document.position_label)
     return document, adjusted, data, StoredCitations(read_citations(connection, doc_id))
 
 

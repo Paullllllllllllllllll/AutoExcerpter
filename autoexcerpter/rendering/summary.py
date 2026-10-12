@@ -379,7 +379,7 @@ def _scan_position(result: dict[str, Any], fallback_positions: dict[int, int]) -
 
 def prepare_summary_data(
     summary_results: list[dict[str, Any]],
-    citation_manager: CitationManager,
+    citation_manager: CitationManager | None,
     position_label: str = "pdf",
 ) -> SummaryData:
     """Shared preparation logic for DOCX and Markdown summary writers.
@@ -389,8 +389,9 @@ def prepare_summary_data(
 
     Args:
         summary_results: Raw summary results from the API.
-        citation_manager: A :class:`CitationManager` instance (passed in for
-            testability).
+        citation_manager: The :class:`CitationManager` that collects the
+            pages' citations; None collects none (the citations are rendered
+            from the store).
         position_label: ``"pdf"`` or ``"image"``: how a page without a printed
             number is located (``PDF p. N`` or ``Image N``).
 
@@ -430,7 +431,7 @@ def prepare_summary_data(
             if is_spread and isinstance(page_end, int):
                 numbered_pages.append(page_end)
 
-        if references:
+        if references and citation_manager is not None:
             # A numbered page (both pages of a spread) is cited by its printed
             # number, keeping roman numerals roman and inferred numbers marked;
             # an unnumbered page by its scan position. The citation manager
