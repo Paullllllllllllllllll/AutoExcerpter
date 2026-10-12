@@ -24,8 +24,11 @@ and has not expired by the clock read inside the transaction; it raises
 same way. A write that waited on a busy database past the lease's expiry
 therefore fails, while the response rows of its attempts stay: response rows
 are appended without a lease check and are never updated or deleted.
-Reads use short read-only connections; a busy database delays a read the same
-way, retried with the writer's backoff and warnings, without failing it.
+An importer such as ``migrate`` writes one document's responses, units and
+outputs in one leased transaction through :meth:`Store.import_document`; a
+run never does. Reads use short read-only connections; a busy database
+delays a read the same way, retried with the writer's backoff and warnings,
+without failing it.
 """
 
 from __future__ import annotations
@@ -77,6 +80,7 @@ __all__ = [
     "Component",
     "ConversionResult",
     "Converter",
+    "DocumentImport",
     "DocumentRow",
     "Lease",
     "LeaseKeeper",
@@ -1116,6 +1120,64 @@ def _touch(
     )
 
 
+def _unit_params(
+    doc_id: int, result: UnitResult, tool: str, run_id: str, now: str
+) -> dict[str, Any]:
+    """Return the parameters of :data:`_UPSERT_UNIT` for *result*."""
+    return {
+        "doc_id": doc_id,
+        "kind": result.kind,
+        "idx": result.idx,
+        "status": result.status,
+        "outcome": result.outcome,
+        "source_index": result.source_index,
+        "label": result.label,
+        "content": result.content,
+        "tool": tool,
+        "model": result.model,
+        "provider": result.provider,
+        "run_id": run_id,
+        "attempts": result.attempts,
+        "usage": _json(result.usage),
+        "error": result.error,
+        "error_type": result.error_type,
+        "provenance": _json(result.provenance),
+        "response_id": result.response_id,
+        "now": now,
+    }
+
+
+def _response_params(
+    response: ResponseRow, tool: str, run_id: str, now: str
+) -> dict[str, Any]:
+    """Return the parameters of :data:`_INSERT_RESPONSE` for *response*."""
+    unit = response.unit
+    return {
+        "doc_id": None if unit is None else unit.doc_id,
+        "kind": None if unit is None else unit.kind,
+        "idx": None if unit is None else unit.idx,
+        "run_id": run_id,
+        "tool": tool,
+        "provider": response.provider,
+        "model": response.model,
+        "role": response.role,
+        "attempt": response.attempt,
+        "submission_id": response.submission_id,
+        "custom_id": response.custom_id,
+        "request": _json(
+            None if response.request is None else redact_payloads(response.request)
+        ),
+        "raw": _raw_value(response.raw),
+        "raw_kind": response.raw_kind,
+        "usage": _json(response.usage),
+        "error": response.error,
+        "error_type": response.error_type,
+        "http_status": response.http_status,
+        "latency": response.latency,
+        "now": now,
+    }
+
+
 def _check_lease(connection: sqlite3.Connection, lease: Lease, now: float) -> None:
     """Raise unless *lease* holds and has not expired at *now*.
 
@@ -1673,27 +1735,7 @@ class Store:
         """
         run_id = self._require_run()
         now = _iso(self.clock())
-        params = {
-            "doc_id": lease.doc_id,
-            "kind": result.kind,
-            "idx": result.idx,
-            "status": result.status,
-            "outcome": result.outcome,
-            "source_index": result.source_index,
-            "label": result.label,
-            "content": result.content,
-            "tool": self.tool,
-            "model": result.model,
-            "provider": result.provider,
-            "run_id": run_id,
-            "attempts": result.attempts,
-            "usage": _json(result.usage),
-            "error": result.error,
-            "error_type": result.error_type,
-            "provenance": _json(result.provenance),
-            "response_id": result.response_id,
-            "now": now,
-        }
+        params = _unit_params(lease.doc_id, result, self.tool, run_id, now)
 
         def write(connection: sqlite3.Connection) -> None:
             if extra is not None:
@@ -1764,6 +1806,36 @@ class Store:
         """
         return await self._leased(lease, func)
 
+    async def import_document(
+        self, lease: Lease, func: Callable[[DocumentImport], T]
+    ) -> T:
+        """Commit an importer's writes of one document in one leased transaction.
+
+        *func* receives a :class:`DocumentImport` bound to the transaction and
+        writes the document's image settings, responses, units and outputs
+        through it; after the lease check they commit together, or none does
+        when *func* raises. This is for importers such as ``migrate``: a run
+        commits each unit in its own short transaction and each response
+        before any retry.
+        """
+        run_id = self._require_run()
+        now = _iso(self.clock())
+
+        def write(connection: sqlite3.Connection) -> T:
+            batch = DocumentImport(
+                connection,
+                lease,
+                tool=self.tool,
+                run_id=run_id,
+                now=now,
+                path_key=self._path_key,
+            )
+            result = func(batch)
+            batch.finish()
+            return result
+
+        return await self._leased(lease, write)
+
     # ------------------------------------------------------------ responses
 
     async def append_response(self, response: ResponseRow) -> int:
@@ -1771,31 +1843,9 @@ class Store:
 
         No lease is checked: response rows always stay.
         """
-        unit = response.unit
-        params = {
-            "doc_id": None if unit is None else unit.doc_id,
-            "kind": None if unit is None else unit.kind,
-            "idx": None if unit is None else unit.idx,
-            "run_id": self._require_run(),
-            "tool": self.tool,
-            "provider": response.provider,
-            "model": response.model,
-            "role": response.role,
-            "attempt": response.attempt,
-            "submission_id": response.submission_id,
-            "custom_id": response.custom_id,
-            "request": _json(
-                None if response.request is None else redact_payloads(response.request)
-            ),
-            "raw": _raw_value(response.raw),
-            "raw_kind": response.raw_kind,
-            "usage": _json(response.usage),
-            "error": response.error,
-            "error_type": response.error_type,
-            "http_status": response.http_status,
-            "latency": response.latency,
-            "now": _iso(self.clock()),
-        }
+        params = _response_params(
+            response, self.tool, self._require_run(), _iso(self.clock())
+        )
 
         def write(connection: sqlite3.Connection) -> int:
             cursor = connection.execute(_INSERT_RESPONSE, params)
@@ -2474,6 +2524,86 @@ def _resume_state(
         lease_run_id=row["lease_run_id"],
         lease_until=row["lease_until"],
     )
+
+
+class DocumentImport:
+    """The writes of one imported document inside one leased transaction.
+
+    :meth:`Store.import_document` creates it. Each method runs the statement
+    of the store method of the same name on the transaction's connection, so
+    the rows commit or roll back together; the document's unit counts are
+    refreshed once, when the function returns.
+    """
+
+    def __init__(
+        self,
+        connection: sqlite3.Connection,
+        lease: Lease,
+        *,
+        tool: str,
+        run_id: str,
+        now: str,
+        path_key: Callable[[Path], str],
+    ) -> None:
+        self.connection = connection
+        self.lease = lease
+        self._tool = tool
+        self._run_id = run_id
+        self._now = now
+        self._path_key = path_key
+        self._units_written = False
+
+    def set_image_settings(self, record: Mapping[str, Any] | None) -> None:
+        """Record the image settings the document's units were produced with."""
+        self.connection.execute(
+            "UPDATE documents SET image_settings = ? WHERE doc_id = ?",
+            (_json(record), self.lease.doc_id),
+        )
+
+    def append_response(self, response: ResponseRow) -> int:
+        """Append one imported response row; return its id."""
+        params = _response_params(response, self._tool, self._run_id, self._now)
+        cursor = self.connection.execute(_INSERT_RESPONSE, params)
+        return int(cursor.lastrowid or 0)
+
+    def write_unit(
+        self,
+        result: UnitResult,
+        *,
+        extra: Callable[[sqlite3.Connection], object] | None = None,
+    ) -> None:
+        """Write one unit's state; *extra* first writes its content row."""
+        if extra is not None:
+            extra(self.connection)
+        params = _unit_params(
+            self.lease.doc_id, result, self._tool, self._run_id, self._now
+        )
+        self.connection.execute(_UPSERT_UNIT, params)
+        self._units_written = True
+
+    def register_output(
+        self, path: Path, *, format: str, sha256: str | None = None
+    ) -> None:
+        """Record an existing rendered file with its hash."""
+        digest = sha256 if sha256 is not None else file_sha256(path)
+        if digest is None:
+            raise FileNotFoundError(f"No output file at {path}")
+        self.connection.execute(
+            _OUTPUT_DONE,
+            (
+                self.lease.doc_id,
+                self._path_key(path),
+                format,
+                digest,
+                self._now,
+                self._run_id,
+            ),
+        )
+
+    def finish(self) -> None:
+        """Refresh the document's counts and status once units were written."""
+        if self._units_written:
+            _touch(self.connection, self.lease.doc_id, self._run_id, self._now)
 
 
 class StoreRecorder:

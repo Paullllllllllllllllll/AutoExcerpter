@@ -1,4 +1,4 @@
-"""The public leased write and renderers that return bytes."""
+"""The public leased write, the document import and renderers that return bytes."""
 
 from __future__ import annotations
 
@@ -13,11 +13,14 @@ import pytest
 from autoexcerpter.common.sqlite import read_rows
 from autoexcerpter.common.store import (
     Component,
+    DocumentImport,
     Lease,
     LeaseLostError,
     PlannedUnit,
     RenderTarget,
+    ResponseRow,
     Store,
+    UnitKey,
     UnitResult,
 )
 from tests.common.store_child import FakeClock
@@ -141,6 +144,100 @@ def test_a_unit_and_its_extra_row_commit_or_roll_back_together(
     asyncio.run(main())
     assert [row["text"] for row in read_rows(db, "extra")] == ["row"]
     assert [row["content"] for row in read_rows(db, "units")] == ["kept"]
+
+
+_IGNORED = {"run_id", "first_run_id", "last_run_id", "lease_until"}
+
+
+def _rows(db: Path) -> dict[str, list[dict[str, object]]]:
+    tables = ("documents", "units", "responses", "outputs", "extra")
+    return {
+        table: [
+            {
+                key: value
+                for key, value in row.items()
+                if key not in _IGNORED and not key.endswith("_at")
+            }
+            for row in read_rows(db, table)
+        ]
+        for table in tables
+    }
+
+
+def test_an_import_writes_what_the_single_writes_write(tmp_path: Path) -> None:
+    usage = {"input_tokens": 3}
+
+    def response(lease: Lease) -> ResponseRow:
+        unit = UnitKey(lease.doc_id, "page", 0)
+        return ResponseRow("p", "m", unit, raw="body", raw_kind="legacy", usage=usage)
+
+    def result(response_id: int) -> UnitResult:
+        return UnitResult(
+            "page", 0, "done", "m", "p", content="text", response_id=response_id
+        )
+
+    async def single(db: Path, output: Path) -> None:
+        async with Store(db, "tool", components=(EXTRA,)) as store:
+            await store.begin_run("migrate")
+            lease = await _lease(store)
+            await store.set_image_settings(lease, {"dpi": 300})
+            response_id = await store.append_response(response(lease))
+            await store.write_unit(
+                lease, result(response_id), extra=_insert("row", lease)
+            )
+            await store.write_unit(lease, UnitResult("page", 1, "pending", "m", "p"))
+            await store.register_output(lease, output, format="txt")
+
+    def batch_writes(batch: DocumentImport, output: Path) -> None:
+        batch.set_image_settings({"dpi": 300})
+        response_id = batch.append_response(response(batch.lease))
+        batch.write_unit(result(response_id), extra=_insert("row", batch.lease))
+        batch.write_unit(UnitResult("page", 1, "pending", "m", "p"))
+        batch.register_output(output, format="txt")
+
+    async def imported(db: Path, output: Path) -> None:
+        async with Store(db, "tool", components=(EXTRA,)) as store:
+            await store.begin_run("migrate")
+            lease = await _lease(store)
+            await store.import_document(
+                lease, lambda batch: batch_writes(batch, output)
+            )
+
+    for name, write in (("single", single), ("import", imported)):
+        (tmp_path / name).mkdir()
+        output = tmp_path / name / "doc.txt"
+        output.write_text("text\n", encoding="utf-8")
+        asyncio.run(write(tmp_path / name / "tool.sqlite", output))
+
+    expected = _rows(tmp_path / "single" / "tool.sqlite")
+    assert expected["units"][0]["response_id"] == 1
+    assert expected["documents"][0]["units_done"] == 1
+    assert _rows(tmp_path / "import" / "tool.sqlite") == expected
+
+
+def test_an_import_commits_all_or_nothing_under_the_lease(tmp_path: Path) -> None:
+    db = tmp_path / "tool.sqlite"
+    clock = FakeClock()
+    called: list[str] = []
+
+    def failing(batch: DocumentImport) -> None:
+        called.append("ran")
+        batch.write_unit(UnitResult("page", 0, "done", "m", "p", content="lost"))
+        raise ValueError("refused")
+
+    async def main() -> None:
+        async with Store(db, "tool", clock=clock) as store:
+            await store.begin_run("migrate")
+            lease = await _lease(store)
+            with pytest.raises(ValueError, match="refused"):
+                await store.import_document(lease, failing)
+            clock.advance(11 * MINUTE)
+            with pytest.raises(LeaseLostError, match="expired"):
+                await store.import_document(lease, failing)
+
+    asyncio.run(main())
+    assert called == ["ran"]
+    assert read_rows(db, "units") == []
 
 
 def test_a_bytes_rendering_is_written_as_it_is(tmp_path: Path) -> None:
