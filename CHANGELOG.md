@@ -1,5 +1,14 @@
 # Changelog
 
+- **v2.4.1** (13 October 2026) -- A refactor with no change in behavior. The image
+  presets (the recommended values the wizard shows and the request settings of
+  each model family) and the building of provider request options move to the
+  vendored `common/image_presets.py` and `common/request_options.py`, which
+  ChronoTranscriber and ChronoMiner share. AutoExcerpter passes its own values and
+  rules (`IMAGE_PRESETS` in `spec.py`, the tables in `llm/options.py`), so
+  requests, batch bodies, image settings and the stored image-settings records
+  stay as they were; new tests compare them with golden files over a matrix of
+  providers, models and options, and resume an item stored by v2.4.0.
 - **v2.4.0** (13 October 2026) -- `run` and `batch check --wait` write their
   progress to the file named in `CHRONO_HEARTBEAT_FILE`, so a job launcher can
   show it: the current item's pages processed and its position, an ETA from the

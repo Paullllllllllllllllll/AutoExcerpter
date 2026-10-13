@@ -32,6 +32,7 @@ from dataclasses import dataclass, field
 from typing import Any, Final
 
 from autoexcerpter.common.batch import BatchRequest, supports_batch
+from autoexcerpter.common.request_options import batch_service_tier
 from autoexcerpter.common.structured import (
     ResponseFormat,
     anthropic_output_schema,
@@ -57,7 +58,6 @@ logger = logging.getLogger(__name__)
 ROLE_TRANSCRIPTION: Final = "transcription"
 ROLE_SUMMARY: Final = "summary"
 
-_BATCH_SERVICE_TIERS = frozenset({"auto", "default", "priority"})
 _ANTHROPIC_FALLBACK_LIMIT = 4096
 _SAMPLERS = ("temperature", "top_p")
 
@@ -123,10 +123,8 @@ class BodyPlan:
         kwargs = self.kwargs
         if "max_output_tokens" in kwargs:
             body["max_output_tokens"] = kwargs["max_output_tokens"]
-        tier = kwargs.get("service_tier")
-        if tier == "flex":
-            body["service_tier"] = "auto"
-        elif tier in _BATCH_SERVICE_TIERS:
+        tier = batch_service_tier(kwargs.get("service_tier"))
+        if tier is not None:
             body["service_tier"] = tier
         if "reasoning" in kwargs:
             body["reasoning"] = dict(kwargs["reasoning"])

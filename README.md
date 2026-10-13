@@ -1,4 +1,4 @@
-# AutoExcerpter v2.4.0
+# AutoExcerpter v2.4.1
 
 AutoExcerpter transcribes PDFs and folders of page images with vision-language
 models, summarizes each page and builds a consolidated bibliography whose entries
@@ -754,7 +754,7 @@ autoexcerpter/
   common/       vendored modules shared with the sibling tools, the store and the
                 batch backends among them
   llm/          client factory, model calls with attempt capture, capability table
-  imaging/      page payload sources and image presets
+  imaging/      page payload sources and the resolved image settings
   output/       the store's tables, views and resume, the renderers, item paths
   pipeline/     item processing, pages, units, context
   rendering/    transcription, Markdown, DOCX, equations, citations/
@@ -765,11 +765,13 @@ The core imports nothing from `cli/` or `ui/`. It never prints, prompts or exits
 and reports through the run events, which the CLI writes to stderr and the UI
 shows as progress bars. `common/` holds tool-agnostic modules (option tables,
 wizard framework, settings loader, structured calls, retry, rate limiting, HTTP
-timeouts, images, the run store and its SQLite writer, attempt capture, the batch
-backends of OpenAI, Anthropic and Google, the poll loop of `batch check --wait`,
-agent contract) kept byte-identical
-across the sibling tools: `common/MANIFEST.json` pins each file by its SHA-256, and
-`tests/common/test_manifest.py` fails when a copy drifts. `ext.py` holds the
+timeouts, images, image presets, provider request options, the run store and its
+SQLite writer, attempt capture, the batch backends of OpenAI, Anthropic and Google,
+the poll loop of `batch check --wait`, agent contract) kept byte-identical across
+the sibling tools: `common/MANIFEST.json` pins each file by its SHA-256, and
+`tests/common/test_manifest.py` fails when a copy drifts. Each tool passes its own
+values to the shared presets and request options: AutoExcerpter's image presets
+are `IMAGE_PRESETS` in `spec.py`. `ext.py` holds the
 extension hooks (extra arguments, settings blocks and wizard steps, a startup
 hook, batch consent, the key variables of a call, an attempt context around every
 model and batch call); its defaults pass everything through.

@@ -13,10 +13,19 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, fields, is_dataclass
+from dataclasses import asdict, dataclass, fields, is_dataclass
 from pathlib import Path
 from typing import Any, Literal
 
+from autoexcerpter.common.image_presets import (
+    DetailCheck,
+    DetailRules,
+    ImagePresets,
+    anthropic_preset,
+    custom_preset,
+    google_preset,
+    openai_preset,
+)
 from autoexcerpter.common.options import (
     Condition,
     Kind,
@@ -41,6 +50,7 @@ __all__ = [
     "DEFAULT_MODEL",
     "IMAGE_DETAILS",
     "IMAGE_FORMATS",
+    "IMAGE_PRESETS",
     "MIGRATE_OPTIONS",
     "MODEL_SUGGESTIONS",
     "OPTIONS",
@@ -248,11 +258,49 @@ class RunSpec:
         return spec
 
 
+IMAGE_PRESETS = ImagePresets(
+    families={
+        "openai": openai_preset(),
+        "anthropic": anthropic_preset(),
+        "google": google_preset(),
+        "custom": custom_preset(),
+    },
+    detail=DetailRules(
+        filter_overrides=False,
+        openrouter_openai_detail=False,
+        checks={
+            "openai": DetailCheck(
+                kept=frozenset({"low", "high", "auto"}),
+                original=True,
+                unsupported_original="high",
+                fallback="auto",
+                without_detail="auto",
+                source="request",
+            ),
+            "openrouter": DetailCheck(
+                kept=frozenset({"low", "high", "auto", "original"}),
+                model_types=frozenset({"openai"}),
+            ),
+        },
+        other=DetailCheck(
+            kept=frozenset({"low", "high", "auto"}),
+            model_types=frozenset({"openai", "custom"}),
+        ),
+    ),
+    resampling="bilinear",
+)
+"""The image presets of each model family: the values the wizard recommends
+and the request sections of ``imaging.settings``. A run's detail is written
+into the section as given. OpenAI pages follow the request's ``image_size``
+option: low, high and auto stay, original stays where the model takes it and
+becomes high elsewhere, and any other detail, or a model without image
+detail, gives auto. OpenRouter models of the OpenAI family keep low, high,
+auto and original, other providers' OpenAI and custom sections low, high and
+auto; anything else becomes high."""
+
 _RECOMMENDED_IMAGES: Mapping[str, ImageSpec] = {
-    "openai": ImageSpec("native", "original", "jpeg", 95, True),
-    "anthropic": ImageSpec("native", "auto", "jpeg", 95, True),
-    "google": ImageSpec(300, "high", "jpeg", 95, True),
-    "custom": ImageSpec(150, "high", "jpeg", 85, True),
+    family: ImageSpec(**asdict(preset.recommended))
+    for family, preset in IMAGE_PRESETS.families.items()
 }
 
 

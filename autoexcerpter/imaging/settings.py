@@ -1,17 +1,20 @@
 """Resolve the page-image settings of one transcription model.
 
-The per-provider sections below are the recommended values; the run's
-``ImageSpec`` overrides the fields it sets. The resolved dict is recorded
-with the document in the store, and resume compares it key by key.
+The per-provider sections of :data:`IMAGE_PROCESSING` are the recommended
+values of ``spec.IMAGE_PRESETS``; the run's ``ImageSpec`` overrides the
+fields it sets, and the detail follows the presets' detail rules. The
+resolved dict is recorded with the document in the store, and resume
+compares it key by key.
 """
 
 from __future__ import annotations
 
-import copy
 import logging
 from collections.abc import Mapping
-from typing import Any, Literal
+from typing import Any
 
+from autoexcerpter.common import image_presets
+from autoexcerpter.common.image_presets import ModelType
 from autoexcerpter.common.images import DEFAULT_JPEG_QUALITY
 from autoexcerpter.common.native import model_image_cap, validate_image_settings
 from autoexcerpter.llm.capabilities import (
@@ -20,95 +23,20 @@ from autoexcerpter.llm.capabilities import (
     detect_provider,
 )
 from autoexcerpter.llm.image_detail import resolve_request_detail
-from autoexcerpter.spec import ImageSpec, recommended_images
+from autoexcerpter.spec import IMAGE_PRESETS, ImageSpec, recommended_images
 
 logger = logging.getLogger(__name__)
 
-ModelType = Literal["openai", "google", "anthropic", "custom"]
-
 # Recommended image settings per model family. Numeric runs render directly to
 # the profile unless a section sets the supersample strategy; native runs
-# render to the resolved model cap or profile. The optional OpenAI keys for
-# the original side and pixel limits and the Anthropic key for the high side
-# limit only tighten the model caps.
+# render to the resolved model cap or profile. ``max_pixels_per_page`` guards
+# numeric rendering only (0 disables it); ``resampling_algorithm`` is the
+# downscaling filter, bilinear (fast) or lanczos (quality).
 IMAGE_PROCESSING: Mapping[str, Any] = {
-    "render_strategy": "direct",
-    # Numeric rendering only; 0 disables the memory guard.
-    "max_pixels_per_page": 24_000_000,
-    # Downscaling filter: bilinear (fast) or lanczos (quality).
-    "resampling_algorithm": "bilinear",
-    "api_image_processing": {
-        "target_dpi": "native",
-        "native_fallback_dpi": 300,
-        "payload_format": "jpeg",
-        "max_image_bytes": 50_000_000,
-        "grayscale_conversion": True,
-        "handle_transparency": True,
-        "jpeg_quality": 95,
-        "llm_detail": "original",
-        "resize_profile": "high",
-        "low_max_side_px": 512,
-        "high_target_box": [768, 1536],
-    },
-    "anthropic_image_processing": {
-        "target_dpi": "native",
-        "native_fallback_dpi": 300,
-        "payload_format": "jpeg",
-        "max_image_bytes": 10_000_000,
-        "grayscale_conversion": True,
-        "handle_transparency": True,
-        "jpeg_quality": 95,
-        "resize_profile": "auto",
-        "low_max_side_px": 512,
-        "high_target_box": [768, 1536],
-    },
-    "google_image_processing": {
-        "target_dpi": 300,
-        "native_fallback_dpi": 300,
-        "payload_format": "jpeg",
-        "max_image_bytes": 20_000_000,
-        "grayscale_conversion": True,
-        "handle_transparency": True,
-        "jpeg_quality": 95,
-        "media_resolution": "high",
-        "resize_profile": "high",
-        "low_max_side_px": 512,
-        "high_target_box": [768, 1536],
-    },
-    "custom_image_processing": {
-        "target_dpi": 150,
-        "native_fallback_dpi": 300,
-        "payload_format": "jpeg",
-        "max_image_bytes": 0,
-        "grayscale_conversion": True,
-        "handle_transparency": True,
-        "jpeg_quality": 85,
-        "llm_detail": "high",
-        "resize_profile": "low",
-        "low_max_side_px": 768,
-        "high_target_box": [512, 1024],
-    },
-}
-
-# The section key that carries the detail of each model family.
-_DETAIL_KEY: Mapping[str, str] = {
-    "openai": "llm_detail",
-    "anthropic": "resize_profile",
-    "google": "media_resolution",
-    "custom": "llm_detail",
-}
-
-_DIRECT_PROVIDERS: Mapping[str, ModelType] = {
-    "custom": "custom",
-    "google": "google",
-    "anthropic": "anthropic",
-    "openai": "openai",
-}
-
-_SECTION_NAMES: Mapping[str, str] = {
-    "custom": "custom_image_processing",
-    "google": "google_image_processing",
-    "anthropic": "anthropic_image_processing",
+    "render_strategy": IMAGE_PRESETS.render_strategy,
+    "max_pixels_per_page": IMAGE_PRESETS.max_pixels_per_page,
+    "resampling_algorithm": IMAGE_PRESETS.resampling,
+    **IMAGE_PRESETS.sections(),
 }
 
 
@@ -118,20 +46,12 @@ def detect_model_type(provider: str, model_name: str | None = None) -> ModelType
     Direct providers decide; OpenRouter and unknown providers are detected
     from the model name, defaulting to OpenAI.
     """
-    provider = provider.lower()
-    model_name = model_name.lower() if model_name else ""
-    if provider in _DIRECT_PROVIDERS:
-        return _DIRECT_PROVIDERS[provider]
-    if "gemini" in model_name or "google/" in model_name:
-        return "google"
-    if "claude" in model_name or "anthropic/" in model_name:
-        return "anthropic"
-    return "openai"
+    return image_presets.detect_model_type(provider, model_name)
 
 
 def get_image_config_section_name(model_type: ModelType) -> str:
     """Return the settings section of *model_type*."""
-    return _SECTION_NAMES.get(model_type, "api_image_processing")
+    return image_presets.section_name(model_type)
 
 
 def request_detail_option(
@@ -147,22 +67,6 @@ def request_detail_option(
     if images is not None and images.detail is not None:
         return images.detail
     return recommended_images("openai").detail
-
-
-def _apply_overrides(
-    cfg: dict[str, Any], images: ImageSpec, model_type: ModelType
-) -> None:
-    """Write the fields *images* sets into one provider section."""
-    if images.dpi is not None:
-        cfg["target_dpi"] = images.dpi
-    if images.format is not None:
-        cfg["payload_format"] = images.format
-    if images.jpeg_quality is not None:
-        cfg["jpeg_quality"] = images.jpeg_quality
-    if images.grayscale is not None:
-        cfg["grayscale_conversion"] = images.grayscale
-    if images.detail is not None:
-        cfg[_DETAIL_KEY[model_type]] = images.detail
 
 
 def resolve_image_settings(
@@ -181,9 +85,8 @@ def resolve_image_settings(
     model_type = detect_model_type(provider, model)
     section = get_image_config_section_name(model_type)
     full_cfg = IMAGE_PROCESSING
-    cfg = copy.deepcopy(dict(full_cfg.get(section, {})))
-    if images is not None:
-        _apply_overrides(cfg, images, model_type)
+    rules = IMAGE_PRESETS.detail
+    cfg = image_presets.section_settings(full_cfg, section, images, rules, provider)
     validate_image_settings(cfg, section)
     result = {
         "target_dpi": 300,
@@ -198,24 +101,17 @@ def resolve_image_settings(
         "high_target_box": [768, 1536],
         **cfg,
     }
-    model_options = {"image_size": request_detail_option(provider, images)}
+    image_size = request_detail_option(provider, images)
+    model_options = {"image_size": image_size}
     request_detail = resolve_request_detail(model_options, provider, model, logger)
-    if model_type == "google":
-        detail = str(result.get("media_resolution", "high") or "high")
-    elif model_type == "anthropic":
-        detail = str(result.get("resize_profile", "auto") or "auto")
-    elif provider == "openai":
-        detail = request_detail or "auto"
-    else:
-        # OpenRouter and custom requests carry no OpenAI detail parameter, so the
-        # local profile decides. On OpenRouter, original keeps the conservative
-        # 10,000-patch cap (the target model's default detail decides remotely);
-        # custom endpoints fall back to the high profile.
-        local = str(result.get("llm_detail", "high") or "high").strip().lower()
-        allowed: tuple[str, ...] = ("low", "high", "auto", "original")
-        if provider != "openrouter":
-            allowed = ("low", "high", "auto")
-        detail = local if local in allowed else "high"
+    detail = image_presets.page_detail(
+        provider,
+        model_type,
+        result,
+        detect_capabilities(model),
+        rules,
+        request=image_size,
+    )
     strategy = (
         str(cfg.get("render_strategy") or full_cfg.get("render_strategy") or "direct")
         .strip()
@@ -229,7 +125,7 @@ def resolve_image_settings(
         provider=provider,
         model_type=model_type,
         request_detail=request_detail,
-        resolved_detail=detail.strip().lower(),
+        resolved_detail=detail,
         image_original_patch_cap_30k=(
             caps.image_original_patch_cap_30k and provider == "openai"
         ),
