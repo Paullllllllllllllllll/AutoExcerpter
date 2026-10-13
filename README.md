@@ -1,4 +1,4 @@
-# AutoExcerpter v2.5.1
+# AutoExcerpter v2.5.2
 
 AutoExcerpter transcribes PDFs and folders of page images with vision-language
 models, summarizes each page and builds a consolidated bibliography whose entries
@@ -785,16 +785,21 @@ autoexcerpter/
 The core imports nothing from `cli/` or `ui/`. It never prints, prompts or exits
 and reports through the run events, which the CLI writes to stderr and the UI
 shows as progress bars. `common/` holds tool-agnostic modules (option tables,
-wizard framework, settings loader, structured calls, retry, rate limiting, HTTP
-timeouts, images, image presets, the model capability table, provider request
-options, the run store and its
+the shared option rows, wizard framework, settings loader, the shared settings
+blocks, structured calls, retry, rate limiting, HTTP timeouts, images, image
+presets, the model capability table, provider request options, the run store and
+its
 SQLite writer, attempt capture, the batch backends of OpenAI, Anthropic and Google,
 the poll loop of `batch check --wait`, agent contract) kept byte-identical across
 the sibling tools: `common/MANIFEST.json` pins each file by its SHA-256, and
 `tests/common/test_manifest.py` fails when a copy drifts. Each tool passes its own
 values to the shared presets and request options: AutoExcerpter's image presets
-are `IMAGE_PRESETS` in `spec.py`. `ext.py` holds the
-extension hooks (extra arguments, settings blocks and wizard steps, a startup
+are `IMAGE_PRESETS` in `spec.py`. The option rows every tool declares (model,
+images, output location, run control, batch check and cancel, render) come from
+`common/standard_options.py` with AutoExcerpter's defaults and help texts, and
+`settings.py` reads the shared settings blocks through
+`common/settings_schema.py`; `retry` and `openalex` stay its own. `ext.py` holds
+the extension hooks (extra arguments, settings blocks and wizard steps, a startup
 hook, batch consent, the key variables of a call, an attempt context around every
 model and batch call); its defaults pass everything through.
 

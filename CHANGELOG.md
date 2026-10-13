@@ -1,5 +1,14 @@
 # Changelog
 
+- **v2.5.2** (13 October 2026) -- The option rows AutoExcerpter, ChronoTranscriber
+  and ChronoMiner share (the model block with its per-phase copies, images, output
+  location, run control, batch check and cancel, render) and the shared settings
+  blocks (`api_keys`, `endpoints`, `timeouts`, `rate_limits`, `images`,
+  `state_dir`) now come from the vendored modules `common/standard_options.py`
+  and `common/settings_schema.py`, with AutoExcerpter's defaults and help texts
+  passed in. Flags, defaults, help output, accepted settings keys and resolved
+  settings are unchanged; a test loads each settings file through the earlier
+  and the current code and compares the results.
 - **v2.5.1** (13 October 2026) -- Provider inference uses the provider
   detection of the shared capability table, so a model routes to the provider
   whose capabilities it is resolved with. Google `models/` ids such as

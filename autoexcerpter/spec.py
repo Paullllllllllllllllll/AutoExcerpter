@@ -11,11 +11,10 @@ per provider for the front ends; any other name is accepted.
 
 from __future__ import annotations
 
-import math
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, fields, is_dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from autoexcerpter.common.image_presets import (
     DetailCheck,
@@ -27,7 +26,6 @@ from autoexcerpter.common.image_presets import (
     openai_preset,
 )
 from autoexcerpter.common.options import (
-    Condition,
     Kind,
     Option,
     OptionTable,
@@ -35,6 +33,33 @@ from autoexcerpter.common.options import (
     Source,
 )
 from autoexcerpter.common.polling import DEFAULT_POLL_MINUTES, wait_options
+from autoexcerpter.common.standard_options import (
+    IMAGE_DETAILS,
+    IMAGE_FORMATS,
+    JSON_HELP,
+    MODEL_FIELDS,
+    REASONING_EFFORTS,
+    RESPONSE_FORMATS,
+    SERVICE_TIERS,
+    VERBOSITIES,
+    Dpi,
+    abandon_option,
+    adopt_option,
+    batch_cancel_options,
+    batch_ids_option,
+    batch_option,
+    check_input_option,
+    concurrency_option,
+    dry_run_option,
+    force_option,
+    image_options,
+    json_option,
+    model_options,
+    nonempty_text,
+    output_options,
+    render_options,
+    settings_option,
+)
 from autoexcerpter.providers import (
     PROVIDERS,
     implied_provider,
@@ -93,12 +118,6 @@ __all__ = [
     "to_argv",
 ]
 
-REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
-VERBOSITIES = ("low", "medium", "high")
-SERVICE_TIERS = ("auto", "default", "flex", "priority")
-RESPONSE_FORMATS = ("schema", "json", "text")
-IMAGE_DETAILS = ("low", "high", "auto", "original")
-IMAGE_FORMATS = ("jpeg", "png")
 TRANSCRIPTION_FORMATS = ("md", "txt")
 OUTPUT_FORMATS = ("summary-md", "summary-docx")
 RENDER_FORMATS = ("transcription-md", "transcription-txt", "summary-md", "summary-docx")
@@ -124,8 +143,6 @@ MODEL_SUGGESTIONS: Mapping[str, tuple[str, ...]] = {
         "google/gemini-3.1-pro",
     ),
 }
-
-Dpi = int | Literal["native"]
 
 
 class SpecError(ValueError):
@@ -324,159 +341,41 @@ def model_suggestions(provider: str | None = None) -> tuple[str, ...]:
     return MODEL_SUGGESTIONS.get(provider, ())
 
 
-def _positive_int(value: str) -> int:
-    parsed = int(value)
-    if parsed <= 0:
-        raise ValueError("must be > 0")
-    return parsed
-
-
-def _bounded_float(low: float, high: float) -> Any:
-    def convert(value: str) -> float:
-        parsed = float(value)
-        if not math.isfinite(parsed) or not low <= parsed <= high:
-            raise ValueError(f"must be between {low} and {high}")
-        return parsed
-
-    return convert
-
-
-def _dpi(value: str) -> Dpi:
-    if value.strip().lower() == "native":
-        return "native"
-    return _positive_int(value)
-
-
-def _jpeg_quality(value: str) -> int:
-    parsed = int(value)
-    if not 1 <= parsed <= 100:
-        raise ValueError("must be between 1 and 100")
-    return parsed
-
-
-def _text(value: str) -> str:
-    if not value.strip():
-        raise ValueError("must not be empty")
-    return value
-
-
 def _context(value: str) -> str | None:
     keyword = value.strip().lower()
     if keyword == CONTEXT_AUTO:
         return None
     if keyword == CONTEXT_NONE:
         return CONTEXT_NONE
-    return _text(value)
+    return nonempty_text(value)
 
 
 def _fallback_context(value: str) -> str | None:
     if value.strip().lower() == CONTEXT_NONE:
         return None
-    return _text(value)
-
-
-_MODEL_FIELDS: tuple[tuple[str, dict[str, Any], dict[str, Any]], ...] = (
-    ("provider", {"choices": PROVIDERS}, dict.fromkeys(PHASES)),
-    (
-        "model",
-        {"type": _text, "metavar": "NAME", "choice_provider": model_suggestions},
-        dict.fromkeys(PHASES, DEFAULT_MODEL),
-    ),
-    ("endpoint", {"type": _text, "metavar": "NAME"}, dict.fromkeys(PHASES)),
-    (
-        "reasoning_effort",
-        {"choices": REASONING_EFFORTS},
-        dict.fromkeys(PHASES, DEFAULT_REASONING_EFFORT),
-    ),
-    ("verbosity", {"choices": VERBOSITIES}, DEFAULT_VERBOSITY),
-    (
-        "max_output_tokens",
-        {"type": _positive_int, "metavar": "N"},
-        dict.fromkeys(PHASES),
-    ),
-    (
-        "temperature",
-        {"type": _bounded_float(0.0, 2.0), "metavar": "T"},
-        dict.fromkeys(PHASES, DEFAULT_TEMPERATURE),
-    ),
-    (
-        "top_p",
-        {"type": _bounded_float(0.0, 1.0), "metavar": "P"},
-        dict.fromkeys(PHASES),
-    ),
-    (
-        "service_tier",
-        {"choices": SERVICE_TIERS},
-        dict.fromkeys(PHASES, DEFAULT_SERVICE_TIER),
-    ),
-    ("response_format", {"choices": RESPONSE_FORMATS}, dict.fromkeys(PHASES)),
-)
-
-_MODEL_HELP = {
-    "provider": "model provider",
-    "model": "model name; a provider: prefix (anthropic:NAME) selects the provider",
-    "endpoint": "named custom endpoint from the settings (implies provider custom)",
-    "reasoning_effort": "reasoning effort",
-    "verbosity": "output verbosity",
-    "max_output_tokens": "maximum output tokens",
-    "temperature": "sampling temperature, 0.0 to 2.0",
-    "top_p": "nucleus sampling, 0.0 to 1.0; sent only when given and supported",
-    "service_tier": "OpenAI service tier",
-    "response_format": (
-        "schema (API-enforced), json (prompted, validated) or text (plain)"
-    ),
-}
-
-_MODEL_DEFAULT_HELP = {
-    "provider": "inferred from the model name",
-    "max_output_tokens": "the model's output limit",
-    "endpoint": "none",
-    "top_p": "not sent",
-    "response_format": "schema when the model supports it, else json",
-}
+    return nonempty_text(value)
 
 
 def _model_options() -> list[Option]:
-    options: list[Option] = []
-    for scope in (None, *PHASES):
-        for name, extra, defaults in _MODEL_FIELDS:
-            condition = None
-            if name == "service_tier":
-                provider = "provider" if scope is None else f"{scope}_provider"
-                condition = Condition(provider, frozenset({"openai"}))
-            if scope is None:
-                options.append(
-                    Option(
-                        name=name,
-                        flag="--" + name.replace("_", "-"),
-                        help=_MODEL_HELP[name],
-                        group="model",
-                        default_help=_MODEL_DEFAULT_HELP.get(name, "per phase"),
-                        condition=condition,
-                        **extra,
-                    )
-                )
-                continue
-            default = defaults[scope]
-            options.append(
-                Option(
-                    name=f"{scope}_{name}",
-                    flag=f"--{scope}-{name.replace('_', '-')}",
-                    help=_MODEL_HELP[name],
-                    group=f"{scope} model",
-                    default=default,
-                    default_help=_MODEL_DEFAULT_HELP.get(name),
-                    condition=condition,
-                    fallback=name,
-                    target=f"{scope}_model.{name}",
-                    **extra,
-                )
-            )
-    return options
+    """Return the unprefixed model options and the per-phase copies."""
+    return model_options(
+        providers=PROVIDERS,
+        suggestions=model_suggestions,
+        defaults={
+            "model": DEFAULT_MODEL,
+            "reasoning_effort": DEFAULT_REASONING_EFFORT,
+            "temperature": DEFAULT_TEMPERATURE,
+            "service_tier": DEFAULT_SERVICE_TIER,
+        },
+        response_formats=RESPONSE_FORMATS,
+        phases=PHASES,
+        phase_defaults={
+            phase: {"verbosity": DEFAULT_VERBOSITY[phase]} for phase in PHASES
+        },
+    )
 
 
 def _build_table() -> OptionTable:
-    recommended = "the provider's recommended value"
     options = [
         Option(
             "input",
@@ -492,7 +391,7 @@ def _build_table() -> OptionTable:
             "--select",
             "select items by number (1,3), range (1-5) or name search",
             group="input",
-            type=_text,
+            type=nonempty_text,
             metavar="EXPR",
             exclusive="selection",
             target="input.select",
@@ -507,27 +406,7 @@ def _build_table() -> OptionTable:
             exclusive="selection",
             target="input.all",
         ),
-        Option(
-            "output",
-            "--output",
-            "output folder",
-            group="output",
-            type=Path,
-            metavar="DIR",
-            default_help="beside the input",
-            exclusive="output_location",
-            target="output.directory",
-        ),
-        Option(
-            "beside_input",
-            "--beside-input",
-            "write outputs beside each input",
-            group="output",
-            kind=Kind.FLAG,
-            default=False,
-            exclusive="output_location",
-            settable=False,
-        ),
+        *output_options(),
         Option(
             "transcription_format",
             "--transcription-format",
@@ -594,63 +473,8 @@ def _build_table() -> OptionTable:
             target="citations.openalex",
         ),
         *_model_options(),
-        Option(
-            "dpi",
-            "--dpi",
-            "render resolution: native or a DPI value",
-            group="images",
-            type=_dpi,
-            metavar="native|N",
-            default_help=recommended,
-            target="images.dpi",
-        ),
-        Option(
-            "image_detail",
-            "--image-detail",
-            "image detail sent to the model",
-            group="images",
-            choices=IMAGE_DETAILS,
-            default_help=recommended,
-            target="images.detail",
-        ),
-        Option(
-            "image_format",
-            "--image-format",
-            "page image format",
-            group="images",
-            choices=IMAGE_FORMATS,
-            default_help=recommended,
-            target="images.format",
-        ),
-        Option(
-            "jpeg_quality",
-            "--jpeg-quality",
-            "JPEG quality, 1 to 100",
-            group="images",
-            type=_jpeg_quality,
-            metavar="N",
-            default_help=recommended,
-            target="images.jpeg_quality",
-        ),
-        Option(
-            "grayscale",
-            "--grayscale",
-            "convert page images to grayscale",
-            group="images",
-            kind=Kind.SWITCH,
-            default_help=recommended,
-            target="images.grayscale",
-        ),
-        Option(
-            "force",
-            "--force",
-            "reprocess items whose outputs exist (resume is the default)",
-            group="run",
-            kind=Kind.FLAG,
-            default=False,
-            target="run.force",
-            settable=False,
-        ),
+        *image_options(),
+        force_option("reprocess items whose outputs exist (resume is the default)"),
         Option(
             "retranscribe",
             "--retranscribe",
@@ -661,55 +485,11 @@ def _build_table() -> OptionTable:
             target="run.retranscribe",
             settable=False,
         ),
-        Option(
-            "concurrency",
-            "--concurrency",
-            "parallel page requests",
-            group="run",
-            type=_positive_int,
-            metavar="N",
-            default=DEFAULT_CONCURRENCY,
-            target="run.concurrency",
-        ),
-        Option(
-            "batch",
-            "--batch",
-            "submit the pages and summaries to the providers' batch APIs",
-            group="run",
-            kind=Kind.SWITCH,
-            default=False,
-            target="run.batch",
-        ),
-        Option(
-            "dry_run",
-            "--dry-run",
-            "plan without API calls or writes",
-            group="run",
-            kind=Kind.FLAG,
-            default=False,
-            target="run.dry_run",
-            settable=False,
-        ),
-        Option(
-            "json",
-            "--json",
-            "print one JSON summary line on stdout",
-            group="run",
-            kind=Kind.FLAG,
-            default=False,
-            target="run.json",
-            settable=False,
-        ),
-        Option(
-            "settings",
-            "--settings",
-            "alternate settings file",
-            group="run",
-            type=Path,
-            metavar="FILE",
-            default_help="config/settings.yaml",
-            settable=False,
-        ),
+        concurrency_option(DEFAULT_CONCURRENCY, help="parallel page requests"),
+        batch_option("submit the pages and summaries to the providers' batch APIs"),
+        dry_run_option("run.dry_run"),
+        json_option("run.json"),
+        settings_option(),
     ]
     titles = {
         "input": "input",
@@ -728,48 +508,13 @@ def _build_table() -> OptionTable:
 OPTIONS = _build_table()
 
 
-def _render_flag(name: str, help: str) -> Option:
-    return Option(
-        name,
-        "--" + name.replace("_", "-"),
-        help,
-        group="run",
-        kind=Kind.FLAG,
-        default=False,
-        target=name,
-        settable=False,
-    )
-
-
 RENDER_OPTIONS = OptionTable(
-    [
-        Option(
-            "input",
-            "--input",
-            "output folder or autoexcerpter.sqlite to render",
-            group="input",
-            type=Path,
-            metavar="PATH",
-            default=Path("."),
-            target="input",
-            settable=False,
-        ),
-        Option(
-            "formats",
-            "--formats",
-            "comma-separated formats to render",
-            group="output",
-            kind=Kind.LIST,
-            choices=RENDER_FORMATS,
-            metavar="LIST",
-            default_help="the formats each document was rendered in",
-            target="formats",
-            settable=False,
-        ),
-        _render_flag("force", "replace files changed outside the tool"),
-        _render_flag("dry_run", "print what would be written without writing"),
-        _render_flag("json", "print one JSON summary line on stdout"),
-    ],
+    render_options(
+        input_help="output folder or autoexcerpter.sqlite to render",
+        formats=RENDER_FORMATS,
+        dry_run_help="print what would be written without writing",
+        json_help=JSON_HELP,
+    ),
     group_titles={"input": "input", "output": "output", "run": "run control"},
 )
 
@@ -812,19 +557,12 @@ MIGRATE_OPTIONS = OptionTable(
             target="input",
             settable=False,
         ),
-        Option(
-            "settings",
-            "--settings",
-            "settings file whose state_dir holds the OpenAlex cache",
-            group="run",
-            type=Path,
-            metavar="FILE",
-            default_help="config/settings.yaml",
+        settings_option(
+            help="settings file whose state_dir holds the OpenAlex cache",
             target="settings",
-            settable=False,
         ),
-        _render_flag("dry_run", "print what would be imported without writing"),
-        _render_flag("json", "print one JSON summary line on stdout"),
+        dry_run_option("dry_run", "print what would be imported without writing"),
+        json_option("json"),
     ],
     group_titles={"input": "input", "run": "run control"},
 )
@@ -855,36 +593,6 @@ def resolve_migrate(flags: Mapping[str, Any]) -> MigrateSpec:
     return MigrateSpec(**values)
 
 
-def _batch_ids_option(help: str, exclusive: str | None = None) -> Option:
-    return Option(
-        "batch_ids",
-        "--batch-ids",
-        help,
-        group="batch",
-        kind=Kind.LIST,
-        type=_text,
-        metavar="IDS",
-        default=(),
-        exclusive=exclusive,
-        target="batch_ids",
-        settable=False,
-    )
-
-
-def _settings_option() -> Option:
-    return Option(
-        "settings",
-        "--settings",
-        "alternate settings file",
-        group="run",
-        type=Path,
-        metavar="FILE",
-        default_help="config/settings.yaml",
-        target="settings",
-        settable=False,
-    )
-
-
 _BATCH_TITLES = {"batch": "batches", "run": "run control"}
 
 WAIT_HOURS = 98.0
@@ -894,78 +602,23 @@ batch window (Gemini, 48 hours)."""
 
 BATCH_CHECK_OPTIONS = OptionTable(
     [
-        Option(
-            "input",
-            "--input",
-            "folder searched for batch submissions, subfolders included",
-            group="batch",
-            type=Path,
-            metavar="DIR",
-            default=Path("."),
-            default_help="the current directory",
-            target="directory",
-            settable=False,
-        ),
-        _batch_ids_option("comma-separated batch IDs to check; default every batch"),
-        Option(
-            "adopt",
-            "--adopt",
-            "record this provider batch for the unresolved submission it belongs "
-            "to, then finalize it",
-            group="batch",
-            metavar="BATCH_ID",
-            exclusive="unresolved_action",
-            target="adopt",
-            settable=False,
-        ),
-        Option(
-            "abandon",
-            "--abandon",
+        check_input_option(),
+        batch_ids_option("comma-separated batch IDs to check; default every batch"),
+        adopt_option(),
+        abandon_option(
             "give up an unresolved submission (its upload is deleted) or a "
             "submitted one whose results are lost: its pages return to pending "
-            "and its documents wait for a run",
-            group="batch",
-            metavar="SUBMISSION_ID",
-            exclusive="unresolved_action",
-            target="abandon",
-            settable=False,
+            "and its documents wait for a run"
         ),
         *wait_options(group="batch", default_hours=WAIT_HOURS),
-        _render_flag("json", "print one JSON summary line on stdout"),
-        _settings_option(),
+        json_option("json"),
+        settings_option(target="settings"),
     ],
     group_titles=_BATCH_TITLES,
 )
 
 BATCH_CANCEL_OPTIONS = OptionTable(
-    [
-        _batch_ids_option("comma-separated batch IDs to cancel", "cancel_target"),
-        Option(
-            "all",
-            "--all",
-            "cancel every unfinished batch of every provider",
-            group="batch",
-            kind=Kind.FLAG,
-            default=False,
-            exclusive="cancel_target",
-            target="all",
-            settable=False,
-        ),
-        Option(
-            "input",
-            "--input",
-            "cancel the open batch submissions recorded in the databases below "
-            "this folder",
-            group="batch",
-            type=Path,
-            metavar="DIR",
-            exclusive="cancel_target",
-            target="directory",
-            settable=False,
-        ),
-        _render_flag("json", "print one JSON summary line on stdout"),
-        _settings_option(),
-    ],
+    batch_cancel_options(settings_target="settings"),
     group_titles=_BATCH_TITLES,
 )
 
@@ -1359,7 +1012,7 @@ def _spell_providers(
 
 def _merge_phases(given: dict[str, Any], flat: Mapping[str, Any]) -> None:
     """Replace per-phase model values that agree with the unprefixed option."""
-    for name, _extra, _defaults in _MODEL_FIELDS:
+    for name in MODEL_FIELDS:
         per_phase = [f"{phase}_{name}" for phase in PHASES]
         if not any(key in given for key in per_phase):
             continue

@@ -7,11 +7,16 @@ run options by option name (see :mod:`autoexcerpter.spec`); a flag overrides
 it, and it overrides the code default. Further top-level blocks are accepted
 only when the caller passes a parser for them; :attr:`Settings.extensions`
 holds their parsed values.
+
+The shared blocks (``api_keys``, ``endpoints``, ``timeouts``,
+``rate_limits``, ``images``, ``state_dir``) are read by
+:mod:`autoexcerpter.common.settings_schema`; ``retry`` and ``openalex`` are
+this tool's own.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
@@ -19,6 +24,23 @@ from typing import Any
 
 from autoexcerpter.common.retry import DEFAULT_BACKOFF_MULTIPLIERS, RetryPolicy
 from autoexcerpter.common.settings_loader import SettingsError, load_settings
+from autoexcerpter.common.settings_schema import (
+    DEFAULT_API_KEYS,
+    BlockParser,
+    Endpoint,
+    Images,
+    Reader,
+    Timeouts,
+    check_blocks,
+    read_api_keys,
+    read_endpoints,
+    read_extensions,
+    read_images,
+    read_rate_limits,
+    read_state_dir,
+    read_timeouts,
+    state_directory,
+)
 from autoexcerpter.spec import OPTIONS, Resolution, SpecError, resolve_spec
 from autoexcerpter.state import DEFAULT_DIR_NAME
 
@@ -44,38 +66,8 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SETTINGS_PATH = _PROJECT_ROOT / "config" / "settings.yaml"
 EXAMPLE_SETTINGS_PATH = _PROJECT_ROOT / "config" / "settings.example.yaml"
 
-DEFAULT_API_KEYS: Mapping[str, str] = MappingProxyType(
-    {
-        "openai": "OPENAI_API_KEY",
-        "anthropic": "ANTHROPIC_API_KEY",
-        "google": "GOOGLE_API_KEY",
-        "openrouter": "OPENROUTER_API_KEY",
-    }
-)
-
-type BlockParser = Callable[[Any], Any]
-"""Turns the parsed YAML value of an extra top-level block into its setting."""
-
-
-@dataclass(frozen=True)
-class Endpoint:
-    """A named OpenAI-compatible endpoint."""
-
-    name: str
-    base_url: str
-    api_key_env: str
-    supports_vision: bool = True
-    supports_schema: bool = False
-
-
-@dataclass(frozen=True)
-class Timeouts:
-    """HTTP timeouts in seconds; ``request`` is the read timeout."""
-
-    request: float = 900.0
-    connect: float = 10.0
-    write: float = 30.0
-    pool: float = 30.0
+RATE_LIMITS: tuple[tuple[int, int], ...] = ((10, 1), (600, 60), (600, 3600))
+"""The code default of ``rate_limits``: ``[requests, seconds]`` windows."""
 
 
 @dataclass(frozen=True)
@@ -143,17 +135,6 @@ class OpenAlexSettings:
 
 
 @dataclass(frozen=True)
-class Images:
-    """Page image limits besides the run's image options.
-
-    ``original_max_side_px`` limits the long side of OpenAI pages sent at
-    ``original`` detail; None takes the model's default limit, if any.
-    """
-
-    original_max_side_px: int | None = None
-
-
-@dataclass(frozen=True)
 class Settings:
     """Machine values, the optional run defaults and any extra blocks.
 
@@ -166,7 +147,7 @@ class Settings:
         default_factory=lambda: MappingProxyType({})
     )
     timeouts: Timeouts = field(default_factory=Timeouts)
-    rate_limits: tuple[tuple[int, int], ...] = ((10, 1), (600, 60), (600, 3600))
+    rate_limits: tuple[tuple[int, int], ...] = RATE_LIMITS
     retry: RetrySettings = field(default_factory=RetrySettings)
     state_dir: Path | None = None
     openalex: OpenAlexSettings = field(default_factory=OpenAlexSettings)
@@ -206,9 +187,7 @@ class Settings:
 
     def state_directory(self) -> Path:
         """Return the state directory (not created here)."""
-        if self.state_dir is not None:
-            return self.state_dir.expanduser()
-        return Path.home() / DEFAULT_DIR_NAME
+        return state_directory(self.state_dir, DEFAULT_DIR_NAME)
 
     @classmethod
     def from_mapping(
@@ -230,26 +209,23 @@ class Settings:
             ValueError: A block name is a built-in key.
         """
         blocks = dict(blocks or {})
-        clashes = sorted(_TOP_KEYS.intersection(blocks))
-        if clashes:
-            raise ValueError(f"built-in settings keys: {', '.join(clashes)}")
+        check_blocks(_TOP_KEYS, blocks)
         where = str(source) if source is not None else "settings"
-        reader = _Reader(where)
+        reader = Reader(where)
         reader.keys(data, _TOP_KEYS | frozenset(blocks), "")
-        base = cls()
-        state_dir = reader.text(data, "state_dir", "", "")
+        state_dir = read_state_dir(reader, data)
         return cls(
-            api_keys=_api_keys(reader, data.get("api_keys")),
-            endpoints=_endpoints(reader, data.get("endpoints")),
-            timeouts=_timeouts(reader, data.get("timeouts")),
-            rate_limits=_rate_limits(reader, data.get("rate_limits"), base),
+            api_keys=read_api_keys(reader, data.get("api_keys")),
+            endpoints=read_endpoints(reader, data.get("endpoints")),
+            timeouts=read_timeouts(reader, data.get("timeouts")),
+            rate_limits=read_rate_limits(reader, data.get("rate_limits"), RATE_LIMITS),
             retry=_retry(reader, data.get("retry")),
-            state_dir=Path(state_dir) if state_dir else None,
+            state_dir=state_dir,
             openalex=_openalex(reader, data.get("openalex")),
-            images=_images(reader, data.get("images")),
+            images=read_images(reader, data.get("images")),
             defaults=MappingProxyType(dict(defaults or {})),
             source=source,
-            extensions=_extensions(reader, data, blocks),
+            extensions=read_extensions(reader, data, blocks),
         )
 
 
@@ -266,134 +242,6 @@ _TOP_KEYS = frozenset(
     }
 )
 
-
-class _Reader:
-    """Typed reads from a parsed settings mapping with errors naming the key."""
-
-    def __init__(self, where: str) -> None:
-        self.where = where
-
-    def fail(self, path: str, message: str) -> SettingsError:
-        return SettingsError(f"{self.where}: {path}: {message}")
-
-    def section(self, raw: Any, path: str) -> Mapping[str, Any]:
-        if raw is None:
-            return {}
-        if not isinstance(raw, Mapping):
-            raise self.fail(path, "must be a mapping")
-        return raw
-
-    def keys(self, raw: Mapping[str, Any], allowed: frozenset[str], path: str) -> None:
-        unknown = sorted(str(key) for key in raw if key not in allowed)
-        if unknown:
-            raise self.fail(path or "top level", f"unknown keys {', '.join(unknown)}")
-
-    def text(self, raw: Mapping[str, Any], key: str, default: str, path: str) -> str:
-        value = raw.get(key)
-        if value is None:
-            return default
-        if not isinstance(value, str):
-            raise self.fail(path + key, "must be a string")
-        return value.strip()
-
-    def number(
-        self, raw: Mapping[str, Any], key: str, default: float, path: str
-    ) -> float:
-        value = raw.get(key)
-        if value is None:
-            return default
-        if isinstance(value, bool) or not isinstance(value, int | float):
-            raise self.fail(path + key, "must be a number")
-        if value < 0:
-            raise self.fail(path + key, "must not be negative")
-        return float(value)
-
-    def integer(self, raw: Mapping[str, Any], key: str, default: int, path: str) -> int:
-        value = raw.get(key)
-        if value is None:
-            return default
-        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-            raise self.fail(path + key, "must be a non-negative integer")
-        return value
-
-    def flag(self, raw: Mapping[str, Any], key: str, default: bool, path: str) -> bool:
-        value = raw.get(key)
-        if value is None:
-            return default
-        if not isinstance(value, bool):
-            raise self.fail(path + key, "must be true or false")
-        return value
-
-
-def _api_keys(reader: _Reader, raw: Any) -> Mapping[str, str]:
-    section = reader.section(raw, "api_keys")
-    reader.keys(section, frozenset(DEFAULT_API_KEYS), "api_keys")
-    return MappingProxyType(
-        {
-            provider: reader.text(section, provider, default, "api_keys.") or default
-            for provider, default in DEFAULT_API_KEYS.items()
-        }
-    )
-
-
-_ENDPOINT_KEYS = frozenset(
-    {"base_url", "api_key_env", "supports_vision", "supports_schema"}
-)
-
-
-def _endpoints(reader: _Reader, raw: Any) -> Mapping[str, Endpoint]:
-    section = reader.section(raw, "endpoints")
-    endpoints: dict[str, Endpoint] = {}
-    for name, value in section.items():
-        path = f"endpoints.{name}."
-        entry = reader.section(value, path.rstrip("."))
-        reader.keys(entry, _ENDPOINT_KEYS, path.rstrip("."))
-        base_url = reader.text(entry, "base_url", "", path)
-        key_env = reader.text(entry, "api_key_env", "", path)
-        if not base_url or not key_env:
-            raise reader.fail(path.rstrip("."), "needs base_url and api_key_env")
-        endpoints[str(name)] = Endpoint(
-            name=str(name),
-            base_url=base_url,
-            api_key_env=key_env,
-            supports_vision=reader.flag(entry, "supports_vision", True, path),
-            supports_schema=reader.flag(entry, "supports_schema", False, path),
-        )
-    return MappingProxyType(endpoints)
-
-
-def _timeouts(reader: _Reader, raw: Any) -> Timeouts:
-    section = reader.section(raw, "timeouts")
-    reader.keys(section, frozenset({"request", "connect", "write", "pool"}), "timeouts")
-    base = Timeouts()
-    return Timeouts(
-        *(
-            reader.number(section, name, getattr(base, name), "timeouts.")
-            for name in ("request", "connect", "write", "pool")
-        )
-    )
-
-
-def _rate_limits(
-    reader: _Reader, raw: Any, base: Settings
-) -> tuple[tuple[int, int], ...]:
-    if raw is None:
-        return base.rate_limits
-    if not isinstance(raw, list) or not raw:
-        raise reader.fail("rate_limits", "must be a list of [requests, seconds]")
-    limits: list[tuple[int, int]] = []
-    for item in raw:
-        if (
-            not isinstance(item, list | tuple)
-            or len(item) != 2
-            or not all(isinstance(n, int) and not isinstance(n, bool) for n in item)
-            or min(item) <= 0
-        ):
-            raise reader.fail("rate_limits", f"invalid entry {item!r}")
-        limits.append((item[0], item[1]))
-    return tuple(limits)
-
-
 _RETRY_KEYS = frozenset(
     {
         "max_attempts",
@@ -409,26 +257,26 @@ _RULE_KEYS = frozenset(
 )
 
 
-def _retry(reader: _Reader, raw: Any) -> RetrySettings:
-    section = reader.section(raw, "retry")
-    reader.keys(section, _RETRY_KEYS, "retry")
+def _retry(reader: Reader, raw: Any) -> RetrySettings:
+    section = reader.section(raw, "retry", _RETRY_KEYS)
     base = RetrySettings()
     multipliers = dict(base.backoff_multipliers)
     raw_multipliers = reader.section(
-        section.get("backoff_multipliers"), "retry.backoff_multipliers"
+        section.get("backoff_multipliers"),
+        "retry.backoff_multipliers",
+        frozenset(multipliers),
     )
-    reader.keys(raw_multipliers, frozenset(multipliers), "retry.backoff_multipliers")
     for kind in raw_multipliers:
         multipliers[kind] = reader.number(
             raw_multipliers, kind, multipliers[kind], "retry.backoff_multipliers."
         )
-    jitter = reader.section(section.get("jitter"), "retry.jitter")
-    reader.keys(jitter, frozenset({"min", "max"}), "retry.jitter")
-    max_attempts = reader.integer(section, "max_attempts", base.max_attempts, "retry.")
-    if max_attempts < 1:
-        raise reader.fail("retry.max_attempts", "must be at least 1")
+    jitter = reader.section(
+        section.get("jitter"), "retry.jitter", frozenset({"min", "max"})
+    )
     return RetrySettings(
-        max_attempts=max_attempts,
+        max_attempts=reader.positive(
+            section, "max_attempts", base.max_attempts, "retry."
+        ),
         backoff_base=reader.number(
             section, "backoff_base", base.backoff_base, "retry."
         ),
@@ -443,19 +291,16 @@ def _retry(reader: _Reader, raw: Any) -> RetrySettings:
 
 
 def _schema_rules(
-    reader: _Reader, raw: Any, base: Mapping[str, Mapping[str, RetryRule]]
+    reader: Reader, raw: Any, base: Mapping[str, Mapping[str, RetryRule]]
 ) -> Mapping[str, Mapping[str, RetryRule]]:
-    section = reader.section(raw, "retry.schema_retries")
-    reader.keys(section, frozenset(base), "retry.schema_retries")
+    section = reader.section(raw, "retry.schema_retries", frozenset(base))
     phases: dict[str, Mapping[str, RetryRule]] = {}
     for phase, rules in base.items():
         path = f"retry.schema_retries.{phase}"
-        raw_rules = reader.section(section.get(phase), path)
-        reader.keys(raw_rules, frozenset(rules), path)
+        raw_rules = reader.section(section.get(phase), path, frozenset(rules))
         merged: dict[str, RetryRule] = {}
         for name, rule in rules.items():
-            entry = reader.section(raw_rules.get(name), f"{path}.{name}")
-            reader.keys(entry, _RULE_KEYS, f"{path}.{name}")
+            entry = reader.section(raw_rules.get(name), f"{path}.{name}", _RULE_KEYS)
             prefix = f"{path}.{name}."
             merged[name] = RetryRule(
                 enabled=reader.flag(entry, "enabled", rule.enabled, prefix),
@@ -473,10 +318,9 @@ def _schema_rules(
     return MappingProxyType(phases)
 
 
-def _openalex(reader: _Reader, raw: Any) -> OpenAlexSettings:
-    section = reader.section(raw, "openalex")
-    reader.keys(
-        section, frozenset({"email", "api_key_env", "max_requests"}), "openalex"
+def _openalex(reader: Reader, raw: Any) -> OpenAlexSettings:
+    section = reader.section(
+        raw, "openalex", frozenset({"email", "api_key_env", "max_requests"})
     )
     base = OpenAlexSettings()
     return OpenAlexSettings(
@@ -486,31 +330,6 @@ def _openalex(reader: _Reader, raw: Any) -> OpenAlexSettings:
             section, "max_requests", base.max_requests, "openalex."
         ),
     )
-
-
-def _images(reader: _Reader, raw: Any) -> Images:
-    section = reader.section(raw, "images")
-    reader.keys(section, frozenset({"original_max_side_px"}), "images")
-    if section.get("original_max_side_px") is None:
-        return Images()
-    side = reader.integer(section, "original_max_side_px", 0, "images.")
-    if side < 1:
-        raise reader.fail("images.original_max_side_px", "must be at least 1")
-    return Images(original_max_side_px=side)
-
-
-def _extensions(
-    reader: _Reader, data: Mapping[str, Any], blocks: Mapping[str, BlockParser]
-) -> Mapping[str, Any]:
-    parsed: dict[str, Any] = {}
-    for name, parser in blocks.items():
-        if name not in data:
-            continue
-        try:
-            parsed[name] = parser(data[name])
-        except Exception as exc:
-            raise reader.fail(name, str(exc) or type(exc).__name__) from exc
-    return MappingProxyType(parsed)
 
 
 def load(
