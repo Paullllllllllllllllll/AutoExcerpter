@@ -9,12 +9,19 @@ cancellation or a provider listing failed, and 2 for a refused database or
 a missing folder. With ``--json`` both write one JSON summary line on every
 exit; the check's line adds ``adopted`` or ``abandoned`` when those options
 are given.
+
+``batch check --wait`` repeats the check until no batch work is pending or
+``--wait-hours`` have passed. Its counts are read from the stores at the
+end; it exits 1 as well when the deadline passed with work pending or a
+document needs a run, and its line adds ``polls``, ``waited_seconds``,
+``stopped``, ``needs_run`` and ``rerun``.
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import logging
 import sys
 from collections.abc import Callable, Coroutine, Mapping, Sequence
@@ -33,14 +40,22 @@ from autoexcerpter.batch.check import (
     ABANDONED,
     CheckResult,
     CheckTargetError,
+    WaitProgress,
+    WaitTotals,
     check_batches,
+    check_until_settled,
+    wait_totals,
 )
 from autoexcerpter.batch.finalize import FAILED
 from autoexcerpter.batch.report import (
     cancel_lines,
     check_lines,
     complete_documents,
+    pending_lines,
+    retry_line,
     submitted_batches,
+    wait_end_lines,
+    wait_line,
 )
 from autoexcerpter.cli.parser import UsageError
 from autoexcerpter.common.contract import (
@@ -51,6 +66,7 @@ from autoexcerpter.common.contract import (
     usage_field,
 )
 from autoexcerpter.common.log_setup import configure_logging
+from autoexcerpter.common.polling import Stop, WaitLimits
 from autoexcerpter.common.usage import Usage
 from autoexcerpter.settings import Settings
 from autoexcerpter.spec import (
@@ -123,6 +139,8 @@ def _base(flags: Mapping[str, Any]) -> dict[str, Any]:
     for option, key in (("adopt", "adopted"), ("abandon", "abandoned")):
         if flags.get(option):
             base[key] = False
+    if flags.get("wait"):
+        base.update(polls=0, waited_seconds=0, stopped=None, needs_run=0, rerun=[])
     return base
 
 
@@ -184,6 +202,8 @@ def _execute_check(
         _write(f"[ERROR] {prepared}")
         emitter.emit(_base(flags))
         return ExitCode.USAGE
+    if spec.wait:
+        return _execute_wait(args, flags, spec, prepared, emitter)
     _write(f"Checking the batch work below '{directory}'...")
     try:
         result = asyncio.run(
@@ -206,6 +226,113 @@ def _execute_check(
     if result.refused:
         return ExitCode.USAGE
     return ExitCode.FAILURE if result.had_failure else ExitCode.OK
+
+
+def _wait_fields(
+    spec: BatchCheckSpec, progress: WaitProgress, totals: WaitTotals
+) -> dict[str, Any]:
+    """Return the summary fields of a wait from its store-based totals."""
+    stats = totals.stats
+    fields = check_fields(
+        finalized=stats.finalized,
+        pending=stats.pending,
+        failed=stats.failed,
+        unresolved=stats.unresolved,
+        submitted=totals.submitted,
+        complete=totals.complete,
+        outputs=[str(path) for path in totals.outputs],
+        usage=totals.usage,
+    )
+    targets = _result_fields(spec, progress.ledger.first or CheckResult())
+    for key in ("adopted", "abandoned"):
+        if key in targets:
+            fields[key] = targets[key]
+    fields.update(
+        polls=progress.passes,
+        waited_seconds=progress.waited_seconds(),
+        stopped=progress.stop,
+        needs_run=len(totals.needs_run),
+        rerun=[hint.command for hint in totals.needs_run],
+    )
+    return fields
+
+
+def _finish_wait(
+    spec: BatchCheckSpec, progress: WaitProgress, emitter: SummaryEmitter
+) -> WaitTotals:
+    """Read the totals from the stores, write the closing lines and the
+    summary line, and return the totals."""
+    totals = wait_totals(progress.ledger)
+    if progress.stop == Stop.TIMEOUT and progress.last is not None:
+        for line in pending_lines(progress.last):
+            _write(line)
+    lines = wait_end_lines(
+        totals,
+        passes=progress.passes,
+        waited=progress.waited_seconds(),
+        stop=progress.stop or "error",
+    )
+    for line in lines:
+        _write(line)
+    emitter.emit(_wait_fields(spec, progress, totals))
+    return totals
+
+
+def _execute_wait(
+    args: argparse.Namespace,
+    flags: Mapping[str, Any],
+    spec: BatchCheckSpec,
+    settings: Settings,
+    emitter: SummaryEmitter,
+) -> int:
+    """Check until no batch work is pending; see :func:`check_until_settled`.
+
+    On Ctrl+C and on a crash the totals of the checks so far are written
+    before the exception goes on to :func:`_guarded`.
+    """
+    directory = spec.directory.expanduser().resolve()
+    limits = WaitLimits(spec.poll_minutes * 60, spec.wait_hours * 3600)
+    progress = WaitProgress()
+    _write(
+        f"Checking the batch work below '{directory}' every "
+        f"{spec.poll_minutes:g} min, for up to {spec.wait_hours:g} h..."
+    )
+
+    def on_pass(number: int, result: CheckResult) -> None:
+        for line in check_lines(result, pending=number == 1, totals=False):
+            _write(line)
+
+    try:
+        asyncio.run(
+            check_until_settled(
+                directory,
+                settings,
+                limits,
+                batch_ids=spec.batch_ids,
+                adopt=spec.adopt,
+                abandon=spec.abandon,
+                args=args,
+                progress=progress,
+                on_pass=on_pass,
+                on_wait=lambda tick: _write(wait_line(tick)),
+                on_retry=lambda number, exc: _write(retry_line(number, exc)),
+            )
+        )
+    except CheckTargetError as exc:
+        _write(f"[ERROR] Invalid arguments: {exc}")
+        emitter.emit(_base(flags))
+        return ExitCode.USAGE
+    except BaseException as exc:
+        progress.stop = "interrupted" if isinstance(exc, KeyboardInterrupt) else "error"
+        with contextlib.suppress(Exception):
+            _finish_wait(spec, progress, emitter)
+        raise
+    totals = _finish_wait(spec, progress, emitter)
+    if totals.refused:
+        return ExitCode.USAGE
+    if totals.had_failure or progress.stop == Stop.TIMEOUT:
+        return ExitCode.FAILURE
+    return ExitCode.OK
 
 
 def _cancel(

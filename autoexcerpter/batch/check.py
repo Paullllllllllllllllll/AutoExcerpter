@@ -18,13 +18,21 @@ pages are written. A document that has nothing left to submit and no
 pending unit gets its citations stored and its files rendered, and its batch
 job ends. The batches' input and result files are deleted from the provider
 after that. ``--batch-ids`` limits the finalization to those batches.
+
+:func:`check_until_settled` repeats the check with ``--wait`` until no
+batch work a check can advance is pending, or its deadline has passed. A
+:class:`WaitLedger` records what every pass saw, and :func:`wait_totals`
+builds the final counts from the stores' current state of those
+submissions and documents.
 """
 
 from __future__ import annotations
 
 import argparse
+import asyncio
 import logging
-from collections.abc import Mapping, Sequence
+import time
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Final
@@ -57,6 +65,13 @@ from autoexcerpter.batch.submit import (
 )
 from autoexcerpter.batch.work import SummaryWork, summary_work, write_placeholders
 from autoexcerpter.common.batch import BatchListing
+from autoexcerpter.common.polling import (
+    PollResult,
+    WaitLimits,
+    WaitTick,
+    poll_until_settled,
+)
+from autoexcerpter.common.retry import classify_error
 from autoexcerpter.common.sqlite import read
 from autoexcerpter.common.store import (
     Lease,
@@ -86,15 +101,26 @@ from autoexcerpter.settings import Settings
 
 __all__ = [
     "ABANDONED",
+    "COMPLETE",
+    "NEEDS_RUN",
+    "SUBMITTED",
     "UNRESOLVED",
+    "WAITING",
     "CheckResult",
     "CheckStats",
     "CheckTargetError",
     "DocumentAdvance",
+    "RunHint",
     "SubmissionCheck",
+    "WaitLedger",
+    "WaitProgress",
+    "WaitTotals",
     "check_batches",
+    "check_until_settled",
     "end_batch_jobs",
     "find_databases",
+    "pending_work",
+    "wait_totals",
 ]
 
 logger = logging.getLogger(__name__)
@@ -103,7 +129,15 @@ ROLE = "batch"
 
 UNRESOLVED: Final = "unresolved"
 ABANDONED: Final = "abandoned"
+SUBMITTED: Final = "submitted"
+COMPLETE: Final = "complete"
+WAITING: Final = "waiting"
+NEEDS_RUN: Final = "needs_run"
 _WORKED: Final = ("submitting", "submitted", UNRESOLVED)
+
+_clock: Callable[[], float] = time.monotonic
+"""The wait's clock; tests replace it together with :data:`_sleep`."""
+_sleep: Callable[[float], Awaitable[None]] = asyncio.sleep
 
 
 @dataclass
@@ -171,8 +205,9 @@ class DocumentAdvance:
 
     *outcome* is ``submitted`` (its summaries went to the batch API),
     ``complete`` (its files were rendered and the job ended), ``failed``
-    (rendered with failed pages, or a submission was refused) or
-    ``waiting`` (pages wait for a run or a lease); *detail* says why.
+    (rendered with failed pages, or a submission was refused), ``waiting``
+    (another run holds the document) or ``needs_run`` (pages are pending
+    with no batch in flight, so only a run submits them); *detail* says why.
     """
 
     database: Path
@@ -535,7 +570,7 @@ class _DatabaseCheck:
         if lease is None:
             lease = await store.acquire(job.doc_id)
         if lease is None:
-            return advance("waiting", "another run holds the document")
+            return advance(WAITING, "another run holds the document")
         try:
             return await _Advance(self, job, row.name, row.input_path, lease).run()
         except LeaseLostError as exc:
@@ -626,7 +661,7 @@ class _Advance:
         ]
         if waiting:
             return self._result(
-                "waiting",
+                NEEDS_RUN,
                 detail=(
                     f"{len(waiting)} unit(s) are pending; run 'autoexcerpter run "
                     "--batch' on the input to submit them again"
@@ -653,7 +688,7 @@ class _Advance:
         except (BatchSubmissionError, ValueError) as exc:
             return self._result(FAILED, detail=str(exc))
         if submitted.status == "submitted":
-            return self._result("submitted", submission_ids=submitted.submission_ids)
+            return self._result(SUBMITTED, submission_ids=submitted.submission_ids)
         accepted = (
             submitted.submission_ids[:-1]
             if submitted.status == "refused"
@@ -703,7 +738,7 @@ class _Advance:
                     "the input retries them"
                 ),
             )
-        return self._result("complete", outputs=outputs, warnings=warnings)
+        return self._result(COMPLETE, outputs=outputs, warnings=warnings)
 
 
 class _Warnings(NullEvents):
@@ -792,6 +827,8 @@ async def check_batches(
     adopt: str | None = None,
     abandon: str | None = None,
     args: argparse.Namespace | None = None,
+    clients: BatchClients | None = None,
+    result: CheckResult | None = None,
 ) -> CheckResult:
     """Check the open batch work of every database below *directory*.
 
@@ -804,14 +841,18 @@ async def check_batches(
     left alone. Only databases with a
     submission to work or a batch job are opened for writing. *args* holds
     the parsed command line, if any, for the extension's key variables.
+    *clients* are the batch clients to use (new ones by default); *result*,
+    when given, is filled as the check goes and returned, so its caller
+    keeps what was checked before an exception.
 
     Raises:
         CheckTargetError: *adopt* or *abandon* fits no submission, or more
             than one.
     """
     directory = Path(directory)
-    result = CheckResult()
-    clients = BatchClients(settings, ROLE, args=args)
+    result = result if result is not None else CheckResult()
+    if clients is None:
+        clients = BatchClients(settings, ROLE, args=args)
     found = _read_databases(directory, result)
     targets = _Targets(
         adopt=(
@@ -825,3 +866,349 @@ async def check_batches(
             continue
         await _check_database(database, clients, settings, wanted, targets, result)
     return result
+
+
+# =============================================================================
+# batch check --wait
+# =============================================================================
+
+type _Key = tuple[Path, str]
+"""A submission or document: its database and its id or name."""
+
+
+def pending_work(result: CheckResult) -> int:
+    """Return the batch work of one check that a later check can advance.
+
+    That is every pending submission (its batch runs, a provider error was
+    retryable, another run submits it or holds one of its documents) and
+    every document whose summaries were just submitted or that another run
+    holds. Failed, unresolved and abandoned submissions and the documents
+    that need a run are left to the user.
+    """
+    documents = sum(
+        1 for advance in result.documents if advance.outcome in (SUBMITTED, WAITING)
+    )
+    return result.stats.pending + documents
+
+
+@dataclass
+class WaitLedger:
+    """What the checks of a wait saw, recorded check by check.
+
+    *submissions* and *documents* hold every (database, id or name) a check
+    listed, in the order first seen; *failed* and *failed_documents* those a
+    check reported failed, *abandoned* the submissions it abandoned.
+    *opened* holds the summary submissions the checks opened, *outputs* the
+    files written, *usage* the tokens of each finalized submission and
+    *refused* the databases the store refused. *first* is the first check's
+    result, the one that acts on ``--adopt`` and ``--abandon``.
+    """
+
+    submissions: dict[_Key, None] = field(default_factory=dict)
+    failed: set[_Key] = field(default_factory=set)
+    abandoned: set[_Key] = field(default_factory=set)
+    documents: dict[_Key, None] = field(default_factory=dict)
+    failed_documents: set[_Key] = field(default_factory=set)
+    opened: dict[_Key, None] = field(default_factory=dict)
+    outputs: list[Path] = field(default_factory=list)
+    usage: dict[_Key, Mapping[str, Usage]] = field(default_factory=dict)
+    refused: dict[Path, str] = field(default_factory=dict)
+    first: CheckResult | None = None
+
+    def record(self, result: CheckResult) -> None:
+        """Add what one check reported, also when it ended early."""
+        if self.first is None:
+            self.first = result
+        for check in result.submissions:
+            key = (check.database, check.submission_id)
+            self.submissions.setdefault(key, None)
+            if check.outcome == FAILED:
+                self.failed.add(key)
+            elif check.outcome == ABANDONED:
+                self.abandoned.add(key)
+            if check.usage:
+                self.usage[key] = check.usage
+        for advance in result.documents:
+            key = (advance.database, advance.document)
+            self.documents.setdefault(key, None)
+            if advance.outcome == FAILED:
+                self.failed_documents.add(key)
+            for submission_id in advance.submission_ids:
+                opened = (advance.database, submission_id)
+                self.submissions.setdefault(opened, None)
+                if advance.outcome == SUBMITTED:
+                    self.opened.setdefault(opened, None)
+            for path in advance.outputs:
+                if path not in self.outputs:
+                    self.outputs.append(path)
+        self.refused.update(result.refused)
+
+
+@dataclass
+class WaitProgress:
+    """The state of a wait, updated after every check for its caller.
+
+    *passes* counts the checks run, *started* is the wait clock's reading
+    at the first one, *stop* says why the wait ended (``settled`` or
+    ``timeout``; None while it runs) and *last* is the latest check's
+    result.
+    """
+
+    ledger: WaitLedger = field(default_factory=WaitLedger)
+    passes: int = 0
+    started: float | None = None
+    stop: str | None = None
+    last: CheckResult | None = None
+
+    def waited_seconds(self) -> int:
+        """Return the whole seconds since the first check began."""
+        if self.started is None:
+            return 0
+        return int(_clock() - self.started)
+
+
+@dataclass(frozen=True)
+class RunHint:
+    """A document that needs a run, and the command that submits its pages."""
+
+    database: Path
+    document: str
+    command: str
+
+
+@dataclass
+class WaitTotals:
+    """The final counts of a wait, read from the stores after it ended.
+
+    *stats* counts the submissions by their current state; *complete*,
+    *failed_documents* and *needs_run* the documents. *submitted* counts the
+    summary submissions the wait opened, *outputs* the files it wrote and
+    *usage* the tokens of the results it stored, per role.
+    """
+
+    stats: CheckStats = field(default_factory=CheckStats)
+    complete: int = 0
+    failed_documents: int = 0
+    needs_run: list[RunHint] = field(default_factory=list)
+    submitted: int = 0
+    outputs: list[Path] = field(default_factory=list)
+    usage: dict[str, Usage] = field(default_factory=dict)
+    refused: dict[Path, str] = field(default_factory=dict)
+
+    @property
+    def had_failure(self) -> bool:
+        """Whether something failed, waits for the user or needs a run."""
+        return (
+            self.stats.had_failure or self.failed_documents > 0 or bool(self.needs_run)
+        )
+
+
+def _submission_outcome(key: _Key, status: str, ledger: WaitLedger) -> str | None:
+    """Return the final outcome of a submission from its current *status*.
+
+    A failure a check reported stays a failure unless the store shows the
+    submission finalized since; a cancelled submission counts nowhere.
+    """
+    if status == "finalized":
+        return FINALIZED_OUTCOME
+    if key in ledger.abandoned:
+        return ABANDONED
+    if key in ledger.failed or status == FAILED:
+        return FAILED
+    if status == UNRESOLVED:
+        return UNRESOLVED
+    if status in ("submitting", "submitted"):
+        return PENDING
+    return None
+
+
+def _run_command(database: Path, input_path: str | None, name: str) -> str:
+    source = input_path or name
+    return f'autoexcerpter run --input "{source}" --output "{database.parent}" --batch'
+
+
+def _document_outcome(
+    store: Store, key: _Key, jobs: set[int], ledger: WaitLedger
+) -> tuple[str, str] | None:
+    """Return the final outcome of a document and its run command, if any.
+
+    A document whose batch job ended is complete unless units failed or are
+    pending; one with a job failed if a check said so, waits on its open
+    submissions, or needs a run when its pending units have none.
+    """
+    database, name = key
+    row = store.document(name)
+    if row is None:
+        return None
+    units = store.units(row.doc_id)
+    failed = any(unit.status == FAILED for unit in units)
+    waiting = any(
+        unit.status == PENDING
+        or (unit.kind == KIND_SUMMARY and unit.stale and unit.status != FAILED)
+        for unit in units
+    )
+    command = _run_command(database, row.input_path, row.name)
+    if row.doc_id not in jobs:
+        if failed:
+            return FAILED, command
+        return (NEEDS_RUN, command) if waiting else (COMPLETE, command)
+    if key in ledger.failed_documents:
+        return FAILED, command
+    if waiting and not store.blocked_units(row.doc_id):
+        return NEEDS_RUN, command
+    return WAITING, command
+
+
+def wait_totals(ledger: WaitLedger) -> WaitTotals:
+    """Build the final counts of a wait from the stores' current state.
+
+    Every submission and document a check listed is read again, also those
+    a later check no longer listed. A database the store refuses now is
+    added to :attr:`WaitTotals.refused`.
+    """
+    totals = WaitTotals(
+        submitted=len(ledger.opened),
+        outputs=list(ledger.outputs),
+        refused=dict(ledger.refused),
+    )
+    for by_role in ledger.usage.values():
+        for role, usage in by_role.items():
+            totals.usage[role] = totals.usage.get(role, Usage()) + usage
+    stores: dict[Path, tuple[Store, set[int]] | None] = {}
+
+    def store_of(database: Path) -> tuple[Store, set[int]] | None:
+        if database not in stores:
+            try:
+                store = read_store(database.parent)
+                jobs = read(database, read_batch_jobs) if store is not None else []
+            except StoreError as exc:
+                totals.refused[database] = str(exc)
+                store = None
+            stores[database] = (
+                None if store is None else (store, {job.doc_id for job in jobs})
+            )
+        return stores[database]
+
+    for key in ledger.submissions:
+        found = store_of(key[0])
+        if found is None:
+            continue
+        try:
+            status = found[0].submission(key[1]).status
+        except KeyError:
+            continue
+        outcome = _submission_outcome(key, status, ledger)
+        if outcome is not None:
+            totals.stats.count(outcome)
+    for key in ledger.documents:
+        found = store_of(key[0])
+        document = (
+            None
+            if found is None
+            else _document_outcome(found[0], key, found[1], ledger)
+        )
+        if document is None:
+            continue
+        outcome, command = document
+        if outcome == COMPLETE:
+            totals.complete += 1
+        elif outcome == FAILED:
+            totals.failed_documents += 1
+        elif outcome == NEEDS_RUN:
+            totals.needs_run.append(RunHint(key[0], key[1], command))
+    return totals
+
+
+def _ignore(*_: object) -> None:
+    return None
+
+
+def _retryable(exc: BaseException) -> bool:
+    """Whether a check that raised *exc* is worth repeating."""
+    if isinstance(exc, (CheckTargetError, StoreError)):
+        return False
+    return classify_error(exc).retryable
+
+
+def _acted(result: CheckResult, adopt: str | None, abandon: str | None) -> bool:
+    """Whether a check reached the submission ``--adopt`` or ``--abandon`` names."""
+    return any(
+        (adopt is not None and check.batch_id == adopt)
+        or (abandon is not None and check.submission_id == abandon)
+        for check in result.submissions
+    )
+
+
+async def check_until_settled(  # noqa: PLR0913 - the check options plus hooks
+    directory: Path,
+    settings: Settings,
+    limits: WaitLimits,
+    *,
+    batch_ids: Sequence[str] = (),
+    adopt: str | None = None,
+    abandon: str | None = None,
+    args: argparse.Namespace | None = None,
+    progress: WaitProgress | None = None,
+    on_pass: Callable[[int, CheckResult], None] = _ignore,
+    on_wait: Callable[[WaitTick], None] = _ignore,
+    on_retry: Callable[[int, Exception], None] = _ignore,
+) -> WaitProgress:
+    """Check every *limits* interval until no batch work a check can advance
+    is pending; start no check after the timeout.
+
+    The options are those of :func:`check_batches`; *adopt* and *abandon*
+    act in the first check that reaches their submission. *progress* is
+    updated after every check, so a caller that is interrupted still reads
+    what the wait saw. *on_pass* receives each check's result, *on_wait*
+    each sleep and *on_retry* each check that raised a retryable error.
+    The batch clients are built once and closed when the wait ends.
+
+    Raises:
+        CheckTargetError: *adopt* or *abandon* fits no submission, or more
+            than one.
+    """
+    progress = progress if progress is not None else WaitProgress()
+    clients = BatchClients(settings, ROLE, args=args)
+    clock = _clock
+    progress.started = clock()
+    acted = False
+
+    async def one_pass(number: int) -> CheckResult:
+        nonlocal acted
+        result = CheckResult()
+        try:
+            await check_batches(
+                directory,
+                settings,
+                batch_ids=batch_ids,
+                adopt=None if acted else adopt,
+                abandon=None if acted else abandon,
+                args=args,
+                clients=clients,
+                result=result,
+            )
+        finally:
+            progress.ledger.record(result)
+            progress.passes = number
+            progress.last = result
+            acted = acted or _acted(result, adopt, abandon)
+        acted = True
+        logger.info("Batch check %d: %d pending", number, pending_work(result))
+        on_pass(number, result)
+        return result
+
+    try:
+        outcome: PollResult[CheckResult] = await poll_until_settled(
+            one_pass,
+            pending_work,
+            limits,
+            on_wait=on_wait,
+            on_retry=on_retry,
+            retryable=_retryable,
+            clock=clock,
+            sleep=_sleep,
+        )
+    finally:
+        clients.close()
+    progress.stop = outcome.stop.value
+    return progress

@@ -25,6 +25,7 @@ from autoexcerpter.common.options import (
     Resolved,
     Source,
 )
+from autoexcerpter.common.polling import DEFAULT_POLL_MINUTES, wait_options
 from autoexcerpter.providers import (
     PROVIDERS,
     implied_provider,
@@ -838,6 +839,10 @@ def _settings_option() -> Option:
 
 _BATCH_TITLES = {"batch": "batches", "run": "run control"}
 
+WAIT_HOURS = 50.0
+"""Default ``--wait-hours``: a check waits for two batch rounds in sequence,
+the transcriptions and then the summaries, each of up to a day."""
+
 BATCH_CHECK_OPTIONS = OptionTable(
     [
         Option(
@@ -876,6 +881,7 @@ BATCH_CHECK_OPTIONS = OptionTable(
             target="abandon",
             settable=False,
         ),
+        *wait_options(group="batch", default_hours=WAIT_HOURS),
         _render_flag("json", "print one JSON summary line on stdout"),
         _settings_option(),
     ],
@@ -921,12 +927,17 @@ class BatchCheckSpec:
 
     ``adopt`` names a provider batch to record for an unresolved submission;
     ``abandon`` names an unresolved submission whose pages return to pending.
+    With ``wait`` the check repeats every ``poll_minutes`` until no batch
+    work is pending; no check starts after ``wait_hours``.
     """
 
     directory: Path
     batch_ids: tuple[str, ...] = ()
     adopt: str | None = None
     abandon: str | None = None
+    wait: bool = False
+    poll_minutes: float = DEFAULT_POLL_MINUTES
+    wait_hours: float = WAIT_HOURS
     json: bool = False
     settings: Path | None = None
 
@@ -951,13 +962,19 @@ def resolve_batch_check(flags: Mapping[str, Any]) -> BatchCheckSpec:
     """Resolve batch check options; no option takes a settings default.
 
     Raises:
-        SpecError: An unknown option, or ``--adopt`` with ``--abandon``.
+        SpecError: An unknown option, ``--adopt`` with ``--abandon``, or
+            ``--poll-minutes`` or ``--wait-hours`` without ``--wait``.
     """
     unknown = set(flags) - set(BATCH_CHECK_OPTIONS.names)
     if unknown:
         raise SpecError(f"unknown options: {', '.join(sorted(unknown))}")
     if flags.get("adopt") and flags.get("abandon"):
         raise SpecError("--adopt and --abandon exclude each other")
+    if not flags.get("wait"):
+        for name in ("poll_minutes", "wait_hours"):
+            if name in flags:
+                flag = BATCH_CHECK_OPTIONS[name].flag
+                raise SpecError(f"{flag} needs --wait")
     resolved = BATCH_CHECK_OPTIONS.resolve(flags, None)
     values, _ = BATCH_CHECK_OPTIONS.by_targets(resolved)
     return BatchCheckSpec(**values)

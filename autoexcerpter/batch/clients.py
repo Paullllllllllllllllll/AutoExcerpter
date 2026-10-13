@@ -108,6 +108,22 @@ class BatchClients:
         self._sleep = sleep
         self._clients: dict[tuple[str, str], Any] = {}
 
+    def close(self) -> None:
+        """Close the SDK clients built so far; a later call builds them anew.
+
+        A client without ``close`` is left alone and a failing close is
+        logged, so closing never raises.
+        """
+        built, self._clients = list(self._clients.values()), {}
+        for client in built:
+            close = getattr(client, "close", None)
+            if not callable(close):
+                continue
+            try:
+                close()
+            except Exception as exc:  # noqa: BLE001 - closing must not fail
+                logger.warning("Could not close a batch client: %s", exc)
+
     def has_key(self, provider: str) -> bool:
         """Whether a key variable the extension names for *provider* is set.
 

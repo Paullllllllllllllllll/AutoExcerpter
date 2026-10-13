@@ -1,5 +1,19 @@
 # Changelog
 
+- **v2.3.0** (13 October 2026) -- `batch check --wait` repeats the check every
+  `--poll-minutes` (default 15) until no batch work it can advance is pending,
+  so one command collects the transcriptions, submits the summaries, collects
+  them and writes the files; no check starts after `--wait-hours` (default 50),
+  but a running one finishes. A failure does not end the wait, its counts are
+  read from the databases at the end for every submission and document a check
+  saw, and it also exits 1 when the deadline passed with work pending or a
+  document needs a run, whose `run --batch` command the end line and the new
+  JSON fields `needs_run` and `rerun` name; `polls`, `waited_seconds` and
+  `stopped` join the JSON line. The batch clients are built once per wait and
+  closed at its end. The loop is the new vendored `common/polling.py`, shared
+  with ChronoTranscriber and ChronoMiner. A one-pass check is unchanged, except
+  that a document whose pages wait for a run is reported as `needs a run`.
+
 - **v2.2.0** (13 October 2026) -- Batch mode: `run --batch` submits each item's
   pages to the batch APIs of OpenAI, Anthropic and Google instead of calling the
   models, and the new `batch check` collects finished batches, submits the

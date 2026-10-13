@@ -203,14 +203,18 @@ BATCH_CHECK_DESCRIPTION = (
 )
 
 BATCH_CHECK_EPILOG = """\
-Each check makes one pass and does not wait. A run --batch that summarizes \
+Without --wait a check makes one pass. A run --batch that summarizes then \
 needs two checks after its batches finish: the first collects the \
 transcriptions and submits the summaries, the second collects the summaries \
-and writes the files.
+and writes the files. With --wait the check repeats every --poll-minutes \
+until no batch work is pending; no check starts after --wait-hours, but a \
+running one finishes.
 
 Exit codes:
   0    nothing failed
-  1    a submission or a document failed, or a submission is unresolved
+  1    a submission or a document failed, or a submission is unresolved;
+       with --wait also when the deadline passed with work pending or a
+       document needs a run
   2    usage error, a missing folder, a database the store refuses, or an
        --adopt or --abandon that names nothing to act on
   130  interrupted (Ctrl+C)

@@ -8,21 +8,31 @@ the user has to act on.
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+
 from autoexcerpter.batch.cancel import CancelReport
 from autoexcerpter.batch.check import (
     ABANDONED,
+    NEEDS_RUN,
     UNRESOLVED,
     CheckResult,
     DocumentAdvance,
     SubmissionCheck,
+    WaitTotals,
 )
 from autoexcerpter.batch.finalize import FAILED, FINALIZED_OUTCOME, PENDING, SKIPPED
+from autoexcerpter.common.polling import WaitTick
+from autoexcerpter.common.retry import classify_error
 
 __all__ = [
     "cancel_lines",
     "check_lines",
     "complete_documents",
+    "pending_lines",
+    "retry_line",
     "submitted_batches",
+    "wait_end_lines",
+    "wait_line",
 ]
 
 
@@ -94,19 +104,30 @@ def _document_lines(advance: DocumentAdvance) -> list[str]:
         lines.append(f"{label}: complete -> {outputs}")
     elif advance.outcome == FAILED:
         lines.append(f"[ERROR] {label}: {advance.detail}")
+    elif advance.outcome == NEEDS_RUN:
+        lines.append(f"{label}: needs a run: {advance.detail}")
     else:
         lines.append(f"{label}: {advance.outcome}: {advance.detail}")
     return lines
 
 
-def check_lines(result: CheckResult) -> list[str]:
+def check_lines(
+    result: CheckResult, *, pending: bool = True, totals: bool = True
+) -> list[str]:
     """Return one line per refused database, submission and document, then
-    the totals."""
+    the totals.
+
+    Without *pending* the submissions that are not finished yet are left
+    out; without *totals* the totals line.
+    """
     lines = [f"[ERROR] {path}: {reason}" for path, reason in result.refused.items()]
     for check in result.submissions:
-        lines += _submission_lines(check)
+        if pending or check.outcome != PENDING:
+            lines += _submission_lines(check)
     for advance in result.documents:
         lines += _document_lines(advance)
+    if not totals:
+        return lines
     stats = result.stats
     lines.append(
         f"Batch check: {stats.finalized} finalized, {stats.pending} pending, "
@@ -114,6 +135,65 @@ def check_lines(result: CheckResult) -> list[str]:
         f"{submitted_batches(result)} summary batch(es) submitted, "
         f"{complete_documents(result)} document(s) complete."
     )
+    return lines
+
+
+def pending_lines(result: CheckResult) -> list[str]:
+    """Return the lines of the submissions that are not finished yet."""
+    return [
+        line
+        for check in result.submissions
+        if check.outcome == PENDING
+        for line in _submission_lines(check)
+    ]
+
+
+def _hours(seconds: float) -> str:
+    return f"{seconds / 3600:.2f}"
+
+
+def wait_line(tick: WaitTick, now: datetime | None = None) -> str:
+    """Return the line written before a wait sleeps.
+
+    It begins with ``Waiting for batches``, which the job launcher reads;
+    it never says "Waiting until", which marks a budget wait there.
+    """
+    at = (now or datetime.now()) + timedelta(seconds=tick.next_in)
+    return (
+        f"Waiting for batches: {tick.pending} pending; next check at "
+        f"{at:%H:%M} (check {tick.passes}; {_hours(tick.elapsed)} of "
+        f"{tick.timeout / 3600:g} h)."
+    )
+
+
+def retry_line(number: int, exc: Exception) -> str:
+    """Return the warning of a check that raised a retryable error."""
+    return (
+        f"[WARNING] Check {number} failed ({classify_error(exc)}): {exc}; "
+        "checking again."
+    )
+
+
+def wait_end_lines(
+    totals: WaitTotals, *, passes: int, waited: float, stop: str
+) -> list[str]:
+    """Return the closing lines of a wait: totals, documents that need a run,
+    and how the wait ended."""
+    stats = totals.stats
+    lines = [f"[ERROR] {path}: {reason}" for path, reason in totals.refused.items()]
+    lines.append(
+        f"Batch check: {stats.finalized} finalized, {stats.pending} pending, "
+        f"{stats.failed} failed, {stats.unresolved} unresolved; "
+        f"{totals.submitted} summary batch(es) submitted, "
+        f"{totals.complete} document(s) complete, "
+        f"{totals.failed_documents} failed, {len(totals.needs_run)} need a run."
+    )
+    for hint in totals.needs_run:
+        lines.append(
+            f"[WARNING] {hint.database.parent.name}/{hint.document} needs a run: "
+            f"{hint.command}"
+        )
+    lines.append(f"Stopped after {passes} check(s) and {_hours(waited)} h: {stop}.")
     return lines
 
 

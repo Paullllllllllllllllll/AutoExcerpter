@@ -1,4 +1,4 @@
-# AutoExcerpter v2.2.0
+# AutoExcerpter v2.3.0
 
 AutoExcerpter transcribes PDFs and folders of page images with vision-language
 models, summarizes each page and builds a consolidated bibliography whose entries
@@ -63,6 +63,7 @@ uv run autoexcerpter run --input scans --all --dry-run --json
 uv run autoexcerpter ui                              # guided run
 uv run autoexcerpter run --input scans --all --output excerpts --batch
 uv run autoexcerpter batch check --input excerpts    # collect finished batches
+uv run autoexcerpter batch check --input excerpts --wait  # ... until all are in
 uv run autoexcerpter render --input excerpts         # rewrite the files, no calls
 uv run autoexcerpter migrate --input excerpts        # import version 1.0 outputs
 ```
@@ -205,7 +206,8 @@ batches (`batch check`, `batch cancel`), rendering the files of stored documents
 again (`render`) or importing version 1.0 outputs (`migrate`). A task chosen
 there opens at its first step, and Back from it returns to the task question.
 The batch check task asks for the folder, the batch IDs and what to do with an
-unresolved submission; the batch cancel task asks what to cancel. The render
+unresolved submission, and makes one pass (`--wait` is a command-line option);
+the batch cancel task asks what to cancel. The render
 task asks for the input, the formats, whether to
 replace files changed outside the tool and whether to dry-run; the migrate task
 asks for the input and whether to dry-run, and its review shows what a dry run
@@ -563,18 +565,23 @@ an interrupted run never loses a batch.
 `batch check` continues the work. For every database below `--input` it stores the
 results of each finished batch, submits the summaries of the pages those results
 transcribed and writes the files of every document left with nothing to submit or
-wait for. A run that summarizes therefore needs two checks after its batches
-finish: the first collects the transcriptions and submits the summaries, the
-second collects the summaries and writes the files. Each check makes one pass and
-does not wait. The later steps follow the `run --batch` that submitted the
-document: its stored spec sets the summary model, the formats and OpenAlex, and
-the summary context it read is kept with the document. Prompts, schemas and
-machine settings come from the installed version and the current settings file.
+wait for. Without `--wait` a check makes one pass, so a run that summarizes needs
+two checks after its batches finish: the first collects the transcriptions and
+submits the summaries, the second collects the summaries and writes the files.
+With `--wait` the check repeats every `--poll-minutes` until no batch work it can
+advance is pending: no batch still running, no summaries just submitted and no
+document held by another run. No check starts after `--wait-hours`, but a running
+one finishes; the default of 50 hours covers the two rounds of a day each. The
+later steps follow the `run --batch` that submitted the document: its stored spec
+sets the summary model, the formats and OpenAlex, and the summary context it read
+is kept with the document. Prompts, schemas and machine settings come from the
+installed version and the current settings file.
 
 ```bash
 autoexcerpter run --input scans --all --output excerpts --batch
 autoexcerpter batch check --input excerpts     # transcriptions in, summaries out
 autoexcerpter batch check --input excerpts     # summaries in, files written
+autoexcerpter batch check --input excerpts --wait   # or: both, as batches finish
 ```
 
 | Flag | Description | Default | In `defaults:` |
@@ -583,6 +590,9 @@ autoexcerpter batch check --input excerpts     # summaries in, files written
 | `--batch-ids IDS` | comma-separated batch IDs to check; default every batch | | no |
 | `--adopt BATCH_ID` | record this provider batch for the unresolved submission it belongs to, then finalize it | | no |
 | `--abandon SUBMISSION_ID` | give up an unresolved submission (its upload is deleted) or a submitted one whose results are lost: its pages return to pending and its documents wait for a run | | no |
+| `--wait` | check again every --poll-minutes until no batch work is pending, or until --wait-hours have passed | | no |
+| `--poll-minutes N` | minutes between two checks with --wait | 15 | no |
+| `--wait-hours N` | hours after which --wait starts no further check; a running check finishes | 50 | no |
 | `--json` | print one JSON summary line on stdout | | no |
 | `--settings FILE` | alternate settings file | config/settings.yaml | no |
 
@@ -612,6 +622,18 @@ or an `--adopt` or `--abandon` that names nothing to act on. Its JSON line holds
 `unresolved`, the summary batches `submitted`, the documents `complete`, the
 `outputs` written and the `usage` of the stored results per role, plus `adopted`
 or `abandoned` when the option is given.
+
+With `--wait` a failure does not end the wait: the other batches are still
+collected, and a later check may still settle an unresolved submission. When the
+wait ends, its counts are read from the databases for every submission and
+document a check saw; a failure stays one unless the database shows it recovered.
+The check then also exits 1 when the deadline passed with work pending, or when a
+document needs a run: its pages are pending with no batch in flight, and the end
+line names the `autoexcerpter run ... --batch` command that submits them. The JSON
+line adds `polls` (checks made), `waited_seconds`, `stopped` (`settled`,
+`timeout`, `interrupted` or `error`), `needs_run` and `rerun` (those commands).
+Between checks stderr shows one line, such as `Waiting for batches: 2 pending;
+next check at 14:45 (check 3; 0.50 of 50 h).`
 
 `batch cancel` cancels batches at the provider:
 
@@ -731,7 +753,8 @@ and reports through the run events, which the CLI writes to stderr and the UI
 shows as progress bars. `common/` holds tool-agnostic modules (option tables,
 wizard framework, settings loader, structured calls, retry, rate limiting, HTTP
 timeouts, images, the run store and its SQLite writer, attempt capture, the batch
-backends of OpenAI, Anthropic and Google, agent contract) kept byte-identical
+backends of OpenAI, Anthropic and Google, the poll loop of `batch check --wait`,
+agent contract) kept byte-identical
 across the sibling tools: `common/MANIFEST.json` pins each file by its SHA-256, and
 `tests/common/test_manifest.py` fails when a copy drifts. `ext.py` holds the
 extension hooks (extra arguments, settings blocks and wizard steps, a startup
