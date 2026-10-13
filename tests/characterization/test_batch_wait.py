@@ -15,6 +15,8 @@ from typing import Any
 import pytest
 
 from autoexcerpter.batch import check as check_module
+from autoexcerpter.spec import WAIT_HOURS, resolve_batch_check
+from tests.characterization import fakes_batch
 from tests.characterization.fakes import TRANSCRIPTION, FakeLLM
 from tests.characterization.fakes_batch import FakeBatchService, Provider
 from tests.characterization.test_batch import DOC, PAGES, Case
@@ -88,6 +90,53 @@ def test_one_wait_collects_both_rounds_and_writes_the_files(
     assert "Waiting for batches: 1 pending; next check at" in stderr
     assert "Waiting until" not in stderr
     assert "Stopped after 4 check(s) and 0.75 h: settled." in stderr
+
+
+def test_the_default_wait_outlasts_two_rounds_of_the_longest_window() -> None:
+    spec = resolve_batch_check({"wait": True})
+    assert spec.wait_hours == WAIT_HOURS == 98
+    assert spec.wait_hours > 2 * 48
+
+
+def test_the_default_wait_collects_two_rounds_of_two_days(
+    run: Case, clock: WaitClock
+) -> None:
+    run.service.polls_until_complete = 12
+    run.submit()
+
+    waited = run.check("wait", "--wait", "--poll-minutes", "240")
+
+    assert waited.result.exit_code == 0, waited.result.stderr
+    assert _wait_fields(waited.summary) == (24, "settled", 0, [], 0)
+    assert clock.sleeps == [4 * 3600] * 23
+    assert waited.summary["waited_seconds"] == 92 * 3600
+
+
+def test_an_expired_batch_ends_the_default_wait(
+    run: Case, clock: WaitClock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real = fakes_batch._openai_batch
+
+    def expiring(batch: Any) -> Any:
+        reported = real(batch)
+        if batch.polls >= 3:
+            return reported.model_copy(update={"status": "expired"})
+        return reported
+
+    monkeypatch.setattr(fakes_batch, "_openai_batch", expiring)
+    run.service.polls_until_complete = 1_000
+    run.submit()
+
+    waited = run.check("wait", "--wait")
+
+    assert waited.result.exit_code == 1
+    summary = waited.summary
+    assert (summary["polls"], summary["stopped"], summary["failed"]) == (
+        3,
+        "settled",
+        1,
+    )
+    assert clock.sleeps == [900, 900]
 
 
 def test_the_wait_stops_at_the_deadline_with_the_batch_pending(

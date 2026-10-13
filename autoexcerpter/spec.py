@@ -839,9 +839,10 @@ def _settings_option() -> Option:
 
 _BATCH_TITLES = {"batch": "batches", "run": "run control"}
 
-WAIT_HOURS = 50.0
+WAIT_HOURS = 98.0
 """Default ``--wait-hours``: a check waits for two batch rounds in sequence,
-the transcriptions and then the summaries, each of up to a day."""
+the transcriptions and then the summaries, each up to the longest provider
+batch window (Gemini, 48 hours)."""
 
 BATCH_CHECK_OPTIONS = OptionTable(
     [

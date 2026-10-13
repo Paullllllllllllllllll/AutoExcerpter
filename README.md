@@ -571,7 +571,10 @@ submits the summaries, the second collects the summaries and writes the files.
 With `--wait` the check repeats every `--poll-minutes` until no batch work it can
 advance is pending: no batch still running, no summaries just submitted and no
 document held by another run. No check starts after `--wait-hours`, but a running
-one finishes; the default of 50 hours covers the two rounds of a day each. The
+one finishes. The default of 98 hours covers two rounds of the longest provider
+window: OpenAI and Anthropic expire a batch after 24 hours and Google after 48. The
+limit is soft: a check fails an expired batch, and the wait then ends on its own;
+the limit bounds a wait whose checks cannot read the batch statuses. The
 later steps follow the `run --batch` that submitted the document: its stored spec
 sets the summary model, the formats and OpenAlex, and the summary context it read
 is kept with the document. Prompts, schemas and machine settings come from the
@@ -592,7 +595,7 @@ autoexcerpter batch check --input excerpts --wait   # or: both, as batches finis
 | `--abandon SUBMISSION_ID` | give up an unresolved submission (its upload is deleted) or a submitted one whose results are lost: its pages return to pending and its documents wait for a run | | no |
 | `--wait` | check again every --poll-minutes until no batch work is pending, or until --wait-hours have passed | | no |
 | `--poll-minutes N` | minutes between two checks with --wait | 15 | no |
-| `--wait-hours N` | hours after which --wait starts no further check; a running check finishes | 50 | no |
+| `--wait-hours N` | hours after which --wait starts no further check; a running check finishes | 98 | no |
 | `--json` | print one JSON summary line on stdout | | no |
 | `--settings FILE` | alternate settings file | config/settings.yaml | no |
 
@@ -633,7 +636,7 @@ line names the `autoexcerpter run ... --batch` command that submits them. The JS
 line adds `polls` (checks made), `waited_seconds`, `stopped` (`settled`,
 `timeout`, `interrupted` or `error`), `needs_run` and `rerun` (those commands).
 Between checks stderr shows one line, such as `Waiting for batches: 2 pending;
-next check at 14:45 (check 3; 0.50 of 50 h).`
+next check at 14:45 (check 3; 0.50 of 98 h).`
 
 `batch cancel` cancels batches at the provider:
 

@@ -23,7 +23,7 @@ batches:
                         --wait-hours have passed
   --poll-minutes N      minutes between two checks with --wait; default: 15
   --wait-hours N        hours after which --wait starts no further check; a running check
-                        finishes; default: 50
+                        finishes; default: 98
 
 run control:
   --json                print one JSON summary line on stdout
