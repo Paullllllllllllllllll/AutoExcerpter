@@ -1,5 +1,12 @@
 # Changelog
 
+- **v2.5.1** (13 October 2026) -- Provider inference uses the provider
+  detection of the shared capability table, so a model routes to the provider
+  whose capabilities it is resolved with. Google `models/` ids such as
+  `models/gemini-2.5-flash` now run on Google instead of OpenRouter, bare Gemma
+  ids such as `gemma-4-31b-it` on Google instead of OpenAI, and bare Llama,
+  Mistral, Mixtral, Qwen and DeepSeek names on OpenRouter; an explicit
+  `provider:` prefix still wins.
 - **v2.5.0** (13 October 2026) -- Model capabilities follow the vendors'
   documentation, and requests change with them. AutoExcerpter, ChronoTranscriber
   and ChronoMiner now share one capability table, the vendored

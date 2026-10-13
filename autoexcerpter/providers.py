@@ -1,12 +1,17 @@
 """Provider names and the provider a model name implies.
 
-A ``provider:`` prefix naming a supported provider selects it; a
-``vendor/model`` id selects openrouter; ``claude``, ``gemini`` and the OpenAI
-name prefixes select their providers. Any other name implies no provider and
-runs on openai.
+A ``provider:`` prefix naming a supported provider selects it. Any other name
+goes through the provider detection of the shared capability table, so
+routing and capability resolution agree: Google's ``models/`` prefix and the
+``gemini`` and ``gemma`` names select google, a ``vendor/model`` id selects
+openrouter, and the Anthropic and OpenAI names select theirs. A name the
+table assigns no provider implies none and runs on openai.
 """
 
 from __future__ import annotations
+
+from autoexcerpter.common.capabilities import detect_provider
+from autoexcerpter.common.capability_table import TABLE
 
 __all__ = [
     "DEFAULT_PROVIDER",
@@ -18,12 +23,6 @@ __all__ = [
 
 PROVIDERS = ("openai", "anthropic", "google", "openrouter", "custom")
 DEFAULT_PROVIDER = "openai"
-
-_NAME_PREFIXES: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("anthropic", ("claude",)),
-    ("google", ("gemini",)),
-    ("openai", ("gpt", "chatgpt", "o1", "o3", "o4", "text-")),
-)
 
 
 def split_provider_prefix(model: str) -> tuple[str | None, str]:
@@ -44,13 +43,8 @@ def implied_provider(model: str) -> str | None:
     prefixed, name = split_provider_prefix(model)
     if prefixed is not None:
         return prefixed
-    lowered = name.strip().lower()
-    if "/" in lowered:
-        return "openrouter"
-    for provider, prefixes in _NAME_PREFIXES:
-        if lowered.startswith(prefixes):
-            return provider
-    return None
+    detected = detect_provider(name, TABLE)
+    return detected if detected in PROVIDERS else None
 
 
 def infer_provider(model: str) -> str:

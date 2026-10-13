@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from autoexcerpter import __main__ as entry
 from autoexcerpter.common.options import Source
+from autoexcerpter.llm.capabilities import detect_capabilities
+from autoexcerpter.llm.client import build_chat_model
 from autoexcerpter.pipeline.job import job_from_spec
 from autoexcerpter.providers import implied_provider, infer_provider
-from autoexcerpter.settings import Endpoint, Settings, SpecError, resolve
+from autoexcerpter.settings import Endpoint, Settings, SpecError, Timeouts, resolve
 from autoexcerpter.spec import OPTIONS, Resolution, parse, resolve_spec, to_argv
 
 
@@ -25,14 +28,37 @@ def _resolve(argv: list[str], settings: Settings | None = None) -> Resolution:
         ("o3-mini", "openai"),
         ("claude-sonnet-4-5", "anthropic"),
         ("gemini-2.5-flash", "google"),
+        ("models/gemini-2.5-flash", "google"),
+        ("gemma-4-31b-it", "google"),
         ("anthropic/claude-sonnet-4.5", "openrouter"),
         ("anthropic:claude-sonnet-4-5", "anthropic"),
+        ("openrouter:google/gemma-3-27b-it", "openrouter"),
         ("ft:gpt-4o-mini:org:id", "openai"),
         ("my-local-model", "openai"),
     ],
 )
 def test_infer_provider(model: str, provider: str) -> None:
     assert infer_provider(model) == provider
+
+
+@pytest.mark.parametrize("model", ["models/gemini-2.5-flash", "gemma-4-31b-it"])
+def test_routing_agrees_with_capability_resolution(model: str) -> None:
+    assert infer_provider(model) == detect_capabilities(model).provider_name == "google"
+
+
+@pytest.mark.parametrize("model", ["models/gemini-2.5-flash", "gemma-4-31b-it"])
+def test_google_ids_reach_the_google_client_from_the_model_flag(
+    model: str, mock_api_keys: None
+) -> None:
+    spec = parse(["--input", "x", "--model", model])
+    job = job_from_spec(spec, Settings())
+    with patch("langchain_google_genai.ChatGoogleGenerativeAI") as google:
+        google.return_value = MagicMock()
+        for phase in (job.transcription, job.summary):
+            assert phase.provider == "google"
+            assert phase.api_key_env == "GOOGLE_API_KEY"
+            build_chat_model(phase, Timeouts())
+    assert [call.kwargs["model"] for call in google.call_args_list] == [model] * 2
 
 
 def test_only_known_names_imply_a_provider() -> None:

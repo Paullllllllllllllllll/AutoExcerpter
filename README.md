@@ -1,4 +1,4 @@
-# AutoExcerpter v2.5.0
+# AutoExcerpter v2.5.1
 
 AutoExcerpter transcribes PDFs and folders of page images with vision-language
 models, summarizes each page and builds a consolidated bibliography whose entries
@@ -328,13 +328,16 @@ thresholds, image byte caps and text cleaning switches are code constants.
 ## Providers and Response Formats
 
 Each phase's provider comes from `--provider` (or a phase flag), else a
-`provider:` prefix on the model name (`anthropic:claude-sonnet-5`), else a
-`vendor/model` name (OpenRouter), else the name itself (`claude` is Anthropic,
-`gemini` is Google, `gpt`, `chatgpt`, `o1`, `o3`, `o4` and `text-` are OpenAI),
-else OpenAI. A prefix that contradicts a provider given at the same or a higher
-precedence level is an error. The key comes from the variable `api_keys:` names.
-Custom endpoints are named in the settings and selected with `--endpoint NAME`,
-which implies provider `custom`:
+`provider:` prefix on the model name (`anthropic:claude-sonnet-5`), else the
+provider rules of the shared capability table, so that a model runs on the
+provider its capabilities are resolved for: Google's `models/` prefix, `gemini`
+and `gemma` are Google, a `vendor/model` name is OpenRouter, `claude` is
+Anthropic, `gpt`, `chatgpt`, `o1`, `o3`, `o4`, `text-` and `whisper` are OpenAI,
+and bare `llama`, `mistral`, `mixtral`, `qwen` and `deepseek` names are
+OpenRouter; any other name runs on OpenAI. A prefix that contradicts a provider
+given at the same or a higher precedence level is an error. The key comes from
+the variable `api_keys:` names. Custom endpoints are named in the settings and
+selected with `--endpoint NAME`, which implies provider `custom`:
 
 ```yaml
 endpoints:
