@@ -1653,18 +1653,20 @@ class Store:
         return renewed
 
     async def release(self, lease: Lease) -> None:
-        """Give *lease* up if this holder still has it."""
+        """Give *lease* up if this holder still has it.
+
+        The lease leaves the held leases before its write is queued, so the
+        heartbeat no longer renews it once the release has begun.
+        """
         values = (lease.doc_id, lease.holder, lease.generation)
-        try:
-            await self._write(
-                lambda connection: connection.execute(
-                    "UPDATE documents SET lease_run_id = NULL, lease_until = NULL "
-                    "WHERE doc_id = ? AND lease_run_id = ? AND lease_generation = ?",
-                    values,
-                )
+        self._forget(lease)
+        await self._write(
+            lambda connection: connection.execute(
+                "UPDATE documents SET lease_run_id = NULL, lease_until = NULL "
+                "WHERE doc_id = ? AND lease_run_id = ? AND lease_generation = ?",
+                values,
             )
-        finally:
-            self._forget(lease)
+        )
 
     def held_leases(self) -> dict[int, Lease]:
         """Return the leases this store holds, by document id."""
@@ -2690,10 +2692,20 @@ class LeaseKeeper:
             await task
 
     async def renew_all(self) -> None:
-        """Renew every held lease once."""
-        for lease in self._store.held_leases().values():
+        """Renew every held lease once.
+
+        Each lease is looked up right before its renewal is queued, with no
+        await in between, so a lease released meanwhile is skipped rather
+        than reported lost; the writer commits a renewal queued before a
+        release first.
+        """
+        store = self._store
+        for doc_id in list(store.held_leases()):
+            lease = store.held_leases().get(doc_id)
+            if lease is None:
+                continue
             try:
-                await self._store.renew(lease)
+                await store.renew(lease)
             except LeaseLostError:
                 self.lost.append(lease)
                 if self._on_lost is not None:

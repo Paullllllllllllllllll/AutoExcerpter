@@ -1,5 +1,10 @@
 # Changelog
 
+- **v2.3.1** (13 October 2026) -- The lease heartbeat no longer reports a
+  document lease that the run has just released as lost. A release now drops the
+  lease from the held leases before its database write, and the heartbeat looks
+  each lease up again right before queueing its renewal, so a lease whose release
+  began while the heartbeat was renewing is skipped rather than logged as expired.
 - **v2.3.0** (13 October 2026) -- `batch check --wait` repeats the check every
   `--poll-minutes` (default 15) until no batch work it can advance is pending,
   so one command collects the transcriptions, submits the summaries, collects

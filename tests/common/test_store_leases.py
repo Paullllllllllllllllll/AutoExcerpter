@@ -214,6 +214,65 @@ def test_the_heartbeat_reports_a_lease_that_expired_between_beats(
     assert keeper_lost == lost
 
 
+def test_the_heartbeat_skips_a_lease_released_during_its_beat(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db = tmp_path / "tool.sqlite"
+    lost: list[Lease] = []
+
+    async def main() -> tuple[list[Lease], int]:
+        async with Store(db, "tool") as store:
+            await store.begin_run("run")
+            first = await store.acquire(await _document(store, "first"))
+            second = await store.acquire(await _document(store, "second"))
+            assert first is not None
+            assert second is not None
+            renew = store.renew
+
+            async def renew_then_release(lease: Lease) -> Lease:
+                renewed = await renew(lease)
+                if lease == first:
+                    await store.release(second)
+                return renewed
+
+            monkeypatch.setattr(store, "renew", renew_then_release)
+            keeper = store.heartbeat(on_lost=lost.append)
+            await keeper.renew_all()
+            return keeper.lost, keeper.renewals
+
+    keeper_lost, renewals = asyncio.run(main())
+
+    assert lost == []
+    assert keeper_lost == []
+    assert renewals == 1
+
+
+def test_the_heartbeat_skips_a_lease_whose_release_is_in_flight(
+    tmp_path: Path,
+) -> None:
+    db = tmp_path / "tool.sqlite"
+    lost: list[Lease] = []
+
+    async def main() -> tuple[dict[int, Lease], list[Lease]]:
+        async with Store(db, "tool") as store:
+            await store.begin_run("run")
+            lease = await store.acquire(await _document(store))
+            assert lease is not None
+            keeper = store.heartbeat(on_lost=lost.append)
+            release = asyncio.create_task(store.release(lease))
+            await asyncio.sleep(0)
+            await keeper.renew_all()
+            await release
+            return store.held_leases(), keeper.lost
+
+    held, keeper_lost = asyncio.run(main())
+
+    assert held == {}
+    assert lost == []
+    assert keeper_lost == []
+    assert [row["lease_run_id"] for row in read_rows(db, "documents")] == [None]
+
+
 # =============================================================================
 # Subprocess race
 # =============================================================================
