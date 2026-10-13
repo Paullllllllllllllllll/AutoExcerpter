@@ -26,6 +26,9 @@ COLUMNS = 100
 CASES = {
     "autoexcerpter": (),
     "run": ("run",),
+    "batch": ("batch",),
+    "batch-check": ("batch", "check"),
+    "batch-cancel": ("batch", "cancel"),
     "render": ("render",),
     "migrate": ("migrate",),
     "ui": ("ui",),

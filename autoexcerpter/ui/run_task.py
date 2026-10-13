@@ -47,7 +47,9 @@ def _run(request: RunRequest) -> int:
         return int(ExitCode.USAGE)
     spec = resolved.spec
     try:
-        run_plan = core.plan(spec, session.settings, sources=resolved.sources)
+        run_plan = core.plan(
+            spec, session.settings, sources=resolved.sources, args=request.args
+        )
     except core.PlanError as exc:
         _say(request, f"Error: {exc}")
         return int(exc.exit_code)
@@ -65,7 +67,7 @@ def _run(request: RunRequest) -> int:
         return int(ExitCode.OK)
     try:
         with RichProgress(request.console) as progress:
-            result = asyncio.run(core.run(run_plan, progress))
+            result = asyncio.run(core.run(run_plan, progress, args=request.args))
     except core.PlanError as exc:
         _say(request, f"Error: {exc}")
         return int(exc.exit_code)

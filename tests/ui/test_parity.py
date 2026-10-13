@@ -464,6 +464,15 @@ def dry_run(ws: Workspace) -> Script:
     return Script(ws.session(), answers)
 
 
+def batch_submission(ws: Workspace) -> Script:
+    """A batch run on providers with a batch API, planned as a dry run."""
+    ws.keys("OPENAI_API_KEY")
+    pdf = ws.pdf()
+    answers = _base(pdf, "run")
+    answers[14:16] = [["openalex", "batch", "dry_run"], KEEP]
+    return Script(ws.session(), answers)
+
+
 SESSIONS: Final[Mapping[str, Callable[[Workspace], Script]]] = MappingProxyType(
     {
         builder.__name__: builder
@@ -480,6 +489,7 @@ SESSIONS: Final[Mapping[str, Callable[[Workspace], Script]]] = MappingProxyType(
             back_navigation,
             force_review_action,
             dry_run,
+            batch_submission,
         )
     }
 )
@@ -763,3 +773,27 @@ def test_the_force_action_and_the_dry_run_reach_the_command(
     run = dry.spec().run
     assert (run.dry_run, run.force, run.retranscribe) == (True, True, True)
     assert not dry.spec().citations.openalex
+
+
+def test_the_batch_option_reaches_the_command_and_the_review(
+    workspace: Workspace,
+) -> None:
+    played = play(batch_submission(workspace))
+    assert played.outcome.action is Decision.RUN
+    assert played.spec().run.batch
+    assert "--batch" in played.command
+    assert "Submit to the providers' batch APIs (--batch)" in played.prompter.transcript
+    review = [
+        line
+        for line in played.prompter.transcript.splitlines()
+        if line.strip().startswith("run ") and "resume" in line
+    ]
+    assert review and all("batch" in line for line in review)
+    assert all("concurrency" not in line for line in review)
+
+
+def test_the_batch_option_is_not_offered_without_a_batch_api(
+    workspace: Workspace,
+) -> None:
+    played = play(named_endpoints(workspace))
+    assert "(--batch)" not in played.prompter.transcript

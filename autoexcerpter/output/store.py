@@ -26,7 +26,10 @@ position in the item (``original_input_order_index``):
 ``summaries`` holds one row per summarized page (``page`` is its 1-based
 position, ``page_information``, ``bullet_points`` and ``page_references``
 are JSON); ``citations`` the document's consolidated citations in rendered
-order. Units carry the model and provider of their role.
+order. Units carry the model and provider of their role. ``batch_jobs``
+(schema version 2) holds one row per document with batch work in flight: the
+``run --batch`` whose stored spec governs its later steps and the summary
+context it used (see :mod:`autoexcerpter.batch`).
 
 Read contract
 =============
@@ -129,6 +132,7 @@ __all__ = [
     "TOOL",
     "UNIT_KINDS",
     "VIEWS",
+    "BatchJob",
     "CitationRow",
     "Classification",
     "InputMismatchError",
@@ -138,11 +142,14 @@ __all__ = [
     "begin_run",
     "classify",
     "database_path",
+    "delete_batch_job",
     "document_kind",
+    "drop_batch_job",
     "image_settings_record",
     "model_derived_keys",
     "open_store",
     "plan_pages",
+    "read_batch_jobs",
     "read_citations",
     "read_only_connection",
     "read_pages",
@@ -151,6 +158,7 @@ __all__ = [
     "store_artifacts",
     "tool_version",
     "transcription_outcome",
+    "write_batch_job",
     "write_citations",
     "write_summary",
 ]
@@ -293,8 +301,17 @@ LEFT JOIN documents AS d ON d.doc_id = r.doc_id
 ORDER BY r.response_id;
 """
 
-COMPONENT: Final = Component(TOOL, (_V1,))
-"""The tool's schema component: version 1 adds the content tables and views."""
+_V2 = """
+CREATE TABLE batch_jobs (
+    doc_id INTEGER PRIMARY KEY REFERENCES documents (doc_id),
+    run_id TEXT NOT NULL REFERENCES runs (run_id),
+    context TEXT
+);
+"""
+
+COMPONENT: Final = Component(TOOL, (_V1, _V2))
+"""The tool's schema component: version 1 adds the content tables and views,
+version 2 the batch jobs."""
 
 _COMPONENTS: Final = (COMPONENT,)
 
@@ -590,6 +607,64 @@ async def write_citations(
         )
 
     await store.write(lease, replace)
+
+
+@dataclass(frozen=True)
+class BatchJob:
+    """A document's batch work in flight: the run that governs it, the context.
+
+    *run_id* names the ``run --batch`` whose stored spec sets the summary
+    model, the formats and OpenAlex for the document's later steps;
+    *context* is the item's summary context as it entered the prompt.
+    """
+
+    doc_id: int
+    run_id: str
+    context: str | None = None
+
+
+async def write_batch_job(store: Store, lease: Lease, context: str | None) -> None:
+    """Record the store's run as the one governing the document's batch work."""
+    run_id = store.run_id
+    if run_id is None:
+        raise RuntimeError("write_batch_job needs a begun run")
+    doc_id = lease.doc_id
+
+    def upsert(connection: sqlite3.Connection) -> None:
+        connection.execute(
+            "INSERT INTO batch_jobs (doc_id, run_id, context) VALUES (?, ?, ?) "
+            "ON CONFLICT (doc_id) DO UPDATE SET run_id = excluded.run_id, "
+            "context = excluded.context",
+            (doc_id, run_id, context),
+        )
+
+    await store.write(lease, upsert)
+
+
+def drop_batch_job(connection: sqlite3.Connection, doc_id: int) -> None:
+    """Delete a document's batch job inside a write transaction."""
+    connection.execute("DELETE FROM batch_jobs WHERE doc_id = ?", (doc_id,))
+
+
+async def delete_batch_job(store: Store, lease: Lease) -> None:
+    """Delete the batch job of the leased document, if it has one."""
+    doc_id = lease.doc_id
+    await store.write(lease, lambda connection: drop_batch_job(connection, doc_id))
+
+
+def read_batch_jobs(connection: sqlite3.Connection) -> list[BatchJob]:
+    """Return the batch jobs in document order; none before schema version 2."""
+    found = connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'batch_jobs'"
+    ).fetchone()
+    if found is None:
+        return []
+    return [
+        BatchJob(int(doc_id), str(run_id), context)
+        for doc_id, run_id, context in connection.execute(
+            "SELECT doc_id, run_id, context FROM batch_jobs ORDER BY doc_id"
+        )
+    ]
 
 
 def _loaded(value: Any) -> Any:

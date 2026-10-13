@@ -1,0 +1,11 @@
+usage: autoexcerpter batch [-h] COMMAND ...
+
+Check and continue, or cancel, the batch work that run --batch submitted.
+
+options:
+  -h, --help  show this help message and exit
+
+commands:
+  COMMAND
+    check     collect finished batches and continue their documents
+    cancel    cancel batches

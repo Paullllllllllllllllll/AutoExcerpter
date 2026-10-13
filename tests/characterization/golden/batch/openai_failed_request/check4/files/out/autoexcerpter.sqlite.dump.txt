@@ -1,0 +1,1482 @@
+## artifacts
+{
+  "created_at": "<datetime>+00:00",
+  "kind": "summary_prompt",
+  "run_id": "<run-1>",
+  "sha256": "f4ccaa329d6b6bba15b6f02fba5d080f32ae1b1ba80c216846b33f13afb67cc7",
+  "text": "<5932 characters>"
+}
+{
+  "created_at": "<datetime>+00:00",
+  "kind": "summary_schema",
+  "run_id": "<run-1>",
+  "sha256": "0bc58a02aaf99fff031fb171ee83cf3e5800a238e3128b7529b4134ba02942fb",
+  "text": "<5427 characters>"
+}
+{
+  "created_at": "<datetime>+00:00",
+  "kind": "transcription_prompt",
+  "run_id": "<run-1>",
+  "sha256": "ae9a319f0c2b46616a4ec1f492a6ebd2af6560482e8096f020b960c9f9bdfa62",
+  "text": "<3690 characters>"
+}
+{
+  "created_at": "<datetime>+00:00",
+  "kind": "transcription_schema",
+  "run_id": "<run-1>",
+  "sha256": "e5b5bfa70ecf479eff64f1b886a2be45f913f19e2f6be29b806b4fc4c4ee9f37",
+  "text": "<3520 characters>"
+}
+## batch_jobs
+## citations
+{
+  "doc_id": 1,
+  "doi": null,
+  "metadata": null,
+  "pages": "p. 1; PDF p. 3",
+  "partial": 0,
+  "position": 1,
+  "text": "<206 characters>",
+  "url": null
+}
+{
+  "doc_id": 1,
+  "doi": null,
+  "metadata": null,
+  "pages": "p. xi; p. 1",
+  "partial": 0,
+  "position": 2,
+  "text": "Braudel, F. (1979). *Civilisation matérielle, économie et capitalisme, XVe-XVIIIe siècle*. Paris: Armand Colin.",
+  "url": null
+}
+{
+  "doc_id": 1,
+  "doi": null,
+  "metadata": null,
+  "pages": "PDF p. 3",
+  "partial": 0,
+  "position": 3,
+  "text": "Montanari, M. (1994). *The Culture of Food*. Oxford: Blackwell.",
+  "url": null
+}
+## documents
+{
+  "doc_id": 1,
+  "first_run_id": "<run-1>",
+  "image_settings": {
+    "cap_policy": "openai-original-30k-v1",
+    "grayscale_conversion": true,
+    "handle_transparency": true,
+    "high_target_box": [
+      768,
+      1536
+    ],
+    "image_high_res_tier": false,
+    "image_original_patch_cap_30k": true,
+    "jpeg_quality": 95,
+    "llm_detail": "original",
+    "low_max_side_px": 512,
+    "max_image_bytes": 50000000,
+    "max_pixels_per_page": 24000000,
+    "model_name": "gpt-5.6-terra",
+    "model_type": "openai",
+    "native_fallback_dpi": 300,
+    "payload_format": "jpeg",
+    "provider": "openai",
+    "render_strategy": "direct",
+    "request_detail": "original",
+    "resampling_algorithm": "bilinear",
+    "resize_profile": "high",
+    "resolved_detail": "original",
+    "target_dpi": "native"
+  },
+  "input_path": "<tmp>/docs/doc.pdf",
+  "input_sha256": "<sha256>",
+  "kind": "pdf",
+  "last_run_id": "<run-6>",
+  "lease_generation": 6,
+  "lease_run_id": null,
+  "lease_until": null,
+  "name": "doc",
+  "status": "complete",
+  "tool": "autoexcerpter",
+  "units_done": 6,
+  "units_failed": 0,
+  "units_pending": 0,
+  "units_total": 6,
+  "updated_at": "<datetime>+00:00"
+}
+## meta
+{
+  "component": "core",
+  "version": 1
+}
+{
+  "component": "autoexcerpter",
+  "version": 2
+}
+## notes
+## outputs
+{
+  "doc_id": 1,
+  "format": "summary-docx",
+  "path": "doc_summary.docx",
+  "rendered_at": "<datetime>+00:00",
+  "run_id": "<run-6>",
+  "sha256": "<sha256>",
+  "stale": 0
+}
+{
+  "doc_id": 1,
+  "format": "summary-md",
+  "path": "doc_summary.md",
+  "rendered_at": "<datetime>+00:00",
+  "run_id": "<run-6>",
+  "sha256": "<sha256>",
+  "stale": 0
+}
+{
+  "doc_id": 1,
+  "format": "transcription-md",
+  "path": "doc_transcription.md",
+  "rendered_at": "<datetime>+00:00",
+  "run_id": "<run-6>",
+  "sha256": "<sha256>",
+  "stale": 0
+}
+## responses
+{
+  "attempt": 1,
+  "created_at": "<datetime>+00:00",
+  "custom_id": "<submission-2>-00000",
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "http_status": 200,
+  "idx": 0,
+  "kind": "summary",
+  "latency": null,
+  "model": "gpt-5.6-terra",
+  "provider": "openai",
+  "raw": {
+    "custom_id": "<submission-2>-00000",
+    "error": null,
+    "id": "batch_req_fake0001",
+    "response": {
+      "body": {
+        "created_at": 1767225600,
+        "id": "resp_fake0001",
+        "model": "gpt-5.6-terra",
+        "object": "response",
+        "output": [
+          {
+            "content": [
+              {
+                "annotations": [],
+                "text": "{\"page_information\": {\"page_number_integer\": 11, \"is_two_page_spread\": false, \"page_number_integer_end\": null, \"page_number_type\": \"roman\", \"page_types\": [\"preface\"]}, \"bullet_points\": [\"The preface introduces new research on the *material culture* of eating in early modern Europe between 1500 and 1800.\", \"It frames the chapters around prices, wages and diets and follows Braudel's long-run view of material life.\"], \"references\": [{\"citation\": \"Braudel (1979)\", \"is_partial\": true}]}",
+                "type": "output_text"
+              }
+            ],
+            "id": "msg_fake0001",
+            "role": "assistant",
+            "status": "completed",
+            "type": "message"
+          }
+        ],
+        "status": "completed",
+        "usage": {
+          "input_tokens": 900,
+          "input_tokens_details": {
+            "cached_tokens": 0
+          },
+          "output_tokens": 250,
+          "output_tokens_details": {
+            "reasoning_tokens": 0
+          },
+          "total_tokens": 1150
+        }
+      },
+      "request_id": "req_fake0001",
+      "status_code": 200
+    }
+  },
+  "raw_kind": "line",
+  "request": null,
+  "response_id": 1,
+  "role": "summary",
+  "run_id": "<run-3>",
+  "submission_id": "<submission-2>",
+  "tool": "autoexcerpter",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 900,
+    "output_tokens": 250,
+    "reasoning_tokens": 0,
+    "total_tokens": 1150
+  }
+}
+{
+  "attempt": 1,
+  "created_at": "<datetime>+00:00",
+  "custom_id": "<submission-4>-00000",
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "http_status": 200,
+  "idx": 1,
+  "kind": "summary",
+  "latency": null,
+  "model": "gpt-5.6-terra",
+  "provider": "openai",
+  "raw": {
+    "custom_id": "<submission-4>-00000",
+    "error": null,
+    "id": "batch_req_fake0001",
+    "response": {
+      "body": {
+        "created_at": 1767225600,
+        "id": "resp_fake0001",
+        "model": "gpt-5.6-terra",
+        "object": "response",
+        "output": [
+          {
+            "content": [
+              {
+                "annotations": [],
+                "text": "{\"page_information\": {\"page_number_integer\": 1, \"is_two_page_spread\": false, \"page_number_integer_end\": null, \"page_number_type\": \"arabic\", \"page_types\": [\"content\"]}, \"bullet_points\": [\"Bread prices rose faster than wages after 1550, shifting the economic burden onto **urban households**.\", \"The real wage index is defined as $w_t / p_t$, nominal wages deflated by the bread price.\", \"A consumer basket weights goods so that $$\\\\sum_{i=1}^{n} \\\\omega_i = 1$$ holds in every year.\"], \"references\": [{\"citation\": \"Allen, R. C. (2001). The great divergence in European wages and prices from the Middle Ages to the First World War. *Explorations in Economic History, 38*(4), 411-447. https://doi.org/10.1006/exeh.2001.0775\", \"is_partial\": false}, {\"citation\": \"Braudel, F. (1979). *Civilisation matérielle, économie et capitalisme, XVe-XVIIIe siècle*. Paris: Armand Colin.\", \"is_partial\": false}]}",
+                "type": "output_text"
+              }
+            ],
+            "id": "msg_fake0001",
+            "role": "assistant",
+            "status": "completed",
+            "type": "message"
+          }
+        ],
+        "status": "completed",
+        "usage": {
+          "input_tokens": 900,
+          "input_tokens_details": {
+            "cached_tokens": 0
+          },
+          "output_tokens": 250,
+          "output_tokens_details": {
+            "reasoning_tokens": 0
+          },
+          "total_tokens": 1150
+        }
+      },
+      "request_id": "req_fake0001",
+      "status_code": 200
+    }
+  },
+  "raw_kind": "line",
+  "request": null,
+  "response_id": 2,
+  "role": "summary",
+  "run_id": "<run-6>",
+  "submission_id": "<submission-4>",
+  "tool": "autoexcerpter",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 900,
+    "output_tokens": 250,
+    "reasoning_tokens": 0,
+    "total_tokens": 1150
+  }
+}
+{
+  "attempt": 1,
+  "created_at": "<datetime>+00:00",
+  "custom_id": "<submission-2>-00001",
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "http_status": 200,
+  "idx": 2,
+  "kind": "summary",
+  "latency": null,
+  "model": "gpt-5.6-terra",
+  "provider": "openai",
+  "raw": {
+    "custom_id": "<submission-2>-00001",
+    "error": null,
+    "id": "batch_req_fake0002",
+    "response": {
+      "body": {
+        "created_at": 1767225600,
+        "id": "resp_fake0002",
+        "model": "gpt-5.6-terra",
+        "object": "response",
+        "output": [
+          {
+            "content": [
+              {
+                "annotations": [],
+                "text": "{\"page_information\": {\"page_number_integer\": null, \"is_two_page_spread\": false, \"page_number_integer_end\": null, \"page_number_type\": \"none\", \"page_types\": [\"bibliography\"]}, \"bullet_points\": null, \"references\": [{\"citation\": \"Allen, R. C. (2001). The great divergence in European wages and prices from the Middle Ages to the First World War. *Explorations in Economic History, 38*(4), 411-447.\", \"is_partial\": false}, {\"citation\": \"Montanari, M. (1994). *The Culture of Food*. Oxford: Blackwell.\", \"is_partial\": false}]}",
+                "type": "output_text"
+              }
+            ],
+            "id": "msg_fake0002",
+            "role": "assistant",
+            "status": "completed",
+            "type": "message"
+          }
+        ],
+        "status": "completed",
+        "usage": {
+          "input_tokens": 900,
+          "input_tokens_details": {
+            "cached_tokens": 0
+          },
+          "output_tokens": 250,
+          "output_tokens_details": {
+            "reasoning_tokens": 0
+          },
+          "total_tokens": 1150
+        }
+      },
+      "request_id": "req_fake0002",
+      "status_code": 200
+    }
+  },
+  "raw_kind": "line",
+  "request": null,
+  "response_id": 3,
+  "role": "summary",
+  "run_id": "<run-3>",
+  "submission_id": "<submission-2>",
+  "tool": "autoexcerpter",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 900,
+    "output_tokens": 250,
+    "reasoning_tokens": 0,
+    "total_tokens": 1150
+  }
+}
+{
+  "attempt": 1,
+  "created_at": "<datetime>+00:00",
+  "custom_id": "<submission-1>-00000",
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "http_status": 200,
+  "idx": 0,
+  "kind": "transcription",
+  "latency": null,
+  "model": "gpt-5.6-terra",
+  "provider": "openai",
+  "raw": {
+    "custom_id": "<submission-1>-00000",
+    "error": null,
+    "id": "batch_req_fake0001",
+    "response": {
+      "body": {
+        "created_at": 1767225600,
+        "id": "resp_fake0001",
+        "model": "gpt-5.6-terra",
+        "object": "response",
+        "output": [
+          {
+            "content": [
+              {
+                "annotations": [],
+                "text": "{\"transcription\": \"# Preface\\n\\nThis volume brings together **new research** on the *material\\nculture* of eating in early modern Europe. Its chapters trace how\\nprices, wages and diets changed between 1500 and 1800.[^1]\\n\\n[^1]: See Braudel (1979) for the classic statement of this view.\\n\\n<page_number>xi</page_number>\", \"no_transcribable_text\": false, \"transcription_not_possible\": false}",
+                "type": "output_text"
+              }
+            ],
+            "id": "msg_fake0001",
+            "role": "assistant",
+            "status": "completed",
+            "type": "message"
+          }
+        ],
+        "status": "completed",
+        "usage": {
+          "input_tokens": 1500,
+          "input_tokens_details": {
+            "cached_tokens": 0
+          },
+          "output_tokens": 400,
+          "output_tokens_details": {
+            "reasoning_tokens": 0
+          },
+          "total_tokens": 1900
+        }
+      },
+      "request_id": "req_fake0001",
+      "status_code": 200
+    }
+  },
+  "raw_kind": "line",
+  "request": null,
+  "response_id": 4,
+  "role": "transcription",
+  "run_id": "<run-2>",
+  "submission_id": "<submission-1>",
+  "tool": "autoexcerpter",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 1500,
+    "output_tokens": 400,
+    "reasoning_tokens": 0,
+    "total_tokens": 1900
+  }
+}
+{
+  "attempt": 1,
+  "created_at": "<datetime>+00:00",
+  "custom_id": "<submission-1>-00001",
+  "doc_id": 1,
+  "error": "Error code: 400 - invalid request",
+  "error_type": "invalid_request",
+  "http_status": 400,
+  "idx": 1,
+  "kind": "transcription",
+  "latency": null,
+  "model": "gpt-5.6-terra",
+  "provider": "openai",
+  "raw": {
+    "custom_id": "<submission-1>-00001",
+    "error": null,
+    "id": "batch_req_fake0002",
+    "response": {
+      "body": {
+        "error": {
+          "code": "invalid_request",
+          "message": "Error code: 400 - invalid request",
+          "param": null,
+          "type": "invalid_request_error"
+        }
+      },
+      "request_id": "req_fake0002",
+      "status_code": 400
+    }
+  },
+  "raw_kind": "line",
+  "request": null,
+  "response_id": 5,
+  "role": "transcription",
+  "run_id": "<run-2>",
+  "submission_id": "<submission-1>",
+  "tool": "autoexcerpter",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "reasoning_tokens": 0,
+    "total_tokens": 0
+  }
+}
+{
+  "attempt": 1,
+  "created_at": "<datetime>+00:00",
+  "custom_id": "<submission-3>-00000",
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "http_status": 200,
+  "idx": 1,
+  "kind": "transcription",
+  "latency": null,
+  "model": "gpt-5.6-terra",
+  "provider": "openai",
+  "raw": {
+    "custom_id": "<submission-3>-00000",
+    "error": null,
+    "id": "batch_req_fake0001",
+    "response": {
+      "body": {
+        "created_at": 1767225600,
+        "id": "resp_fake0001",
+        "model": "gpt-5.6-terra",
+        "object": "response",
+        "output": [
+          {
+            "content": [
+              {
+                "annotations": [],
+                "text": "{\"transcription\": \"## The Price of Bread\\n\\nBread prices rose faster than wages after 1550, and the eco-\\nnomic burden fell on urban households.[^2] The real wage index\\nis defined as $w_t / p_t$.\\n\\n![Image: line chart of bread prices and day wages in Antwerp, 1500-1800; prices rise steeply after 1550 while wages stay flat]\\n\\n[^2]: Allen, R. C. (2001). The great divergence in European wages and prices from the Middle Ages to the First World War. *Explorations in Economic History, 38*(4), 411-447. https://doi.org/10.1006/exeh.2001.0775\\n\\n<page_number>1</page_number>\", \"no_transcribable_text\": false, \"transcription_not_possible\": false}",
+                "type": "output_text"
+              }
+            ],
+            "id": "msg_fake0001",
+            "role": "assistant",
+            "status": "completed",
+            "type": "message"
+          }
+        ],
+        "status": "completed",
+        "usage": {
+          "input_tokens": 1500,
+          "input_tokens_details": {
+            "cached_tokens": 0
+          },
+          "output_tokens": 400,
+          "output_tokens_details": {
+            "reasoning_tokens": 0
+          },
+          "total_tokens": 1900
+        }
+      },
+      "request_id": "req_fake0001",
+      "status_code": 200
+    }
+  },
+  "raw_kind": "line",
+  "request": null,
+  "response_id": 6,
+  "role": "transcription",
+  "run_id": "<run-5>",
+  "submission_id": "<submission-3>",
+  "tool": "autoexcerpter",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 1500,
+    "output_tokens": 400,
+    "reasoning_tokens": 0,
+    "total_tokens": 1900
+  }
+}
+{
+  "attempt": 1,
+  "created_at": "<datetime>+00:00",
+  "custom_id": "<submission-1>-00002",
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "http_status": 200,
+  "idx": 2,
+  "kind": "transcription",
+  "latency": null,
+  "model": "gpt-5.6-terra",
+  "provider": "openai",
+  "raw": {
+    "custom_id": "<submission-1>-00002",
+    "error": null,
+    "id": "batch_req_fake0003",
+    "response": {
+      "body": {
+        "created_at": 1767225600,
+        "id": "resp_fake0003",
+        "model": "gpt-5.6-terra",
+        "object": "response",
+        "output": [
+          {
+            "content": [
+              {
+                "annotations": [],
+                "text": "{\"transcription\": \"## Bibliography\\n\\nAllen, R. C. (2001). The great divergence in European wages and prices from the Middle Ages to the First World War. *Explorations in Economic History, 38*(4), 411-447.\\n\\nMontanari, M. (1994). *The Culture of Food*. Oxford: Blackwell.\", \"no_transcribable_text\": false, \"transcription_not_possible\": false}",
+                "type": "output_text"
+              }
+            ],
+            "id": "msg_fake0003",
+            "role": "assistant",
+            "status": "completed",
+            "type": "message"
+          }
+        ],
+        "status": "completed",
+        "usage": {
+          "input_tokens": 1500,
+          "input_tokens_details": {
+            "cached_tokens": 0
+          },
+          "output_tokens": 400,
+          "output_tokens_details": {
+            "reasoning_tokens": 0
+          },
+          "total_tokens": 1900
+        }
+      },
+      "request_id": "req_fake0003",
+      "status_code": 200
+    }
+  },
+  "raw_kind": "line",
+  "request": null,
+  "response_id": 7,
+  "role": "transcription",
+  "run_id": "<run-2>",
+  "submission_id": "<submission-1>",
+  "tool": "autoexcerpter",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 1500,
+    "output_tokens": 400,
+    "reasoning_tokens": 0,
+    "total_tokens": 1900
+  }
+}
+## runs
+{
+  "command": "run",
+  "ended_at": "<datetime>+00:00",
+  "exit_code": 0,
+  "run_id": "<run-1>",
+  "settings_fingerprint": "<sha256>",
+  "spec": {
+    "citations.openalex": {
+      "source": "flag",
+      "value": false
+    },
+    "images.detail": {
+      "source": "default",
+      "value": null
+    },
+    "images.dpi": {
+      "source": "default",
+      "value": null
+    },
+    "images.format": {
+      "source": "default",
+      "value": null
+    },
+    "images.grayscale": {
+      "source": "default",
+      "value": null
+    },
+    "images.jpeg_quality": {
+      "source": "default",
+      "value": null
+    },
+    "input.all": {
+      "source": "flag",
+      "value": true
+    },
+    "input.path": {
+      "source": "flag",
+      "value": "<tmp>/docs/doc.pdf"
+    },
+    "input.select": {
+      "source": "flag",
+      "value": null
+    },
+    "output.directory": {
+      "source": "flag",
+      "value": "<tmp>/out"
+    },
+    "output.formats": {
+      "source": "flag",
+      "value": [
+        "summary-md",
+        "summary-docx"
+      ]
+    },
+    "output.transcription_format": {
+      "source": "default",
+      "value": "md"
+    },
+    "run.batch": {
+      "source": "flag",
+      "value": true
+    },
+    "run.concurrency": {
+      "source": "default",
+      "value": 16
+    },
+    "run.dry_run": {
+      "source": "default",
+      "value": false
+    },
+    "run.force": {
+      "source": "default",
+      "value": false
+    },
+    "run.json": {
+      "source": "flag",
+      "value": true
+    },
+    "run.retranscribe": {
+      "source": "default",
+      "value": false
+    },
+    "summary.context": {
+      "source": "default",
+      "value": null
+    },
+    "summary.enabled": {
+      "source": "flag",
+      "value": true
+    },
+    "summary.fallback_context": {
+      "source": "default",
+      "value": null
+    },
+    "summary_model.endpoint": {
+      "source": "default",
+      "value": null
+    },
+    "summary_model.max_output_tokens": {
+      "source": "default",
+      "value": null
+    },
+    "summary_model.model": {
+      "source": "flag",
+      "value": "gpt-5.6-terra"
+    },
+    "summary_model.provider": {
+      "source": "flag",
+      "value": "openai"
+    },
+    "summary_model.reasoning_effort": {
+      "source": "default",
+      "value": "high"
+    },
+    "summary_model.response_format": {
+      "source": "default",
+      "value": null
+    },
+    "summary_model.service_tier": {
+      "source": "default",
+      "value": "flex"
+    },
+    "summary_model.temperature": {
+      "source": "default",
+      "value": 1.0
+    },
+    "summary_model.top_p": {
+      "source": "default",
+      "value": null
+    },
+    "summary_model.verbosity": {
+      "source": "default",
+      "value": "low"
+    },
+    "transcription_model.endpoint": {
+      "source": "default",
+      "value": null
+    },
+    "transcription_model.max_output_tokens": {
+      "source": "default",
+      "value": null
+    },
+    "transcription_model.model": {
+      "source": "flag",
+      "value": "gpt-5.6-terra"
+    },
+    "transcription_model.provider": {
+      "source": "flag",
+      "value": "openai"
+    },
+    "transcription_model.reasoning_effort": {
+      "source": "default",
+      "value": "high"
+    },
+    "transcription_model.response_format": {
+      "source": "default",
+      "value": null
+    },
+    "transcription_model.service_tier": {
+      "source": "default",
+      "value": "flex"
+    },
+    "transcription_model.temperature": {
+      "source": "default",
+      "value": 1.0
+    },
+    "transcription_model.top_p": {
+      "source": "default",
+      "value": null
+    },
+    "transcription_model.verbosity": {
+      "source": "default",
+      "value": "high"
+    }
+  },
+  "started_at": "<datetime>+00:00",
+  "tool": "autoexcerpter",
+  "tool_version": "<version>"
+}
+{
+  "command": "batch check",
+  "ended_at": "<datetime>+00:00",
+  "exit_code": 0,
+  "run_id": "<run-2>",
+  "settings_fingerprint": null,
+  "spec": {
+    "batch_ids": [],
+    "directory": "<tmp>/out"
+  },
+  "started_at": "<datetime>+00:00",
+  "tool": "autoexcerpter",
+  "tool_version": "<version>"
+}
+{
+  "command": "batch check",
+  "ended_at": "<datetime>+00:00",
+  "exit_code": 1,
+  "run_id": "<run-3>",
+  "settings_fingerprint": null,
+  "spec": {
+    "batch_ids": [],
+    "directory": "<tmp>/out"
+  },
+  "started_at": "<datetime>+00:00",
+  "tool": "autoexcerpter",
+  "tool_version": "<version>"
+}
+{
+  "command": "run",
+  "ended_at": "<datetime>+00:00",
+  "exit_code": 0,
+  "run_id": "<run-4>",
+  "settings_fingerprint": "<sha256>",
+  "spec": {
+    "citations.openalex": {
+      "source": "flag",
+      "value": false
+    },
+    "images.detail": {
+      "source": "default",
+      "value": null
+    },
+    "images.dpi": {
+      "source": "default",
+      "value": null
+    },
+    "images.format": {
+      "source": "default",
+      "value": null
+    },
+    "images.grayscale": {
+      "source": "default",
+      "value": null
+    },
+    "images.jpeg_quality": {
+      "source": "default",
+      "value": null
+    },
+    "input.all": {
+      "source": "flag",
+      "value": true
+    },
+    "input.path": {
+      "source": "flag",
+      "value": "<tmp>/docs/doc.pdf"
+    },
+    "input.select": {
+      "source": "flag",
+      "value": null
+    },
+    "output.directory": {
+      "source": "flag",
+      "value": "<tmp>/out"
+    },
+    "output.formats": {
+      "source": "flag",
+      "value": [
+        "summary-md",
+        "summary-docx"
+      ]
+    },
+    "output.transcription_format": {
+      "source": "default",
+      "value": "md"
+    },
+    "run.batch": {
+      "source": "flag",
+      "value": true
+    },
+    "run.concurrency": {
+      "source": "default",
+      "value": 16
+    },
+    "run.dry_run": {
+      "source": "default",
+      "value": false
+    },
+    "run.force": {
+      "source": "default",
+      "value": false
+    },
+    "run.json": {
+      "source": "flag",
+      "value": true
+    },
+    "run.retranscribe": {
+      "source": "default",
+      "value": false
+    },
+    "summary.context": {
+      "source": "default",
+      "value": null
+    },
+    "summary.enabled": {
+      "source": "flag",
+      "value": true
+    },
+    "summary.fallback_context": {
+      "source": "default",
+      "value": null
+    },
+    "summary_model.endpoint": {
+      "source": "default",
+      "value": null
+    },
+    "summary_model.max_output_tokens": {
+      "source": "default",
+      "value": null
+    },
+    "summary_model.model": {
+      "source": "flag",
+      "value": "gpt-5.6-terra"
+    },
+    "summary_model.provider": {
+      "source": "flag",
+      "value": "openai"
+    },
+    "summary_model.reasoning_effort": {
+      "source": "default",
+      "value": "high"
+    },
+    "summary_model.response_format": {
+      "source": "default",
+      "value": null
+    },
+    "summary_model.service_tier": {
+      "source": "default",
+      "value": "flex"
+    },
+    "summary_model.temperature": {
+      "source": "default",
+      "value": 1.0
+    },
+    "summary_model.top_p": {
+      "source": "default",
+      "value": null
+    },
+    "summary_model.verbosity": {
+      "source": "default",
+      "value": "low"
+    },
+    "transcription_model.endpoint": {
+      "source": "default",
+      "value": null
+    },
+    "transcription_model.max_output_tokens": {
+      "source": "default",
+      "value": null
+    },
+    "transcription_model.model": {
+      "source": "flag",
+      "value": "gpt-5.6-terra"
+    },
+    "transcription_model.provider": {
+      "source": "flag",
+      "value": "openai"
+    },
+    "transcription_model.reasoning_effort": {
+      "source": "default",
+      "value": "high"
+    },
+    "transcription_model.response_format": {
+      "source": "default",
+      "value": null
+    },
+    "transcription_model.service_tier": {
+      "source": "default",
+      "value": "flex"
+    },
+    "transcription_model.temperature": {
+      "source": "default",
+      "value": 1.0
+    },
+    "transcription_model.top_p": {
+      "source": "default",
+      "value": null
+    },
+    "transcription_model.verbosity": {
+      "source": "default",
+      "value": "high"
+    }
+  },
+  "started_at": "<datetime>+00:00",
+  "tool": "autoexcerpter",
+  "tool_version": "<version>"
+}
+{
+  "command": "batch check",
+  "ended_at": "<datetime>+00:00",
+  "exit_code": 0,
+  "run_id": "<run-5>",
+  "settings_fingerprint": null,
+  "spec": {
+    "batch_ids": [],
+    "directory": "<tmp>/out"
+  },
+  "started_at": "<datetime>+00:00",
+  "tool": "autoexcerpter",
+  "tool_version": "<version>"
+}
+{
+  "command": "batch check",
+  "ended_at": "<datetime>+00:00",
+  "exit_code": 0,
+  "run_id": "<run-6>",
+  "settings_fingerprint": null,
+  "spec": {
+    "batch_ids": [],
+    "directory": "<tmp>/out"
+  },
+  "started_at": "<datetime>+00:00",
+  "tool": "autoexcerpter",
+  "tool_version": "<version>"
+}
+## submission_requests
+{
+  "custom_id": "<submission-1>-00000",
+  "doc_id": 1,
+  "idx": 0,
+  "kind": "transcription",
+  "submission_id": "<submission-1>"
+}
+{
+  "custom_id": "<submission-1>-00001",
+  "doc_id": 1,
+  "idx": 1,
+  "kind": "transcription",
+  "submission_id": "<submission-1>"
+}
+{
+  "custom_id": "<submission-1>-00002",
+  "doc_id": 1,
+  "idx": 2,
+  "kind": "transcription",
+  "submission_id": "<submission-1>"
+}
+{
+  "custom_id": "<submission-2>-00000",
+  "doc_id": 1,
+  "idx": 0,
+  "kind": "summary",
+  "submission_id": "<submission-2>"
+}
+{
+  "custom_id": "<submission-2>-00001",
+  "doc_id": 1,
+  "idx": 2,
+  "kind": "summary",
+  "submission_id": "<submission-2>"
+}
+{
+  "custom_id": "<submission-3>-00000",
+  "doc_id": 1,
+  "idx": 1,
+  "kind": "transcription",
+  "submission_id": "<submission-3>"
+}
+{
+  "custom_id": "<submission-4>-00000",
+  "doc_id": 1,
+  "idx": 1,
+  "kind": "summary",
+  "submission_id": "<submission-4>"
+}
+## submissions
+{
+  "batch_id": "batch_fake0002",
+  "counts": {
+    "completed": 2,
+    "failed": 1,
+    "pending": 0,
+    "total": 3
+  },
+  "error": null,
+  "finalized_at": "<datetime>+00:00",
+  "intent_at": "<datetime>+00:00",
+  "last_checked_at": "<datetime>+00:00",
+  "model": "gpt-5.6-terra",
+  "part": 1,
+  "provider": "openai",
+  "provider_status": "completed",
+  "request_count": 3,
+  "run_id": "<run-1>",
+  "status": "finalized",
+  "submission_id": "<submission-1>",
+  "tool": "autoexcerpter",
+  "updated_at": "<datetime>+00:00",
+  "upload_ref": "file-fake0001"
+}
+{
+  "batch_id": "batch_fake0006",
+  "counts": {
+    "completed": 2,
+    "failed": 0,
+    "pending": 0,
+    "total": 2
+  },
+  "error": null,
+  "finalized_at": "<datetime>+00:00",
+  "intent_at": "<datetime>+00:00",
+  "last_checked_at": "<datetime>+00:00",
+  "model": "gpt-5.6-terra",
+  "part": 1,
+  "provider": "openai",
+  "provider_status": "completed",
+  "request_count": 2,
+  "run_id": "<run-2>",
+  "status": "finalized",
+  "submission_id": "<submission-2>",
+  "tool": "autoexcerpter",
+  "updated_at": "<datetime>+00:00",
+  "upload_ref": "file-fake0005"
+}
+{
+  "batch_id": "batch_fake0009",
+  "counts": {
+    "completed": 1,
+    "failed": 0,
+    "pending": 0,
+    "total": 1
+  },
+  "error": null,
+  "finalized_at": "<datetime>+00:00",
+  "intent_at": "<datetime>+00:00",
+  "last_checked_at": "<datetime>+00:00",
+  "model": "gpt-5.6-terra",
+  "part": 1,
+  "provider": "openai",
+  "provider_status": "completed",
+  "request_count": 1,
+  "run_id": "<run-4>",
+  "status": "finalized",
+  "submission_id": "<submission-3>",
+  "tool": "autoexcerpter",
+  "updated_at": "<datetime>+00:00",
+  "upload_ref": "file-fake0008"
+}
+{
+  "batch_id": "batch_fake0012",
+  "counts": {
+    "completed": 1,
+    "failed": 0,
+    "pending": 0,
+    "total": 1
+  },
+  "error": null,
+  "finalized_at": "<datetime>+00:00",
+  "intent_at": "<datetime>+00:00",
+  "last_checked_at": "<datetime>+00:00",
+  "model": "gpt-5.6-terra",
+  "part": 1,
+  "provider": "openai",
+  "provider_status": "completed",
+  "request_count": 1,
+  "run_id": "<run-5>",
+  "status": "finalized",
+  "submission_id": "<submission-4>",
+  "tool": "autoexcerpter",
+  "updated_at": "<datetime>+00:00",
+  "upload_ref": "file-fake0011"
+}
+## summaries
+{
+  "bullet_points": [
+    "The preface introduces new research on the *material culture* of eating in early modern Europe between 1500 and 1800.",
+    "It frames the chapters around prices, wages and diets and follows Braudel's long-run view of material life."
+  ],
+  "doc_id": 1,
+  "idx": 0,
+  "page": 1,
+  "page_information": {
+    "is_two_page_spread": false,
+    "page_number_integer": 11,
+    "page_number_integer_end": null,
+    "page_number_type": "roman",
+    "page_types": [
+      "preface"
+    ]
+  },
+  "page_references": [
+    {
+      "citation": "Braudel (1979)",
+      "is_partial": true
+    }
+  ]
+}
+{
+  "bullet_points": [
+    "Bread prices rose faster than wages after 1550, shifting the economic burden onto **urban households**.",
+    "The real wage index is defined as $w_t / p_t$, nominal wages deflated by the bread price.",
+    "A consumer basket weights goods so that $$\\sum_{i=1}^{n} \\omega_i = 1$$ holds in every year."
+  ],
+  "doc_id": 1,
+  "idx": 1,
+  "page": 2,
+  "page_information": {
+    "is_two_page_spread": false,
+    "page_number_integer": 1,
+    "page_number_integer_end": null,
+    "page_number_type": "arabic",
+    "page_types": [
+      "content"
+    ]
+  },
+  "page_references": [
+    {
+      "citation": "Allen, R. C. (2001). The great divergence in European wages and prices from the Middle Ages to the First World War. *Explorations in Economic History, 38*(4), 411-447. https://doi.org/10.1006/exeh.2001.0775",
+      "is_partial": false
+    },
+    {
+      "citation": "Braudel, F. (1979). *Civilisation matérielle, économie et capitalisme, XVe-XVIIIe siècle*. Paris: Armand Colin.",
+      "is_partial": false
+    }
+  ]
+}
+{
+  "bullet_points": null,
+  "doc_id": 1,
+  "idx": 2,
+  "page": 3,
+  "page_information": {
+    "is_two_page_spread": false,
+    "page_number_integer": null,
+    "page_number_integer_end": null,
+    "page_number_type": "none",
+    "page_types": [
+      "bibliography"
+    ]
+  },
+  "page_references": [
+    {
+      "citation": "Allen, R. C. (2001). The great divergence in European wages and prices from the Middle Ages to the First World War. *Explorations in Economic History, 38*(4), 411-447.",
+      "is_partial": false
+    },
+    {
+      "citation": "Montanari, M. (1994). *The Culture of Food*. Oxford: Blackwell.",
+      "is_partial": false
+    }
+  ]
+}
+## units
+{
+  "attempts": 1,
+  "content": null,
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "idx": 0,
+  "kind": "summary",
+  "label": "page_0001.jpg",
+  "model": "gpt-5.6-terra",
+  "outcome": "ok",
+  "provenance": null,
+  "provider": "openai",
+  "response_id": 1,
+  "run_id": "<run-3>",
+  "source_index": 0,
+  "stale": 0,
+  "status": "done",
+  "tool": "autoexcerpter",
+  "updated_at": "<datetime>+00:00",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 900,
+    "output_tokens": 250,
+    "reasoning_tokens": 0,
+    "total_tokens": 1150
+  }
+}
+{
+  "attempts": 1,
+  "content": null,
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "idx": 1,
+  "kind": "summary",
+  "label": "page_0002.jpg",
+  "model": "gpt-5.6-terra",
+  "outcome": "ok",
+  "provenance": null,
+  "provider": "openai",
+  "response_id": 2,
+  "run_id": "<run-6>",
+  "source_index": 1,
+  "stale": 0,
+  "status": "done",
+  "tool": "autoexcerpter",
+  "updated_at": "<datetime>+00:00",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 900,
+    "output_tokens": 250,
+    "reasoning_tokens": 0,
+    "total_tokens": 1150
+  }
+}
+{
+  "attempts": 1,
+  "content": null,
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "idx": 2,
+  "kind": "summary",
+  "label": "page_0003.jpg",
+  "model": "gpt-5.6-terra",
+  "outcome": "ok",
+  "provenance": null,
+  "provider": "openai",
+  "response_id": 3,
+  "run_id": "<run-3>",
+  "source_index": 2,
+  "stale": 0,
+  "status": "done",
+  "tool": "autoexcerpter",
+  "updated_at": "<datetime>+00:00",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 900,
+    "output_tokens": 250,
+    "reasoning_tokens": 0,
+    "total_tokens": 1150
+  }
+}
+{
+  "attempts": 1,
+  "content": "# Preface\n\nThis volume brings together **new research** on the *material\nculture* of eating in early modern Europe. Its chapters trace how\nprices, wages and diets changed between 1500 and 1800.[^1]\n\n[^1]: See Braudel (1979) for the classic statement of this view.\n\n<page_number>xi</page_number>\n",
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "idx": 0,
+  "kind": "transcription",
+  "label": "page_0001.jpg",
+  "model": "gpt-5.6-terra",
+  "outcome": "ok",
+  "provenance": {
+    "image_provenance": {
+      "byte_size": "<bytes>",
+      "cap_policy": "openai-original-30k-v1",
+      "downscale_reason": "none",
+      "dpi_source": "fallback",
+      "effective_dpi": 300.0,
+      "format_fallback": false,
+      "height": 1250,
+      "mime_type": "image/jpeg",
+      "payload_format": "jpeg",
+      "render_dpi": 300.0,
+      "sent_dpi": 300.0,
+      "source_dpi_x": 300.0,
+      "source_dpi_y": 300.0,
+      "source_height": 1250,
+      "source_width": 834,
+      "width": 834
+    },
+    "source_file": "<tmp>/docs/doc.pdf"
+  },
+  "provider": "openai",
+  "response_id": 4,
+  "run_id": "<run-2>",
+  "source_index": 0,
+  "stale": 0,
+  "status": "done",
+  "tool": "autoexcerpter",
+  "updated_at": "<datetime>+00:00",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 1500,
+    "output_tokens": 400,
+    "reasoning_tokens": 0,
+    "total_tokens": 1900
+  }
+}
+{
+  "attempts": 1,
+  "content": "## The Price of Bread\n\nBread prices rose faster than wages after 1550, and the economic burden fell on urban households.[^2] The real wage index\nis defined as $w_t / p_t$.\n\n![Image: line chart of bread prices and day wages in Antwerp, 1500-1800; prices rise steeply after 1550 while wages stay flat]\n\n[^2]: Allen, R. C. (2001). The great divergence in European wages and prices from the Middle Ages to the First World War. *Explorations in Economic History, 38*(4), 411-447. https://doi.org/10.1006/exeh.2001.0775\n\n<page_number>1</page_number>\n",
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "idx": 1,
+  "kind": "transcription",
+  "label": "page_0002.jpg",
+  "model": "gpt-5.6-terra",
+  "outcome": "ok",
+  "provenance": {
+    "image_provenance": {
+      "byte_size": "<bytes>",
+      "cap_policy": "openai-original-30k-v1",
+      "downscale_reason": "none",
+      "dpi_source": "fallback",
+      "effective_dpi": 300.0,
+      "format_fallback": false,
+      "height": 1250,
+      "mime_type": "image/jpeg",
+      "payload_format": "jpeg",
+      "render_dpi": 300.0,
+      "sent_dpi": 300.0,
+      "source_dpi_x": 300.0,
+      "source_dpi_y": 300.0,
+      "source_height": 1250,
+      "source_width": 834,
+      "width": 834
+    },
+    "source_file": "<tmp>/docs/doc.pdf"
+  },
+  "provider": "openai",
+  "response_id": 6,
+  "run_id": "<run-5>",
+  "source_index": 1,
+  "stale": 0,
+  "status": "done",
+  "tool": "autoexcerpter",
+  "updated_at": "<datetime>+00:00",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 1500,
+    "output_tokens": 400,
+    "reasoning_tokens": 0,
+    "total_tokens": 1900
+  }
+}
+{
+  "attempts": 1,
+  "content": "## Bibliography\n\nAllen, R. C. (2001). The great divergence in European wages and prices from the Middle Ages to the First World War. *Explorations in Economic History, 38*(4), 411-447.\n\nMontanari, M. (1994). *The Culture of Food*. Oxford: Blackwell.\n",
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "idx": 2,
+  "kind": "transcription",
+  "label": "page_0003.jpg",
+  "model": "gpt-5.6-terra",
+  "outcome": "ok",
+  "provenance": {
+    "image_provenance": {
+      "byte_size": "<bytes>",
+      "cap_policy": "openai-original-30k-v1",
+      "downscale_reason": "none",
+      "dpi_source": "fallback",
+      "effective_dpi": 300.0,
+      "format_fallback": false,
+      "height": 1250,
+      "mime_type": "image/jpeg",
+      "payload_format": "jpeg",
+      "render_dpi": 300.0,
+      "sent_dpi": 300.0,
+      "source_dpi_x": 300.0,
+      "source_dpi_y": 300.0,
+      "source_height": 1250,
+      "source_width": 834,
+      "width": 834
+    },
+    "source_file": "<tmp>/docs/doc.pdf"
+  },
+  "provider": "openai",
+  "response_id": 7,
+  "run_id": "<run-2>",
+  "source_index": 2,
+  "stale": 0,
+  "status": "done",
+  "tool": "autoexcerpter",
+  "updated_at": "<datetime>+00:00",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 1500,
+    "output_tokens": 400,
+    "reasoning_tokens": 0,
+    "total_tokens": 1900
+  }
+}

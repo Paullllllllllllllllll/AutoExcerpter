@@ -1,4 +1,4 @@
-"""The README Command Reference tables agree with the option table."""
+"""The README option tables agree with the option tables of the commands."""
 
 from __future__ import annotations
 
@@ -8,7 +8,12 @@ from collections import Counter
 import pytest
 
 from autoexcerpter.common.options import Kind, Option, OptionTable
-from autoexcerpter.spec import OPTIONS, PHASES
+from autoexcerpter.spec import (
+    BATCH_CANCEL_OPTIONS,
+    BATCH_CHECK_OPTIONS,
+    OPTIONS,
+    PHASES,
+)
 from tests.conftest import PROJECT_ROOT
 
 README = PROJECT_ROOT / "README.md"
@@ -18,9 +23,9 @@ MATRIX_HEADER = ["Setting", "Values", "Both phases", "Transcription", "Summary"]
 SETTABLE_TEXT = {True: "yes", False: "no"}
 
 
-def _section(text: str) -> list[str]:
+def _section(text: str, heading: str = SECTION) -> list[str]:
     lines = text.splitlines()
-    start = lines.index(SECTION) + 1
+    start = lines.index(heading) + 1
     end = next(
         (i for i in range(start, len(lines)) if lines[i].startswith("## ")),
         len(lines),
@@ -164,6 +169,23 @@ def test_readme_tables_match_the_option_table() -> None:
     assert table_drift(_readme()) == []
 
 
+def test_readme_batch_tables_match_their_option_tables() -> None:
+    tables = [
+        table
+        for table in _tables(_section(_readme(), "## Batch Processing"))
+        if table[0] == FLAG_HEADER
+    ]
+    options = (BATCH_CHECK_OPTIONS, BATCH_CANCEL_OPTIONS)
+    assert len(tables) == len(options)
+    for (_header, *rows), table in zip(tables, options, strict=True):
+        problems: list[str] = []
+        seen: Counter[str] = Counter()
+        for row in rows:
+            _check_flag_row(row, table, seen, problems)
+        assert problems == []
+        assert list(seen) == [option.flag for option in table]
+
+
 def test_default_text_is_what_help_prints() -> None:
     for option in OPTIONS:
         default = default_text(option)
@@ -181,9 +203,10 @@ DRIFT = [
         id="changed-default",
     ),
     pytest.param(
-        "| `--json` | print one JSON summary line on stdout | | no |\n",
+        "| `--retranscribe` | transcribe again instead of reusing stored "
+        "transcriptions | | no |\n",
         "",
-        "--json: 0 README rows",
+        "--retranscribe: 0 README rows",
         id="missing-row",
     ),
     pytest.param(

@@ -1,4 +1,5 @@
-"""Fixtures for the characterization tests: fake LLM, fake OpenAlex, goldens."""
+"""Fixtures for the characterization tests: fake LLM, fake batch service, fake
+OpenAlex, goldens."""
 
 from __future__ import annotations
 
@@ -15,6 +16,7 @@ import requests
 
 from tests.characterization.adapter import RunResult
 from tests.characterization.fakes import FakeLLM, FakeOpenAlex
+from tests.characterization.fakes_batch import FakeBatchService
 from tests.characterization.golden import check_golden
 from tests.conftest import WriteGuard
 
@@ -41,6 +43,12 @@ def fake_openalex(monkeypatch: pytest.MonkeyPatch) -> FakeOpenAlex:
     monkeypatch.setattr(requests, "Session", service.session)
     monkeypatch.setattr(requests, "get", service.get)
     return service
+
+
+@pytest.fixture
+def fake_batch(fake_llm: FakeLLM, monkeypatch: pytest.MonkeyPatch) -> FakeBatchService:
+    """Replace the batch SDK clients with fakes over the fake LLM's scripts."""
+    return FakeBatchService(fake_llm).install(monkeypatch)
 
 
 @pytest.fixture

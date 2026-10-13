@@ -1,0 +1,34 @@
+{
+  "exit_code": 0,
+  "json_line": {
+    "command": "check_batches",
+    "complete": 1,
+    "dry_run": false,
+    "failed": 0,
+    "finalized": 1,
+    "outputs": [
+      "<tmp>/out/doc_transcription.md",
+      "<tmp>/out/doc_summary.docx",
+      "<tmp>/out/doc_summary.md"
+    ],
+    "pending": 0,
+    "submitted": 0,
+    "unresolved": 0,
+    "usage": {
+      "summary": {
+        "cached_tokens": 0,
+        "input_tokens": 900,
+        "output_tokens": 250,
+        "reasoning_tokens": 0,
+        "total_tokens": 1150
+      },
+      "total": {
+        "cached_tokens": 0,
+        "input_tokens": 900,
+        "output_tokens": 250,
+        "reasoning_tokens": 0,
+        "total_tokens": 1150
+      }
+    }
+  }
+}

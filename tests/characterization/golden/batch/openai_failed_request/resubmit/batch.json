@@ -1,0 +1,150 @@
+{
+  "calls": [
+    {
+      "call": "openai.files.create",
+      "lines": 1,
+      "purpose": "batch"
+    },
+    {
+      "call": "openai.batches.create",
+      "completion_window": "24h",
+      "endpoint": "/v1/responses",
+      "input_file_id": "file-fake0008",
+      "metadata": {
+        "description": "autoexcerpter",
+        "part": "1",
+        "submission_id": "<submission-3>"
+      }
+    }
+  ],
+  "clients": [
+    {
+      "kwargs": {
+        "api_key": "<env:OPENAI_API_KEY>",
+        "timeout": {
+          "httpx.Timeout": {
+            "connect": 10.0,
+            "pool": 30.0,
+            "read": 900.0,
+            "write": 30.0
+          }
+        }
+      },
+      "provider": "openai"
+    }
+  ],
+  "prompts": {
+    "batch-prompt-1": {
+      "chars": 3690,
+      "sha256": "ae9a319f0c2b4661"
+    },
+    "batch-prompt-2": {
+      "chars": 2582,
+      "sha256": "44add1472db1aa4b"
+    },
+    "batch-prompt-3": {
+      "chars": 146,
+      "sha256": "98edbe011d370ce3"
+    },
+    "batch-prompt-4": {
+      "chars": 178,
+      "sha256": "d3db5925aa15ac35"
+    }
+  },
+  "requests": [
+    {
+      "batch_id": "batch_fake0009",
+      "body": {
+        "body": {
+          "input": [
+            {
+              "content": [
+                {
+                  "text": {
+                    "chars": 3690,
+                    "prompt": "batch-prompt-1"
+                  },
+                  "type": "input_text"
+                }
+              ],
+              "role": "system"
+            },
+            {
+              "content": [
+                {
+                  "detail": "original",
+                  "image_url": {
+                    "image": {
+                      "height": 1250,
+                      "mime": "image/jpeg",
+                      "page": 1,
+                      "width": 834
+                    }
+                  },
+                  "type": "input_image"
+                }
+              ],
+              "role": "user"
+            }
+          ],
+          "max_output_tokens": 128000,
+          "model": "gpt-5.6-terra",
+          "reasoning": {
+            "effort": "high"
+          },
+          "service_tier": "auto",
+          "text": {
+            "format": {
+              "name": "markdown_transcription_schema",
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "no_transcribable_text": {
+                    "description": {
+                      "chars": 146,
+                      "prompt": "batch-prompt-3"
+                    },
+                    "type": "boolean"
+                  },
+                  "transcription": {
+                    "description": {
+                      "chars": 2582,
+                      "prompt": "batch-prompt-2"
+                    },
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "transcription_not_possible": {
+                    "description": {
+                      "chars": 178,
+                      "prompt": "batch-prompt-4"
+                    },
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "transcription",
+                  "no_transcribable_text",
+                  "transcription_not_possible"
+                ],
+                "type": "object"
+              },
+              "strict": true,
+              "type": "json_schema"
+            },
+            "verbosity": "high"
+          }
+        },
+        "custom_id": "<submission-3>-00000",
+        "method": "POST",
+        "url": "/v1/responses"
+      },
+      "custom_id": "<submission-3>-00000",
+      "page": 1,
+      "provider": "openai",
+      "role": "transcription"
+    }
+  ]
+}

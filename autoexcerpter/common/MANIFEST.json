@@ -2,6 +2,10 @@
   "algorithm": "sha256",
   "files": {
     "__init__.py": "2831f94666326b39fa039c3948cfde359744f871ea4bee96f678024858729c3d",
+    "batch.py": "2f294040c2f634c9007ec51af27d19da4799b9bc6813631d82b5dceea8f8f252",
+    "batch_anthropic.py": "b6101484d149c94e2c4f2b198370a5c76dc1384ac084295c80f28cdedbf74be7",
+    "batch_google.py": "4c2ad2f842d8270c1d7035c33204ef64c1d6d23486ea58ff67d82bc9102ec03f",
+    "batch_openai.py": "4a812dacec46eeb13ac7404954b91961b3019f579eeea344ba161feb5098654c",
     "capabilities.py": "dc925842bd034d600c16811518736cd16eca4bc540f025824d157309aa6fbdb8",
     "capture.py": "dff33d798f9fca6a346e19f29fcb5a04a28e26d3ef62e3c8673dfd70652ddaf5",
     "context.py": "e1a81223beed918d4bfeea5d540cee9330e3651fcbe3c319fa5f0b815fee2ce5",

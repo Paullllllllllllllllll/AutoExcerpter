@@ -1,6 +1,7 @@
 """What a guided session shares: settings, tasks, discovered items, the spec.
 
-Every wizard task (a new run, render, migrate) is a :class:`TaskFlow`.
+Every wizard task (a new run, batch check and cancel, render, migrate) is a
+:class:`TaskFlow`.
 :func:`build_wizard` puts the task step first, so the user can switch
 tasks, then the task's own steps. The run task's steps and its review read
 the answers through :func:`resolution`, which resolves them like
@@ -83,6 +84,8 @@ TASK_STEP: Final = "task"
 TASKS: Mapping[str, str] = MappingProxyType(
     {
         "run": "new run",
+        "batch-check": "check batches",
+        "batch-cancel": "cancel batches",
         "render": "render files again",
         "migrate": "import version 1.0 outputs (migrate)",
     }
@@ -95,12 +98,15 @@ class Session:
     """The settings of a guided session and where they came from.
 
     ``settings_path`` is the ``--settings`` file the ui was started with;
-    ``environ`` is where the review looks up API key variables.
+    ``environ`` is where the review looks up API key variables; ``args``
+    holds the parsed ``ui`` arguments, which the review's plan passes to the
+    extension's batch consent.
     """
 
     settings: Settings
     settings_path: Path | None = None
     environ: Mapping[str, str] = field(default_factory=lambda: os.environ)
+    args: argparse.Namespace | None = None
 
 
 def new_state(session: Session, table: OptionTable = OPTIONS) -> State:

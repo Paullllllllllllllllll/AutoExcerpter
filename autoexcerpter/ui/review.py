@@ -236,7 +236,10 @@ def _run_line(spec: RunSpec, mark: _Mark) -> Line:
     if spec.summary.enabled:
         openalex = "on" if spec.citations.openalex else "off"
         parts.append(mark("citations.openalex", f"OpenAlex {openalex}"))
-    parts.append(mark("run.concurrency", f"concurrency {run.concurrency}"))
+    if run.batch:
+        parts.append(mark("run.batch", "batch"))
+    else:
+        parts.append(mark("run.concurrency", f"concurrency {run.concurrency}"))
     if run.dry_run:
         parts.append(mark("run.dry_run", "dry run"))
     return Line("run", parts)
@@ -322,7 +325,7 @@ def build_review(state: State, session: Session) -> Review:
     withheld: list[str] = []
     actions: list[ReviewAction] = []
     try:
-        plan = core.plan(spec, session.settings, sources=sources)
+        plan = core.plan(spec, session.settings, sources=sources, args=session.args)
     except core.PlanError as exc:
         notes.append(f"Plan error: {exc}")
         withheld.append("the plan failed; edit a step")
@@ -337,6 +340,12 @@ def build_review(state: State, session: Session) -> Review:
                     _force,
                 )
             )
+    if spec.run.batch:
+        notes.append(
+            "Batch: Run submits the pages to the providers' batch APIs; the "
+            "batch check task collects them, submits the summaries and writes "
+            "the files."
+        )
     if spec.run.dry_run:
         notes.append("Dry run: Run shows the plan only, with no API calls or writes.")
     else:

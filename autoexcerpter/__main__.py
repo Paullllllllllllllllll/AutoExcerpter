@@ -23,9 +23,22 @@ def main(argv: Sequence[str] | None = None) -> int:
             from autoexcerpter.cli import store
 
             return store.report_usage_error(error, args)
+        if args[0] == "batch":
+            from autoexcerpter.cli import batch
+
+            return batch.report_usage_error(error, args)
         return command.report_usage_error(error, args)
     if namespace.command == "run":
         return command.execute(namespace)
+    if namespace.command == "batch":
+        from autoexcerpter.cli import batch
+
+        if namespace.batch_command == "check":
+            return batch.execute_check(namespace)
+        if namespace.batch_command == "cancel":
+            return batch.execute_cancel(namespace)
+        namespace.group_parser.print_help()
+        return 0
     if namespace.command == "render":
         from autoexcerpter.cli import store
 

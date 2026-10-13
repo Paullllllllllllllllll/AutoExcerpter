@@ -42,7 +42,13 @@ def test_startup_hooks_pass_through() -> None:
     assert list(ext.wizard_steps()) == []
     spec = resolve_spec({"input": Path("x.pdf")}).spec
     ext.startup(spec, settings=_SETTINGS, args=argparse.Namespace())
-    assert ext.batch_allowed(spec) is True
+    assert ext.batch_allowed(spec, settings=_SETTINGS) is True
+    assert ext.key_variables("openai", kind="batch", settings=_SETTINGS) == (
+        _SETTINGS.api_key_env("openai"),
+    )
+    assert ext.client_options(ext.Identity("openai", "KEY", "batch")) == (
+        ext.ClientOptions()
+    )
 
 
 def test_identity_uses_the_settings_key_variable() -> None:

@@ -5,6 +5,7 @@
     "items_complete": 0,
     "items_failed": 0,
     "items_skipped": 1,
+    "items_submitted": 0,
     "items_total": 0,
     "outputs": [],
     "usage": {

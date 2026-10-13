@@ -1,0 +1,46 @@
+{
+  "calls": [
+    {
+      "batch_id": "batch_fake0005",
+      "call": "openai.batches.retrieve"
+    },
+    {
+      "batch_id": "batch_fake0005",
+      "call": "openai.batches.retrieve"
+    },
+    {
+      "call": "openai.files.content",
+      "file_id": "file-fake0006"
+    },
+    {
+      "batch_id": "batch_fake0005",
+      "call": "openai.batches.retrieve"
+    },
+    {
+      "call": "openai.files.delete",
+      "file_id": "file-fake0004"
+    },
+    {
+      "call": "openai.files.delete",
+      "file_id": "file-fake0006"
+    }
+  ],
+  "clients": [
+    {
+      "kwargs": {
+        "api_key": "<env:OPENAI_API_KEY>",
+        "timeout": {
+          "httpx.Timeout": {
+            "connect": 10.0,
+            "pool": 30.0,
+            "read": 900.0,
+            "write": 30.0
+          }
+        }
+      },
+      "provider": "openai"
+    }
+  ],
+  "prompts": {},
+  "requests": []
+}

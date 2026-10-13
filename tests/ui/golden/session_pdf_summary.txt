@@ -2,6 +2,8 @@
 AutoExcerpter | new run   step 1 of 10
 ? Task:
  > new run
+   check batches
+   cancel batches
    render files again
    import version 1.0 outputs (migrate)
    Back
@@ -122,6 +124,7 @@ AutoExcerpter | new run   step 10 of 10
    [x] Look up citations in OpenAlex
    [ ] Reprocess items whose outputs exist (--force)
    [ ] Transcribe again instead of reusing stored pages
+   [ ] Submit to the providers' batch APIs (--batch)
    [ ] Dry run: show the plan, no API calls or writes
    [ ] Back
   answer: Look up citations in OpenAlex

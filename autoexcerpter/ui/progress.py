@@ -218,23 +218,30 @@ def summary_table(result: RunResult) -> RenderableType:
     for item in result.items:
         counts = [_count(item.report, key) for key in _PAGE_KEYS]
         totals = [a + b for a, b in zip(totals, counts, strict=True)]
-        table.add_row(
-            Text(item.name),
-            Text(
-                "complete" if item.success else "incomplete",
-                style="green" if item.success else "red",
-            ),
-            *(str(count) for count in counts),
-        )
+        if item.submitted:
+            status = Text("submitted", style="cyan")
+        elif item.success:
+            status = Text("complete", style="green")
+        else:
+            status = Text("incomplete", style="red")
+        table.add_row(Text(item.name), status, *(str(count) for count in counts))
     table.add_section()
+    submitted = f"{result.submitted} submitted, " if result.submitted else ""
     table.add_row(
         "Total",
-        f"{result.complete} complete, {result.failed} incomplete",
+        f"{result.complete} complete, {submitted}{result.failed} incomplete",
         *(str(count) for count in totals),
         style="bold",
     )
-    parts: list[RenderableType] = [
-        table,
+    parts: list[RenderableType] = [table]
+    if result.submitted:
+        parts.append(
+            Text(
+                "Batches: run the batch check task, or 'autoexcerpter batch "
+                "check', to collect the results."
+            )
+        )
+    parts += [
         Text(f"Run time: {result.seconds:.1f}s"),
         _listing("Skipped (already complete)", result.skipped),
         _listing("Databases written", result.databases),

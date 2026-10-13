@@ -1,5 +1,26 @@
 # Changelog
 
+- **v2.2.0** (13 October 2026) -- Batch mode: `run --batch` submits each item's
+  pages to the batch APIs of OpenAI, Anthropic and Google instead of calling the
+  models, and the new `batch check` collects finished batches, submits the
+  summaries of the pages they transcribed and writes the files of every document
+  left with nothing to do, following the run that submitted it; `batch cancel`
+  cancels batches by ID, every unfinished batch, or the open submissions below a
+  folder. The request bodies carry what a direct call sends, results are read as
+  direct answers are, every result line is stored with its submission, and
+  unresolved creates are reconciled with the provider's batch list or settled
+  with `--adopt` and `--abandon`. A rerun retries failed pages, with or without
+  `--batch`. The guided UI offers `--batch` when every phase's provider has a
+  batch API and gains the batch check and cancel tasks; the run summary reports
+  `items_submitted`. The store's schema moves to version 2 with a `batch_jobs`
+  table, which AutoExcerpter 2.1 refuses as newer. The shared batch backends join
+  the vendored `common/` modules. Large folders plan and render faster: inputs are
+  hashed on a thread pool, LangChain is imported when a model call needs it,
+  native page DPI is found without hashing every image, citations are merged and
+  rendered with less work, and OpenAlex DOI lookups go out in batches on four
+  workers. gpt-6-luna pages sent at original detail are limited to 3,000 px on
+  the long side (`images.original_max_side_px` sets the limit for every OpenAI
+  model), and Anthropic structured output keeps nullable fields.
 - **v2.1.1** (12 October 2026) -- A resume with a transcription model from
   another provider family, for example after a provider's content filter refused
   some pages, now transcribes only the missing pages instead of skipping the item

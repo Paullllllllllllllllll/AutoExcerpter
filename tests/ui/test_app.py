@@ -182,6 +182,28 @@ def test_a_task_switch_starts_at_the_first_step_of_the_new_task(
     assert "? Quit without running?" in prompter.lines
 
 
+def test_the_batch_check_task_checks_a_folder(tmp_path: Path, startup: _Calls) -> None:
+    folder = tmp_path / "out"
+    folder.mkdir()
+    code, console, prompter = _launch(["batch-check", str(folder), "", "report", "run"])
+    assert code == 0
+    assert "Batch check: 0 finalized, 0 pending" in _text(console)
+    assert "Equivalent command:\n  autoexcerpter batch check" in prompter.transcript
+    assert len(startup.calls) == 1
+
+
+def test_the_batch_cancel_task_cancels_the_submissions_below_a_folder(
+    tmp_path: Path, startup: _Calls
+) -> None:
+    folder = tmp_path / "out"
+    folder.mkdir()
+    code, console, prompter = _launch(["batch-cancel", "dir", str(folder), "run"])
+    assert code == 0
+    assert "Batch cancel: 0 cancelled, 0 failed." in _text(console)
+    assert "Equivalent command:\n  autoexcerpter batch cancel" in prompter.transcript
+    assert len(startup.calls) == 1
+
+
 def test_the_migrate_task_imports_a_version_1_item(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -304,7 +326,9 @@ def test_a_key_missing_from_the_process_exits_2_before_any_work(
 
 
 def _fake_run(seen: list[core.RunPlan], *, success: bool) -> Callable[..., Any]:
-    async def run(run_plan: core.RunPlan, events: RunEvents) -> core.RunResult:
+    async def run(
+        run_plan: core.RunPlan, events: RunEvents, **kwargs: Any
+    ) -> core.RunResult:
         seen.append(run_plan)
         planned = run_plan.to_process[0]
         events.item_started(ItemStarted(planned.name, "pdf", 1, 1))

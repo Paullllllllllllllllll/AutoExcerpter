@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "autoexcerpter"
-version = "2.1.1"
+version = "2.2.0"
 description = "Document processing pipeline that transcribes and summarizes PDFs and image collections using vision-enabled LLMs"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -17,6 +17,9 @@ dependencies = [
     "langchain-openai>=1.3",
     "langchain-anthropic>=1.4",
     "langchain-google-genai>=4.2",
+    "openai>=2.46",
+    "anthropic>=0.117",
+    "google-genai>=2.12",
     "httpx>=0.28.1",
     "requests>=2.34",
     "python-docx>=1.2",
@@ -57,10 +60,12 @@ strict = true
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-# Store tests copied from ChronoTranscriber with the package name changed;
-# ChronoTranscriber does not type-check its tests.
+# Store and batch tests copied from ChronoTranscriber with the package name
+# changed; ChronoTranscriber does not type-check its tests.
 module = [
     "tests.common.sqlite_child",
+    "tests.common.test_batch_google",
+    "tests.common.test_batch_parts",
     "tests.common.test_sqlite",
     "tests.common.test_sqlite_robustness",
     "tests.common.test_store",
@@ -117,3 +122,4 @@ PyYAML = ["yaml"]
 PyMuPDF = ["fitz"]
 Pillow = ["PIL"]
 python-docx = ["docx"]
+google-genai = ["google"]

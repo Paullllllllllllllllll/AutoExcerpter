@@ -20,6 +20,7 @@
   "sha256": "4f88f65c97fb1d86c03f5fd4c16a137e25dc37b0427596c3ef2db806c57f3512",
   "text": "<2348 characters>"
 }
+## batch_jobs
 ## citations
 ## documents
 {
@@ -75,7 +76,7 @@
 }
 {
   "component": "autoexcerpter",
-  "version": 1
+  "version": 2
 }
 ## notes
 ## outputs
@@ -1278,6 +1279,10 @@
     "output.transcription_format": {
       "source": "default",
       "value": "md"
+    },
+    "run.batch": {
+      "source": "default",
+      "value": false
     },
     "run.concurrency": {
       "source": "default",

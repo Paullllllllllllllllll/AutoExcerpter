@@ -25,6 +25,7 @@ from autoexcerpter.common.structured import (
     ResponseFormat,
     StructuredRequest,
     StructuredResult,
+    validate_json,
 )
 from autoexcerpter.llm.caller import CallEnv
 from autoexcerpter.llm.capabilities import detect_capabilities
@@ -43,8 +44,10 @@ from autoexcerpter.settings import RetryRule
 __all__ = [
     "TRANSCRIPTION_REQUIRED_KEYS",
     "TranscriptionManager",
+    "answer_entry",
     "page_text",
     "stops_page",
+    "transcription_prompt",
 ]
 
 logger = logging.getLogger(__name__)
@@ -143,7 +146,7 @@ def _recoverable(data: Any) -> bool:
     return isinstance(data.get("transcription"), str)
 
 
-def _load_prompt(plain: bool) -> tuple[dict[str, Any] | None, str]:
+def transcription_prompt(plain: bool) -> tuple[dict[str, Any] | None, str]:
     """Return the transcription schema (None for text) and the system prompt."""
     if plain:
         return None, (PROMPTS_DIR / PLAIN_TEXT_PROMPT_FILE).read_text(encoding="utf-8")
@@ -152,6 +155,33 @@ def _load_prompt(plain: bool) -> tuple[dict[str, Any] | None, str]:
     )
     raw = (PROMPTS_DIR / SYSTEM_PROMPT_FILE).read_text(encoding="utf-8")
     return schema, render_prompt_with_schema(raw, schema.get("schema", schema))
+
+
+def answer_entry(text: str, image_name: str, *, plain: bool) -> dict[str, Any]:
+    """Return the page entry of one final answer, as a synchronous page ends.
+
+    An empty answer fails the page; a JSON answer that fails validation and
+    carries no usable page fails it too. Otherwise the page text comes from
+    :func:`page_text`; a flag the model set is taken as given, without the
+    retries of a synchronous call. The batch path reads its results so.
+    """
+    if not text:
+        return {
+            "transcription": "[transcription error: empty response]",
+            "error": "empty response",
+            "error_type": "empty_response",
+        }
+    if plain:
+        return {"transcription": page_text(text, image_name, plain=True)}
+    data, error = validate_json(text, TRANSCRIPTION_REQUIRED_KEYS)
+    transcription = page_text(text, image_name, data)
+    if error is not None and not _recoverable(data):
+        return {
+            "transcription": transcription,
+            "error": f"schema validation failed: {error}",
+            "error_type": "schema_validation_failed",
+        }
+    return {"transcription": transcription}
 
 
 class TranscriptionManager:
@@ -178,7 +208,7 @@ class TranscriptionManager:
                 "Model '%s' may not support image input; transcription may fail.",
                 phase.name,
             )
-        self.schema, self.system_prompt = _load_prompt(self.plain_text)
+        self.schema, self.system_prompt = transcription_prompt(self.plain_text)
         self.invoke_kwargs = build_invoke_kwargs(
             self.provider, phase.name, phase.options, phase.service_tier
         )

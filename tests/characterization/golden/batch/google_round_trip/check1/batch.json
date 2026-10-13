@@ -1,0 +1,584 @@
+{
+  "calls": [
+    {
+      "call": "google.batches.get",
+      "name": "batches/fake0001"
+    },
+    {
+      "call": "google.batches.get",
+      "name": "batches/fake0001"
+    },
+    {
+      "call": "google.batches.create",
+      "config": {
+        "display_name": "autoexcerpter-<submission-2>-p1"
+      },
+      "model": "models/gemini-2.5-flash-lite",
+      "src": 3
+    },
+    {
+      "call": "google.batches.get",
+      "name": "batches/fake0001"
+    }
+  ],
+  "clients": [
+    {
+      "kwargs": {
+        "api_key": "<env:GOOGLE_API_KEY>",
+        "http_options": {
+          "timeout": 900000
+        }
+      },
+      "provider": "google"
+    }
+  ],
+  "prompts": {
+    "batch-prompt-1": {
+      "chars": 295,
+      "sha256": "077b66f2675d3228"
+    },
+    "batch-prompt-10": {
+      "chars": 544,
+      "sha256": "7b77a0cc8a85c403"
+    },
+    "batch-prompt-11": {
+      "chars": 250,
+      "sha256": "029878f966dd8a51"
+    },
+    "batch-prompt-2": {
+      "chars": 5932,
+      "sha256": "f4ccaa329d6b6bba"
+    },
+    "batch-prompt-3": {
+      "chars": 308,
+      "sha256": "3f71b83792a0cc3b"
+    },
+    "batch-prompt-4": {
+      "chars": 167,
+      "sha256": "78491fb82aae9603"
+    },
+    "batch-prompt-5": {
+      "chars": 168,
+      "sha256": "47d77a1d2ab50501"
+    },
+    "batch-prompt-6": {
+      "chars": 420,
+      "sha256": "e4db55970b699361"
+    },
+    "batch-prompt-7": {
+      "chars": 988,
+      "sha256": "5d8fe579be3202b5"
+    },
+    "batch-prompt-8": {
+      "chars": 232,
+      "sha256": "5bfef6338cd8bb02"
+    },
+    "batch-prompt-9": {
+      "chars": 199,
+      "sha256": "870ebbcebc253d27"
+    }
+  },
+  "requests": [
+    {
+      "batch_id": "batches/fake0002",
+      "body": {
+        "config": {
+          "max_output_tokens": 65536,
+          "response_json_schema": {
+            "$schema": "Summary_2_3_0",
+            "additionalProperties": false,
+            "properties": {
+              "bullet_points": {
+                "description": {
+                  "chars": 988,
+                  "prompt": "batch-prompt-7"
+                },
+                "items": {
+                  "type": "string"
+                },
+                "type": [
+                  "array",
+                  "null"
+                ]
+              },
+              "page_information": {
+                "additionalProperties": false,
+                "description": "The page's printed number and its classification.",
+                "properties": {
+                  "is_two_page_spread": {
+                    "description": {
+                      "chars": 167,
+                      "prompt": "batch-prompt-4"
+                    },
+                    "type": "boolean"
+                  },
+                  "page_number_integer": {
+                    "description": {
+                      "chars": 308,
+                      "prompt": "batch-prompt-3"
+                    },
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "page_number_integer_end": {
+                    "description": {
+                      "chars": 168,
+                      "prompt": "batch-prompt-5"
+                    },
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "page_number_type": {
+                    "description": "The numbering system of page_number_integer as printed: 'roman' or 'arabic'; 'none' when page_number_integer is null.",
+                    "enum": [
+                      "roman",
+                      "arabic",
+                      "none"
+                    ],
+                    "type": "string"
+                  },
+                  "page_types": {
+                    "description": {
+                      "chars": 420,
+                      "prompt": "batch-prompt-6"
+                    },
+                    "items": {
+                      "enum": [
+                        "content",
+                        "table_of_contents",
+                        "bibliography",
+                        "title_page",
+                        "index",
+                        "blank",
+                        "preface",
+                        "appendix",
+                        "figures_tables_sources",
+                        "abstract",
+                        "copyright",
+                        "other"
+                      ],
+                      "type": "string"
+                    },
+                    "maxItems": 3,
+                    "minItems": 1,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "page_number_integer",
+                  "is_two_page_spread",
+                  "page_number_integer_end",
+                  "page_number_type",
+                  "page_types"
+                ],
+                "type": "object"
+              },
+              "references": {
+                "description": "Every bibliographic citation on the page, from pages of any type, in APA style; null when the page cites nothing.",
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "citation": {
+                      "description": {
+                        "chars": 232,
+                        "prompt": "batch-prompt-8"
+                      },
+                      "type": "string"
+                    },
+                    "is_partial": {
+                      "description": {
+                        "chars": 199,
+                        "prompt": "batch-prompt-9"
+                      },
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "citation",
+                    "is_partial"
+                  ],
+                  "type": "object"
+                },
+                "type": [
+                  "array",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "page_information",
+              "bullet_points",
+              "references"
+            ],
+            "title": "Article Page Summary",
+            "type": "object"
+          },
+          "response_mime_type": "application/json",
+          "system_instruction": {
+            "chars": 5932,
+            "prompt": "batch-prompt-2"
+          },
+          "temperature": 1.0
+        },
+        "contents": [
+          {
+            "parts": [
+              {
+                "text": {
+                  "chars": 295,
+                  "prompt": "batch-prompt-1"
+                }
+              }
+            ],
+            "role": "user"
+          }
+        ],
+        "metadata": {
+          "key": "<submission-2>-00000"
+        }
+      },
+      "custom_id": "<submission-2>-00000",
+      "page": 0,
+      "provider": "google",
+      "role": "summary"
+    },
+    {
+      "batch_id": "batches/fake0002",
+      "body": {
+        "config": {
+          "max_output_tokens": 65536,
+          "response_json_schema": {
+            "$schema": "Summary_2_3_0",
+            "additionalProperties": false,
+            "properties": {
+              "bullet_points": {
+                "description": {
+                  "chars": 988,
+                  "prompt": "batch-prompt-7"
+                },
+                "items": {
+                  "type": "string"
+                },
+                "type": [
+                  "array",
+                  "null"
+                ]
+              },
+              "page_information": {
+                "additionalProperties": false,
+                "description": "The page's printed number and its classification.",
+                "properties": {
+                  "is_two_page_spread": {
+                    "description": {
+                      "chars": 167,
+                      "prompt": "batch-prompt-4"
+                    },
+                    "type": "boolean"
+                  },
+                  "page_number_integer": {
+                    "description": {
+                      "chars": 308,
+                      "prompt": "batch-prompt-3"
+                    },
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "page_number_integer_end": {
+                    "description": {
+                      "chars": 168,
+                      "prompt": "batch-prompt-5"
+                    },
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "page_number_type": {
+                    "description": "The numbering system of page_number_integer as printed: 'roman' or 'arabic'; 'none' when page_number_integer is null.",
+                    "enum": [
+                      "roman",
+                      "arabic",
+                      "none"
+                    ],
+                    "type": "string"
+                  },
+                  "page_types": {
+                    "description": {
+                      "chars": 420,
+                      "prompt": "batch-prompt-6"
+                    },
+                    "items": {
+                      "enum": [
+                        "content",
+                        "table_of_contents",
+                        "bibliography",
+                        "title_page",
+                        "index",
+                        "blank",
+                        "preface",
+                        "appendix",
+                        "figures_tables_sources",
+                        "abstract",
+                        "copyright",
+                        "other"
+                      ],
+                      "type": "string"
+                    },
+                    "maxItems": 3,
+                    "minItems": 1,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "page_number_integer",
+                  "is_two_page_spread",
+                  "page_number_integer_end",
+                  "page_number_type",
+                  "page_types"
+                ],
+                "type": "object"
+              },
+              "references": {
+                "description": "Every bibliographic citation on the page, from pages of any type, in APA style; null when the page cites nothing.",
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "citation": {
+                      "description": {
+                        "chars": 232,
+                        "prompt": "batch-prompt-8"
+                      },
+                      "type": "string"
+                    },
+                    "is_partial": {
+                      "description": {
+                        "chars": 199,
+                        "prompt": "batch-prompt-9"
+                      },
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "citation",
+                    "is_partial"
+                  ],
+                  "type": "object"
+                },
+                "type": [
+                  "array",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "page_information",
+              "bullet_points",
+              "references"
+            ],
+            "title": "Article Page Summary",
+            "type": "object"
+          },
+          "response_mime_type": "application/json",
+          "system_instruction": {
+            "chars": 5932,
+            "prompt": "batch-prompt-2"
+          },
+          "temperature": 1.0
+        },
+        "contents": [
+          {
+            "parts": [
+              {
+                "text": {
+                  "chars": 544,
+                  "prompt": "batch-prompt-10"
+                }
+              }
+            ],
+            "role": "user"
+          }
+        ],
+        "metadata": {
+          "key": "<submission-2>-00001"
+        }
+      },
+      "custom_id": "<submission-2>-00001",
+      "page": 1,
+      "provider": "google",
+      "role": "summary"
+    },
+    {
+      "batch_id": "batches/fake0002",
+      "body": {
+        "config": {
+          "max_output_tokens": 65536,
+          "response_json_schema": {
+            "$schema": "Summary_2_3_0",
+            "additionalProperties": false,
+            "properties": {
+              "bullet_points": {
+                "description": {
+                  "chars": 988,
+                  "prompt": "batch-prompt-7"
+                },
+                "items": {
+                  "type": "string"
+                },
+                "type": [
+                  "array",
+                  "null"
+                ]
+              },
+              "page_information": {
+                "additionalProperties": false,
+                "description": "The page's printed number and its classification.",
+                "properties": {
+                  "is_two_page_spread": {
+                    "description": {
+                      "chars": 167,
+                      "prompt": "batch-prompt-4"
+                    },
+                    "type": "boolean"
+                  },
+                  "page_number_integer": {
+                    "description": {
+                      "chars": 308,
+                      "prompt": "batch-prompt-3"
+                    },
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "page_number_integer_end": {
+                    "description": {
+                      "chars": 168,
+                      "prompt": "batch-prompt-5"
+                    },
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "page_number_type": {
+                    "description": "The numbering system of page_number_integer as printed: 'roman' or 'arabic'; 'none' when page_number_integer is null.",
+                    "enum": [
+                      "roman",
+                      "arabic",
+                      "none"
+                    ],
+                    "type": "string"
+                  },
+                  "page_types": {
+                    "description": {
+                      "chars": 420,
+                      "prompt": "batch-prompt-6"
+                    },
+                    "items": {
+                      "enum": [
+                        "content",
+                        "table_of_contents",
+                        "bibliography",
+                        "title_page",
+                        "index",
+                        "blank",
+                        "preface",
+                        "appendix",
+                        "figures_tables_sources",
+                        "abstract",
+                        "copyright",
+                        "other"
+                      ],
+                      "type": "string"
+                    },
+                    "maxItems": 3,
+                    "minItems": 1,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "page_number_integer",
+                  "is_two_page_spread",
+                  "page_number_integer_end",
+                  "page_number_type",
+                  "page_types"
+                ],
+                "type": "object"
+              },
+              "references": {
+                "description": "Every bibliographic citation on the page, from pages of any type, in APA style; null when the page cites nothing.",
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "citation": {
+                      "description": {
+                        "chars": 232,
+                        "prompt": "batch-prompt-8"
+                      },
+                      "type": "string"
+                    },
+                    "is_partial": {
+                      "description": {
+                        "chars": 199,
+                        "prompt": "batch-prompt-9"
+                      },
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "citation",
+                    "is_partial"
+                  ],
+                  "type": "object"
+                },
+                "type": [
+                  "array",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "page_information",
+              "bullet_points",
+              "references"
+            ],
+            "title": "Article Page Summary",
+            "type": "object"
+          },
+          "response_mime_type": "application/json",
+          "system_instruction": {
+            "chars": 5932,
+            "prompt": "batch-prompt-2"
+          },
+          "temperature": 1.0
+        },
+        "contents": [
+          {
+            "parts": [
+              {
+                "text": {
+                  "chars": 250,
+                  "prompt": "batch-prompt-11"
+                }
+              }
+            ],
+            "role": "user"
+          }
+        ],
+        "metadata": {
+          "key": "<submission-2>-00002"
+        }
+      },
+      "custom_id": "<submission-2>-00002",
+      "page": 2,
+      "provider": "google",
+      "role": "summary"
+    }
+  ]
+}

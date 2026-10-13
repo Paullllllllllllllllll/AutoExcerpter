@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import random
 from dataclasses import replace
 from pathlib import Path
@@ -41,6 +42,7 @@ from autoexcerpter.spec import (
     parse,
     recommended_images,
     resolve_spec,
+    spec_from_effective,
     to_argv,
 )
 
@@ -103,6 +105,7 @@ def _spec(rng: random.Random) -> RunSpec:
             force=rng.random() < 0.5,
             retranscribe=rng.random() < 0.5,
             concurrency=rng.choice([1, 16, 80]),
+            batch=rng.random() < 0.5,
             dry_run=rng.random() < 0.5,
             json=rng.random() < 0.5,
         ),
@@ -145,6 +148,7 @@ _DEFAULT_VALUES: dict[str, list[Any]] = {
     "jpeg_quality": [80, 95],
     "grayscale": [True, False],
     "concurrency": [4, 16],
+    "batch": [True, False],
     **_MODEL_DEFAULT_VALUES,
     **{
         f"{phase}_{name}": values
@@ -201,6 +205,30 @@ def _resolved(argv: list[str], defaults: dict[str, Any]) -> RunSpec:
 def test_parse_of_to_argv_returns_the_spec(seed: int) -> None:
     spec = _spec(random.Random(seed))
     assert parse(to_argv(spec)) == spec
+
+
+@pytest.mark.parametrize("seed", range(100))
+def test_spec_from_effective_returns_the_recorded_spec(seed: int) -> None:
+    spec = _spec(random.Random(seed))
+    stored = json.loads(json.dumps(effective_spec(spec)))
+    assert spec_from_effective(stored) == spec
+
+
+def test_spec_from_effective_takes_defaults_for_fields_a_store_lacks() -> None:
+    spec = _code_defaults("in.pdf")
+    stored = {
+        path: entry
+        for path, entry in effective_spec(spec).items()
+        if path != "run.batch"
+    }
+    assert spec_from_effective(stored) == spec
+
+
+def test_spec_from_effective_refuses_an_incomplete_spec() -> None:
+    stored = effective_spec(_code_defaults("in.pdf"))
+    del stored["input.path"]
+    with pytest.raises(SpecError, match="incomplete"):
+        spec_from_effective(stored)
 
 
 @pytest.mark.parametrize("seed", range(400))

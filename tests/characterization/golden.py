@@ -77,6 +77,9 @@ _TABLE_KEYS: dict[str, list[str]] = {
 _UUID_RE = re.compile(
     r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.IGNORECASE
 )
+# A custom id scoped to its submission: the submission id's first eight
+# characters and the request's position.
+_SCOPED_ID_RE = re.compile(r"\b([0-9a-f]{8})-(\d{5})\b")
 
 
 # ============================================================================
@@ -235,30 +238,57 @@ def _shortened(value: Any) -> Any:
 
 
 def _runs(value: Any, runs: dict[str, str]) -> Any:
-    """Replace run ids by their order and other UUIDs by a placeholder."""
+    """Replace run and submission ids by their order, other UUIDs by a
+    placeholder, and the prefix of a scoped custom id by its submission's."""
     if isinstance(value, dict):
         return {key: _runs(item, runs) for key, item in value.items()}
     if isinstance(value, list):
         return [_runs(item, runs) for item in value]
     if isinstance(value, str):
-        return _UUID_RE.sub(lambda m: runs.get(m.group(0), "<uuid>"), value)
+        value = _UUID_RE.sub(lambda m: runs.get(m.group(0), "<uuid>"), value)
+        return _SCOPED_ID_RE.sub(
+            lambda m: f"{runs.get(m.group(1), m.group(1))}-{m.group(2)}", value
+        )
     return value
+
+
+def replace_ids(value: Any, ids: dict[str, str]) -> Any:
+    """Return *value* with the run and submission ids of *ids* replaced."""
+    return _runs(value, ids)
+
+
+def recorded_ids(path: Path) -> dict[str, str]:
+    """Return placeholders for the run and submission ids of a database.
+
+    Run ids become ``<run-N>`` and submission ids ``<submission-N>`` in the
+    order they were recorded; the eight-character prefix that scopes a
+    submission's custom ids maps to the same placeholder.
+    """
+    tables = table_names(path)
+    ids: dict[str, str] = {}
+    if "runs" in tables:
+        for number, row in enumerate(read_rows(path, "runs"), start=1):
+            ids[str(row["run_id"])] = f"<run-{number}>"
+    if "submissions" in tables:
+        for number, row in enumerate(read_rows(path, "submissions"), start=1):
+            submission_id = str(row["submission_id"])
+            ids[submission_id] = f"<submission-{number}>"
+            ids[submission_id[:8]] = f"<submission-{number}>"
+    return ids
 
 
 def dump_sqlite(path: Path, norm: Normalizer) -> str:
     """Return every table of a SQLite file, rows ordered by key, normalized.
 
-    JSON text columns are parsed so that their paths normalize too. Run ids
-    become ``<run-N>`` in the order the runs began and response ids their
+    JSON text columns are parsed so that their paths normalize too. Run and
+    submission ids become ``<run-N>`` and ``<submission-N>`` in the order
+    they were recorded (see :func:`recorded_ids`) and response ids their
     rank in unit order, since concurrent pages append in any order; long
     artifact texts become their length.
     """
     tables = table_names(path)
-    runs: dict[str, str] = {}
+    runs = recorded_ids(path)
     responses: dict[int, int] = {}
-    if "runs" in tables:
-        for number, row in enumerate(read_rows(path, "runs"), start=1):
-            runs[str(row["run_id"])] = f"<run-{number}>"
     if "responses" in tables:
         ordered = read_rows(path, "responses", order_by=_TABLE_KEYS["responses"])
         responses = {

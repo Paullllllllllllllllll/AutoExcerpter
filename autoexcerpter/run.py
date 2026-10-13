@@ -6,7 +6,9 @@ machine settings into a :class:`RunPlan` without API calls or writes;
 progress through :class:`~autoexcerpter.events.RunEvents`. Neither prints,
 prompts or exits: a plan that cannot run raises a :class:`PlanError` that
 carries its exit code. Cancelling the task that awaits :func:`run` stops the
-run, retry waits included.
+run, retry waits included. Under ``--batch`` each item's missing units are
+submitted to the providers' batch APIs instead of called
+(:mod:`autoexcerpter.batch`), and ``batch check`` continues the work.
 
 Every output folder holds one ``autoexcerpter.sqlite``, the store of its
 documents (see :mod:`autoexcerpter.output.store`). Resume reads only the
@@ -18,6 +20,7 @@ used other image settings is ``refused`` and counts failed.
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import concurrent.futures
 import contextlib
@@ -31,6 +34,10 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
+from autoexcerpter import ext
+from autoexcerpter.batch.clients import BatchClients
+from autoexcerpter.batch.item import BatchItem, BatchItemOutcome
+from autoexcerpter.common.batch import supports_batch
 from autoexcerpter.common.contract import ExitCode
 from autoexcerpter.common.options import Source
 from autoexcerpter.common.selection import select_items
@@ -53,6 +60,7 @@ from autoexcerpter.events import (
 )
 from autoexcerpter.imaging.settings import resolve_image_settings
 from autoexcerpter.llm import CallEnv
+from autoexcerpter.llm.types import PhaseModel
 from autoexcerpter.output.paths import ItemPaths
 from autoexcerpter.output.store import (
     KIND_TRANSCRIPTION,
@@ -63,6 +71,7 @@ from autoexcerpter.output.store import (
     begin_run,
     classify,
     document_kind,
+    drop_batch_job,
     image_settings_record,
     open_store,
     read_store,
@@ -234,6 +243,11 @@ class RunPlan:
         return self.spec.run.dry_run
 
     @property
+    def batch(self) -> bool:
+        """Whether the units are submitted to the providers' batch APIs."""
+        return self.spec.run.batch
+
+    @property
     def render_only(self) -> tuple[PlannedItem, ...]:
         """The complete items whose files are written again without model calls."""
         return tuple(item for item in self.skipped if item.resume.render)
@@ -328,6 +342,55 @@ def _job(spec: RunSpec, settings: Settings) -> ItemJob:
             "summary-docx with --formats."
         )
     return job
+
+
+def _batch_phases(job: ItemJob) -> list[tuple[str, PhaseModel]]:
+    """Return the phases a batch run submits: (role, phase model)."""
+    phases: list[tuple[str, PhaseModel]] = [("transcription", job.transcription)]
+    if job.summarize:
+        phases.append(("summary", job.summary))
+    return phases
+
+
+def _check_batch(
+    spec: RunSpec, job: ItemJob, settings: Settings, args: argparse.Namespace | None
+) -> None:
+    """Require a batch API for every phase, the extension's consent and the keys.
+
+    Raises:
+        ConfigurationError: A phase's provider has no batch API or uses a
+            custom endpoint, the extension refuses batch submission, or no
+            batch key variable of a phase is set.
+    """
+    for role, phase in _batch_phases(job):
+        if phase.endpoint is not None or not supports_batch(phase.provider):
+            where = (
+                f"the custom endpoint {phase.endpoint!r}"
+                if phase.endpoint is not None
+                else f"provider {phase.provider}"
+            )
+            raise ConfigurationError(
+                "--batch needs a provider with a batch API (openai, anthropic, "
+                f"google) for every phase; the {role} model uses {where}."
+            )
+    try:
+        allowed = ext.batch_allowed(spec, settings=settings, args=args)
+    except SettingsError as exc:
+        raise ConfigurationError(str(exc)) from exc
+    if not allowed:
+        raise ConfigurationError("Batch submission is not available for this run.")
+    for role, phase in _batch_phases(job):
+        try:
+            variables = ext.key_variables(
+                phase.provider, kind="batch", settings=settings, args=args
+            )
+        except SettingsError as exc:
+            raise ConfigurationError(str(exc)) from exc
+        if variables and not any(os.environ.get(name) for name in variables):
+            raise ConfigurationError(
+                f"The API key variable {variables[0]} of provider {phase.provider} "
+                f"is not set; --batch needs it for the {role} batches."
+            )
 
 
 def _context(item: ItemSpec, job: ItemJob) -> str | None:
@@ -470,18 +533,23 @@ def plan(
     settings: Settings,
     *,
     sources: Mapping[str, Source] | None = None,
+    args: argparse.Namespace | None = None,
 ) -> RunPlan:
     """Discover, select and classify the items of a run; write nothing.
 
     *sources* maps spec fields to where their values came from; the plan
-    reports them with the effective spec.
+    reports them with the effective spec. *args* holds the parsed command
+    line, if any, for the extension's batch consent and key variables.
 
     Raises:
         PlanError: The run cannot proceed; the subclass names the reason and
             ``exit_code`` the exit code. A versionless, newer or unreadable
-            database raises :class:`StoreRefusedError`.
+            database raises :class:`StoreRefusedError`; a ``--batch`` run
+            that batch cannot serve a :class:`ConfigurationError`.
     """
     job = _job(spec, settings)
+    if spec.run.batch:
+        _check_batch(spec, job, settings, args)
     input_path = _absolute(spec.input.path)
     base = _absolute(spec.output.directory) if spec.output.directory else None
     logger.info("Input=%s, Output=%s", input_path, base or "beside input")
@@ -544,8 +612,10 @@ class ItemResult:
     """The outcome of one item.
 
     *success* is True only when every page succeeded and every configured
-    output was written. *outputs* are the absolute paths written; *report*
-    holds the page statistics (None when the item stopped before them).
+    output was written, or, under ``--batch``, when the item's units were
+    submitted (*submitted*). *outputs* are the absolute paths written;
+    *report* holds the page statistics (None when the item stopped before
+    them or was batched).
     """
 
     name: str
@@ -553,6 +623,7 @@ class ItemResult:
     paths: ItemPaths
     outputs: tuple[str, ...] = ()
     report: dict[str, Any] | None = None
+    submitted: bool = False
 
 
 @dataclass(frozen=True)
@@ -583,12 +654,17 @@ class RunResult:
     @property
     def complete(self) -> int:
         """The number of items that finished complete."""
-        return sum(1 for item in self.items if item.success)
+        return sum(1 for item in self.items if item.success and not item.submitted)
+
+    @property
+    def submitted(self) -> int:
+        """The number of items whose units wait in batches for ``batch check``."""
+        return sum(1 for item in self.items if item.submitted)
 
     @property
     def failed(self) -> int:
         """The number of items that finished incomplete."""
-        return len(self.items) - self.complete
+        return sum(1 for item in self.items if not item.success)
 
     @property
     def outputs(self) -> list[str]:
@@ -649,6 +725,13 @@ class _Stores:
             raise _refused(key, exc) from exc
         self._stores[key] = store
         await begin_run(store, "run", self._plan.effective_spec())
+        marked = await store.mark_stale_submissions()
+        if marked:
+            self._events.warning(
+                f"{len(marked)} batch submission(s) in {store.path} were left "
+                "without a provider batch id and are now unresolved; their pages "
+                "stay blocked. Run 'autoexcerpter batch check' to reconcile them."
+            )
         keeper = store.heartbeat(on_lost=self._lost)
         keeper.start()
         self._keepers.append(keeper)
@@ -741,7 +824,9 @@ class _ItemRun:
         A reset transcription marks its page's summary stale. The input hash
         is recorded after the reset, so that an interruption between the two
         leaves the change detected, and the document's files are marked
-        stale: they are rendered again once its units are stored.
+        stale: they are rendered again once its units are stored. The
+        document's batch job of an earlier ``run --batch`` ends, so ``batch
+        check`` leaves the document to this run.
         """
         planned, spec = self.planned, self.run_plan.spec
         if spec.run.force or planned.resume.reset:
@@ -759,18 +844,80 @@ class _ItemRun:
             connection.execute(
                 "UPDATE outputs SET stale = 1 WHERE doc_id = ?", (doc_id,)
             )
+            drop_batch_job(connection, doc_id)
 
         await handle.store.write(handle.lease, prepare)
 
 
-async def _run_item(
+async def _submit_item(
+    run_plan: RunPlan,
+    planned: PlannedItem,
+    handle: DocumentHandle,
+    events: RunEvents,
+    clients: BatchClients,
+) -> BatchItemOutcome:
+    """Submit one leased item's missing units to the batch APIs."""
+    outcome = await BatchItem(
+        planned.item,
+        planned.output_dir,
+        run_plan.job,
+        handle,
+        context=planned.context,
+        clients=clients,
+        events=events,
+        force=run_plan.force,
+    ).process()
+    if outcome.detail:
+        await _note(
+            handle.store, handle.doc_id, f"'{planned.name}': {outcome.detail}", events
+        )
+    if outcome.status == "submitted":
+        logger.info(
+            "Submitted '%s' in %d batch(es); run 'autoexcerpter batch check' to "
+            "collect them",
+            planned.name,
+            len(outcome.submission_ids),
+        )
+    return outcome
+
+
+def _batch_result(
+    planned: PlannedItem,
+    index: int,
+    total: int,
+    events: RunEvents,
+    outcome: BatchItemOutcome,
+) -> ItemResult:
+    """Report a batch item's end and return its result."""
+    outputs = tuple(str(path) for path in outcome.outputs)
+    success = outcome.success
+    events.item_finished(
+        ItemFinished(planned.name, index, total, success, outputs, None)
+    )
+    return ItemResult(
+        planned.name,
+        success,
+        planned.paths,
+        outputs,
+        None,
+        submitted=outcome.status == "submitted",
+    )
+
+
+async def _run_item(  # noqa: PLR0913 - the item, its place and the run's objects
     run_plan: RunPlan,
     planned: PlannedItem,
     index: int,
     env: CallEnv,
     stores: _Stores,
+    clients: BatchClients | None = None,
 ) -> ItemResult | None:
-    """Process one item; None when another run holds its document."""
+    """Process one item; None when another run holds its document.
+
+    An item whose pages a batch submission took since the plan is skipped
+    as well. With *clients*, the item's missing units are submitted to the
+    batch APIs instead of called.
+    """
     events = env.events
     total = len(run_plan.to_process)
     name = planned.name
@@ -779,6 +926,17 @@ async def _run_item(
     if leased is None:
         return None
     store, doc_id, lease = leased
+    if store.blocked_units(doc_id):
+        await _note(
+            store,
+            doc_id,
+            f"Skipping '{name}': its pages wait in a batch submitted since the "
+            "plan; run 'autoexcerpter batch check'.",
+            events,
+        )
+        with contextlib.suppress(sqlite3.Error):
+            await store.release(lease)
+        return None
     events.item_started(ItemStarted(name, planned.item.kind, index, total))
     processor: ItemProcessor | None = None
     success = False
@@ -787,6 +945,9 @@ async def _run_item(
             await _note(store, doc_id, planned.resume.note, events)
         handle = item_run.handle(store, doc_id, lease)
         await item_run.reset(handle)
+        if clients is not None:
+            batched = await _submit_item(run_plan, planned, handle, events, clients)
+            return _batch_result(planned, index, total, events, batched)
         processor = ItemProcessor(
             planned.item,
             planned.output_dir,
@@ -880,7 +1041,27 @@ def _check_clients(run_plan: RunPlan, env: CallEnv) -> None:
             ) from exc
 
 
-async def run(run_plan: RunPlan, events: RunEvents | None = None) -> RunResult:
+def _clients(
+    run_plan: RunPlan, env: CallEnv, args: argparse.Namespace | None
+) -> BatchClients | None:
+    """Return the run's batch clients under ``--batch``; else check the callers.
+
+    Raises:
+        ConfigurationError: A phase's caller cannot be built.
+    """
+    if run_plan.batch:
+        return BatchClients(run_plan.settings, "batch", args=args)
+    if run_plan.to_process:
+        _check_clients(run_plan, env)
+    return None
+
+
+async def run(
+    run_plan: RunPlan,
+    events: RunEvents | None = None,
+    *,
+    args: argparse.Namespace | None = None,
+) -> RunResult:
     """Process the plan's items one after another on the running event loop.
 
     The run owns one rate-limiter registry and one usage total, shared by
@@ -892,7 +1073,10 @@ async def run(run_plan: RunPlan, events: RunEvents | None = None) -> RunResult:
     model calls. An item whose document another run holds is skipped with a
     note. An item that crashes is logged and counted failed; the run
     continues with the next item. Refused items count as failed.
-    Cancellation propagates.
+    Cancellation propagates. Under ``--batch`` no model client is built:
+    each item's missing units are submitted through one set of batch
+    clients, and *args*, the parsed command line if any, serves the
+    extension's key variables.
 
     Raises:
         ValueError: The plan is a dry run.
@@ -905,8 +1089,7 @@ async def run(run_plan: RunPlan, events: RunEvents | None = None) -> RunResult:
         raise ValueError("a dry-run plan is reported, not run")
     sink: RunEvents = events if events is not None else NullEvents()
     env = CallEnv.create(run_plan.settings, sink)
-    if run_plan.to_process:
-        _check_clients(run_plan, env)
+    clients = _clients(run_plan, env, args)
     if run_plan.output_dir is not None and (
         run_plan.to_process or run_plan.render_only
     ):
@@ -923,7 +1106,7 @@ async def run(run_plan: RunPlan, events: RunEvents | None = None) -> RunResult:
                 skipped.remove(planned.name)
                 results.append(failure)
         for index, planned in enumerate(run_plan.to_process, start=1):
-            result = await _run_item(run_plan, planned, index, env, stores)
+            result = await _run_item(run_plan, planned, index, env, stores, clients)
             if result is None:
                 skipped.append(planned.name)
             else:

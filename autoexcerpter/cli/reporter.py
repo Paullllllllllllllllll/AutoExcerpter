@@ -113,6 +113,15 @@ class StderrReporter:
             _write(f"DRY-RUN: {item.name} -> {item.state} (skip): {item.reason}")
         for item in run_plan.refused:
             _write(f"DRY-RUN: {item.name} -> refused: {item.reason}")
+        if run_plan.batch:
+            job = run_plan.job
+            phases = [f"transcriptions to {job.transcription.provider}"]
+            if job.summarize:
+                phases.append(f"summaries to {job.summary.provider}")
+            _write(
+                f"DRY-RUN: batch mode: {len(run_plan.to_process)} item(s) would "
+                f"be submitted ({' and '.join(phases)} batch APIs)"
+            )
 
     def completion(self, result: RunResult) -> None:
         """Write the run overview: items, pages, run time and outputs."""
@@ -122,13 +131,22 @@ class StderrReporter:
         pages = f"  pages: {ok} ok, {failed} failed, {deferred} deferred"
         if summary_failures:
             pages += f", {summary_failures} summary failure(s)"
+        submitted = (
+            f"{result.submitted} submitted to batches, " if result.submitted else ""
+        )
         lines = [
             "Run complete:",
-            f"  items: {result.complete} processed, {result.failed} failed, "
-            f"{len(result.skipped)} skipped (of {len(result.items)})",
+            f"  items: {result.complete} processed, {submitted}{result.failed} "
+            f"failed, {len(result.skipped)} skipped (of {len(result.items)})",
             pages,
             f"  run time: {result.seconds:.1f}s",
         ]
+        if result.submitted:
+            lines.append(
+                "  batches: run 'autoexcerpter batch check' to collect the "
+                "results; each check submits the summaries the finished pages "
+                "call for and renders the finished items"
+            )
         outputs = result.outputs
         if outputs:
             lines.append(f"  outputs ({len(outputs)}):")

@@ -33,6 +33,8 @@ from autoexcerpter.providers import (
 )
 
 __all__ = [
+    "BATCH_CANCEL_OPTIONS",
+    "BATCH_CHECK_OPTIONS",
     "CONTEXT_AUTO",
     "CONTEXT_NONE",
     "DEFAULT_MODEL",
@@ -51,7 +53,10 @@ __all__ = [
     "SERVICE_TIERS",
     "TRANSCRIPTION_FORMATS",
     "VERBOSITIES",
+    "BatchCancelSpec",
+    "BatchCheckSpec",
     "CitationSpec",
+    "CommandSpec",
     "Dpi",
     "ImageSpec",
     "InputSpec",
@@ -68,9 +73,12 @@ __all__ = [
     "model_suggestions",
     "parse",
     "recommended_images",
+    "resolve_batch_cancel",
+    "resolve_batch_check",
     "resolve_migrate",
     "resolve_render",
     "resolve_spec",
+    "spec_from_effective",
     "to_argv",
 ]
 
@@ -204,13 +212,18 @@ class ImageSpec:
 
 @dataclass(frozen=True)
 class RunControl:
-    """Resume, concurrency and agent-contract switches."""
+    """Resume, concurrency, batch and agent-contract switches.
+
+    ``batch`` submits the model calls to the providers' batch APIs instead
+    of calling the models directly.
+    """
 
     force: bool
     retranscribe: bool
     concurrency: int
     dry_run: bool
     json: bool
+    batch: bool = False
 
 
 @dataclass(frozen=True)
@@ -610,6 +623,15 @@ def _build_table() -> OptionTable:
             target="run.concurrency",
         ),
         Option(
+            "batch",
+            "--batch",
+            "submit the pages and summaries to the providers' batch APIs",
+            group="run",
+            kind=Kind.SWITCH,
+            default=False,
+            target="run.batch",
+        ),
+        Option(
             "dry_run",
             "--dry-run",
             "plan without API calls or writes",
@@ -784,6 +806,183 @@ def resolve_migrate(flags: Mapping[str, Any]) -> MigrateSpec:
     return MigrateSpec(**values)
 
 
+def _batch_ids_option(help: str, exclusive: str | None = None) -> Option:
+    return Option(
+        "batch_ids",
+        "--batch-ids",
+        help,
+        group="batch",
+        kind=Kind.LIST,
+        type=_text,
+        metavar="IDS",
+        default=(),
+        exclusive=exclusive,
+        target="batch_ids",
+        settable=False,
+    )
+
+
+def _settings_option() -> Option:
+    return Option(
+        "settings",
+        "--settings",
+        "alternate settings file",
+        group="run",
+        type=Path,
+        metavar="FILE",
+        default_help="config/settings.yaml",
+        target="settings",
+        settable=False,
+    )
+
+
+_BATCH_TITLES = {"batch": "batches", "run": "run control"}
+
+BATCH_CHECK_OPTIONS = OptionTable(
+    [
+        Option(
+            "input",
+            "--input",
+            "folder searched for batch submissions, subfolders included",
+            group="batch",
+            type=Path,
+            metavar="DIR",
+            default=Path("."),
+            default_help="the current directory",
+            target="directory",
+            settable=False,
+        ),
+        _batch_ids_option("comma-separated batch IDs to check; default every batch"),
+        Option(
+            "adopt",
+            "--adopt",
+            "record this provider batch for the unresolved submission it belongs "
+            "to, then finalize it",
+            group="batch",
+            metavar="BATCH_ID",
+            exclusive="unresolved_action",
+            target="adopt",
+            settable=False,
+        ),
+        Option(
+            "abandon",
+            "--abandon",
+            "give up an unresolved submission (its upload is deleted) or a "
+            "submitted one whose results are lost: its pages return to pending "
+            "and its documents wait for a run",
+            group="batch",
+            metavar="SUBMISSION_ID",
+            exclusive="unresolved_action",
+            target="abandon",
+            settable=False,
+        ),
+        _render_flag("json", "print one JSON summary line on stdout"),
+        _settings_option(),
+    ],
+    group_titles=_BATCH_TITLES,
+)
+
+BATCH_CANCEL_OPTIONS = OptionTable(
+    [
+        _batch_ids_option("comma-separated batch IDs to cancel", "cancel_target"),
+        Option(
+            "all",
+            "--all",
+            "cancel every unfinished batch of every provider",
+            group="batch",
+            kind=Kind.FLAG,
+            default=False,
+            exclusive="cancel_target",
+            target="all",
+            settable=False,
+        ),
+        Option(
+            "input",
+            "--input",
+            "cancel the open batch submissions recorded in the databases below "
+            "this folder",
+            group="batch",
+            type=Path,
+            metavar="DIR",
+            exclusive="cancel_target",
+            target="directory",
+            settable=False,
+        ),
+        _render_flag("json", "print one JSON summary line on stdout"),
+        _settings_option(),
+    ],
+    group_titles=_BATCH_TITLES,
+)
+
+
+@dataclass(frozen=True)
+class BatchCheckSpec:
+    """Check and finalize the batch submissions found below ``directory``.
+
+    ``adopt`` names a provider batch to record for an unresolved submission;
+    ``abandon`` names an unresolved submission whose pages return to pending.
+    """
+
+    directory: Path
+    batch_ids: tuple[str, ...] = ()
+    adopt: str | None = None
+    abandon: str | None = None
+    json: bool = False
+    settings: Path | None = None
+
+
+@dataclass(frozen=True)
+class BatchCancelSpec:
+    """Cancel the named batches, every unfinished batch with ``all``, or the
+    open submissions of the databases below ``directory``."""
+
+    batch_ids: tuple[str, ...] = ()
+    all: bool = False
+    directory: Path | None = None
+    json: bool = False
+    settings: Path | None = None
+
+
+type CommandSpec = RunSpec | BatchCheckSpec | BatchCancelSpec
+"""The specs the extension's startup receives."""
+
+
+def resolve_batch_check(flags: Mapping[str, Any]) -> BatchCheckSpec:
+    """Resolve batch check options; no option takes a settings default.
+
+    Raises:
+        SpecError: An unknown option, or ``--adopt`` with ``--abandon``.
+    """
+    unknown = set(flags) - set(BATCH_CHECK_OPTIONS.names)
+    if unknown:
+        raise SpecError(f"unknown options: {', '.join(sorted(unknown))}")
+    if flags.get("adopt") and flags.get("abandon"):
+        raise SpecError("--adopt and --abandon exclude each other")
+    resolved = BATCH_CHECK_OPTIONS.resolve(flags, None)
+    values, _ = BATCH_CHECK_OPTIONS.by_targets(resolved)
+    return BatchCheckSpec(**values)
+
+
+def resolve_batch_cancel(flags: Mapping[str, Any]) -> BatchCancelSpec:
+    """Resolve batch cancel options; exactly one target is required.
+
+    Raises:
+        SpecError: An unknown option, or not exactly one of ``--batch-ids``,
+            ``--all`` and ``--input``.
+    """
+    unknown = set(flags) - set(BATCH_CANCEL_OPTIONS.names)
+    if unknown:
+        raise SpecError(f"unknown options: {', '.join(sorted(unknown))}")
+    values, _ = BATCH_CANCEL_OPTIONS.by_targets(
+        BATCH_CANCEL_OPTIONS.resolve(flags, None)
+    )
+    spec = BatchCancelSpec(**values)
+    targets = sum((bool(spec.batch_ids), spec.all, spec.directory is not None))
+    if targets != 1:
+        raise SpecError("give exactly one of --batch-ids, --all and --input")
+    return spec
+
+
 @dataclass(frozen=True)
 class Resolution:
     """The effective spec and the source of each field (dotted path)."""
@@ -808,6 +1007,43 @@ def effective_spec(
         }
         for path, value in _flatten(spec).items()
     }
+
+
+_PATH_FIELDS = frozenset({"input.path", "output.directory"})
+
+
+def spec_from_effective(stored: Mapping[str, Any]) -> RunSpec:
+    """Return the :class:`RunSpec` that :func:`effective_spec` recorded.
+
+    *stored* maps dotted field paths to ``{"value": ..., "source": ...}``,
+    as the store keeps a run's spec; lists become tuples and the path fields
+    paths. A field the stored spec lacks, from an earlier version, takes its
+    dataclass default.
+
+    Raises:
+        SpecError: A field without a default is missing or a value is invalid.
+    """
+    values: dict[str, Any] = {}
+    for path, entry in stored.items():
+        value = entry.get("value") if isinstance(entry, Mapping) else entry
+        if path in _PATH_FIELDS and isinstance(value, str):
+            value = Path(value)
+        elif isinstance(value, list):
+            value = tuple(value)
+        values[path] = value
+    try:
+        return RunSpec(
+            input=InputSpec(**_part(values, "input")),
+            output=OutputSpec(**_part(values, "output")),
+            summary=SummarySpec(**_part(values, "summary")),
+            citations=CitationSpec(**_part(values, "citations")),
+            transcription_model=ModelSpec(**_part(values, "transcription_model")),
+            summary_model=ModelSpec(**_part(values, "summary_model")),
+            images=ImageSpec(**_part(values, "images")),
+            run=RunControl(**_part(values, "run")),
+        )
+    except TypeError as exc:
+        raise SpecError(f"the stored run spec is incomplete: {exc}") from exc
 
 
 def _jsonable(value: Any) -> Any:

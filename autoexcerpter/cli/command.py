@@ -1,7 +1,8 @@
 """The run subcommand: plan and run, report on stderr, summarize on stdout.
 
-Exit codes: 0 when every item completed, 1 when an item failed or no item
-could be processed, 2 for usage and configuration errors, 130 on Ctrl+C.
+Exit codes: 0 when every item completed or, under ``--batch``, was
+submitted, 1 when an item failed or no item could be processed, 2 for usage
+and configuration errors, 130 on Ctrl+C.
 With ``--json`` exactly one JSON summary line goes to stdout on every exit.
 """
 
@@ -49,18 +50,22 @@ def summary_fields(
     complete: int = 0,
     failed: int = 0,
     skipped: int = 0,
+    submitted: int = 0,
     outputs: Sequence[str] = (),
     usage: Mapping[str, Usage] | None = None,
 ) -> dict[str, Any]:
     """Return the fields of the JSON run summary.
 
-    *usage* holds the run's tokens per role; the summary adds their total.
+    *submitted* counts the items whose units went to batches under
+    ``--batch``; *usage* holds the run's tokens per role; the summary adds
+    their total.
     """
     return {
         "items_total": total,
         "items_complete": complete,
         "items_failed": failed,
         "items_skipped": skipped,
+        "items_submitted": submitted,
         "outputs": list(outputs),
         USAGE_KEY: usage_field(usage),
     }
@@ -166,7 +171,7 @@ def _execute(
     for message in condition_warnings(flags, settings.defaults, spec):
         reporter.warning(message)
     try:
-        run_plan = core.plan(spec, settings, sources=resolution.sources)
+        run_plan = core.plan(spec, settings, sources=resolution.sources, args=args)
     except core.PlanError as exc:
         reporter.error(str(exc))
         emitter.emit(summary_fields(total=exc.items_total))
@@ -189,7 +194,7 @@ def _execute(
         return ExitCode.OK
 
     try:
-        result = asyncio.run(core.run(run_plan, reporter))
+        result = asyncio.run(core.run(run_plan, reporter, args=args))
     except core.PlanError as exc:
         reporter.error(str(exc))
         emitter.emit(summary_fields(total=exc.items_total, skipped=skipped))
@@ -202,6 +207,7 @@ def _execute(
             complete=result.complete,
             failed=result.failed,
             skipped=len(result.skipped),
+            submitted=result.submitted,
             outputs=result.outputs,
             usage=result.usage,
         )

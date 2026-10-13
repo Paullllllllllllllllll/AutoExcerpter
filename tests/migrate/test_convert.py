@@ -85,7 +85,7 @@ def test_a_version_1_database_is_converted_and_verified(
     assert not inspect_schema(database.snapshot).versions
     assert inspect_schema(root / DATABASE_NAME).versions == {
         "core": 1,
-        "autoexcerpter": 1,
+        "autoexcerpter": 2,
     }
     units = _units(root)
     assert len(units) == 6

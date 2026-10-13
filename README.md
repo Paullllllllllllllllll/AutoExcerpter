@@ -1,12 +1,14 @@
-# AutoExcerpter v2.1.1
+# AutoExcerpter v2.2.0
 
 AutoExcerpter transcribes PDFs and folders of page images with vision-language
 models, summarizes each page and builds a consolidated bibliography whose entries
 are enriched from OpenAlex. It runs on OpenAI, Anthropic, Google and OpenRouter
 models and on OpenAI-compatible endpoints that you name in the settings. The
 `run` command serves scripts and agents; the `ui` command walks you through a run
-in the terminal. `render` writes the files again from the store without model
-calls, and `migrate` imports the outputs of version 1.0. Please report bugs on the
+in the terminal. `run --batch` submits the pages to the providers' batch APIs
+instead, and `batch check` collects them. `render` writes the files again from
+the store without model calls, and `migrate` imports the outputs of version 1.0.
+Please report bugs on the
 [GitHub issue tracker](https://github.com/Paullllllllllllllllll/AutoExcerpter/issues).
 
 ## Overview
@@ -59,6 +61,8 @@ uv run autoexcerpter run --input scans --all --output excerpts
 uv run autoexcerpter run --input scans --select 1-3  # or a name: --select braudel
 uv run autoexcerpter run --input scans --all --dry-run --json
 uv run autoexcerpter ui                              # guided run
+uv run autoexcerpter run --input scans --all --output excerpts --batch
+uv run autoexcerpter batch check --input excerpts    # collect finished batches
 uv run autoexcerpter render --input excerpts         # rewrite the files, no calls
 uv run autoexcerpter migrate --input excerpts        # import version 1.0 outputs
 ```
@@ -77,7 +81,9 @@ stated default are off or unset until given. The last column says whether the
 settings `defaults:` block can set the option; its key there is the flag without
 the leading dashes, with underscores for hyphens (`--transcription-format` becomes
 `transcription_format`). `autoexcerpter ui` takes only `--settings FILE`;
-`render` and `migrate` are described under [Store](#store).
+`batch check` and `batch cancel` are described under
+[Batch Processing](#batch-processing), `render` and `migrate` under
+[Store](#store).
 
 ### Input
 
@@ -158,6 +164,7 @@ option, for example as `model` or `summary_verbosity`.
 | `--force` | reprocess items whose outputs exist (resume is the default) | | no |
 | `--retranscribe` | transcribe again instead of reusing stored transcriptions | | no |
 | `--concurrency N` | parallel page requests | 16 | yes |
+| `--batch`, `--no-batch` | submit the pages and summaries to the providers' batch APIs | off | yes |
 | `--dry-run` | plan without API calls or writes | | no |
 | `--json` | print one JSON summary line on stdout | | no |
 | `--settings FILE` | alternate settings file | config/settings.yaml | no |
@@ -166,9 +173,9 @@ option, for example as `model` or `summary_verbosity`.
 
 | Code | Meaning |
 | --- | --- |
-| 0 | every item completed, or nothing was left to do |
-| 1 | an item failed, or no item could be processed (no PDF or image folder found, `--select` matched nothing, an unexpected error) |
-| 2 | usage or configuration error (invalid flags or settings, several items without `--all` or `--select`, two items with one output name in one folder, a stored document in the output folder that belongs to another input of the same name, summaries on without a summary format, an unset API key variable, a database the store refuses) |
+| 0 | every item completed or, under `--batch`, was submitted, or nothing was left to do |
+| 1 | an item failed, or no item could be processed (no PDF or image folder found, `--select` matched nothing, a refused or unresolved batch submission, an unexpected error) |
+| 2 | usage or configuration error (invalid flags or settings, several items without `--all` or `--select`, two items with one output name in one folder, a stored document in the output folder that belongs to another input of the same name, summaries on without a summary format, an unset API key variable, a database the store refuses, `--batch` on a provider without a batch API) |
 | 130 | interrupted (Ctrl+C) |
 
 Progress, warnings and errors go to stderr. With `--json`, stdout carries exactly
@@ -181,6 +188,7 @@ one JSON line on every exit, errors and interrupts included. Each line holds
 | `items_complete` | items that finished with every page and output |
 | `items_failed` | items that finished incomplete |
 | `items_skipped` | items skipped because they were already complete |
+| `items_submitted` | items whose units wait in batches for `batch check` (`--batch`); they count neither complete nor failed |
 | `outputs` | absolute paths of the files written, item by item, then the databases |
 | `usage` | tokens per role (`transcription`, `summary`) and their sum under `total`, each with `input_tokens`, `output_tokens`, `total_tokens`, `cached_tokens` (input read from the provider's prompt cache) and `reasoning_tokens` |
 
@@ -192,16 +200,20 @@ items; `spec` maps every field of the effective run specification, such as
 
 ## Guided UI
 
-`autoexcerpter ui` first asks for the task: a new run, rendering the files of
-stored documents again (`render`) or importing version 1.0 outputs (`migrate`).
-A task chosen there opens at its first step, and Back from it returns to the
-task question. The render task asks for the input, the formats, whether to
+`autoexcerpter ui` first asks for the task: a new run, checking or cancelling
+batches (`batch check`, `batch cancel`), rendering the files of stored documents
+again (`render`) or importing version 1.0 outputs (`migrate`). A task chosen
+there opens at its first step, and Back from it returns to the task question.
+The batch check task asks for the folder, the batch IDs and what to do with an
+unresolved submission; the batch cancel task asks what to cancel. The render
+task asks for the input, the formats, whether to
 replace files changed outside the tool and whether to dry-run; the migrate task
 asks for the input and whether to dry-run, and its review shows what a dry run
 would import. The new run asks one step at a time: input (with the PDFs, image
 folders and pages found, and the item selection), output location, summary on or
 off, formats, summary context, transcription model, summary model, page images
-("Recommended" or "Customize") and run options. Every list ends with Back; a text
+("Recommended" or "Customize") and run options, which offer `--batch` when every
+phase's provider has a batch API. Every list ends with Back; a text
 or path prompt takes `<` alone as Back. Settings defaults are preselected, and
 answers act like flags over them. The review screen marks values taken from
 settings defaults with `(s)`, previews the plan and prints the equivalent command:
@@ -234,7 +246,9 @@ the answers of steps it turns off come back when they apply again. Copy command
 and quit prints the command on stdout and copies it to the clipboard where one is
 available. Quit exits. When items are already complete, the review offers to reprocess them
 (`--force`). Run is withheld while the plan fails or a needed API key variable is
-unset; the review names the variable. The UI needs an interactive terminal on
+unset; the review names the variable. Under `--batch` the plan fails, and Run is
+withheld, when a provider or the extension refuses batch submission. The UI needs
+an interactive terminal on
 stdin and stdout; anything else exits with code 2.
 
 ## Settings File
@@ -276,6 +290,7 @@ defaults:
   transcription_format: md
   formats: [summary-md, summary-docx]
   concurrency: 16
+  batch: false
   fallback_context: path/to/summary_topics.txt
 ```
 
@@ -472,6 +487,14 @@ for the next run. A database with a newer schema, an
 unreadable file and a database written before the store stop the run with exit
 code 2 and are left as they are.
 
+The store's batch tables come from `common/store.py`: `submissions` holds one row
+per submitted batch part with its provider batch ID and status, and
+`submission_requests` maps each custom ID to its unit. AutoExcerpter adds
+`batch_jobs` (schema version 2), one row per document with batch work in flight,
+naming the `run --batch` whose stored spec governs it and the summary context it
+used. Opening a version 1 database for writing adds the table in its opening
+transaction; AutoExcerpter 2.1 then refuses the database as newer (exit 2).
+
 ### Render
 
 `autoexcerpter render --input PATH` writes the files of every stored document
@@ -520,10 +543,99 @@ carries one summary line with `databases`, `converted`, `documents`, `units`,
 
 ## Batch Processing
 
-AutoExcerpter has no provider batch mode; every page is a direct request. A folder
-run processes the selected items one after another, with up to `--concurrency`
-pages of an item (default 16) in flight at once. The rate limits apply per
-provider across the run. A failed item is counted, and the run continues.
+Without `--batch`, every page is a direct request. A folder run processes the
+selected items one after another, with up to `--concurrency` pages of an item
+(default 16) in flight at once. The rate limits apply per provider across the run.
+A failed item is counted, and the run continues.
+
+`run --batch` sends the same requests to the batch APIs of OpenAI, Anthropic and
+Google instead, which cost about half as much and finish within a day. Both
+phases need such a provider: OpenRouter and custom endpoints exit with code 2 at
+planning, dry runs included, as does an unset key variable. Each item is planned
+and classified as in a direct run. Its pages to transcribe are rendered and
+submitted as one transcription batch, and the summaries of pages already
+transcribed as one summary batch; a page that fails to render fails at once, and
+the summary of a failed or blank page is its placeholder, written without a call.
+The run ends once the batches are accepted (`items_submitted`). The store records
+each submission before its upload and its provider batch ID after the create, so
+an interrupted run never loses a batch.
+
+`batch check` continues the work. For every database below `--input` it stores the
+results of each finished batch, submits the summaries of the pages those results
+transcribed and writes the files of every document left with nothing to submit or
+wait for. A run that summarizes therefore needs two checks after its batches
+finish: the first collects the transcriptions and submits the summaries, the
+second collects the summaries and writes the files. Each check makes one pass and
+does not wait. The later steps follow the `run --batch` that submitted the
+document: its stored spec sets the summary model, the formats and OpenAlex, and
+the summary context it read is kept with the document. Prompts, schemas and
+machine settings come from the installed version and the current settings file.
+
+```bash
+autoexcerpter run --input scans --all --output excerpts --batch
+autoexcerpter batch check --input excerpts     # transcriptions in, summaries out
+autoexcerpter batch check --input excerpts     # summaries in, files written
+```
+
+| Flag | Description | Default | In `defaults:` |
+| --- | --- | --- | --- |
+| `--input DIR` | folder searched for batch submissions, subfolders included | the current directory | no |
+| `--batch-ids IDS` | comma-separated batch IDs to check; default every batch | | no |
+| `--adopt BATCH_ID` | record this provider batch for the unresolved submission it belongs to, then finalize it | | no |
+| `--abandon SUBMISSION_ID` | give up an unresolved submission (its upload is deleted) or a submitted one whose results are lost: its pages return to pending and its documents wait for a run | | no |
+| `--json` | print one JSON summary line on stdout | | no |
+| `--settings FILE` | alternate settings file | config/settings.yaml | no |
+
+A result is read as a direct answer is: a transcription is validated against its
+schema and cleaned, a summary validated and given its placeholder when it fails.
+A failed request, a missing result, a content-filter stop and a refusal fail the
+unit with an error placeholder. Every result line is stored in `page_attempts`
+with its `submission_id` and `custom_id`, and the batch's files are deleted from
+the provider once the results are stored. Inside a batch there are no validation
+or empty-answer retries and no first-page warm-up of the Anthropic prompt cache;
+the cache breakpoint stays in the system prompt. A unit that failed in a batch is
+retried by the next `run`, with or without `--batch`, as any failed page is;
+AutoExcerpter has no separate repair command. A direct run on a document with no
+batch in flight takes its batch work over.
+
+A submission whose create got no confirmed answer is unresolved, and its pages
+stay blocked. The next check lists the provider's batches of its time window and
+adopts the one that names it; otherwise it lists the candidates, and `--adopt
+BATCH_ID` or `--abandon SUBMISSION_ID` settles it. A finished batch whose results
+cannot be downloaded fails the check and stays submitted, so a later check can
+retry; when its results are lost for good, `--abandon` gives it up too, and a run
+submits its pages again. Exit codes of `batch check`: 0
+when nothing failed, 1 when a submission or a document failed or a submission is
+unresolved, 2 for a usage error, a missing folder, a database the store refuses,
+or an `--adopt` or `--abandon` that names nothing to act on. Its JSON line holds
+`command` (`check_batches`), the submissions `finalized`, `pending`, `failed` and
+`unresolved`, the summary batches `submitted`, the documents `complete`, the
+`outputs` written and the `usage` of the stored results per role, plus `adopted`
+or `abandoned` when the option is given.
+
+`batch cancel` cancels batches at the provider:
+
+| Flag | Description | Default | In `defaults:` |
+| --- | --- | --- | --- |
+| `--batch-ids IDS` | comma-separated batch IDs to cancel | | no |
+| `--all` | cancel every unfinished batch of every provider | | no |
+| `--input DIR` | cancel the open batch submissions recorded in the databases below this folder | | no |
+| `--json` | print one JSON summary line on stdout | | no |
+| `--settings FILE` | alternate settings file | config/settings.yaml | no |
+
+Exactly one of the first three is required. With `--input`, each cancelled
+submission is marked cancelled, its pages return to pending and its documents
+wait for a run; a batch that has already ended is left for `batch check`. Exit
+codes: 0 when every batch was cancelled, 1 when a cancellation or a provider
+listing failed, 2 for a usage error, a missing folder or a refused database. Its
+JSON line holds `command` (`cancel_batches`), `cancelled` and `failed`.
+
+The shared backends split a submission into parts by the provider's limits:
+OpenAI 50,000 requests and 150 MB per input file, Anthropic 100,000 requests and
+224 MB, Google 50,000 requests sent inline up to 20 MB, else as an uploaded file
+up to 2 GB. Each part is one submission. Page images keep the size caps of a
+direct run, and an item's page images are held in memory until its transcription
+batch is built.
 
 ## Resume
 
@@ -537,7 +649,7 @@ Resume is the default. Each item is classified from the store alone
 | `transcription_only` | every page is transcribed, some summaries are missing, failed or stale | summarize those pages from the stored text |
 | `complete` | every unit is stored | skip (`items_skipped`); missing files and files rendered before a later run worked the item are rendered again without model calls or OpenAlex requests (a document without stored citations gets them from the OpenAlex cache); a file that cannot be written counts the item failed |
 | `legacy` | output files or version 1.0 working logs exist without stored units | skip and list; `migrate` imports them, `--force` processes the item again |
-| `blocked` | another live run holds the document's lease | skip and list |
+| `blocked` | another live run holds the document's lease, or an open or unresolved batch holds its units | skip and list |
 | `refused` | pages remain to transcribe, but the stored pages used other image settings | count failed; name the changed keys |
 
 A failure never counts as complete, so a rerun retries failed pages. A page
@@ -593,7 +705,7 @@ citations looked up per document. `--no-openalex` turns lookups off.
 
 ```text
 autoexcerpter/
-  __main__.py   entry point: dispatch run, render, migrate or ui
+  __main__.py   entry point: dispatch run, batch, render, migrate or ui
   spec.py       RunSpec dataclasses and the option table (OPTIONS)
   settings.py   typed settings: machine values and the defaults block
   run.py        core: discover, plan, run
@@ -602,8 +714,10 @@ autoexcerpter/
   providers.py  provider names and inference from model names
   migrate.py    import of version 1.0 databases, working logs and files
   cli/          argparse from the option table, stderr reporter, --json, exit codes
-  ui/           questionary wizard with the run, render and migrate tasks
-  common/       vendored modules shared with the sibling tools, the store among them
+  ui/           questionary wizard with the run, batch, render and migrate tasks
+  batch/        run --batch items, request bodies, submit, check, finalize, cancel
+  common/       vendored modules shared with the sibling tools, the store and the
+                batch backends among them
   llm/          client factory, model calls with attempt capture, capability table
   imaging/      page payload sources and image presets
   output/       the store's tables, views and resume, the renderers, item paths
@@ -616,13 +730,13 @@ The core imports nothing from `cli/` or `ui/`. It never prints, prompts or exits
 and reports through the run events, which the CLI writes to stderr and the UI
 shows as progress bars. `common/` holds tool-agnostic modules (option tables,
 wizard framework, settings loader, structured calls, retry, rate limiting, HTTP
-timeouts, images, the run store and its SQLite writer, attempt capture, agent
-contract) kept byte-identical
+timeouts, images, the run store and its SQLite writer, attempt capture, the batch
+backends of OpenAI, Anthropic and Google, agent contract) kept byte-identical
 across the sibling tools: `common/MANIFEST.json` pins each file by its SHA-256, and
 `tests/common/test_manifest.py` fails when a copy drifts. `ext.py` holds the
 extension hooks (extra arguments, settings blocks and wizard steps, a startup
-hook, an attempt context around every model call); its defaults pass everything
-through.
+hook, batch consent, the key variables of a call, an attempt context around every
+model and batch call); its defaults pass everything through.
 
 ## Development
 
@@ -638,7 +752,8 @@ markdownlint-cli2 README.md
 The suite removes provider keys from the environment, points the home folder at
 a temporary directory, blocks non-loopback connections and fails any test that
 writes outside its temporary directory. Model calls go to a scripted fake chat
-model behind the real client. Golden files hold the help texts, a recorded wizard
+model behind the real client, batch calls to a scripted fake batch service behind
+the real SDK clients. Golden files hold the help texts, a recorded wizard
 session, the outputs per provider and response format, and DOCX, Markdown and
 SQLite read-backs. After an intended change, rewrite them with
 `AE_UPDATE_GOLDEN=1` (PowerShell: `$env:AE_UPDATE_GOLDEN = "1"`) and review the

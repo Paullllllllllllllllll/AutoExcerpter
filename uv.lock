@@ -89,9 +89,11 @@ wheels = [
 
 [[package]]
 name = "autoexcerpter"
-version = "2.1.1"
+version = "2.2.0"
 source = { editable = "." }
 dependencies = [
+    { name = "anthropic" },
+    { name = "google-genai" },
     { name = "httpx" },
     { name = "langchain-anthropic" },
     { name = "langchain-core" },
@@ -99,6 +101,7 @@ dependencies = [
     { name = "langchain-openai" },
     { name = "latex2mathml" },
     { name = "mathml2omml" },
+    { name = "openai" },
     { name = "pillow" },
     { name = "pymupdf" },
     { name = "python-docx" },
@@ -121,6 +124,8 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "anthropic", specifier = ">=0.117" },
+    { name = "google-genai", specifier = ">=2.12" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "langchain-anthropic", specifier = ">=1.4" },
     { name = "langchain-core", specifier = ">=1.4" },
@@ -129,6 +134,7 @@ requires-dist = [
     { name = "latex2mathml", specifier = ">=3.80" },
     { name = "mathml2omml", specifier = ">=0.0.2" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=2.3" },
+    { name = "openai", specifier = ">=2.46" },
     { name = "pillow", specifier = ">=12.3" },
     { name = "pymupdf", specifier = ">=1.28" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.1" },

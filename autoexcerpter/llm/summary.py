@@ -44,7 +44,11 @@ __all__ = [
     "SUMMARY_REQUIRED_KEYS",
     "SummaryManager",
     "ensure_page_information",
+    "failed_summary",
     "placeholder_summary",
+    "summary_entry",
+    "summary_prompt",
+    "summary_request_format",
 ]
 
 logger = logging.getLogger(__name__)
@@ -125,6 +129,106 @@ def _wrapped(text: str) -> dict[str, Any]:
     }
 
 
+def summary_prompt(
+    context: str | None, transcription_format: str
+) -> tuple[dict[str, Any], str]:
+    """Return the summary schema and the system prompt of a summary call.
+
+    *context* is the item's summary context as it enters the prompt;
+    *transcription_format* is the transcription's response format, whose
+    ``text`` value selects the plain-text prompt.
+    """
+    schema: dict[str, Any] = json.loads(
+        (SCHEMAS_DIR / SUMMARY_SCHEMA_FILE).read_text(encoding="utf-8")
+    )
+    prompt_file = (
+        PLAIN_TEXT_SUMMARY_PROMPT_FILE
+        if transcription_format == "text"
+        else SUMMARY_PROMPT_FILE
+    )
+    prompt = (PROMPTS_DIR / prompt_file).read_text(encoding="utf-8")
+    system_prompt = render_prompt_with_schema(
+        prompt, schema.get("schema", schema), context=context
+    )
+    return schema, system_prompt
+
+
+def failed_summary(
+    page_num: int,
+    message: str,
+    error_type: str,
+    provider: str,
+    counts: dict[str, int] | None = None,
+) -> dict[str, Any]:
+    """Return the error placeholder of a summary that failed."""
+    placeholder = placeholder_summary(page_num, message)
+    placeholder["error_type"] = error_type
+    placeholder["provider"] = provider
+    if counts and sum(counts.values()) > 0:
+        placeholder["schema_retries"] = dict(counts)
+    return placeholder
+
+
+def summary_entry(
+    page_num: int,
+    *,
+    text: str,
+    data: dict[str, Any] | None,
+    error: str | None,
+    response_format: str,
+    provider: str,
+    counts: dict[str, int] | None = None,
+) -> dict[str, Any]:
+    """Return a page's summary from a final answer, or its error placeholder.
+
+    *data* and *error* are the answer's parsed JSON and validation failure.
+    A valid answer is kept; a ``text``-format answer that failed validation
+    becomes one bullet point; any other failure gives the placeholder. The
+    synchronous and the batch path share this rule.
+    """
+    if error is None and isinstance(data, dict):
+        summary = dict(data)
+    elif response_format == "text":
+        logger.warning(
+            "Summary for page %d: wrapping a plain answer into the summary structure.",
+            page_num,
+        )
+        summary = _wrapped(text)
+    else:
+        logger.error(
+            "Invalid summary JSON for page %d after validation retries: %s",
+            page_num,
+            error,
+        )
+        return failed_summary(
+            page_num,
+            f"Invalid summary JSON: {error}",
+            "schema_validation",
+            provider,
+            counts,
+        )
+    ensure_page_information(summary)
+    entry: dict[str, Any] = {
+        "page": page_num,
+        "page_information": summary.get("page_information"),
+        "bullet_points": summary.get("bullet_points"),
+        "references": summary.get("references"),
+        "provider": provider,
+    }
+    if counts and sum(counts.values()) > 0:
+        entry["schema_retries"] = dict(counts)
+    return entry
+
+
+def summary_request_format(response_format: ResponseFormat) -> ResponseFormat:
+    """Return the format a summary is requested in; ``text`` asks for JSON.
+
+    A summary is always parsed as JSON; text only changes what happens when
+    no valid answer arrives.
+    """
+    return "json" if response_format == "text" else response_format
+
+
 class SummaryManager:
     """Summarize page transcriptions with the summary model of one item.
 
@@ -150,18 +254,7 @@ class SummaryManager:
         self.rule = retry.schema_retries.get("summary", {}).get("validation_failure")
         self._jitter = (retry.jitter_min, retry.jitter_max)
         self.summary_context = context
-        self.schema: dict[str, Any] = json.loads(
-            (SCHEMAS_DIR / SUMMARY_SCHEMA_FILE).read_text(encoding="utf-8")
-        )
-        prompt_file = (
-            PLAIN_TEXT_SUMMARY_PROMPT_FILE
-            if transcription_format == "text"
-            else SUMMARY_PROMPT_FILE
-        )
-        prompt = (PROMPTS_DIR / prompt_file).read_text(encoding="utf-8")
-        self.system_prompt = render_prompt_with_schema(
-            prompt, self.schema.get("schema", self.schema), context=context
-        )
+        self.schema, self.system_prompt = summary_prompt(context, transcription_format)
         self.invoke_kwargs = build_invoke_kwargs(
             self.provider, phase.name, phase.options, phase.service_tier
         )
@@ -191,14 +284,9 @@ class SummaryManager:
                 *self._jitter
             )
 
-        # A summary is always parsed as JSON; text only changes what happens
-        # when no valid answer arrives.
-        fmt: ResponseFormat = (
-            "json" if self.response_format == "text" else self.response_format
-        )
         return StructuredRequest(
             provider=self.provider,
-            response_format=fmt,
+            response_format=summary_request_format(self.response_format),
             schema=self.schema,
             invoke_kwargs=self.invoke_kwargs,
             required=SUMMARY_REQUIRED_KEYS,
@@ -243,38 +331,18 @@ class SummaryManager:
                 outcome.reason or "no reason given",
             )
             return self._failed(page_num, outcome.message, outcome.kind)
-        if result.error is None and isinstance(result.data, dict):
-            summary = dict(result.data)
-        elif self.response_format == "text":
-            logger.warning(
-                "Summary for page %d: wrapping a plain answer into the summary "
-                "structure.",
-                page_num,
-            )
-            summary = _wrapped(result.text)
-        else:
-            logger.error(
-                "Invalid summary JSON for page %d after validation retries: %s",
-                page_num,
-                result.error,
-            )
-            return self._failed(
-                page_num,
-                f"Invalid summary JSON: {result.error}",
-                "schema_validation",
-                counts,
-            )
-        ensure_page_information(summary)
-        entry: dict[str, Any] = {
-            "page": page_num,
-            "page_information": summary.get("page_information"),
-            "bullet_points": summary.get("bullet_points"),
-            "references": summary.get("references"),
-            "processing_time": round(time.time() - started, 2),
-            "provider": self.provider,
-        }
-        if sum(counts.values()) > 0:
-            entry["schema_retries"] = dict(counts)
+        entry = summary_entry(
+            page_num,
+            text=result.text,
+            data=result.data,
+            error=result.error,
+            response_format=self.response_format,
+            provider=self.provider,
+            counts=counts,
+        )
+        if "error" in entry:
+            return entry
+        entry["processing_time"] = round(time.time() - started, 2)
         entry["api_response"] = get_response_metadata(result.response)
         return entry
 
@@ -316,9 +384,4 @@ class SummaryManager:
         error_type: str,
         counts: dict[str, int] | None = None,
     ) -> dict[str, Any]:
-        placeholder = placeholder_summary(page_num, message)
-        placeholder["error_type"] = error_type
-        placeholder["provider"] = self.provider
-        if counts and sum(counts.values()) > 0:
-            placeholder["schema_retries"] = dict(counts)
-        return placeholder
+        return failed_summary(page_num, message, error_type, self.provider, counts)

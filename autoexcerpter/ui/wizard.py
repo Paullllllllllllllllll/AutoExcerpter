@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from autoexcerpter import ext
+from autoexcerpter.common.batch import supports_batch
 from autoexcerpter.common.options import OptionError, Source
 from autoexcerpter.common.selection import is_numeric_selection
 from autoexcerpter.common.wizard import (
@@ -77,6 +78,7 @@ __all__ = [
     "STEP_NAMES",
     "TASK",
     "TITLE",
+    "batch_capable",
     "build_steps",
     "build_wizard",
     "phase_options",
@@ -110,6 +112,7 @@ RUN_FLAGS: Final = (
     "openalex",
     "force",
     "retranscribe",
+    "batch",
     "dry_run",
 )
 
@@ -1068,19 +1071,42 @@ _RUN_FLAG_TITLES = {
     "openalex": "Look up citations in OpenAlex",
     "force": "Reprocess items whose outputs exist (--force)",
     "retranscribe": "Transcribe again instead of reusing stored pages",
+    "batch": "Submit to the providers' batch APIs (--batch)",
     "dry_run": "Dry run: show the plan, no API calls or writes",
 }
 
 
-def _ask_run(ctx: StepContext) -> Nav:
+def batch_capable(state: State, session: Session) -> bool:
+    """Whether every phase the answers run has a provider with a batch API."""
+    phases = ["transcription", *(["summary"] if _summarizing(state) else [])]
+    for phase in phases:
+        model = current_model(state, session, phase)
+        if model is None or model.endpoint is not None:
+            return False
+        if not supports_batch(model.provider):
+            return False
+    return True
+
+
+def _run_step(session: Session) -> Step:
+    def ask(ctx: StepContext) -> Nav:
+        return _ask_run(ctx, session)
+
+    return Step("run", "Run options", ask=ask, sets=(*RUN_FLAGS, "concurrency"))
+
+
+def _ask_run(ctx: StepContext, session: Session) -> Nav:
     state = ctx.state
 
+    def shown(name: str) -> bool:
+        if name == "openalex":
+            return bool(state.value("summarize"))
+        if name == "batch":
+            return batch_capable(state, session)
+        return True
+
     def flags() -> Nav:
-        names = [
-            name
-            for name in RUN_FLAGS
-            if name != "openalex" or bool(state.value("summarize"))
-        ]
+        names = [name for name in RUN_FLAGS if shown(name)]
         choices = [
             Choice(name, _RUN_FLAG_TITLES[name], state.marker(name)) for name in names
         ]
@@ -1123,7 +1149,7 @@ def build_steps(session: Session) -> list[Step]:
         _transcription_model_step(session),
         _summary_model_step(session),
         _images_step(session),
-        Step("run", "Run options", ask=_ask_run, sets=(*RUN_FLAGS, "concurrency")),
+        _run_step(session),
     ]
 
 

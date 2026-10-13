@@ -85,6 +85,49 @@ def _by_index(units: Sequence[UnitRow]) -> dict[int, UnitRow]:
     return {unit.idx: unit for unit in units}
 
 
+def open_source(item: ItemSpec, job: ItemJob) -> PayloadSource:
+    """Open the lazy payload source of *item*; no page is rendered yet."""
+    model = job.transcription
+    source_cls = PdfPayloadSource if item.kind == "pdf" else FolderPayloadSource
+    return source_cls(
+        item.path,
+        provider=model.provider,
+        model_name=model.name,
+        images=job.images,
+        original_max_side_px=job.original_max_side_px,
+    )
+
+
+async def plan_document(
+    document: DocumentHandle, source: PayloadSource, *, pdf: bool
+) -> int:
+    """Plan every page's units; drop the units of pages the input lost.
+
+    Returns the page count.
+    """
+    count = len(source)
+    pages = []
+    for idx in range(count):
+        label = source.image_name(idx)
+        pages.append(PlannedUnit(idx, label=label, source_index=idx if pdf else label))
+    await document.plan(pages)
+    if any(unit.idx >= count for unit in document.units()):
+        doc_id = document.doc_id
+
+        def drop(connection: sqlite3.Connection) -> None:
+            connection.execute(
+                "DELETE FROM summaries WHERE doc_id = ? AND idx >= ?", (doc_id, count)
+            )
+            connection.execute(
+                "DELETE FROM units WHERE doc_id = ? AND idx >= ?", (doc_id, count)
+            )
+            refresh_documents(connection, doc_id)
+
+        logger.info(f"{document.name}: dropping the stored pages from {count + 1} on")
+        await document.store.write(document.lease, drop)
+    return count
+
+
 def input_sha256(item: ItemSpec) -> str | None:
     """Return the SHA-256 of a PDF, or of an image folder's files in page order.
 
@@ -108,7 +151,7 @@ class ItemFiles:
     Once ``stop`` is set, OpenAlex enrichment ends and no file is rendered.
     ``written`` lists the absolute paths of the files that hold their
     rendering. *force* replaces files changed outside the tool; render
-    warnings go to *events*.
+    warnings go to *events*. The files take the document's name.
     """
 
     def __init__(
@@ -122,7 +165,7 @@ class ItemFiles:
         events: RunEvents | None = None,
     ) -> None:
         self.item = item
-        self.name = item.output_stem
+        self.name = document.name
         self.job = job
         self.document = document
         self.paths = ItemPaths.for_item(self.name, output_dir, job.transcription_format)
@@ -323,17 +366,7 @@ class ItemProcessor:
 
     def _open_source(self) -> PayloadSource:
         """Open the lazy payload source; no page is rendered yet."""
-        model = self.job.transcription
-        source_cls = (
-            PdfPayloadSource if self.item.kind == "pdf" else FolderPayloadSource
-        )
-        return source_cls(
-            self.item.path,
-            provider=model.provider,
-            model_name=model.name,
-            images=self.job.images,
-            original_max_side_px=self.job.original_max_side_px,
-        )
+        return open_source(self.item, self.job)
 
     async def _run(self, source: PayloadSource) -> bool:
         """Plan the units, work the missing ones and write the outputs."""
@@ -382,32 +415,7 @@ class ItemProcessor:
 
     async def _plan(self, source: PayloadSource) -> None:
         """Plan every page's units; drop the units of pages the input lost."""
-        pdf = self.item.kind == "pdf"
-        pages = []
-        for idx in range(self.page_count):
-            label = source.image_name(idx)
-            pages.append(
-                PlannedUnit(idx, label=label, source_index=idx if pdf else label)
-            )
-        await self.document.plan(pages)
-        stored = self.document.units()
-        if any(unit.idx >= self.page_count for unit in stored):
-            await self._drop_pages_from(self.page_count)
-
-    async def _drop_pages_from(self, count: int) -> None:
-        doc_id = self.document.doc_id
-
-        def drop(connection: sqlite3.Connection) -> None:
-            connection.execute(
-                "DELETE FROM summaries WHERE doc_id = ? AND idx >= ?", (doc_id, count)
-            )
-            connection.execute(
-                "DELETE FROM units WHERE doc_id = ? AND idx >= ?", (doc_id, count)
-            )
-            refresh_documents(connection, doc_id)
-
-        logger.info(f"{self.name}: dropping the stored pages from {count + 1} on")
-        await self.document.store.write(self.document.lease, drop)
+        await plan_document(self.document, source, pdf=self.item.kind == "pdf")
 
     async def _summarize_stored(
         self, transcriptions: dict[int, UnitRow], pending: Sequence[int]
@@ -611,4 +619,11 @@ class ItemProcessor:
         return success
 
 
-__all__ = ["ItemFiles", "ItemProcessor", "PayloadSource", "input_sha256"]
+__all__ = [
+    "ItemFiles",
+    "ItemProcessor",
+    "PayloadSource",
+    "input_sha256",
+    "open_source",
+    "plan_document",
+]

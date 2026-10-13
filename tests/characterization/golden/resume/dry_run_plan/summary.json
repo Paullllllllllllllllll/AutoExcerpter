@@ -57,6 +57,10 @@
         "source": "default",
         "value": "md"
       },
+      "run.batch": {
+        "source": "default",
+        "value": false
+      },
       "run.concurrency": {
         "source": "default",
         "value": 16

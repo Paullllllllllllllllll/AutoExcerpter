@@ -7,10 +7,18 @@ from collections.abc import Callable
 from typing import Any, NoReturn
 
 from autoexcerpter import ext
-from autoexcerpter.common.options import HelpFormatter
-from autoexcerpter.spec import MIGRATE_OPTIONS, OPTIONS, RENDER_OPTIONS
+from autoexcerpter.common.options import HelpFormatter, OptionTable
+from autoexcerpter.spec import (
+    BATCH_CANCEL_OPTIONS,
+    BATCH_CHECK_OPTIONS,
+    MIGRATE_OPTIONS,
+    OPTIONS,
+    RENDER_OPTIONS,
+)
 
 __all__ = [
+    "BATCH_CANCEL_DESCRIPTION",
+    "BATCH_CHECK_DESCRIPTION",
     "MIGRATE_DESCRIPTION",
     "RENDER_DESCRIPTION",
     "RUN_DESCRIPTION",
@@ -18,6 +26,7 @@ __all__ = [
     "UI_DESCRIPTION",
     "Parser",
     "UsageError",
+    "add_batch_command",
     "add_migrate_command",
     "add_render_command",
     "add_run_arguments",
@@ -42,7 +51,8 @@ code default. --settings FILE reads another settings file instead of \
 config/settings.yaml.
 
 Exit codes:
-  0    every item completed, or nothing was left to do
+  0    every item completed or, under --batch, was submitted, or nothing
+       was left to do
   1    an item failed, or no item could be processed
   2    usage or configuration error
   130  interrupted (Ctrl+C)
@@ -60,6 +70,9 @@ Examples:
       --summary-model claude-sonnet-5
   Plan a folder run without API calls and print the plan as JSON:
     autoexcerpter run --input scans --all --dry-run --json
+  Submit a folder to the batch APIs, then collect it later:
+    autoexcerpter run --input scans --all --batch
+    autoexcerpter batch check --input scans
 """
 
 UI_DESCRIPTION = (
@@ -179,6 +192,100 @@ def add_migrate_command(commands: Commands) -> argparse.ArgumentParser:
     return migrate
 
 
+BATCH_DESCRIPTION = (
+    "Check and continue, or cancel, the batch work that run --batch submitted."
+)
+
+BATCH_CHECK_DESCRIPTION = (
+    "Check the batch submissions found below a folder: store the results of "
+    "every finished batch, submit the summaries of the pages it transcribed, "
+    "and write the files of every document left with nothing to do."
+)
+
+BATCH_CHECK_EPILOG = """\
+Each check makes one pass and does not wait. A run --batch that summarizes \
+needs two checks after its batches finish: the first collects the \
+transcriptions and submits the summaries, the second collects the summaries \
+and writes the files.
+
+Exit codes:
+  0    nothing failed
+  1    a submission or a document failed, or a submission is unresolved
+  2    usage error, a missing folder, a database the store refuses, or an
+       --adopt or --abandon that names nothing to act on
+  130  interrupted (Ctrl+C)
+
+With --json, stdout carries exactly one JSON summary line on every exit.
+"""
+
+BATCH_CANCEL_DESCRIPTION = (
+    "Cancel the named batches, every unfinished batch, or the open batch "
+    "submissions below a folder."
+)
+
+BATCH_CANCEL_EPILOG = """\
+Exit codes:
+  0    every batch was cancelled
+  1    a cancellation or a provider listing failed
+  2    usage error, a missing folder or a database the store refuses
+  130  interrupted (Ctrl+C)
+
+With --json, stdout carries exactly one JSON summary line on every exit.
+"""
+
+
+def _add_batch_action(
+    actions: Commands,
+    name: str,
+    table: OptionTable,
+    *,
+    help: str,
+    description: str,
+    epilog: str,
+) -> argparse.ArgumentParser:
+    parser: argparse.ArgumentParser = actions.add_parser(
+        name,
+        help=help,
+        description=description,
+        epilog=epilog,
+        formatter_class=HelpFormatter,
+    )
+    table.add_arguments(parser)
+    ext.register_args(parser)
+    return parser
+
+
+def add_batch_command(commands: Commands) -> argparse.ArgumentParser:
+    """Add the batch subcommand with its check and cancel subcommands."""
+    batch: argparse.ArgumentParser = commands.add_parser(
+        "batch",
+        help="check or cancel batch submissions",
+        description=BATCH_DESCRIPTION,
+        formatter_class=HelpFormatter,
+    )
+    actions = batch.add_subparsers(
+        dest="batch_command", metavar="COMMAND", title="commands"
+    )
+    batch.set_defaults(group_parser=batch)
+    _add_batch_action(
+        actions,
+        "check",
+        BATCH_CHECK_OPTIONS,
+        help="collect finished batches and continue their documents",
+        description=BATCH_CHECK_DESCRIPTION,
+        epilog=BATCH_CHECK_EPILOG,
+    )
+    _add_batch_action(
+        actions,
+        "cancel",
+        BATCH_CANCEL_OPTIONS,
+        help="cancel batches",
+        description=BATCH_CANCEL_DESCRIPTION,
+        epilog=BATCH_CANCEL_EPILOG,
+    )
+    return batch
+
+
 def add_ui_command(commands: Commands) -> argparse.ArgumentParser:
     """Add the ui subcommand: the settings option and the extension arguments."""
     ui: argparse.ArgumentParser = commands.add_parser(
@@ -194,6 +301,7 @@ def add_ui_command(commands: Commands) -> argparse.ArgumentParser:
 
 SUBCOMMANDS: tuple[Callable[[Commands], argparse.ArgumentParser], ...] = (
     add_run_command,
+    add_batch_command,
     add_render_command,
     add_migrate_command,
     add_ui_command,

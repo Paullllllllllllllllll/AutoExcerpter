@@ -19,7 +19,9 @@ from typing import Any
 import pytest
 
 from autoexcerpter.common.native import image_settings_fingerprint
+from autoexcerpter.common.sqlite import read
 from autoexcerpter.common.store import (
+    Component,
     Lease,
     PlannedUnit,
     ResponseRow,
@@ -35,19 +37,23 @@ from autoexcerpter.output.store import (
     KIND_TRANSCRIPTION,
     TOOL,
     VIEWS,
+    BatchJob,
     CitationRow,
     SummaryRow,
     begin_run,
     database_path,
+    delete_batch_job,
     document_kind,
     image_settings_record,
     open_store,
     plan_pages,
+    read_batch_jobs,
     read_only_connection,
     read_store,
     settings_fingerprint,
     store_artifacts,
     transcription_outcome,
+    write_batch_job,
     write_citations,
     write_summary,
 )
@@ -237,7 +243,7 @@ def query(database: Path, sql: str) -> tuple[tuple[str, ...], list[tuple[Any, ..
         connection.close()
 
 
-def test_the_component_adds_tables_and_views_at_version_1(tmp_path: Path) -> None:
+def test_the_component_adds_tables_and_views_at_version_2(tmp_path: Path) -> None:
     database = build_store(tmp_path, [page(0)])
 
     _, meta = query(database, "SELECT component, version FROM meta ORDER BY 1")
@@ -246,9 +252,63 @@ def test_the_component_adds_tables_and_views_at_version_1(tmp_path: Path) -> Non
 
     assert database.name == DATABASE_NAME
     assert COMPONENT.name == TOOL == "autoexcerpter"
-    assert meta == [("autoexcerpter", 1), ("core", 1)]
+    assert meta == [("autoexcerpter", 2), ("core", 1)]
     assert sorted(name for (name,) in views) == sorted(VIEWS)
-    assert {"summaries", "citations"} <= {name for (name,) in tables}
+    assert {"summaries", "citations", "batch_jobs"} <= {name for (name,) in tables}
+
+
+def _version_1_store(root: Path) -> Store:
+    return Store(
+        database_path(root),
+        TOOL,
+        components=(Component(TOOL, COMPONENT.steps[:1]),),
+    )
+
+
+def test_a_version_1_database_reads_no_batch_jobs_and_upgrades_on_open(
+    tmp_path: Path,
+) -> None:
+    async def seed() -> None:
+        async with _version_1_store(tmp_path) as store:
+            await store.begin_run("run")
+            await seed_document(store, [page(0)])
+            await store.end_run(0)
+
+    asyncio.run(seed())
+    database = database_path(tmp_path)
+    assert read(database, read_batch_jobs) == []
+    assert read_store(tmp_path) is not None
+
+    async def upgrade() -> None:
+        async with open_store(tmp_path) as store:
+            await store.begin_run("run")
+            await store.end_run(0)
+
+    asyncio.run(upgrade())
+    _, meta = query(database, "SELECT component, version FROM meta ORDER BY 1")
+    assert meta == [("autoexcerpter", 2), ("core", 1)]
+    _, rows = query(database, "SELECT COUNT(*) FROM units")
+    assert rows == [(2,)]
+
+
+def test_batch_jobs_are_written_replaced_and_deleted_under_the_lease(
+    tmp_path: Path,
+) -> None:
+    async def main() -> tuple[list[BatchJob], list[BatchJob], list[BatchJob], str]:
+        async with open_store(tmp_path) as store:
+            first = await store.begin_run("run")
+            lease = await seed_document(store, [page(0)])
+            await write_batch_job(store, lease, "context one")
+            written = read(store.path, read_batch_jobs)
+            await write_batch_job(store, lease, None)
+            replaced = read(store.path, read_batch_jobs)
+            await delete_batch_job(store, lease)
+            return written, replaced, read(store.path, read_batch_jobs), first
+
+    written, replaced, deleted, run_id = asyncio.run(main())
+    assert written == [BatchJob(1, run_id, "context one")]
+    assert replaced == [BatchJob(1, run_id, None)]
+    assert deleted == []
 
 
 def test_page_text_returns_the_transcriptions_in_page_order(tmp_path: Path) -> None:

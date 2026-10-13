@@ -2,9 +2,10 @@
 
 These hooks pass everything through: no extra arguments, settings blocks
 or wizard steps, no startup work, nothing reserved, the provider's key
-variable from the settings, and retry decisions from the shared error
-classifier. The core wraps every model call, each retry included, in
-:func:`attempt` and builds every client through it.
+variable from the settings, no client options, and retry decisions from the
+shared error classifier. The core wraps every model call, each retry and
+batch call included, in :func:`attempt` and builds every client through it.
+Plan-time key checks ask :func:`key_variables` which variables serve a call.
 """
 
 from __future__ import annotations
@@ -13,19 +14,24 @@ import argparse
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType, TracebackType
+from typing import Final
 
 from autoexcerpter.common.retry import Decision, default_decision
 from autoexcerpter.common.usage import Usage, usage_from_exception
 from autoexcerpter.common.wizard import Step
 from autoexcerpter.settings import BlockParser, Settings
-from autoexcerpter.spec import RunSpec
+from autoexcerpter.spec import CommandSpec, RunSpec
 
 __all__ = [
+    "CLIENT_KINDS",
     "Attempt",
+    "ClientOptions",
     "Decision",
     "Identity",
     "attempt",
     "batch_allowed",
+    "client_options",
+    "key_variables",
     "register_args",
     "settings_blocks",
     "startup",
@@ -56,22 +62,58 @@ def wizard_steps() -> Sequence[Step]:
     return ()
 
 
-def startup(spec: RunSpec, *, settings: Settings, args: argparse.Namespace) -> None:
-    """Prepare a run before its first model call; nothing to do here.
+def startup(spec: CommandSpec, *, settings: Settings, args: argparse.Namespace) -> None:
+    """Prepare a command before its first model call; nothing to do here.
 
-    The CLI and the UI call this once per run, after planning and before any
-    model call; a dry run calls it too, a real run with nothing to process
-    does not. *args* holds the parsed command line, extension arguments included.
-    Under ``spec.run.dry_run`` an extension may only validate: it makes no
-    calls out and writes nothing. A
-    :class:`~autoexcerpter.settings.SettingsError` stops the run as a
+    *spec* is a run, a batch check or a batch cancel. The CLI and the UI
+    call this once per command, after planning and before any model or
+    batch call; a dry run calls it too, a real run with nothing to process
+    does not. *args* holds the parsed command line, extension arguments
+    included. Under ``spec.run.dry_run`` an extension may only validate: it
+    makes no calls out and writes nothing. A
+    :class:`~autoexcerpter.settings.SettingsError` stops the command as a
     configuration error.
     """
 
 
-def batch_allowed(spec: RunSpec) -> bool:
-    """Whether batch submission is allowed for ``spec``."""
+def batch_allowed(
+    spec: RunSpec,
+    *,
+    settings: Settings,
+    args: argparse.Namespace | None = None,
+) -> bool:
+    """Whether batch submission is allowed for ``spec``; always here.
+
+    *args* holds the parsed command line where the front end has one. An
+    extension may refuse with a reason instead of returning False: the
+    message of a :class:`~autoexcerpter.settings.SettingsError` it raises
+    is shown to the user.
+    """
     return True
+
+
+CLIENT_KINDS: Final = ("chat", "batch")
+"""The client kinds: chat models and batch API clients."""
+
+
+def key_variables(
+    provider: str,
+    endpoint: str | None = None,
+    *,
+    kind: str = "chat",
+    settings: Settings,
+    args: argparse.Namespace | None = None,
+) -> tuple[str, ...]:
+    """Return the key variables any one of which serves these calls.
+
+    The calls are those of *provider* (or of the named *endpoint*) with a
+    client of *kind* (:data:`CLIENT_KINDS`). An empty tuple means no
+    variable is required. Here: the settings' key variable of the provider.
+
+    Raises:
+        SettingsError: The settings name no key variable for the provider.
+    """
+    return (settings.api_key_env(provider, endpoint),)
 
 
 @dataclass(frozen=True)
@@ -79,7 +121,8 @@ class Identity:
     """Who a call is made as, fixed when the attempt starts.
 
     ``group`` is an optional accounting group; ``role`` is the call's role,
-    such as transcription or summary; ``model`` names the model called.
+    such as transcription or summary; ``model`` names the model called;
+    ``kind`` is the kind of client the call uses (:data:`CLIENT_KINDS`).
     """
 
     provider: str
@@ -87,6 +130,23 @@ class Identity:
     role: str
     group: str | None = None
     model: str | None = None
+    kind: str = "chat"
+
+
+@dataclass(frozen=True)
+class ClientOptions:
+    """How a client builder adjusts the client of an identity.
+
+    ``api_key`` replaces the key read from the identity's key variable;
+    batch clients honor it.
+    """
+
+    api_key: str | None = None
+
+
+def client_options(identity: Identity) -> ClientOptions:
+    """Return the client options of *identity*; none here."""
+    return ClientOptions()
 
 
 class Attempt[C]:
@@ -176,17 +236,22 @@ def attempt[C](
     build_client: Callable[[Identity], C],
     endpoint: str | None = None,
     model: str | None = None,
+    kind: str = "chat",
 ) -> Attempt[C]:
     """Open an attempt context for one model call.
 
     Use as ``async with attempt(...) as call:``. The identity takes the key
     variable of ``provider`` (or of the named ``endpoint``) from
-    ``settings``; ``build_client`` builds the client for that identity.
+    ``settings`` and the client *kind* (:data:`CLIENT_KINDS`);
+    ``build_client`` builds the client for that identity.
     """
+    if kind not in CLIENT_KINDS:
+        raise ValueError(f"Unknown client kind {kind!r}; expected {CLIENT_KINDS}")
     identity = Identity(
         provider=provider,
         api_key_env=settings.api_key_env(provider, endpoint),
         role=role,
         model=model,
+        kind=kind,
     )
     return Attempt(identity, estimate, build_client)

@@ -121,6 +121,7 @@ run control:
   --force               reprocess items whose outputs exist (resume is the default)
   --retranscribe        transcribe again instead of reusing stored transcriptions
   --concurrency N       parallel page requests; default: 16
+  --batch, --no-batch   submit the pages and summaries to the providers' batch APIs; default: off
   --dry-run             plan without API calls or writes
   --json                print one JSON summary line on stdout
   --settings FILE       alternate settings file; default: config/settings.yaml
@@ -129,7 +130,8 @@ Precedence: a flag wins over the settings defaults: block, which wins over the c
 --settings FILE reads another settings file instead of config/settings.yaml.
 
 Exit codes:
-  0    every item completed, or nothing was left to do
+  0    every item completed or, under --batch, was submitted, or nothing
+       was left to do
   1    an item failed, or no item could be processed
   2    usage or configuration error
   130  interrupted (Ctrl+C)
@@ -147,3 +149,6 @@ Examples:
       --summary-model claude-sonnet-5
   Plan a folder run without API calls and print the plan as JSON:
     autoexcerpter run --input scans --all --dry-run --json
+  Submit a folder to the batch APIs, then collect it later:
+    autoexcerpter run --input scans --all --batch
+    autoexcerpter batch check --input scans

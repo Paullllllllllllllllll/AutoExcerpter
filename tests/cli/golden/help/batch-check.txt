@@ -1,0 +1,37 @@
+usage: autoexcerpter batch check [-h] [--input DIR] [--batch-ids IDS] [--adopt BATCH_ID |
+                                 --abandon SUBMISSION_ID] [--json] [--settings FILE]
+
+Check the batch submissions found below a folder: store the results of every finished batch,
+submit the summaries of the pages it transcribed, and write the files of every document left with
+nothing to do.
+
+options:
+  -h, --help            show this help message and exit
+
+batches:
+  --input DIR           folder searched for batch submissions, subfolders included; default: the
+                        current directory
+  --batch-ids IDS       comma-separated batch IDs to check; default every batch
+  --adopt BATCH_ID      record this provider batch for the unresolved submission it belongs to,
+                        then finalize it
+  --abandon SUBMISSION_ID
+                        give up an unresolved submission (its upload is deleted) or a submitted
+                        one whose results are lost: its pages return to pending and its documents
+                        wait for a run
+
+run control:
+  --json                print one JSON summary line on stdout
+  --settings FILE       alternate settings file; default: config/settings.yaml
+
+Each check makes one pass and does not wait. A run --batch that summarizes needs two checks after
+its batches finish: the first collects the transcriptions and submits the summaries, the second
+collects the summaries and writes the files.
+
+Exit codes:
+  0    nothing failed
+  1    a submission or a document failed, or a submission is unresolved
+  2    usage error, a missing folder, a database the store refuses, or an
+       --adopt or --abandon that names nothing to act on
+  130  interrupted (Ctrl+C)
+
+With --json, stdout carries exactly one JSON summary line on every exit.

@@ -99,6 +99,7 @@ images:
 #   transcription_format: md  # X_transcription.md; txt writes X_transcription.txt
 #   formats: [summary-md, summary-docx]
 #   concurrency: 16
+#   batch: false  # true submits to the batch APIs; collect with batch check
 #   # Summary context for items without a sidecar: topics or a text file.
 #   # A context default would override the sidecars, like --context.
 #   fallback_context: path/to/summary_topics.txt

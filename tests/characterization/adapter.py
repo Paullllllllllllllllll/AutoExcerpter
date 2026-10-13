@@ -199,6 +199,7 @@ def run_tool(
     jpeg_quality: int | None = None,
     reroute_formats: bool = True,
     transcription_file_format: str | None = None,
+    batch: bool = False,
 ) -> RunResult:
     """Run AutoExcerpter once, in process, as a fresh CLI invocation would.
 
@@ -219,13 +220,11 @@ def run_tool(
     False a registry model keeps its provider for every format and the
     format is passed as ``--<phase>-response-format``. *jpeg_quality* is
     passed as ``--jpeg-quality`` and *transcription_file_format* (``md`` or
-    ``txt``) as ``--transcription-format``.
+    ``txt``) as ``--transcription-format``; *batch* adds ``--batch``.
     During the run ``time.sleep`` returns at once and ``asyncio.sleep`` only
     yields; neither shapes the outputs.
     The fake LLM must already be installed (see ``conftest.fake_llm``).
     """
-    from autoexcerpter import __main__ as entry
-
     output = output_dir if output_dir is not None else root / "out"
     settings_path = write_settings(root / "config")
     formats = [
@@ -272,9 +271,8 @@ def run_tool(
         argv.extend(["--jpeg-quality", str(jpeg_quality)])
     if transcription_file_format is not None:
         argv.extend(["--transcription-format", transcription_file_format])
-
-    scan_dirs = tuple(dict.fromkeys([input_path.parent, output]))
-    before = _files_under(scan_dirs)
+    if batch:
+        argv.append("--batch")
 
     llm.text_roles = {
         role
@@ -284,7 +282,52 @@ def run_tool(
         )
         if fmt == "text"
     }
+    scan_dirs = tuple(dict.fromkeys([input_path.parent, output]))
+    return _invoke(argv, llm=llm, root=root, output=output, scan_dirs=scan_dirs)
 
+
+def run_batch_command(
+    command: Literal["check", "cancel"],
+    *,
+    llm: FakeLLM,
+    root: Path,
+    directory: Path | None = None,
+    extra: Sequence[str] = (),
+) -> RunResult:
+    """Run ``autoexcerpter batch <command>`` once, in process.
+
+    *directory* (``root / "out"`` when None) is passed as ``--input``, with
+    ``--json``, the adapter's settings file and *extra*; the environment is
+    that of :func:`run_tool`. The fake batch service must already be
+    installed.
+    """
+    folder = directory if directory is not None else root / "out"
+    settings_path = write_settings(root / "config")
+    argv = [
+        "batch",
+        command,
+        "--input",
+        str(folder),
+        "--json",
+        "--settings",
+        str(settings_path),
+        *extra,
+    ]
+    return _invoke(argv, llm=llm, root=root, output=folder, scan_dirs=(folder,))
+
+
+def _invoke(
+    argv: list[str],
+    *,
+    llm: FakeLLM,
+    root: Path,
+    output: Path,
+    scan_dirs: tuple[Path, ...],
+) -> RunResult:
+    """Call the entry point with *argv* under the adapter's environment."""
+    from autoexcerpter import __main__ as entry
+
+    before = _files_under(scan_dirs)
     stdout, stderr = io.StringIO(), io.StringIO()
     exit_code: int
     with pytest.MonkeyPatch.context() as mp:
@@ -313,4 +356,11 @@ def run_tool(
     )
 
 
-__all__ = ["RunResult", "ResponseFormat", "item_paths", "run_tool", "write_settings"]
+__all__ = [
+    "RunResult",
+    "ResponseFormat",
+    "item_paths",
+    "run_batch_command",
+    "run_tool",
+    "write_settings",
+]

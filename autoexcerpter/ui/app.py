@@ -35,7 +35,7 @@ from autoexcerpter.common.wizard import (
     copy_to_clipboard,
 )
 from autoexcerpter.settings import SettingsError, load
-from autoexcerpter.ui import run_task, store
+from autoexcerpter.ui import batch, run_task, store
 from autoexcerpter.ui.session import (
     RunRequest,
     Session,
@@ -56,6 +56,8 @@ NOT_INTERACTIVE: Final = (
 
 FLOWS: dict[str, Callable[[], TaskFlow]] = {
     "run": run_task.flow,
+    "batch-check": batch.check_flow,
+    "batch-cancel": batch.cancel_flow,
     "render": store.render_flow,
     "migrate": store.migrate_flow,
 }
@@ -109,10 +111,12 @@ def run_app(
             _say(screen, f"Error: {exc}")
             return int(ExitCode.USAGE)
         configure_logging()
+        namespace = args if args is not None else argparse.Namespace()
         session = Session(
             settings,
             settings_path,
             environ if environ is not None else os.environ,
+            namespace,
         )
         return _guided(
             session,
@@ -120,7 +124,7 @@ def run_app(
             screen,
             stdout if stdout is not None else sys.stdout,
             clipboard,
-            args if args is not None else argparse.Namespace(),
+            namespace,
         )
     except KeyboardInterrupt:
         _say(screen, "Interrupted by the user.")

@@ -387,6 +387,7 @@ def test_interrupt_and_crash_write_one_json_line(
         "items_complete": 0,
         "items_failed": 0,
         "items_skipped": 0,
+        "items_submitted": 0,
         "outputs": [],
         "usage": {"total": zero},
     }
