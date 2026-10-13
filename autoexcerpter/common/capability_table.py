@@ -1,14 +1,13 @@
-"""The model capability table the tools share.
+"""The model capability table the tools share: a base and the settled facts.
 
-Every value follows the documentation of the lab that makes the model, read on
-13.10.2026: OpenAI's model pages, reasoning, flex-processing and
-prompt-caching guides; Anthropic's model, thinking, effort and
-structured-output pages; Google's Gemini and Gemma model pages; Z.ai's GLM
-pages; OpenRouter's model list for routed ids. Where a lab states nothing,
-the value is the conservative one: no request field the API might reject, no
-output limit above the documented one. Ids no rule matches, and ids no lab
-documents (``gpt-5.3``, ``gpt-5.3-chat``, ``glm-flash-latest``), get the
-conservative profile of the engine.
+:data:`BASE_FAMILIES` is the family table ChronoTranscriber and ChronoMiner
+shared before the tables of the three tools merged. :data:`FAMILIES` is that
+base with the records of :mod:`.capability_facts` applied: structural records
+add, drop or re-match rules, and each fact sets one field of the rule that
+resolves a named id to the value the lab's documentation states (read on
+13.10.2026). Ids no rule matches, and ids no lab documents (``gpt-5.3``,
+``gpt-5.3-chat``, ``glm-flash-latest``), get the conservative profile of the
+engine.
 
 Rules are matched in order against the lowercased id after a ``provider:`` or
 ``models/`` prefix is removed; the first match wins, so specific prefixes
@@ -22,22 +21,33 @@ those served only by OpenAI's transcription endpoint.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Any
 
-from .capabilities import OPENROUTER, CapabilityTable, FamilyRule, ProviderRule
+from .capabilities import (
+    OPENROUTER,
+    CapabilityTable,
+    FamilyRule,
+    ProviderRule,
+    detect_provider,
+    split_model_id,
+)
+from .capability_facts import FACTS, STRUCTURE, AddRule, DropRule, Fact, Rematch
 
 __all__ = [
     "AUDIO_FAMILIES",
+    "BASE_FAMILIES",
     "FAMILIES",
     "ORIGINAL_MAX_SIDE",
     "PROVIDERS",
     "SPEECH_TO_TEXT_FAMILIES",
     "TABLE",
     "TableExtension",
+    "apply_facts",
     "build_table",
+    "rule_index",
 ]
 
 ORIGINAL_MAX_SIDE = "image_original_max_side_px"
@@ -46,210 +56,48 @@ OpenAI pages sent at ``original`` detail."""
 
 _Fields = Mapping[str, Any]
 
-_REASONING: _Fields = {"is_reasoning_model": True, "supports_reasoning_effort": True}
-_NO_SAMPLING: _Fields = {"supports_temperature": False, "supports_top_p": False}
-_PENALTIES: _Fields = {
-    "supports_frequency_penalty": True,
-    "supports_presence_penalty": True,
+_NO_SAMPLING: _Fields = {
+    "supports_temperature": False,
+    "supports_top_p": False,
+    "supports_frequency_penalty": False,
+    "supports_presence_penalty": False,
 }
+_REASONING: _Fields = {"is_reasoning_model": True, "supports_reasoning_effort": True}
 _TEXT_ONLY: _Fields = {"supports_vision": False, "supports_image_detail": False}
 _NO_STRUCTURE: _Fields = {
     "supports_structured_output": False,
     "supports_json_mode": False,
 }
-_ORIGINAL: _Fields = {"supports_original_image_detail": True}
-_PATCH_CAP: _Fields = {**_ORIGINAL, "image_original_patch_cap_30k": True}
-_VERBOSITY: _Fields = {"supports_text_verbosity": True}
-_FLEX: _Fields = {"supports_flex_tier": True}
-_CACHE_TTL: _Fields = {"prompt_cache_parameter": "prompt_cache_options"}
-_CACHE_RETENTION: _Fields = {"prompt_cache_parameter": "prompt_cache_retention"}
 
-# Reasoning efforts per OpenAI model page and the reasoning guide.
-_NONE_TO_MAX = ("none", "low", "medium", "high", "xhigh", "max")
-_LOW_TO_MAX = ("low", "medium", "high", "xhigh", "max")
-_NONE_TO_XHIGH = ("none", "low", "medium", "high", "xhigh")
-_NONE_TO_HIGH = ("none", "low", "medium", "high")
-_MINIMAL_TO_HIGH = ("minimal", "low", "medium", "high")
-_LOW_TO_XHIGH = ("low", "medium", "high", "xhigh")
-_PRO = ("medium", "high", "xhigh")
-# Thinking levels per Gemini and Gemma model page.
-_LOW_TO_HIGH = ("low", "medium", "high")
-_GEMMA_LEVELS = ("minimal", "high")
-
-
-def _efforts(levels: tuple[str, ...]) -> _Fields:
-    return {"reasoning_efforts": levels}
-
-
-def _rules(fields: _Fields, *families: str) -> tuple[FamilyRule, ...]:
-    """One rule per family name, matched as a prefix."""
-    return tuple(FamilyRule(family, fields, (family,)) for family in families)
-
-
-def _dotted(fields: _Fields, *families: str) -> tuple[FamilyRule, ...]:
-    """Rules that also match the dashed spelling (``4-5`` for ``4.5``)."""
-    return tuple(
-        FamilyRule(
-            family, fields, tuple(dict.fromkeys((family, family.replace(".", "-"))))
-        )
-        for family in families
-    )
-
-
-# OpenAI: model pages, the reasoning guide, the flex-processing guide (models
-# with a Flex price) and the prompt-caching guide (prompt_cache_options.ttl on
-# GPT-5.6 and later; prompt_cache_retention on the models it lists).
-_OPENAI: _Fields = {
+_OPENAI_REASONING: _Fields = {
     "provider_name": "openai",
     "supports_vision": True,
     "supports_image_detail": True,
     "default_image_detail": "high",
     "supports_structured_output": True,
     "supports_json_mode": True,
-}
-_O_SERIES: _Fields = {
-    **_OPENAI,
     **_REASONING,
     **_NO_SAMPLING,
     "max_context_tokens": 200000,
     "max_output_tokens": 100000,
 }
-
-
-def _gpt(context: int, efforts: tuple[str, ...], **extra: Any) -> _Fields:
-    """A GPT-5 or GPT-6 reasoning model with 128,000 output tokens."""
-    return {
-        **_O_SERIES,
-        **_efforts(efforts),
-        "max_context_tokens": context,
-        "max_output_tokens": 128000,
-        **extra,
-    }
-
-
-_GPT6 = _gpt(1050000, _NONE_TO_MAX, **_PATCH_CAP, **_VERBOSITY, **_FLEX, **_CACHE_TTL)
-_CHAT_LATEST: _Fields = {
-    **_OPENAI,
-    **_NO_SAMPLING,
+_OPENAI_STANDARD: _Fields = {
+    "provider_name": "openai",
+    "supports_vision": True,
+    "supports_image_detail": True,
+    "default_image_detail": "high",
+    "supports_structured_output": True,
+    "supports_json_mode": True,
     "max_context_tokens": 128000,
     "max_output_tokens": 16384,
 }
-_CODEX = _gpt(400000, _LOW_TO_XHIGH)
-_GPT4: _Fields = {**_OPENAI, "max_output_tokens": 16384}
-_GPT41: _Fields = {**_GPT4, "max_context_tokens": 1047576, "max_output_tokens": 32768}
-_TRANSCRIBE: _Fields = {
+_OPENAI_AUDIO: _Fields = {
     "provider_name": "openai",
     "default_image_detail": "high",
     "supports_top_p": False,
     "max_context_tokens": 16000,
     "max_output_tokens": 2000,
 }
-
-_OPENAI_RULES: tuple[FamilyRule, ...] = (
-    *_rules({**_GPT6, **_efforts(_LOW_TO_MAX)}, "gpt-6.1-sol", "gpt-6-astra"),
-    *_rules(_GPT6, "gpt-6-sol"),
-    *_rules({**_GPT6, "extras": {ORIGINAL_MAX_SIDE: 3000}}, "gpt-6-luna"),
-    *_rules(_GPT6, "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"),
-    # The gpt-5.6 alias routes to GPT-5.6 Sol.
-    FamilyRule("gpt-5.6-sol", _GPT6, ("gpt-5.6",)),
-    *_rules(_gpt(1050000, _PRO, **_FLEX, **_CACHE_RETENTION), "gpt-5.5-pro"),
-    *_rules(
-        _gpt(
-            1050000,
-            _NONE_TO_XHIGH,
-            **_ORIGINAL,
-            **_VERBOSITY,
-            **_FLEX,
-            **_CACHE_RETENTION,
-        ),
-        "gpt-5.5",
-    ),
-    *_rules(_gpt(1050000, _PRO, **_ORIGINAL, **_NO_STRUCTURE, **_FLEX), "gpt-5.4-pro"),
-    *_rules(
-        _gpt(400000, _NONE_TO_XHIGH, **_ORIGINAL, **_VERBOSITY, **_FLEX),
-        "gpt-5.4-mini",
-        "gpt-5.4-nano",
-    ),
-    *_rules(
-        _gpt(
-            1050000,
-            _NONE_TO_XHIGH,
-            **_ORIGINAL,
-            **_VERBOSITY,
-            **_FLEX,
-            **_CACHE_RETENTION,
-        ),
-        "gpt-5.4",
-    ),
-    *_rules(_CODEX, "gpt-5.3-codex", "gpt-5.2-codex"),
-    *_rules(_CHAT_LATEST, "gpt-5.3-chat-latest", "gpt-5.2-chat-latest"),
-    *_rules({**_CHAT_LATEST, **_CACHE_RETENTION}, "gpt-5.1-chat-latest"),
-    *_rules(_CHAT_LATEST, "gpt-5-chat-latest"),
-    *_rules(_gpt(400000, _PRO, **_NO_STRUCTURE), "gpt-5.2-pro"),
-    *_rules(
-        _gpt(400000, _NONE_TO_XHIGH, **_VERBOSITY, **_FLEX, **_CACHE_RETENTION),
-        "gpt-5.2",
-    ),
-    *_rules(
-        _gpt(400000, _NONE_TO_HIGH, **_VERBOSITY, **_FLEX, **_CACHE_RETENTION),
-        "gpt-5.1",
-    ),
-    *_rules(
-        _gpt(400000, _MINIMAL_TO_HIGH, **_VERBOSITY, **_FLEX),
-        "gpt-5-mini",
-        "gpt-5-nano",
-    ),
-    FamilyRule(
-        "gpt-5",
-        _gpt(400000, _MINIMAL_TO_HIGH, **_VERBOSITY, **_FLEX, **_CACHE_RETENTION),
-        ("gpt-5-",),
-        exact=("gpt-5",),
-    ),
-    *_rules(
-        {**_O_SERIES, "supports_structured_output": False}, "o4-mini-deep-research"
-    ),
-    *_rules({**_O_SERIES, **_FLEX}, "o4-mini"),
-    *_rules(_O_SERIES, "o4"),
-    *_rules({**_O_SERIES, "supports_structured_output": False}, "o3-deep-research"),
-    *_rules(_O_SERIES, "o3-pro"),
-    *_rules({**_O_SERIES, **_TEXT_ONLY}, "o3-mini"),
-    *_rules(
-        {
-            **_O_SERIES,
-            **_TEXT_ONLY,
-            **_NO_STRUCTURE,
-            "supports_reasoning_effort": False,
-            "max_context_tokens": 128000,
-            "max_output_tokens": 65536,
-        },
-        "o1-mini",
-    ),
-    FamilyRule("o3", {**_O_SERIES, **_FLEX}, ("o3-",), exact=("o3",)),
-    *_rules(_O_SERIES, "o1-pro"),
-    *_rules({**_O_SERIES, "supports_reasoning_effort": False}, "o1"),
-    FamilyRule(
-        "openai-audio",
-        _TRANSCRIBE,
-        ("gpt-transcribe", "gpt-4o-mini-transcribe", "gpt-4o-transcribe", "whisper-1"),
-    ),
-    *_rules(_GPT4, "gpt-4o"),
-    *_rules(_GPT41, "gpt-4.1-mini", "gpt-4.1-nano"),
-    *_rules({**_GPT41, **_CACHE_RETENTION}, "gpt-4.1"),
-    *_rules(_GPT4, "gpt-4.5"),
-    *_rules({**_GPT4, **_NO_STRUCTURE, "max_output_tokens": 4096}, "gpt-4-turbo"),
-    *_rules(
-        {
-            **_GPT4,
-            **_TEXT_ONLY,
-            **_NO_STRUCTURE,
-            "max_context_tokens": 8192,
-            "max_output_tokens": 8192,
-        },
-        "gpt-4",
-    ),
-)
-
-# Anthropic: models overview, thinking, effort and structured-output pages.
 _ANTHROPIC: _Fields = {
     "provider_name": "anthropic",
     "supports_vision": True,
@@ -258,60 +106,6 @@ _ANTHROPIC: _Fields = {
     "max_context_tokens": 200000,
     "max_output_tokens": 8192,
 }
-_ADAPTIVE: _Fields = {
-    **_ANTHROPIC,
-    **_REASONING,
-    **_NO_SAMPLING,
-    "uses_adaptive_thinking": True,
-    "max_context_tokens": 1000000,
-    "max_output_tokens": 128000,
-}
-_CLAUDE_45: _Fields = {
-    **_ANTHROPIC,
-    **_REASONING,
-    "supports_top_p": False,
-    "max_output_tokens": 64000,
-}
-_CLAUDE_4: _Fields = {
-    **_ANTHROPIC,
-    **_REASONING,
-    "supports_structured_output": False,
-}
-
-_ANTHROPIC_RULES: tuple[FamilyRule, ...] = (
-    *_dotted(
-        {**_ADAPTIVE, "image_high_res_tier": True},
-        "claude-opus-5.5",
-        "claude-sonnet-5.5",
-        "claude-haiku-5.5",
-        "claude-opus-5",
-        "claude-fable-5",
-        "claude-sonnet-5",
-        "claude-opus-4.8",
-        "claude-opus-4.7",
-    ),
-    *_dotted(_ADAPTIVE, "claude-opus-4.6", "claude-sonnet-4.6"),
-    *_dotted(_CLAUDE_45, "claude-opus-4.5", "claude-sonnet-4.5", "claude-haiku-4.5"),
-    *_dotted(
-        {**_CLAUDE_4, "max_output_tokens": 32000}, "claude-opus-4.1", "claude-opus-4"
-    ),
-    *_dotted({**_CLAUDE_4, "max_output_tokens": 64000}, "claude-sonnet-4"),
-    *_dotted(
-        {**_ANTHROPIC, "supports_structured_output": False},
-        "claude-3.7-sonnet",
-        "claude-3.5-sonnet",
-    ),
-    *_dotted({**_ANTHROPIC, **_NO_STRUCTURE}, "claude-3.5-haiku"),
-    *_rules(
-        {**_ANTHROPIC, **_NO_STRUCTURE, "max_output_tokens": 4096},
-        "claude-3-opus",
-        "claude-3-sonnet",
-        "claude-3-haiku",
-    ),
-    *_rules(_ANTHROPIC, "claude"),
-)
-
-# Google: Gemini model pages, the Gemini 3 guide, the Gemma on Gemini API page.
 _GOOGLE: _Fields = {
     "provider_name": "google",
     "supports_vision": True,
@@ -321,143 +115,52 @@ _GOOGLE: _Fields = {
     "max_context_tokens": 1000000,
     "max_output_tokens": 8192,
 }
-_THINKING: _Fields = {**_GOOGLE, **_REASONING, "max_output_tokens": 65536}
-# Gemini 3.6 Flash and later ignore samplers; 3.5 Flash routes to 3.6 Flash
-# and 3.7 Flash to 3.8 Flash.
-_FLASH_36: _Fields = {**_THINKING, **_NO_SAMPLING}
-_IMAGE_MODEL: _Fields = {
-    **_GOOGLE,
-    **_NO_STRUCTURE,
-    "is_reasoning_model": True,
-    "max_output_tokens": 32768,
-}
-_GEMMA: _Fields = {
-    **_GOOGLE,
-    **_REASONING,
-    **_NO_STRUCTURE,
-    **_efforts(_GEMMA_LEVELS),
-    "supports_media_resolution": False,
-    "max_context_tokens": 262144,
-}
-
-_GOOGLE_RULES: tuple[FamilyRule, ...] = (
-    *_rules(_GEMMA, "gemma-4-31b-it", "gemma-4-26b-a4b-it"),
-    *_dotted(
-        {**_FLASH_36, **_efforts(_LOW_TO_HIGH)}, "gemini-3.8-flash", "gemini-3.7-flash"
-    ),
-    *_dotted(_FLASH_36, "gemini-3.6-flash", "gemini-3.5-flash"),
-    *_dotted(
-        {**_THINKING, **_efforts(_LOW_TO_HIGH), "max_context_tokens": 1048576},
-        "gemini-3.1-pro",
-    ),
-    *_dotted({**_THINKING, "max_context_tokens": 1048576}, "gemini-3.1-flash-lite"),
-    FamilyRule(
-        "gemini-3.1-flash-image",
-        {**_IMAGE_MODEL, "max_context_tokens": 131072},
-        ("gemini-3.1-flash-image", "gemini-3-1-flash-image"),
-    ),
-    FamilyRule(
-        "gemini-3-pro-image",
-        {**_IMAGE_MODEL, "max_context_tokens": 65536},
-        ("gemini-3-pro-image",),
-    ),
-    FamilyRule(
-        "gemini-3-flash",
-        {**_THINKING, "max_context_tokens": 1048576},
-        ("gemini-3-flash", "gemini-3.0-flash"),
-    ),
-    FamilyRule(
-        "gemini-3-pro",
-        {**_THINKING, "max_context_tokens": 2000000},
-        ("gemini-3-pro", "gemini-3.0-pro"),
-    ),
-    FamilyRule(
-        "gemini-3-preview", _THINKING, ("gemini-3-preview", "gemini-3.0-preview")
-    ),
-    *_rules(_THINKING, "gemini-3"),
-    *_dotted({**_THINKING, "max_context_tokens": 1048576}, "gemini-2.5-pro"),
-    *_dotted(
-        {
-            **_GOOGLE,
-            "is_reasoning_model": True,
-            "max_context_tokens": 1048576,
-            "max_output_tokens": 65536,
-        },
-        "gemini-2.5-flash-lite",
-    ),
-    *_dotted(_THINKING, "gemini-2.5-flash"),
-    FamilyRule("gemini-2.0", _GOOGLE, ("gemini-2.0", "gemini-2-0", "gemini-2-flash")),
-    *_dotted({**_GOOGLE, "max_context_tokens": 2000000}, "gemini-1.5-pro"),
-    *_dotted(_GOOGLE, "gemini-1.5-flash"),
-    *_rules(_GOOGLE, "gemini"),
-)
-
-# Z.ai GLM ids called directly (Z.ai's GLM pages): JSON mode, no strict
-# schema, no penalties. glm-5.3-flash:batch and glm-flash-latest are not
-# documented and take the conservative profile.
-_GLM: _Fields = {
-    "supports_vision": True,
-    "supports_json_mode": True,
-    "is_reasoning_model": True,
-}
-_GLM_FLASH: _Fields = {
-    **_GLM,
-    "supports_reasoning_effort": True,
-    "max_context_tokens": 1048576,
-    "max_output_tokens": 131072,
-}
-_GLM_5V: _Fields = {**_GLM, "max_context_tokens": 202752, "max_output_tokens": 131072}
-_GLM_46V: _Fields = {**_GLM, "max_context_tokens": 131072, "max_output_tokens": 32768}
-_GLM_45V: _Fields = {**_GLM, "max_context_tokens": 65536, "max_output_tokens": 16384}
-
-_GLM_RULES: tuple[FamilyRule, ...] = (
-    *_rules(_GLM_FLASH, "glm-5.3-flashx"),
-    FamilyRule(
-        "glm-5.3-flash", _GLM_FLASH, ("glm-5.3-flash-",), exact=("glm-5.3-flash",)
-    ),
-    *_rules(_GLM_5V, "glm-5v-turbo"),
-    *_rules(_GLM_46V, "glm-4.6v"),
-    *_rules(_GLM_45V, "glm-4.5v"),
-)
-
-# OpenRouter: the parameters and modalities of its public model list. Image
-# detail is not documented there, so routed OpenAI models never take original.
-_ROUTED: _Fields = {
+_GEMINI = _GOOGLE
+_OPENROUTER: _Fields = {
     "provider_name": "openrouter",
     "supports_vision": True,
     "supports_structured_output": True,
     "supports_json_mode": True,
+    "max_context_tokens": 128000,
+    "max_output_tokens": 4096,
 }
-_ROUTED_DETAIL: _Fields = {
-    "supports_image_detail": True,
-    "default_image_detail": "high",
-}
-_ROUTED_OPENAI: _Fields = {**_ROUTED_DETAIL, **_REASONING, **_NO_SAMPLING}
-_ROUTED_GEMINI: _Fields = {
-    "supports_reasoning_effort": True,
-    "supports_media_resolution": True,
+
+_LARGE_GPT: _Fields = {"max_context_tokens": 1050000, "max_output_tokens": 128000}
+_GPT5: _Fields = {"max_context_tokens": 400000, "max_output_tokens": 128000}
+_GPT5_CHAT: _Fields = {**_GPT5, "max_output_tokens": 16384}
+_ORIGINAL: _Fields = {"supports_original_image_detail": True}
+_PATCH_CAP: _Fields = {**_ORIGINAL, "image_original_patch_cap_30k": True}
+_ADAPTIVE: _Fields = {
+    **_REASONING,
+    "uses_adaptive_thinking": True,
+    "supports_top_p": False,
     "max_context_tokens": 1000000,
-    "max_output_tokens": 8192,
+    "max_output_tokens": 128000,
 }
-_ROUTED_CLAUDE_NO_SAMPLING = (
-    "claude-opus-5",
-    "claude-sonnet-5",
-    "claude-haiku-5",
-    "claude-fable-5",
-    "claude-opus-4.8",
-    "claude-opus-4-8",
-    "claude-opus-4.7",
-    "claude-opus-4-7",
-    "claude-opus-4.6",
-    "claude-opus-4-6",
-    "claude-sonnet-4.6",
-    "claude-sonnet-4-6",
-)
-"""Routed Claude models that reject samplers, as they do on Anthropic's API."""
+_CLAUDE_45: _Fields = {**_REASONING, "supports_top_p": False}
+_GEMINI_THINKING: _Fields = {**_REASONING, "max_output_tokens": 65536}
+_GEMMA: _Fields = {**_REASONING, "max_context_tokens": 262144}
 
 
-def _has(*parts: str) -> Callable[[str], bool]:
-    """Match ids that contain any of *parts*."""
+def _rule(
+    family: str, base: _Fields, prefixes: tuple[str, ...], **fields: Any
+) -> FamilyRule:
+    """A rule matching ids that start with one of *prefixes*."""
+    return FamilyRule(family, {**base, **fields}, prefixes)
+
+
+def _rules(base: _Fields, *families: str, **fields: Any) -> tuple[FamilyRule, ...]:
+    """One rule per family name, matched as a prefix."""
+    return tuple(_rule(family, base, (family,), **fields) for family in families)
+
+
+def _dotted(family: str, base: _Fields, **fields: Any) -> FamilyRule:
+    """A rule that also matches the dashed spelling (``4-5`` for ``4.5``)."""
+    spellings = (family.replace(".", "-"), family)
+    return _rule(family, base, tuple(dict.fromkeys(spellings)), **fields)
+
+
+def _contains(*parts: str) -> Callable[[str], bool]:
     return lambda name: any(part in name for part in parts)
 
 
@@ -475,107 +178,324 @@ def _routed(
         return "/" in name and (match is None or match(name))
 
     return FamilyRule(
-        family, {**_ROUTED, **fields}, provider=OPENROUTER, predicate=predicate
+        family,
+        {**_OPENROUTER, **fields},
+        provider=OPENROUTER,
+        predicate=predicate,
     )
+
+
+def _openai_rules() -> tuple[FamilyRule, ...]:
+    return (
+        *_rules(
+            _OPENAI_REASONING,
+            "gpt-6.1-sol",
+            "gpt-6-astra",
+            "gpt-6-sol",
+            **_LARGE_GPT,
+            **_PATCH_CAP,
+        ),
+        *_rules(
+            _OPENAI_REASONING,
+            "gpt-6-luna",
+            **_LARGE_GPT,
+            **_PATCH_CAP,
+            extras={ORIGINAL_MAX_SIDE: 3000},
+        ),
+        *_rules(
+            _OPENAI_REASONING,
+            "gpt-5.6-sol",
+            "gpt-5.6-terra",
+            "gpt-5.6-luna",
+            "gpt-5.6",
+            **_LARGE_GPT,
+            **_PATCH_CAP,
+        ),
+        *_rules(_OPENAI_REASONING, "gpt-5.5-pro", **_LARGE_GPT),
+        *_rules(_OPENAI_REASONING, "gpt-5.5", "gpt-5.4-pro", **_LARGE_GPT, **_ORIGINAL),
+        *_rules(_OPENAI_REASONING, "gpt-5.4-mini", "gpt-5.4-nano", **_GPT5),
+        *_rules(_OPENAI_REASONING, "gpt-5.4", **_LARGE_GPT, **_ORIGINAL),
+        *_rules(_OPENAI_STANDARD, "gpt-5.3-codex", **_GPT5, **_TEXT_ONLY),
+        *_rules(_OPENAI_STANDARD, "gpt-5.3-chat-latest", **_GPT5_CHAT),
+        *_rules(_OPENAI_STANDARD, "gpt-5.3", **_GPT5),
+        *_rules(_OPENAI_STANDARD, "gpt-5.2-codex", **_GPT5, **_TEXT_ONLY),
+        *_rules(
+            _OPENAI_REASONING,
+            "gpt-5.2-chat-latest",
+            "gpt-5.1-chat-latest",
+            "gpt-5-chat-latest",
+            **_GPT5_CHAT,
+        ),
+        *_rules(_OPENAI_REASONING, "gpt-5.2", "gpt-5.1", "gpt-5", **_GPT5),
+        _rule("o4-mini", _OPENAI_REASONING, ("o4-mini", "o4")),
+        *_rules(_OPENAI_REASONING, "o3-pro"),
+        *_rules(_OPENAI_REASONING, "o3-mini", **_TEXT_ONLY),
+        *_rules(_OPENAI_REASONING, "o1-pro", supports_structured_output=False),
+        *_rules(
+            _OPENAI_REASONING,
+            "o1-mini",
+            supports_reasoning_effort=False,
+            **_TEXT_ONLY,
+            **_NO_STRUCTURE,
+            max_context_tokens=128000,
+            max_output_tokens=65536,
+        ),
+        FamilyRule(
+            "o3",
+            {**_OPENAI_REASONING, "supports_structured_output": False},
+            ("o3-",),
+            exact=("o3",),
+        ),
+        _rule(
+            "o1",
+            _OPENAI_REASONING,
+            ("o1",),
+            supports_reasoning_effort=False,
+            supports_structured_output=False,
+        ),
+        _rule(
+            "openai-audio",
+            _OPENAI_AUDIO,
+            ("gpt-transcribe", "gpt-4o-mini-transcribe", "gpt-4o-transcribe"),
+        ),
+        _rule("openai-audio", _OPENAI_AUDIO, ("whisper-1",)),
+        *_rules(_OPENAI_STANDARD, "gpt-4o"),
+        *_rules(
+            _OPENAI_STANDARD,
+            "gpt-4.1",
+            max_context_tokens=1000000,
+            max_output_tokens=32768,
+        ),
+    )
+
+
+def _anthropic_rules() -> tuple[FamilyRule, ...]:
+    high_res = {**_ADAPTIVE, "image_high_res_tier": True}
+    return (
+        _dotted("claude-opus-5.5", _ANTHROPIC, **high_res),
+        *_rules(_ANTHROPIC, "claude-opus-5", "claude-fable-5", **high_res),
+        _dotted("claude-opus-4.8", _ANTHROPIC, **high_res),
+        _dotted("claude-sonnet-5.5", _ANTHROPIC, **high_res),
+        *_rules(_ANTHROPIC, "claude-sonnet-5", **high_res),
+        _dotted("claude-haiku-5.5", _ANTHROPIC, **high_res),
+        _dotted("claude-opus-4.7", _ANTHROPIC, **high_res),
+        _dotted("claude-opus-4.6", _ANTHROPIC, **_ADAPTIVE),
+        _dotted("claude-sonnet-4.6", _ANTHROPIC, **_ADAPTIVE),
+        _dotted("claude-opus-4.5", _ANTHROPIC, **_CLAUDE_45, max_output_tokens=64000),
+        _dotted("claude-sonnet-4.5", _ANTHROPIC, **_CLAUDE_45, max_output_tokens=64000),
+        _dotted("claude-haiku-4.5", _ANTHROPIC, **_CLAUDE_45, max_output_tokens=64000),
+        _dotted("claude-opus-4.1", _ANTHROPIC, **_REASONING, max_output_tokens=32000),
+        *_rules(_ANTHROPIC, "claude-sonnet-4", **_REASONING, max_output_tokens=64000),
+        *_rules(_ANTHROPIC, "claude-opus-4", **_REASONING, max_output_tokens=32000),
+        _dotted("claude-3.7-sonnet", _ANTHROPIC),
+        _dotted("claude-3.5-sonnet", _ANTHROPIC),
+        _dotted("claude-3.5-haiku", _ANTHROPIC, **_NO_STRUCTURE),
+        *_rules(
+            _ANTHROPIC,
+            "claude-3-opus",
+            "claude-3-sonnet",
+            "claude-3-haiku",
+            **_NO_STRUCTURE,
+            max_output_tokens=4096,
+        ),
+        *_rules(_ANTHROPIC, "claude"),
+    )
+
+
+def _google_rules() -> tuple[FamilyRule, ...]:
+    return (
+        _rule("gemma-4-31b", _GOOGLE, ("gemma-4-31b-it",), **_GEMMA),
+        _rule("gemma-4-26b-moe", _GOOGLE, ("gemma-4-26b-a4b-it",), **_GEMMA),
+        *_rules(_GOOGLE, "gemma", **_GEMMA),
+        _dotted("gemini-3.7-flash", _GEMINI, **_GEMINI_THINKING, **_NO_SAMPLING),
+        _dotted("gemini-3.6-flash", _GEMINI, **_GEMINI_THINKING, **_NO_SAMPLING),
+        _dotted(
+            "gemini-3.5-flash", _GEMINI, **_GEMINI_THINKING, max_context_tokens=1048576
+        ),
+        _rule(
+            "gemini-3.1-pro",
+            _GEMINI,
+            ("gemini-3.1-pro-preview", "gemini-3-1-pro-preview"),
+            **_GEMINI_THINKING,
+        ),
+        _rule(
+            "gemini-3.1-flash-lite",
+            _GEMINI,
+            ("gemini-3.1-flash-lite-preview", "gemini-3-1-flash-lite-preview"),
+            max_output_tokens=65536,
+        ),
+        _dotted(
+            "gemini-3.1-flash-lite",
+            _GEMINI,
+            **_GEMINI_THINKING,
+            max_context_tokens=1048576,
+        ),
+        _rule(
+            "gemini-3.1-flash-image",
+            _GEMINI,
+            ("gemini-3.1-flash-image", "gemini-3-1-flash-image"),
+            max_context_tokens=128000,
+            max_output_tokens=32768,
+        ),
+        _rule(
+            "gemini-3-pro-image",
+            _GEMINI,
+            ("gemini-3-pro-image",),
+            max_context_tokens=65536,
+            max_output_tokens=32768,
+        ),
+        _rule(
+            "gemini-3-flash",
+            _GEMINI,
+            ("gemini-3-flash", "gemini-3.0-flash"),
+            **_GEMINI_THINKING,
+            max_context_tokens=1048576,
+        ),
+        _rule(
+            "gemini-3-pro",
+            _GEMINI,
+            ("gemini-3-pro", "gemini-3.0-pro"),
+            **_GEMINI_THINKING,
+            max_context_tokens=2000000,
+        ),
+        _rule(
+            "gemini-3-preview",
+            _GEMINI,
+            ("gemini-3-preview", "gemini-3.0-preview"),
+            **_GEMINI_THINKING,
+            max_context_tokens=1048576,
+        ),
+        _rule("gemini-3", _GEMINI, ("gemini-3", "gemini-3.0"), **_GEMINI_THINKING),
+        _dotted(
+            "gemini-2.5-pro", _GEMINI, **_GEMINI_THINKING, max_context_tokens=2000000
+        ),
+        _dotted(
+            "gemini-2.5-flash-lite",
+            _GEMINI,
+            max_context_tokens=1048576,
+            max_output_tokens=65536,
+        ),
+        _dotted("gemini-2.5-flash", _GEMINI, max_output_tokens=65536),
+        _rule(
+            "gemini-2.0-flash",
+            _GEMINI,
+            ("gemini-2.0-flash", "gemini-2-flash", "gemini-2.0"),
+        ),
+        _dotted("gemini-1.5-pro", _GEMINI, max_context_tokens=2000000),
+        _dotted("gemini-1.5-flash", _GEMINI),
+        *_rules(_GEMINI, "gemini"),
+    )
+
+
+_ROUTED_DETAIL: _Fields = {
+    "supports_image_detail": True,
+    "default_image_detail": "high",
+}
+_ROUTED_GPT5: _Fields = {**_ROUTED_DETAIL, **_REASONING, **_NO_SAMPLING}
+_ROUTED_O_SERIES = _contains("/o1", "/o3", "/o4")
+_ROUTED_GEMINI: _Fields = {
+    "supports_reasoning_effort": True,
+    "supports_media_resolution": True,
+    "max_context_tokens": 1000000,
+    "max_output_tokens": 8192,
+}
+_GEMINI_TAIL = _tail("gemini", "google/")
+_LLAMA_TAIL = _tail("llama", "meta/")
+_PENALTIES: _Fields = {
+    "supports_frequency_penalty": True,
+    "supports_presence_penalty": True,
+}
 
 
 def _mistral(name: str) -> bool:
     return "mistral" in name.rsplit("/", 1)[-1] or "mixtral" in name
 
 
-_CLAUDE_TAIL = _tail("claude", "anthropic/")
-_GEMINI_TAIL = _tail("gemini", "google/")
-_LLAMA_TAIL = _tail("llama", "meta/")
-_ROUTED_O_SERIES = _has("/o1", "/o3", "/o4")
-
-_NO_SCHEMA: _Fields = {"supports_structured_output": False}
-
-_OPENROUTER_RULES: tuple[FamilyRule, ...] = (
-    _routed("glm-5.3-flashx", {**_GLM_FLASH, **_NO_SCHEMA}, _has("glm-5.3-flashx")),
-    _routed(
-        "glm-5.3-flash",
-        {**_GLM_FLASH, **_PENALTIES},
-        lambda name: "glm-5.3-flash" in name and ":batch" not in name,
-    ),
-    _routed("glm-5v-turbo", {**_GLM_5V, **_NO_SCHEMA}, _has("glm-5v-turbo")),
-    _routed("glm-4.6v", {**_GLM_46V, **_PENALTIES, **_NO_SCHEMA}, _has("glm-4.6v")),
-    _routed("glm-4.5v", {**_GLM_45V, **_PENALTIES, **_NO_SCHEMA}, _has("glm-4.5v")),
-    _routed("openrouter-deepseek", _REASONING, _has("deepseek-r1")),
-    _routed(
-        "openrouter-deepseek",
-        _REASONING,
-        lambda name: "deepseek" in name and "terminus" in name,
-    ),
-    _routed(
-        "openrouter-deepseek", {"supports_reasoning_effort": True}, _has("deepseek")
-    ),
-    _routed(
-        "openrouter-gpt-oss",
-        {**_ROUTED_DETAIL, **_REASONING, **_PENALTIES},
-        _has("gpt-oss"),
-    ),
-    _routed("openrouter-gpt6", {**_REASONING, **_NO_SAMPLING}, _has("/gpt-6")),
-    _routed(
-        "openrouter-gpt5",
-        _ROUTED_OPENAI,
-        lambda name: "gpt-5" in name and "gpt-5.3-chat" not in name,
-    ),
-    _routed(
-        "openrouter-o-series",
-        {**_ROUTED_OPENAI, **_TEXT_ONLY},
-        _has("/o1-mini", "/o3-mini"),
-    ),
-    _routed("openrouter-o-series", _ROUTED_OPENAI, _ROUTED_O_SERIES),
-    _routed("openrouter-gpt-4o", _PENALTIES, _has("/gpt-4o")),
-    _routed(
-        "openrouter-claude",
-        {**_REASONING, **_NO_SAMPLING, "max_context_tokens": 200000},
-        lambda name: _CLAUDE_TAIL(name) and _has(*_ROUTED_CLAUDE_NO_SAMPLING)(name),
-    ),
-    _routed(
-        "openrouter-claude", {**_REASONING, "max_context_tokens": 200000}, _CLAUDE_TAIL
-    ),
-    _routed(
-        "openrouter-gemini",
-        {**_ROUTED_GEMINI, "is_reasoning_model": True},
-        lambda name: (
-            _GEMINI_TAIL(name) and _has("gemini-2.5", "gemini-3", "gemini-2-5")(name)
+def _openrouter_rules() -> tuple[FamilyRule, ...]:
+    return (
+        _routed(
+            "openrouter-deepseek",
+            {**_REASONING, **_NO_SAMPLING},
+            _contains("deepseek-r1"),
         ),
-    ),
-    _routed("openrouter-gemini", _ROUTED_GEMINI, _GEMINI_TAIL),
-    _routed(
-        "openrouter-llama",
-        _PENALTIES,
-        lambda name: _LLAMA_TAIL(name) and _has("vision", "llama-3.2")(name),
-    ),
-    _routed("openrouter-llama", {**_PENALTIES, "supports_vision": False}, _LLAMA_TAIL),
-    _routed(
-        "openrouter-mistral", {}, lambda name: _mistral(name) and "pixtral" in name
-    ),
-    _routed("openrouter-mistral", {"supports_vision": False}, _mistral),
-    _routed(
-        "openrouter-qwen",
-        {"max_context_tokens": 262144, "max_output_tokens": 32768},
-        _has("qwen3-vl-235b-a22b-instruct"),
-    ),
-    _routed(
-        "openrouter-qwen", {**_REASONING, "max_context_tokens": 131072}, _has("qwen")
-    ),
-    _routed("openrouter", {}),
-)
+        _routed(
+            "openrouter-deepseek",
+            _REASONING,
+            lambda name: "deepseek" in name and "terminus" in name,
+        ),
+        _routed(
+            "openrouter-deepseek",
+            {"supports_reasoning_effort": True},
+            _contains("deepseek"),
+        ),
+        _routed(
+            "openrouter-gpt-oss",
+            {**_ROUTED_DETAIL, **_REASONING, **_PENALTIES},
+            _contains("gpt-oss"),
+        ),
+        _routed("openrouter-gpt5", _ROUTED_DETAIL, _contains("gpt-5.3")),
+        _routed("openrouter-gpt5", _ROUTED_GPT5, _contains("gpt-5.5-pro")),
+        _routed(
+            "openrouter-gpt5",
+            {**_ROUTED_GPT5, **_ORIGINAL},
+            _contains("gpt-5.4", "gpt-5.5", "gpt-5.6"),
+        ),
+        _routed("openrouter-gpt5", _ROUTED_GPT5, _contains("gpt-5")),
+        _routed(
+            "openrouter-o-series",
+            {**_ROUTED_GPT5, "supports_vision": False},
+            lambda name: _ROUTED_O_SERIES(name) and "mini" in name,
+        ),
+        _routed("openrouter-o-series", _ROUTED_GPT5, _ROUTED_O_SERIES),
+        _routed(
+            "openrouter-claude",
+            {**_REASONING, "max_context_tokens": 200000},
+            _tail("claude", "anthropic/"),
+        ),
+        _routed(
+            "openrouter-gemini",
+            {**_ROUTED_GEMINI, "is_reasoning_model": True},
+            lambda name: (
+                _GEMINI_TAIL(name)
+                and _contains("gemini-2.5", "gemini-3", "gemini-2-5")(name)
+            ),
+        ),
+        _routed("openrouter-gemini", _ROUTED_GEMINI, _GEMINI_TAIL),
+        _routed(
+            "openrouter-llama",
+            _PENALTIES,
+            lambda name: _LLAMA_TAIL(name) and _contains("vision", "llama-3.2")(name),
+        ),
+        _routed(
+            "openrouter-llama", {**_PENALTIES, "supports_vision": False}, _LLAMA_TAIL
+        ),
+        _routed(
+            "openrouter-mistral",
+            {},
+            lambda name: _mistral(name) and "pixtral" in name,
+        ),
+        _routed("openrouter-mistral", {"supports_vision": False}, _mistral),
+        _routed(
+            "openrouter-qwen",
+            {**_REASONING, "max_context_tokens": 131072},
+            _contains("qwen"),
+        ),
+        _routed("openrouter", {}),
+    )
 
-FAMILIES: tuple[FamilyRule, ...] = (
-    *_OPENAI_RULES,
-    *_ANTHROPIC_RULES,
-    *_GOOGLE_RULES,
-    *_GLM_RULES,
-    *_OPENROUTER_RULES,
+
+BASE_FAMILIES: tuple[FamilyRule, ...] = (
+    *_openai_rules(),
+    *_anthropic_rules(),
+    *_google_rules(),
+    *_openrouter_rules(),
 )
-"""The shared family rules, in match order."""
+"""The rules ChronoTranscriber and ChronoMiner shared, without tool extras."""
 
 PROVIDERS: tuple[ProviderRule, ...] = (
     ProviderRule("anthropic", prefixes=("claude",), contains=("anthropic",)),
     ProviderRule("google", prefixes=("gemini", "gemma"), contains=("google",)),
+    # whisper-1 is an OpenAI model (developers.openai.com/api/docs/models/whisper-1).
     ProviderRule(
         "openai", prefixes=("gpt", "o1", "o3", "o4", "chatgpt", "text-", "whisper")
     ),
@@ -584,6 +504,79 @@ PROVIDERS: tuple[ProviderRule, ...] = (
     ),
 )
 """Provider detection for ids without a ``provider:`` prefix or a vendor."""
+
+
+def rule_index(rules: tuple[FamilyRule, ...], model: str) -> int:
+    """Return the position of the rule of *rules* that resolves *model*.
+
+    Raises:
+        ValueError: No rule resolves *model*.
+    """
+    table = CapabilityTable(families=rules, providers=PROVIDERS)
+    explicit, name = split_model_id(model, table)
+    provider = explicit or detect_provider(model, table)
+    for index, rule in enumerate(rules):
+        if rule.matches(name, provider):
+            return index
+    raise ValueError(f"No capability rule resolves {model!r}")
+
+
+def _matchers(record: AddRule | Rematch) -> dict[str, Any]:
+    names = ("prefixes", "contains", "exact", "exclude")
+    return {
+        name: getattr(record, name)
+        for name in names
+        if getattr(record, name, None) is not None
+    }
+
+
+def _structure(
+    rules: list[FamilyRule], record: AddRule | DropRule | Rematch
+) -> list[FamilyRule]:
+    if isinstance(record, DropRule):
+        del rules[rule_index(tuple(rules), record.id)]
+    elif isinstance(record, Rematch):
+        index = rule_index(tuple(rules), record.id)
+        rules[index] = replace(rules[index], **_matchers(record))
+    else:
+        if record.like is None:
+            new = FamilyRule(record.family, {}, **_matchers(record))
+        else:
+            like = rules[rule_index(tuple(rules), record.like)]
+            new = replace(like, family=record.family, **_matchers(record))
+        rules.insert(rule_index(tuple(rules), record.before), new)
+    return rules
+
+
+def _fact(rules: list[FamilyRule], record: Fact) -> list[FamilyRule]:
+    for model in record.ids:
+        index = rule_index(tuple(rules), model)
+        rule = rules[index]
+        rules[index] = replace(rule, fields={**rule.fields, record.field: record.value})
+    return rules
+
+
+def apply_facts(
+    base: Iterable[FamilyRule],
+    structure: Iterable[AddRule | DropRule | Rematch] = STRUCTURE,
+    facts: Iterable[Fact] = FACTS,
+) -> tuple[FamilyRule, ...]:
+    """Return *base* with the structural records and then the facts applied.
+
+    Raises:
+        ValueError: A record names an id no rule resolves, or a field the
+            capability record lacks.
+    """
+    rules = list(base)
+    for record in structure:
+        rules = _structure(rules, record)
+    for fact in facts:
+        rules = _fact(rules, fact)
+    return tuple(rules)
+
+
+FAMILIES: tuple[FamilyRule, ...] = apply_facts(BASE_FAMILIES)
+"""The shared family rules, in match order."""
 
 AUDIO_FAMILIES: frozenset[str] = frozenset(
     {
@@ -601,13 +594,14 @@ AUDIO_FAMILIES: frozenset[str] = frozenset(
         "gemini-2.5-pro",
         "gemini-2.5-flash-lite",
         "gemini-2.5-flash",
-        "gemini-2.0",
+        "gemini-2.0-flash",
         "gemini-1.5-pro",
         "gemini-1.5-flash",
         "gemini",
     }
 )
-"""Families whose models take audio input; the Gemini image models do not."""
+"""Families whose models take audio input (the Gemini pages list audio input;
+the Gemini image models do not take it)."""
 
 SPEECH_TO_TEXT_FAMILIES: frozenset[str] = frozenset({"openai-audio"})
 """Families served only by OpenAI's transcription endpoint."""

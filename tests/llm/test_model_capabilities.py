@@ -85,7 +85,6 @@ def test_glm_5_3_flash_matches_on_openrouter_and_directly(
 @pytest.mark.parametrize(
     ("model", "family"),
     [
-        ("z-ai/glm-5.3-flashx", "glm-5.3-flashx"),
         ("z-ai/glm-5v-turbo", "glm-5v-turbo"),
         ("z-ai/glm-4.6v", "glm-4.6v"),
         ("z-ai/glm-4.5v", "glm-4.5v"),

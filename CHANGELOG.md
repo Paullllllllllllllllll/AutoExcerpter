@@ -3,7 +3,9 @@
 - **v2.5.0** (13 October 2026) -- Model capabilities follow the vendors'
   documentation, and requests change with them. AutoExcerpter, ChronoTranscriber
   and ChronoMiner now share one capability table, the vendored
-  `common/capability_table.py`, which replaces `llm/capabilities.py`'s rules;
+  `common/capability_table.py`, which replaces `llm/capabilities.py`'s rules:
+  the ChronoTranscriber and ChronoMiner rule set with the sourced records of
+  `common/capability_facts.py` applied;
   ids lose a `provider:` or Google `models/` prefix before they are matched, as
   in the sibling tools. OpenAI: `flex` is sent only to the models OpenAI lists
   for Flex processing (gpt-4o, the codex, chat-latest and gpt-5.2-pro models
@@ -25,10 +27,10 @@
   `minimal` becomes `low` on Gemini 3.1 Pro and 3.7/3.8 Flash; the Gemini image
   models get no thinking level and use prompted JSON; Gemini 3.5 Flash, routed
   to 3.6 Flash, gets no samplers; Gemma 4 takes images and a `high` or
-  `minimal` thinking level. OpenRouter: anthropic/claude Opus and Haiku 5.5 and
-  the other Claude models that reject samplers get none, deepseek-r1 keeps its
-  samplers, openai/o3-mini takes no images, and openai/gpt-6 ids are reasoning
-  models without samplers. Z.ai GLM ids called directly use JSON mode without
+  `minimal` thinking level. OpenRouter: anthropic/claude-opus-5.5 and
+  claude-haiku-5.5 get no samplers, deepseek-r1 keeps its samplers,
+  openai/o3-mini takes no images, and openai/gpt-6 ids are reasoning models
+  without samplers. Z.ai GLM ids called directly use JSON mode without
   penalties; `glm-flash-latest` and `glm-5.3-flash:batch` take the conservative
   profile. Image settings recorded for gpt-5.4-mini or gpt-5.4-nano at
   `original` detail, and for `gpt-5.3`, now differ; as with any change of image

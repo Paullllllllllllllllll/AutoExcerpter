@@ -391,16 +391,19 @@ other models are sent no tier, with one warning per run.
 
 The family rules in `autoexcerpter/common/capability_table.py`, shared with
 ChronoTranscriber and ChronoMiner, feed the resolver in
-`autoexcerpter/common/capabilities.py`. Every value follows the vendor's
-documentation (read 13.10.2026). Rules match the lowercased model name in order
-and the first match wins, so specific names (`gpt-5.6-terra`) precede general
-ones (`gpt-5`); a `provider:` or Google `models/` prefix is removed first. A
-rule sets image input, structured output, reasoning and the
-documented effort levels, verbosity, sampling parameters, the Flex tier,
-context and output limits and image size caps. Any model name is accepted. One
-that no rule matches, or that the vendor does not document (`gpt-5.3`,
-`glm-flash-latest`), gets a conservative profile (no image input, no structured
-output, no reasoning parameters) and a warning.
+`autoexcerpter/common/capabilities.py`. The table is the rule set
+ChronoTranscriber and ChronoMiner shared, with the records of
+`autoexcerpter/common/capability_facts.py` applied: each record adds, drops or
+re-matches a rule, or sets one field to the value the vendor's documentation
+states (read 13.10.2026), and names its source. Rules match the lowercased
+model name in order and the first match wins, so specific names
+(`gpt-5.6-terra`) precede general ones (`gpt-5`); a `provider:` or Google
+`models/` prefix is removed first. A rule sets image input, structured output,
+reasoning and the documented effort levels, verbosity, sampling parameters,
+the Flex tier, context and output limits and image size caps. Any model name is
+accepted. One that no rule matches, or that the vendor does not document
+(`gpt-5.3`, `glm-flash-latest`), gets a conservative profile (no image input,
+no structured output, no reasoning parameters) and a warning.
 
 The image options default to the preset of the transcription model's family.
 OpenRouter models use the family their name points to (Claude, Gemini, else

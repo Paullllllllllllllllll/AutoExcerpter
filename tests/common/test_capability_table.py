@@ -1,9 +1,10 @@
 """The shared capability table holds the settled vendor facts.
 
-Each row names a model id and the fields the vendors' documentation settles
-for it (read on 13.10.2026; the source of every row is cited in
-``common/capability_table.py``). Fields a row does not name are not checked
-here.
+Each row of :data:`FACTS` names a model id and the fields the capability-facts
+report settles for it (the labs' documentation, read on 13.10.2026). A row's
+value must come from the base table or from a record of
+``common/capability_facts.py``, which names the source. Fields a row does not
+name are not checked here.
 """
 
 from __future__ import annotations
@@ -12,20 +13,29 @@ from typing import Any
 
 import pytest
 
+from autoexcerpter.common import capability_facts
 from autoexcerpter.common.capabilities import (
+    CapabilityTable,
     FamilyRule,
     detect_provider,
     resolve_capabilities,
 )
+from autoexcerpter.common.capability_facts import AddRule, DropRule, Rematch
 from autoexcerpter.common.capability_table import (
     AUDIO_FAMILIES,
+    BASE_FAMILIES,
     FAMILIES,
     ORIGINAL_MAX_SIDE,
+    PROVIDERS,
     SPEECH_TO_TEXT_FAMILIES,
     TABLE,
     TableExtension,
+    apply_facts,
     build_table,
+    rule_index,
 )
+
+BASE = CapabilityTable(families=BASE_FAMILIES, providers=PROVIDERS)
 
 _NO_REASONING = {
     "is_reasoning_model": False,
@@ -98,7 +108,7 @@ FACTS: tuple[tuple[str, dict[str, Any]], ...] = (
     ("gpt-4.1-mini", {"max_context_tokens": 1047576}),
     *((m, _LARGE) for m in ("gpt-6-luna", "gpt-6-sol", "gpt-6.1-sol", "gpt-6-astra")),
     *((m, _LARGE) for m in ("gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol")),
-    ("gpt-5.6", {"family": "gpt-5.6-sol", **_LARGE}),
+    ("gpt-5.6", {"family": "gpt-5.6", **_LARGE}),
     # chat-latest: non-reasoning ChatGPT snapshots, 128,000 context.
     ("gpt-5-chat-latest", {**_CHAT_LATEST, "max_output_tokens": 16384}),
     ("gpt-5.1-chat-latest", _CHAT_LATEST),
@@ -456,6 +466,66 @@ def test_the_table_holds_the_settled_facts(
         actual["extras"] = dict(caps.extras)
 
     assert actual == expected
+
+
+def _family(model: str) -> str:
+    return FAMILIES[rule_index(FAMILIES, model)].family
+
+
+_RESHAPED = {
+    record.family
+    for record in capability_facts.STRUCTURE
+    if isinstance(record, AddRule)
+}
+_RESHAPED |= {
+    _family(record.id)
+    for record in capability_facts.STRUCTURE
+    if isinstance(record, Rematch)
+}
+_FACT_TARGETS = {
+    (_family(model), record.field)
+    for record in capability_facts.FACTS
+    for model in record.ids
+}
+_DROPPED = {
+    record.id for record in capability_facts.STRUCTURE if isinstance(record, DropRule)
+}
+
+
+@pytest.mark.parametrize(
+    ("model", "expected"), FACTS, ids=[f"{m}-{i}" for i, (m, _) in enumerate(FACTS)]
+)
+def test_every_fact_comes_from_the_base_or_a_record(
+    model: str, expected: dict[str, Any]
+) -> None:
+    """A settled value the base lacks is set by a record of capability_facts."""
+    base = resolve_capabilities(model, BASE)
+    family = resolve_capabilities(model, TABLE).family
+    for name, value in expected.items():
+        if name in ("family", "extras") or getattr(base, name) == value:
+            continue
+        traced = (
+            (family, name) in _FACT_TARGETS
+            or family in _RESHAPED
+            or model in _DROPPED
+            or family == "unknown"
+        )
+        assert traced, f"{model}: {name} has no source record"
+
+
+def test_every_record_names_its_source() -> None:
+    records = (*capability_facts.STRUCTURE, *capability_facts.FACTS)
+    assert all(record.source.strip() for record in records)
+
+
+@pytest.mark.parametrize("index", range(len(capability_facts.FACTS)))
+def test_every_fact_record_changes_the_base(index: int) -> None:
+    """A fact that the base already holds would hide which records matter."""
+    record = capability_facts.FACTS[index]
+    before = apply_facts(BASE_FAMILIES, facts=capability_facts.FACTS[:index])
+    after = apply_facts(BASE_FAMILIES, facts=capability_facts.FACTS[: index + 1])
+
+    assert before != after, record
 
 
 @pytest.mark.parametrize(
