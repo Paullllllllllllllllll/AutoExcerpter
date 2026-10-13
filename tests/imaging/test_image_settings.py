@@ -20,9 +20,15 @@ DETAIL_KEYS = {
     "custom": "llm_detail",
 }
 
-# The fingerprint the characterization goldens record for the default OpenAI
-# transcription model; it guards resume, so the defaults must not move it.
+# The fingerprints of the default OpenAI image settings for gpt-5.6-terra:
+# preset version 2 (colour) and version 1 (grayscale). They guard resume, so
+# only a new preset version may move the default; the version 1 record stays
+# reachable through explicit options, which resume pins for items stored
+# under it.
 GPT_56_TERRA_FINGERPRINT = (
+    "a944acc3d1e9601bec5bb0d57119a17377f6638cd72b417766a2ffb2706fc478"
+)
+GPT_56_TERRA_FINGERPRINT_V1 = (
     "6ac97af9ff976c10c92aa0123591af828a27e84634d5cfde8504605757603452"
 )
 
@@ -52,7 +58,8 @@ def test_section_layout() -> None:
         ]
     sections = [IMAGE_PROCESSING[f"{p}_image_processing"] for p in PROVIDERS]
     assert [s["target_dpi"] for s in sections] == ["native", "native", 300, 150]
-    assert [s["jpeg_quality"] for s in sections] == [95, 95, 95, 85]
+    assert [s["jpeg_quality"] for s in sections] == [95, 95, 95, 95]
+    assert [s["grayscale_conversion"] for s in sections] == [False] * 4
     assert [s["max_image_bytes"] for s in sections] == [
         50_000_000,
         10_000_000,
@@ -85,9 +92,15 @@ def test_default_fingerprint_is_unchanged() -> None:
 
 
 def test_recommended_values_given_explicitly_keep_the_fingerprint() -> None:
-    explicit = ImageSpec("native", "original", "jpeg", 95, True)
+    explicit = ImageSpec("native", "original", "jpeg", 95, False)
     settings, _, _ = resolve_image_settings("openai", "gpt-5.6-terra", explicit)
     assert image_settings_fingerprint(settings) == GPT_56_TERRA_FINGERPRINT
+
+
+def test_version_1_values_given_explicitly_give_the_version_1_fingerprint() -> None:
+    explicit = ImageSpec(format="jpeg", jpeg_quality=95, grayscale=True)
+    settings, _, _ = resolve_image_settings("openai", "gpt-5.6-terra", explicit)
+    assert image_settings_fingerprint(settings) == GPT_56_TERRA_FINGERPRINT_V1
 
 
 def test_run_options_override_the_section() -> None:

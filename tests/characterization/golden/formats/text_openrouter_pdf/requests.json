@@ -8,10 +8,13 @@
       },
       "messages": [
         {
-          "text": {
-            "chars": 2348,
-            "digest": "4f88f65c97fb1d86"
-          },
+          "blocks": [
+            {
+              "chars": 2348,
+              "digest": "4f88f65c97fb1d86",
+              "type": "text"
+            }
+          ],
           "type": "system"
         },
         {
@@ -40,10 +43,13 @@
       },
       "messages": [
         {
-          "text": {
-            "chars": 5751,
-            "digest": "b353fff5eec4227f"
-          },
+          "blocks": [
+            {
+              "chars": 5751,
+              "digest": "b353fff5eec4227f",
+              "type": "text"
+            }
+          ],
           "type": "system"
         },
         {
@@ -71,10 +77,13 @@
       },
       "messages": [
         {
-          "text": {
-            "chars": 5751,
-            "digest": "b353fff5eec4227f"
-          },
+          "blocks": [
+            {
+              "chars": 5751,
+              "digest": "b353fff5eec4227f",
+              "type": "text"
+            }
+          ],
           "type": "system"
         },
         {
@@ -102,10 +111,13 @@
       },
       "messages": [
         {
-          "text": {
-            "chars": 5751,
-            "digest": "b353fff5eec4227f"
-          },
+          "blocks": [
+            {
+              "chars": 5751,
+              "digest": "b353fff5eec4227f",
+              "type": "text"
+            }
+          ],
           "type": "system"
         },
         {
@@ -133,10 +145,13 @@
       },
       "messages": [
         {
-          "text": {
-            "chars": 5751,
-            "digest": "b353fff5eec4227f"
-          },
+          "blocks": [
+            {
+              "chars": 5751,
+              "digest": "b353fff5eec4227f",
+              "type": "text"
+            }
+          ],
           "type": "system"
         },
         {
@@ -164,10 +179,13 @@
       },
       "messages": [
         {
-          "text": {
-            "chars": 2348,
-            "digest": "4f88f65c97fb1d86"
-          },
+          "blocks": [
+            {
+              "chars": 2348,
+              "digest": "4f88f65c97fb1d86",
+              "type": "text"
+            }
+          ],
           "type": "system"
         },
         {
@@ -196,10 +214,13 @@
       },
       "messages": [
         {
-          "text": {
-            "chars": 5751,
-            "digest": "b353fff5eec4227f"
-          },
+          "blocks": [
+            {
+              "chars": 5751,
+              "digest": "b353fff5eec4227f",
+              "type": "text"
+            }
+          ],
           "type": "system"
         },
         {
@@ -227,10 +248,13 @@
       },
       "messages": [
         {
-          "text": {
-            "chars": 5751,
-            "digest": "b353fff5eec4227f"
-          },
+          "blocks": [
+            {
+              "chars": 5751,
+              "digest": "b353fff5eec4227f",
+              "type": "text"
+            }
+          ],
           "type": "system"
         },
         {
@@ -258,10 +282,13 @@
       },
       "messages": [
         {
-          "text": {
-            "chars": 5751,
-            "digest": "b353fff5eec4227f"
-          },
+          "blocks": [
+            {
+              "chars": 5751,
+              "digest": "b353fff5eec4227f",
+              "type": "text"
+            }
+          ],
           "type": "system"
         },
         {
@@ -289,10 +316,13 @@
       },
       "messages": [
         {
-          "text": {
-            "chars": 5751,
-            "digest": "b353fff5eec4227f"
-          },
+          "blocks": [
+            {
+              "chars": 5751,
+              "digest": "b353fff5eec4227f",
+              "type": "text"
+            }
+          ],
           "type": "system"
         },
         {
@@ -320,10 +350,13 @@
       },
       "messages": [
         {
-          "text": {
-            "chars": 2348,
-            "digest": "4f88f65c97fb1d86"
-          },
+          "blocks": [
+            {
+              "chars": 2348,
+              "digest": "4f88f65c97fb1d86",
+              "type": "text"
+            }
+          ],
           "type": "system"
         },
         {
@@ -352,10 +385,13 @@
       },
       "messages": [
         {
-          "text": {
-            "chars": 5751,
-            "digest": "b353fff5eec4227f"
-          },
+          "blocks": [
+            {
+              "chars": 5751,
+              "digest": "b353fff5eec4227f",
+              "type": "text"
+            }
+          ],
           "type": "system"
         },
         {
@@ -383,10 +419,13 @@
       },
       "messages": [
         {
-          "text": {
-            "chars": 5751,
-            "digest": "b353fff5eec4227f"
-          },
+          "blocks": [
+            {
+              "chars": 5751,
+              "digest": "b353fff5eec4227f",
+              "type": "text"
+            }
+          ],
           "type": "system"
         },
         {
@@ -414,10 +453,13 @@
       },
       "messages": [
         {
-          "text": {
-            "chars": 5751,
-            "digest": "b353fff5eec4227f"
-          },
+          "blocks": [
+            {
+              "chars": 5751,
+              "digest": "b353fff5eec4227f",
+              "type": "text"
+            }
+          ],
           "type": "system"
         },
         {
@@ -445,10 +487,13 @@
       },
       "messages": [
         {
-          "text": {
-            "chars": 5751,
-            "digest": "b353fff5eec4227f"
-          },
+          "blocks": [
+            {
+              "chars": 5751,
+              "digest": "b353fff5eec4227f",
+              "type": "text"
+            }
+          ],
           "type": "system"
         },
         {

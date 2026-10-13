@@ -28,7 +28,7 @@
   "first_run_id": "<run-1>",
   "image_settings": {
     "cap_policy": "profile-v1",
-    "grayscale_conversion": true,
+    "grayscale_conversion": false,
     "handle_transparency": true,
     "high_target_box": [
       512,
@@ -36,7 +36,7 @@
     ],
     "image_high_res_tier": false,
     "image_original_patch_cap_30k": false,
-    "jpeg_quality": 85,
+    "jpeg_quality": 95,
     "llm_detail": "high",
     "low_max_side_px": 768,
     "max_image_bytes": 0,
@@ -1149,6 +1149,10 @@
       "source": "flag",
       "value": true
     },
+    "input.files": {
+      "source": "flag",
+      "value": []
+    },
     "input.path": {
       "source": "flag",
       "value": "<tmp>/in/doc.pdf"
@@ -1164,13 +1168,10 @@
     "output.formats": {
       "source": "flag",
       "value": [
+        "transcription-md",
         "summary-md",
         "summary-docx"
       ]
-    },
-    "output.transcription_format": {
-      "source": "default",
-      "value": "md"
     },
     "run.batch": {
       "source": "default",

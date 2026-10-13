@@ -105,27 +105,29 @@ def _settings_file(folder: Path) -> Path:
 
 def _answers(pdf: Path, output: Path) -> list[Any]:
     return [
-        KEEP,
+        KEEP,  # task
         str(pdf),
         "folder",
         str(output),
-        BACK,
+        KEEP,  # transcription format
+        BACK,  # summarize: back to the output step
+        KEEP,
         KEEP,
         KEEP,
         True,
-        KEEP,
-        KEEP,
-        "text",
-        TOPICS,
-        KEEP,
-        KEEP,
-        KEEP,
-        KEEP,
+        KEEP,  # summary formats
+        KEEP,  # provider
+        KEEP,  # model
+        KEEP,  # reasoning effort
+        KEEP,  # response format
         "recommended",
         "same",
+        "text",
+        TOPICS,
         "recommended",
-        KEEP,
-        KEEP,
+        KEEP,  # submission
+        KEEP,  # run options
+        KEEP,  # concurrency
         "run",
     ]
 

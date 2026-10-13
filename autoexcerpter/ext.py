@@ -1,7 +1,8 @@
 """Extension seam: startup hooks and the per-call attempt context.
 
-These hooks pass everything through: no extra arguments, settings blocks
-or wizard steps, no startup work, nothing reserved, the provider's key
+These hooks pass everything through: no extra arguments (and so no argv
+words for a printed command), settings blocks or wizard steps, no startup
+work, nothing reserved, the provider's key
 variable from the settings, no client options, and retry decisions from the
 shared error classifier. The core wraps every model call, each retry and
 batch call included, in :func:`attempt` and builds every client through it.
@@ -31,6 +32,7 @@ __all__ = [
     "attempt",
     "batch_allowed",
     "client_options",
+    "extra_argv",
     "key_variables",
     "register_args",
     "settings_blocks",
@@ -40,7 +42,20 @@ __all__ = [
 
 
 def register_args(parser: argparse.ArgumentParser) -> None:
-    """Add extension arguments to the run parser; none here."""
+    """Add extension arguments to a command parser; none here.
+
+    The commands that call providers register them
+    (:data:`autoexcerpter.spec.EXTENSION_COMMANDS`).
+    """
+
+
+def extra_argv(args: argparse.Namespace | None) -> tuple[str, ...]:
+    """Return the argv words of the extension's options given in *args*.
+
+    Only options given explicitly count, so a printed command reproduces
+    them; none here. The UI appends them to the commands that take them.
+    """
+    return ()
 
 
 def settings_blocks() -> Mapping[str, BlockParser]:

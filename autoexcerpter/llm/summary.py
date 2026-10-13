@@ -28,6 +28,7 @@ from autoexcerpter.llm.options import build_invoke_kwargs, response_format_for
 from autoexcerpter.llm.prompts import (
     PROMPTS_DIR,
     SCHEMAS_DIR,
+    openai_cache_options,
     render_prompt_with_schema,
     strip_markdown_code_block,
     system_message,
@@ -255,9 +256,13 @@ class SummaryManager:
         self._jitter = (retry.jitter_min, retry.jitter_max)
         self.summary_context = context
         self.schema, self.system_prompt = summary_prompt(context, transcription_format)
-        self.invoke_kwargs = build_invoke_kwargs(
-            self.provider, phase.name, phase.options, phase.service_tier
-        )
+        self.caching = env.settings.prompt_caching
+        self.invoke_kwargs = {
+            **build_invoke_kwargs(
+                self.provider, phase.name, phase.options, phase.service_tier
+            ),
+            **openai_cache_options(self.provider, phase.name, self.caching),
+        }
 
     def messages(self, transcription: str) -> list[Any]:
         """Return the system and user messages for one page's text."""
@@ -268,7 +273,10 @@ class SummaryManager:
             user = HumanMessage(content=[{"type": "text", "text": transcription}])
         else:
             user = HumanMessage(content=transcription)
-        return [system_message(self.system_prompt, self.provider), user]
+        system = system_message(
+            self.system_prompt, self.provider, self.model_name, self.caching
+        )
+        return [system, user]
 
     def _request(self, used: int, calls_left: int) -> StructuredRequest:
         rule = self.rule

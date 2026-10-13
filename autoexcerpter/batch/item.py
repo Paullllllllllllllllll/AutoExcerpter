@@ -149,13 +149,15 @@ class BatchItem:
         self._job_written = False
 
     def _plan(self, role: str) -> BodyPlan:
+        caching = self.clients.settings.prompt_caching
         if role == ROLE_TRANSCRIPTION:
-            return build_plan(self.job.transcription, role)
+            return build_plan(self.job.transcription, role, caching=caching)
         return build_plan(
             self.job.summary,
             role,
             context=self.context,
             transcription_format=self.transcription_format,
+            caching=caching,
         )
 
     async def _store_artifacts(self, plans: Sequence[BodyPlan]) -> None:

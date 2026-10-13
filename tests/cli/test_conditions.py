@@ -16,6 +16,13 @@ from tests.conftest import make_spec
 MakePdf = Callable[..., Path]
 
 
+@pytest.fixture(autouse=True)
+def _keys(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Set the key variables, so a dry run warns about conditions only."""
+    for name in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY"):
+        monkeypatch.setenv(name, "test-key")
+
+
 def _dry_run(pdf: Path, *extra: str) -> list[str]:
     return ["run", "--input", str(pdf), *extra, "--dry-run", "--json"]
 

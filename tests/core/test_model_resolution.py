@@ -201,7 +201,7 @@ def test_to_argv_spells_out_a_provider_the_name_does_not_imply() -> None:
     [
         ({"provider": "openai"}, []),
         ({"provider": "anthropic"}, ["--provider", "openai"]),
-        ({"model": "anthropic:claude-sonnet-4-5"}, ["--model", "gpt-5.6-luna"]),
+        ({"model": "anthropic:claude-sonnet-4-5"}, ["--model", "gpt-6-luna"]),
         ({"summary_endpoint": "local"}, ["--provider", "openai"]),
     ],
 )

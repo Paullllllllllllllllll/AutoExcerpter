@@ -1,5 +1,44 @@
 # Changelog
 
+- **v3.0.0** (13 October 2026) -- The command-line interface, defaults and
+  settings follow the standard AutoExcerpter, ChronoTranscriber and ChronoMiner
+  now share. `--formats` takes the transcription format too
+  (`transcription-md` or `transcription-txt` beside `summary-md` and
+  `summary-docx`, default all but `transcription-txt`); `--transcription-format`
+  and the `defaults:` key `transcription_format` still work during version 3
+  with a deprecation warning, and stored specs and settings of version 2 are
+  read as before. `run --files LIST` selects items by exact name beside
+  `--select`; an input without items and a `--select` or `--files` that matches
+  nothing now exit 2 instead of 1, and several items without `--all`,
+  `--select` or `--files` name the three options. `batch check --formats`
+  replaces the formats of the submitting run, and `render` takes `--settings`.
+  A dry run needs no API key: missing key variables are warnings and the dry
+  run exits 0, while a real run still exits 2; its JSON line adds the run
+  counts, a zero `usage` and the `legacy`, `blocked` and `refused` items with
+  their reasons. The default model is gpt-6-luna with high reasoning effort,
+  and the OpenAI suggestions are gpt-6-luna, gpt-6-sol, gpt-6-astra,
+  gpt-6.1-sol, gpt-5.6-luna, gpt-5.6-terra, gpt-5.6-sol and gpt-5.5. Every
+  provider family now sends colour JPEG pages at quality 95 (before: grayscale,
+  and quality 85 for custom endpoints); an item stored under the old preset
+  resumes with its stored image values for each image option the run leaves
+  unset instead of being refused. The settings accept `logs_dir` (no log file
+  when unset), `concurrency.delay_between_tasks` (spacing of page request
+  starts, default 0) and `prompt_caching`, on by default: Anthropic system
+  prompts take the configured TTL, Claude models through OpenRouter now carry
+  the cache breakpoint as well, and OpenAI requests send the documented
+  retention parameter when `prompt_cache_retention` is set. The settings
+  example moves to `autoexcerpter/resources/settings.example.yaml`; the tool
+  still reads `config/settings.yaml` first and applies the code values when no
+  file exists. The guided UI asks input, output and transcription format,
+  summary and summary formats, models, context, page images and run options in
+  that order, asks `Submission:` (synchronous or Batch API) when batches are
+  allowed, offers no `original` detail for Anthropic and Google models, strips
+  one pair of quotes from typed paths, names missing key variables on the review
+  and withholds Run for a real run, and reports an unexpected error as
+  `Unexpected error:`; the `ui` help describes the four tasks. The extension
+  hook `ext.extra_argv` gives the flags the wizard appends to the run, batch
+  check and batch cancel commands it prints (none by default). Help texts use
+  the shared default wording where AutoExcerpter differed only by accident.
 - **v2.5.2** (13 October 2026) -- The option rows AutoExcerpter, ChronoTranscriber
   and ChronoMiner share (the model block with its per-phase copies, images, output
   location, run control, batch check and cancel, render) and the shared settings

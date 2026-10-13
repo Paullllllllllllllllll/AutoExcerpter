@@ -9,6 +9,8 @@ import pytest
 
 from autoexcerpter.batch.bodies import ROLE_SUMMARY, ROLE_TRANSCRIPTION, build_plan
 from autoexcerpter.common.batch import BatchRequest
+from autoexcerpter.common.request_options import PROMPT_CACHE_TTL
+from autoexcerpter.common.settings_schema import PromptCaching
 from autoexcerpter.common.structured import (
     anthropic_output_schema,
     build_text_format,
@@ -98,6 +100,27 @@ def test_an_anthropic_request_caches_the_system_prompt_and_enforces_the_schema()
         "type": "json_schema",
         "schema": anthropic_output_schema(schema),
     }
+
+
+def test_prompt_caching_settings_shape_the_batch_bodies() -> None:
+    off = PromptCaching(enabled=False, openai_retention="24h")
+    hour = PromptCaching(anthropic_ttl="1h", openai_retention="24h")
+    claude = _phase(model="claude-sonnet-4-5")
+    gpt = _phase(model="gpt-5.6-terra")
+
+    assert (
+        "cache_control"
+        not in build_plan(claude, ROLE_SUMMARY, caching=off).body(TEXT)["system"][0]
+    )
+    assert build_plan(claude, ROLE_SUMMARY, caching=hour).body(TEXT)["system"][0][
+        "cache_control"
+    ] == {"type": "ephemeral", "ttl": "1h"}
+    assert "prompt_cache_options" not in build_plan(gpt, ROLE_SUMMARY).body(TEXT)
+    assert "prompt_cache_options" not in build_plan(
+        gpt, ROLE_SUMMARY, caching=off
+    ).body(TEXT)
+    body = build_plan(gpt, ROLE_SUMMARY, caching=hour).body(TEXT)
+    assert body["prompt_cache_options"] == {"ttl": PROMPT_CACHE_TTL}
 
 
 def test_an_anthropic_transcription_sends_the_image_alone() -> None:

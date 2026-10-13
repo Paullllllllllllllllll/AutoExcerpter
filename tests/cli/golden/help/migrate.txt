@@ -10,9 +10,8 @@ input:
   --input PATH     output folder, working folder or autoexcerpter.sqlite to import
 
 run control:
-  --settings FILE  settings file whose state_dir holds the OpenAlex cache; default:
-                   config/settings.yaml
-  --dry-run        print what would be imported without writing
+  --settings FILE  alternate settings file; default: config/settings.yaml
+  --dry-run        plan without API calls or writes
   --json           print one JSON summary line on stdout
 
 A database is snapshotted beside itself before its first write. Citations are consolidated from

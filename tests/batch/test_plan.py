@@ -37,6 +37,18 @@ def test_a_batch_plan_needs_each_phase_key(
     assert "summary batches" in str(caught.value)
 
 
+def test_a_batch_dry_run_plans_without_the_keys_and_warns(
+    pdf: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    run_plan = _plan(pdf, dry_run=True)
+    assert [key.variable for key in run_plan.missing_keys] == ["OPENAI_API_KEY"]
+    assert run_plan.warnings == (
+        "The API key variable OPENAI_API_KEY of provider openai is not set; a "
+        "real run needs it for the transcription and summary phases.",
+    )
+
+
 def test_the_extension_can_refuse_batch_submission(
     pdf: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

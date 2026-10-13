@@ -6,8 +6,10 @@ clipboard runner and environment, for tests and recorded sessions. The
 session starts with the run task; choosing another task on the task step
 rebuilds the wizard for it, starting at that task's first step. Exit codes
 are those of the chosen task's command: 0 when every item completed or
-nothing ran, 1 when an item failed, 2 for usage and configuration errors,
-130 on Ctrl+C.
+nothing ran, 1 when an item failed or an unexpected error stopped the
+session (printed as ``Unexpected error:``), 2 for usage and configuration
+errors, 130 on Ctrl+C. Logging starts once the settings are read, with the
+log file of ``logs_dir`` when set.
 """
 
 from __future__ import annotations
@@ -110,7 +112,7 @@ def run_app(
         except SettingsError as exc:
             _say(screen, f"Error: {exc}")
             return int(ExitCode.USAGE)
-        configure_logging()
+        configure_logging(log_file=settings.log_file())
         namespace = args if args is not None else argparse.Namespace()
         session = Session(
             settings,
@@ -129,8 +131,9 @@ def run_app(
     except KeyboardInterrupt:
         _say(screen, "Interrupted by the user.")
         return int(ExitCode.INTERRUPTED)
-    except Exception as exc:
-        logger.exception("Critical error in the guided run: %s", exc)
+    except Exception as exc:  # noqa: BLE001 - the session's last resort
+        logger.info("Unexpected error in the guided session", exc_info=True)
+        _say(screen, f"Unexpected error: {exc}")
         return int(ExitCode.FAILURE)
 
 

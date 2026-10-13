@@ -1,8 +1,9 @@
 # AutoExcerpter settings: machine values and optional run defaults.
 #
-# Copy this file to config/settings.yaml (gitignored) and edit the copy.
-# Every key is optional; a missing key keeps the value shown here.
-# Run with --settings FILE to read another file.
+# Copy this file to config/settings.yaml in the repository (gitignored) and
+# edit the copy, or pass another file with --settings FILE. Every key is
+# optional; a missing key keeps the value shown here. Unknown keys are errors.
+# Relative paths resolve against the current directory.
 
 # Environment-variable NAMES that hold each provider's API key (never the key).
 api_keys:
@@ -75,8 +76,17 @@ retry:
         backoff_base: 0.5
         backoff_multiplier: 1.5
 
+# Pause in seconds between starting two page requests (--concurrency bounds
+# the requests in flight).
+concurrency:
+  delay_between_tasks: 0
+
 # Folder of the OpenAlex cache; '' means .autoexcerpter in the home folder.
 state_dir: ''
+
+# Log folder, or a file ending in .log; '' writes no log file (warnings and
+# errors go to the console).
+logs_dir: ''
 
 # OpenAlex citation lookups.
 openalex:
@@ -89,15 +99,26 @@ openalex:
 images:
   original_max_side_px: null
 
+# Provider prompt caching of the system prompt (instructions and schema).
+prompt_caching:
+  enabled: true
+  anthropic:
+    ttl: 5m  # 5m or 1h
+  openai:
+    prompt_cache_retention: null  # or 24h: documented models; GPT-5.6+ get ttl 30m
+  openrouter:
+    anthropic_cache_control: true
+
 # Run defaults keyed by option name (flags override them), for example:
 # defaults:
-#   model: gpt-5.6-terra
+#   model: gpt-6-luna
 #   reasoning_effort: high
 #   transcription_verbosity: high
 #   summary_verbosity: low
 #   service_tier: flex
-#   transcription_format: md  # X_transcription.md; txt writes X_transcription.txt
-#   formats: [summary-md, summary-docx]
+#   # One transcription format (transcription-md or transcription-txt) and the
+#   # summary formats; the database is always written.
+#   formats: [transcription-md, summary-md, summary-docx]
 #   concurrency: 16
 #   batch: false  # true submits to the batch APIs; collect with batch check
 #   # Summary context for items without a sidecar: topics or a text file.

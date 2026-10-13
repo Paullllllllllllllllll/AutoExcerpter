@@ -134,6 +134,11 @@ def _select_nothing(tmp_path: Path, make_pdf: MakePdf) -> tuple[Path, dict[str, 
     return path, {"select": "gamma"}
 
 
+def _files_nothing(tmp_path: Path, make_pdf: MakePdf) -> tuple[Path, dict[str, Any]]:
+    path, _ = _two_items(tmp_path, make_pdf)
+    return path, {"files": ("alpha.pdf", "gamma.pdf")}
+
+
 def _same_stem(tmp_path: Path, make_pdf: MakePdf) -> tuple[Path, dict[str, Any]]:
     for sub in ("a", "b"):
         (tmp_path / "in" / sub).mkdir(parents=True)
@@ -152,15 +157,16 @@ def _empty_context_file(
 def _summaries_without_format(
     tmp_path: Path, make_pdf: MakePdf
 ) -> tuple[Path, dict[str, Any]]:
-    return make_pdf("doc.pdf"), {"formats": ()}
+    return make_pdf("doc.pdf"), {"formats": ("transcription-md",)}
 
 
 @pytest.mark.parametrize(
     ("setup", "error", "code", "message"),
     [
-        (_empty_dir, core.NoItemsError, 1, "No items found to process"),
-        (_select_nothing, core.SelectionError, 1, "No items found matching 'gamma'"),
-        (_two_items, core.AmbiguousSelectionError, 2, "neither --all nor --select"),
+        (_empty_dir, core.NoItemsError, 2, "No items found to process"),
+        (_select_nothing, core.SelectionError, 2, "No items found matching 'gamma'"),
+        (_files_nothing, core.SelectionError, 2, "--files names no item"),
+        (_two_items, core.AmbiguousSelectionError, 2, "--all, --select and --files"),
         (_same_stem, core.DuplicateOutputError, 2, "Duplicate output target"),
         (_empty_context_file, core.ConfigurationError, 2, "empty or unreadable"),
         (_summaries_without_format, core.ConfigurationError, 2, "--no-summarize"),

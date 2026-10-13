@@ -55,7 +55,7 @@
   "first_run_id": "<run-1>",
   "image_settings": {
     "cap_policy": "openai-original-30k-v1",
-    "grayscale_conversion": true,
+    "grayscale_conversion": false,
     "handle_transparency": true,
     "high_target_box": [
       768,
@@ -451,6 +451,10 @@
       "source": "flag",
       "value": true
     },
+    "input.files": {
+      "source": "flag",
+      "value": []
+    },
     "input.path": {
       "source": "flag",
       "value": "<tmp>/docs/doc.pdf"
@@ -466,13 +470,10 @@
     "output.formats": {
       "source": "flag",
       "value": [
+        "transcription-md",
         "summary-md",
         "summary-docx"
       ]
-    },
-    "output.transcription_format": {
-      "source": "default",
-      "value": "md"
     },
     "run.batch": {
       "source": "flag",

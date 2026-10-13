@@ -27,6 +27,8 @@ class ItemJob:
     set and *openalex* holds a client, at most *openalex_max_requests* per
     item. *transcription_format* is the transcription file's extension.
     *original_max_side_px* is the ``images`` setting of that name.
+    *start_delay* is the pause in seconds between starting two page
+    requests (``concurrency.delay_between_tasks``).
     """
 
     transcription: PhaseModel
@@ -36,6 +38,7 @@ class ItemJob:
     output_markdown: bool = True
     transcription_format: str = "md"
     concurrency: int = 1
+    start_delay: float = 0.0
     timeout: float | None = None
     context: str | None = None
     fallback_context: str | None = None
@@ -117,7 +120,7 @@ def job_from_spec(spec: RunSpec, settings: Settings) -> ItemJob:
     """
     key_env = settings.openalex.api_key_env
     openalex_key = os.environ.get(key_env, "").strip() if key_env else ""
-    formats = spec.output.formats
+    formats = spec.output.summary_formats
     openalex = (
         OpenAlexClient(
             settings.openalex.email or None,
@@ -137,6 +140,7 @@ def job_from_spec(spec: RunSpec, settings: Settings) -> ItemJob:
         output_markdown="summary-md" in formats,
         transcription_format=spec.output.transcription_format,
         concurrency=spec.run.concurrency,
+        start_delay=settings.concurrency.delay_between_tasks,
         timeout=_seconds(settings.timeouts.request),
         context=spec.summary.context,
         fallback_context=spec.summary.fallback_context,

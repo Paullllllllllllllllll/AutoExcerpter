@@ -8,13 +8,18 @@ from unittest.mock import patch
 
 import pytest
 
+from autoexcerpter.common.request_options import PROMPT_CACHE_TTL
+from autoexcerpter.common.settings_schema import PromptCaching
 from autoexcerpter.llm.prompts import (
     SCHEMA_MARKER,
     SCHEMA_TOKEN_GENERIC,
     _inject_context,
     _replace_schema_at_marker,
+    cache_breakpoint,
+    openai_cache_options,
     render_prompt_with_schema,
     strip_markdown_code_block,
+    system_message,
 )
 
 
@@ -315,3 +320,55 @@ class TestStripMarkdownCodeBlock:
 
     def test_plain_text_unchanged(self) -> None:
         assert strip_markdown_code_block("hello world") == "hello world"
+
+
+# ============================================================================
+# Prompt caching of the system prompt
+# ============================================================================
+CLAUDE_ROUTE = "anthropic/claude-sonnet-4.5"
+
+
+@pytest.mark.parametrize(
+    ("provider", "model", "caching", "expected"),
+    [
+        ("anthropic", "claude-sonnet-4-5", None, {"type": "ephemeral"}),
+        (
+            "anthropic",
+            "claude-sonnet-4-5",
+            PromptCaching(anthropic_ttl="1h"),
+            {"type": "ephemeral", "ttl": "1h"},
+        ),
+        ("openrouter", CLAUDE_ROUTE, None, {"type": "ephemeral"}),
+        (
+            "openrouter",
+            CLAUDE_ROUTE,
+            PromptCaching(openrouter_cache_control=False),
+            None,
+        ),
+        ("openrouter", "z-ai/glm-5.3-flash", None, None),
+        ("openai", "gpt-5.6-terra", None, None),
+        ("anthropic", "claude-sonnet-4-5", PromptCaching(enabled=False), None),
+    ],
+)
+def test_cache_breakpoint(
+    provider: str, model: str, caching: PromptCaching | None, expected: Any
+) -> None:
+    assert cache_breakpoint(provider, model, caching) == expected
+    message = system_message("Prompt.", provider, model, caching)
+    if expected is None:
+        assert message.content == "Prompt."
+    else:
+        assert message.content == [
+            {"type": "text", "text": "Prompt.", "cache_control": expected}
+        ]
+
+
+def test_openai_cache_options_need_caching_and_a_retention() -> None:
+    retained = PromptCaching(openai_retention="24h")
+    assert openai_cache_options("openai", "gpt-5.6-terra") == {}
+    assert openai_cache_options("openai", "gpt-5.6-terra", retained) == {
+        "prompt_cache_options": {"ttl": PROMPT_CACHE_TTL}
+    }
+    off = PromptCaching(enabled=False, openai_retention="24h")
+    assert openai_cache_options("openai", "gpt-5.6-terra", off) == {}
+    assert openai_cache_options("anthropic", "claude-sonnet-4-5", retained) == {}

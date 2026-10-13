@@ -67,7 +67,7 @@ def scripted_run(
         make_pdf("doc.pdf", num_pages=2),
         output=tmp_path / "out",
         openalex=False,
-        formats="summary-md",
+        formats=("summary-md",),
     )
     result = asyncio.run(core.run(core.plan(spec, settings)))
     return result, recorder

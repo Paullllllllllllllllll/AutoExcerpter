@@ -220,7 +220,8 @@ def run_tool(
     False a registry model keeps its provider for every format and the
     format is passed as ``--<phase>-response-format``. *jpeg_quality* is
     passed as ``--jpeg-quality`` and *transcription_file_format* (``md`` or
-    ``txt``) as ``--transcription-format``; *batch* adds ``--batch``.
+    ``txt``) joins ``--formats`` as ``transcription-md`` or
+    ``transcription-txt``; *batch* adds ``--batch``.
     During the run ``time.sleep`` returns at once and ``asyncio.sleep`` only
     yields; neither shapes the outputs.
     The fake LLM must already be installed (see ``conftest.fake_llm``).
@@ -229,7 +230,11 @@ def run_tool(
     settings_path = write_settings(root / "config")
     formats = [
         name
-        for name, wanted in (("summary-md", markdown), ("summary-docx", docx))
+        for name, wanted in (
+            (f"transcription-{transcription_file_format}", transcription_file_format),
+            ("summary-md", markdown),
+            ("summary-docx", docx),
+        )
         if wanted
     ]
 
@@ -269,8 +274,6 @@ def run_tool(
         argv.append("--dry-run")
     if jpeg_quality is not None:
         argv.extend(["--jpeg-quality", str(jpeg_quality)])
-    if transcription_file_format is not None:
-        argv.extend(["--transcription-format", transcription_file_format])
     if batch:
         argv.append("--batch")
 

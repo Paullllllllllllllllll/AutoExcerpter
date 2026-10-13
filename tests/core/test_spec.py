@@ -14,17 +14,18 @@ from autoexcerpter.llm.capabilities import detect_capabilities
 from autoexcerpter.providers import infer_provider
 from autoexcerpter.spec import (
     CONTEXT_NONE,
+    DEFAULT_FORMATS,
     DEFAULT_MODEL,
     IMAGE_DETAILS,
     IMAGE_FORMATS,
     MODEL_SUGGESTIONS,
     OPTIONS,
-    OUTPUT_FORMATS,
     PHASES,
     PROVIDERS,
     REASONING_EFFORTS,
     RESPONSE_FORMATS,
     SERVICE_TIERS,
+    SUMMARY_FORMATS,
     TRANSCRIPTION_FORMATS,
     VERBOSITIES,
     CitationSpec,
@@ -37,6 +38,7 @@ from autoexcerpter.spec import (
     RunSpec,
     SpecError,
     SummarySpec,
+    check_formats,
     effective_spec,
     model_suggestions,
     parse,
@@ -44,6 +46,7 @@ from autoexcerpter.spec import (
     resolve_spec,
     spec_from_effective,
     to_argv,
+    with_transcription_format,
 )
 
 _DPIS: list[Dpi | None] = [None, "native", 150, 300]
@@ -73,18 +76,25 @@ def _model(rng: random.Random) -> ModelSpec:
 
 def _spec(rng: random.Random) -> RunSpec:
     select = rng.choice([None, "1,3", "2-4", "Mennell"])
+    every = select is None and rng.random() < 0.5
+    files: tuple[str, ...] = ()
+    if select is None and not every and rng.random() < 0.5:
+        files = rng.choice([("a.pdf",), ("a b", "c.pdf")])
     transcription = _model(rng)
     summary = transcription if rng.random() < 0.3 else _model(rng)
     return RunSpec(
         input=InputSpec(
             path=Path(rng.choice(["in.pdf", "scans", "a b/c.pdf"])),
             select=select,
-            all=select is None and rng.random() < 0.5,
+            all=every,
+            files=files,
         ),
         output=OutputSpec(
             directory=rng.choice([None, Path("out"), Path("x y")]),
-            transcription_format=rng.choice(["md", "txt"]),
-            formats=tuple(f for f in OUTPUT_FORMATS if rng.random() < 0.6),
+            formats=with_transcription_format(
+                [f for f in SUMMARY_FORMATS if rng.random() < 0.6],
+                rng.choice(TRANSCRIPTION_FORMATS),
+            ),
         ),
         summary=SummarySpec(
             enabled=rng.random() < 0.5,
@@ -136,8 +146,12 @@ _DEFAULT_VALUES: dict[str, list[Any]] = {
     "select": ["1", "2-3", "Laudan"],
     "all": [True, False],
     "output": ["out", "x y"],
-    "transcription_format": list(TRANSCRIPTION_FORMATS),
-    "formats": [["summary-md"], ["summary-docx"], list(OUTPUT_FORMATS)],
+    "formats": [
+        ["summary-md"],
+        ["summary-docx"],
+        ["transcription-txt", "summary-md"],
+        list(DEFAULT_FORMATS),
+    ],
     "summarize": [True, False],
     "context": ["auto", "none", "Default topics", "ctx.txt"],
     "fallback_context": ["none", "Fallback topics", "fallback.txt"],
@@ -175,10 +189,11 @@ def _expressible(spec: RunSpec, key: str, value: Any) -> bool:
     """
     if key in _IMAGE_FIELDS:
         return getattr(spec.images, _IMAGE_FIELDS[key]) is not None
+    chosen = spec.input.select is not None or bool(spec.input.files)
     if key == "select":
-        return spec.input.select is not None or spec.input.all
+        return chosen or spec.input.all
     if key == "all":
-        return not value or spec.input.all or spec.input.select is not None
+        return not value or spec.input.all or chosen
     phase, _, name = key.partition("_")
     phases = [phase] if phase in PHASES else list(PHASES)
     name = name if phase in PHASES else key
@@ -346,7 +361,7 @@ def test_sources_cover_every_field() -> None:
     payload = effective_spec(resolution.spec, resolution.sources)
     assert payload["run.concurrency"] == {"value": 4, "source": "flag"}
     assert payload["summary_model.verbosity"] == {"value": "high", "source": "settings"}
-    assert payload["output.formats"]["value"] == list(OUTPUT_FORMATS)
+    assert payload["output.formats"]["value"] == list(DEFAULT_FORMATS)
     assert payload["input.path"] == {"value": "x", "source": "flag"}
     assert len(payload) == len([o for o in OPTIONS if o.target is not None])
 
@@ -378,7 +393,63 @@ def test_service_tier_applies_only_to_openai() -> None:
 def test_recommended_images_fill_unset_fields() -> None:
     spec = ImageSpec(jpeg_quality=70)
     assert spec.over(recommended_images("openai")) == ImageSpec(
-        "native", "original", "jpeg", 70, True
+        "native", "original", "jpeg", 70, False
     )
     assert recommended_images("google").dpi == 300
     assert recommended_images("unknown") == recommended_images("custom")
+
+
+@pytest.mark.parametrize("family", ["openai", "anthropic", "google", "custom"])
+def test_every_family_sends_colour_jpeg_at_quality_95(family: str) -> None:
+    images = recommended_images(family)
+    assert (images.format, images.jpeg_quality, images.grayscale) == (
+        "jpeg",
+        95,
+        False,
+    )
+
+
+def test_spec_from_effective_reads_a_version_2_spec() -> None:
+    stored = effective_spec(_code_defaults("in.pdf"))
+    stored["output.formats"] = {"value": ["summary-docx"], "source": "flag"}
+    stored["output.transcription_format"] = {"value": "txt", "source": "default"}
+    spec = spec_from_effective(stored)
+    assert spec.output.formats == ("transcription-txt", "summary-docx")
+    assert spec.output.transcription_format == "txt"
+    assert spec.output.summary_formats == ("summary-docx",)
+
+
+@pytest.mark.parametrize(
+    ("override", "stored", "expected"),
+    [
+        (
+            None,
+            ("transcription-txt", "summary-md"),
+            ("transcription-txt", "summary-md"),
+        ),
+        (
+            ("summary-docx",),
+            ("transcription-txt",),
+            ("transcription-txt", "summary-docx"),
+        ),
+        (
+            ("transcription-md", "summary-md"),
+            ("transcription-txt", "summary-docx"),
+            ("transcription-md", "summary-md"),
+        ),
+    ],
+)
+def test_check_formats_replace_the_stored_ones(
+    override: tuple[str, ...] | None,
+    stored: tuple[str, ...],
+    expected: tuple[str, ...],
+) -> None:
+    assert check_formats(override, stored) == expected
+
+
+def test_files_select_items_by_exact_name() -> None:
+    spec = parse(["--input", "scans", "--files", "a.pdf,b"])
+    assert spec.input.files == ("a.pdf", "b")
+    assert not spec.input.all
+    with pytest.raises(SystemExit):
+        parse(["--input", "scans", "--files", "a.pdf", "--all"])

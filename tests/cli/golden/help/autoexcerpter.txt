@@ -11,6 +11,6 @@ commands:
     batch     check or cancel batch submissions
     render    render stored documents again without model calls
     migrate   import the outputs of version 1.0 into the store
-    ui        guided run in an interactive terminal
+    ui        guided session in an interactive terminal
 
 Run 'autoexcerpter <command> --help' for the options of a command.

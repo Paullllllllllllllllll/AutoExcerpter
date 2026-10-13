@@ -13,6 +13,10 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from autoexcerpter.common.request_options import openai_prompt_cache
+from autoexcerpter.common.settings_schema import PromptCaching
+from autoexcerpter.llm.capabilities import detect_capabilities
+
 if TYPE_CHECKING:
     from langchain_core.messages import SystemMessage
 
@@ -22,6 +26,8 @@ __all__ = [
     "PROMPTS_DIR",
     "RESOURCES_DIR",
     "SCHEMAS_DIR",
+    "cache_breakpoint",
+    "openai_cache_options",
     "render_prompt_with_schema",
     "strip_markdown_code_block",
     "system_message",
@@ -52,19 +58,71 @@ def strip_markdown_code_block(text: str) -> str:
     return stripped.strip()
 
 
-def system_message(prompt: str, provider: str) -> SystemMessage:
+def cache_breakpoint(
+    provider: str, model_name: str, caching: PromptCaching | None = None
+) -> dict[str, Any] | None:
+    """Return the ``cache_control`` of a system prompt, or None for none.
+
+    With prompt caching on (*caching*, by default the code values), an
+    Anthropic system prompt carries a breakpoint with the configured TTL,
+    and so does a Claude model's through OpenRouter when
+    ``openrouter_cache_control`` is set.
+    """
+    caching = caching if caching is not None else PromptCaching()
+    if not caching.enabled:
+        return None
+    if provider == "anthropic":
+        control: dict[str, Any] = {"type": "ephemeral"}
+        if caching.anthropic_ttl == "1h":
+            control["ttl"] = "1h"
+        return control
+    name = model_name.lower()
+    if (
+        provider == "openrouter"
+        and caching.openrouter_cache_control
+        and ("claude" in name or "anthropic/" in name)
+    ):
+        return {"type": "ephemeral"}
+    return None
+
+
+def openai_cache_options(
+    provider: str, model_name: str, caching: PromptCaching | None = None
+) -> dict[str, Any]:
+    """Return the prompt-cache parameter of an OpenAI request, if any.
+
+    Sent only with prompt caching on and a configured
+    ``prompt_cache_retention``, in the form the model documents
+    (:func:`~autoexcerpter.common.request_options.openai_prompt_cache`).
+    """
+    caching = caching if caching is not None else PromptCaching()
+    if provider != "openai" or not caching.enabled:
+        return {}
+    return openai_prompt_cache(
+        detect_capabilities(model_name), caching.openai_retention
+    )
+
+
+def system_message(
+    prompt: str,
+    provider: str,
+    model_name: str = "",
+    caching: PromptCaching | None = None,
+) -> SystemMessage:
     """Return the system message of a request.
 
-    For Anthropic the prompt is one text block with a cache breakpoint, so
-    the system prompt and its schema, identical across a phase's pages, are
-    read from the prompt cache after the first request.
+    With a cache breakpoint (:func:`cache_breakpoint`) the prompt is one text
+    block that carries it, so the system prompt and its schema, identical
+    across a phase's pages, are read from the prompt cache after the first
+    request.
     """
     # Imported on first use, so that commands without model calls (render,
     # migrate) do not load LangChain at startup.
     from langchain_core.messages import SystemMessage
 
-    if provider == "anthropic":
-        block = {"type": "text", "text": prompt, "cache_control": {"type": "ephemeral"}}
+    control = cache_breakpoint(provider, model_name, caching)
+    if control is not None:
+        block = {"type": "text", "text": prompt, "cache_control": control}
         return SystemMessage(content=[block])
     return SystemMessage(content=prompt)
 

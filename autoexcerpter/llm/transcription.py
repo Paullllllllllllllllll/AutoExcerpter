@@ -34,6 +34,7 @@ from autoexcerpter.llm.options import build_invoke_kwargs, response_format_for
 from autoexcerpter.llm.prompts import (
     PROMPTS_DIR,
     SCHEMAS_DIR,
+    openai_cache_options,
     render_prompt_with_schema,
     strip_markdown_code_block,
     system_message,
@@ -209,9 +210,13 @@ class TranscriptionManager:
                 phase.name,
             )
         self.schema, self.system_prompt = transcription_prompt(self.plain_text)
-        self.invoke_kwargs = build_invoke_kwargs(
-            self.provider, phase.name, phase.options, phase.service_tier
-        )
+        self.caching = env.settings.prompt_caching
+        self.invoke_kwargs = {
+            **build_invoke_kwargs(
+                self.provider, phase.name, phase.options, phase.service_tier
+            ),
+            **openai_cache_options(self.provider, phase.name, self.caching),
+        }
 
     @property
     def plain_text(self) -> bool:
@@ -239,7 +244,9 @@ class TranscriptionManager:
                 image_url["detail"] = detail
             block = {"type": "image_url", "image_url": image_url}
         return [
-            system_message(self.system_prompt, self.provider),
+            system_message(
+                self.system_prompt, self.provider, self.model_name, self.caching
+            ),
             HumanMessage(content=[block]),
         ]
 

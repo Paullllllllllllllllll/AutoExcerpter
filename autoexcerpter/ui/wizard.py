@@ -1,11 +1,12 @@
 """AutoExcerpter's wizard: the steps of a guided run on the shared framework.
 
-Steps in order: input and item selection, output, summary, formats,
-context, transcription model, summary model, images and run options, then
-the extension steps and the review. Each :class:`Step` names the options it
-may set. Answers act like command-line flags over the settings defaults; a
-reset to an unset code default is offered only where no settings default
-applies, since the equivalent command could not express it.
+Steps in order, after the task: input and item selection, output and
+transcription format, summary and summary formats, transcription model,
+summary model, context, page images and run options (submission, flags,
+concurrency), then the extension steps and the review. Each :class:`Step`
+names the options it may set. Answers act like command-line flags over the
+settings defaults; a reset to an unset code default is offered only where no
+settings default applies, since the equivalent command could not express it.
 """
 
 from __future__ import annotations
@@ -32,19 +33,22 @@ from autoexcerpter.common.wizard import (
     Wizard,
 )
 from autoexcerpter.providers import implied_provider, split_provider_prefix
+from autoexcerpter.settings import SettingsError
 from autoexcerpter.spec import (
     CONTEXT_NONE,
     IMAGE_DETAILS,
     IMAGE_FORMATS,
     OPTIONS,
-    OUTPUT_FORMATS,
     REASONING_EFFORTS,
     SERVICE_TIERS,
+    SUMMARY_FORMATS,
     VERBOSITIES,
     ImageSpec,
     ModelSpec,
     model_suggestions,
     recommended_images,
+    transcription_format_of,
+    with_transcription_format,
 )
 from autoexcerpter.ui.review import (
     IMAGE_OPTIONS,
@@ -65,6 +69,7 @@ from autoexcerpter.ui.session import (
     inventory_of,
     new_state,
     plural,
+    resolution,
     selection_of,
     source_of,
     support_of,
@@ -78,6 +83,7 @@ __all__ = [
     "STEP_NAMES",
     "TASK",
     "TITLE",
+    "batch_available",
     "batch_capable",
     "build_steps",
     "build_wizard",
@@ -112,7 +118,6 @@ RUN_FLAGS: Final = (
     "openalex",
     "force",
     "retranscribe",
-    "batch",
     "dry_run",
 )
 
@@ -124,10 +129,9 @@ STEP_NAMES: Final = (
     "input",
     "output",
     "summary",
-    "formats",
-    "context",
     "transcription_model",
     "summary_model",
+    "context",
     "images",
     "run",
 )
@@ -314,7 +318,28 @@ def _folder(text: str) -> str | None:
     return None
 
 
-def _ask_output(ctx: StepContext) -> Nav:
+def _current_formats(state: State, session: Session) -> tuple[str, ...]:
+    """Return the formats the answers resolve to, one transcription format
+    included (the deprecated settings key applied)."""
+    try:
+        return resolution(state, session).spec.output.formats
+    except ValueError:
+        return with_transcription_format(state.value("formats") or (), None)
+
+
+def _set_formats(state: State, session: Session, value: tuple[str, ...]) -> None:
+    """Answer the formats with *value*, unless the answers without one give it.
+
+    The comparison uses the resolved formats, which always name one
+    transcription format, so a settings default without one keeps its
+    source when the answer only spells it out.
+    """
+    state.clear("formats")
+    if value != _current_formats(state, session):
+        state.set("formats", value)
+
+
+def _ask_output(ctx: StepContext, session: Session) -> Nav:
     state = ctx.state
     chosen: dict[str, str] = {}
 
@@ -357,18 +382,23 @@ def _ask_output(ctx: StepContext) -> Nav:
         state.set("output", absolute(answer))
         return DONE
 
-    return StepContext.sequence([where, folder])
+    def transcription_format() -> Nav:
+        current = _current_formats(state, session)
+        answer = ctx.prompter.select(
+            "Transcription file format:",
+            [
+                Choice("md", "Markdown (X_transcription.md)"),
+                Choice("txt", "Plain text (X_transcription.txt)"),
+            ],
+            default=transcription_format_of(current) or "md",
+            marker=state.marker("formats"),
+        )
+        if answer is BACK:
+            return BACK
+        _set_formats(state, session, with_transcription_format(current, answer))
+        return DONE
 
-
-def _ask_summary(ctx: StepContext) -> Nav:
-    return ctx.select_option(
-        "summarize",
-        "Summarize after transcribing?",
-        [
-            Choice(True, "Yes, transcribe and summarize"),
-            Choice(False, "No, transcribe only"),
-        ],
-    )
+    return StepContext.sequence([where, folder, transcription_format])
 
 
 _FORMAT_TITLES = {
@@ -377,26 +407,29 @@ _FORMAT_TITLES = {
 }
 
 
-def _ask_formats(ctx: StepContext) -> Nav:
+def _ask_summary(ctx: StepContext, session: Session) -> Nav:
     state = ctx.state
 
-    def transcription_format() -> Nav:
+    def summarize() -> Nav:
         return ctx.select_option(
-            "transcription_format",
-            "Transcription file format:",
-            [Choice("md", "Markdown (.md)"), Choice("txt", "Plain text (.txt)")],
+            "summarize",
+            "Summarize after transcribing?",
+            [
+                Choice(True, "Yes, transcribe and summarize"),
+                Choice(False, "No, transcribe only"),
+            ],
         )
 
-    def formats() -> Nav:
+    def formats() -> Nav | None:
         if not state.value("summarize"):
-            return DONE
-        offered = [Choice(name, _FORMAT_TITLES[name]) for name in OUTPUT_FORMATS]
-        current = tuple(state.value("formats") or ())
+            return None
+        offered = [Choice(name, _FORMAT_TITLES[name]) for name in SUMMARY_FORMATS]
+        current = _current_formats(state, session)
         while True:
             answer = ctx.prompter.checkbox(
                 "Summary formats:",
                 offered,
-                checked=current,
+                checked=[name for name in current if name in SUMMARY_FORMATS],
                 marker=state.marker("formats"),
             )
             if answer is BACK:
@@ -406,10 +439,13 @@ def _ask_formats(ctx: StepContext) -> Nav:
                     "  summaries need summary-md or summary-docx; select at least one"
                 )
                 continue
-            state.set("formats", OPTIONS["formats"].convert(list(answer)))
+            chosen = [name for name in current if name not in SUMMARY_FORMATS] + list(
+                answer
+            )
+            _set_formats(state, session, with_transcription_format(chosen, None))
             return DONE
 
-    return StepContext.sequence([transcription_format, formats])
+    return StepContext.sequence([summarize, formats])
 
 
 _CONTEXT_CHOICES = (
@@ -947,6 +983,11 @@ def _images_note(state: State, recommended: ImageSpec) -> str:
     )
 
 
+_NO_ORIGINAL_FAMILIES = frozenset({"anthropic", "google"})
+"""Model families whose pages take no ``original`` detail: their detail
+selects the local resize profile or media resolution, which have none."""
+
+
 class _ImageQuestions:
     """The questions of the images step: recommended or customized values."""
 
@@ -1018,9 +1059,12 @@ class _ImageQuestions:
     def detail(self) -> Nav | None:
         if not self._customizing():
             return None
+        details: tuple[str, ...] = IMAGE_DETAILS
+        if self._family() in _NO_ORIGINAL_FAMILIES:
+            details = tuple(value for value in details if value != "original")
         choices = [
             *self._reset_choice("image_detail", str(self._recommended().detail)),
-            *(Choice(value, value) for value in IMAGE_DETAILS),
+            *(Choice(value, value) for value in details),
         ]
         return self.ctx.select_option("image_detail", "Image detail:", choices)
 
@@ -1064,14 +1108,13 @@ def _images_step(session: Session) -> Step:
     def ask(ctx: StepContext) -> Nav:
         return StepContext.sequence(_ImageQuestions(ctx, session).questions())
 
-    return Step("images", "Images", ask=ask, sets=IMAGE_OPTIONS)
+    return Step("images", "Page images", ask=ask, sets=IMAGE_OPTIONS)
 
 
 _RUN_FLAG_TITLES = {
     "openalex": "Look up citations in OpenAlex",
     "force": "Reprocess items whose outputs exist (--force)",
     "retranscribe": "Transcribe again instead of reusing stored pages",
-    "batch": "Submit to the providers' batch APIs (--batch)",
     "dry_run": "Dry run: show the plan, no API calls or writes",
 }
 
@@ -1088,11 +1131,29 @@ def batch_capable(state: State, session: Session) -> bool:
     return True
 
 
+def batch_available(state: State, session: Session) -> bool:
+    """Whether the answers may submit to the batch APIs.
+
+    Every phase needs a provider with a batch API, and the extension must
+    allow batch submission (``ext.batch_allowed``); a refusal it raises
+    counts as not allowed.
+    """
+    if not batch_capable(state, session):
+        return False
+    try:
+        spec = resolution(state, session).spec
+        return ext.batch_allowed(spec, settings=session.settings, args=session.args)
+    except (ValueError, SettingsError):
+        return False
+
+
 def _run_step(session: Session) -> Step:
     def ask(ctx: StepContext) -> Nav:
         return _ask_run(ctx, session)
 
-    return Step("run", "Run options", ask=ask, sets=(*RUN_FLAGS, "concurrency"))
+    return Step(
+        "run", "Run options", ask=ask, sets=("batch", *RUN_FLAGS, "concurrency")
+    )
 
 
 def _ask_run(ctx: StepContext, session: Session) -> Nav:
@@ -1101,9 +1162,20 @@ def _ask_run(ctx: StepContext, session: Session) -> Nav:
     def shown(name: str) -> bool:
         if name == "openalex":
             return bool(state.value("summarize"))
-        if name == "batch":
-            return batch_capable(state, session)
         return True
+
+    def submission() -> Nav | None:
+        if not batch_available(state, session):
+            state.set("batch", False)
+            return None
+        return ctx.select_option(
+            "batch",
+            "Submission:",
+            [
+                Choice(False, "Synchronous", "results now"),
+                Choice(True, "Batch API", "collected later with batch check"),
+            ],
+        )
 
     def flags() -> Nav:
         names = [name for name in RUN_FLAGS if shown(name)]
@@ -1121,24 +1193,32 @@ def _ask_run(ctx: StepContext, session: Session) -> Nav:
             state.set(name, name in answer)
         return DONE
 
-    def concurrency() -> Nav:
-        return ctx.text_option("concurrency", "Parallel page requests:")
+    def concurrency() -> Nav | None:
+        if state.value("batch"):
+            return None
+        return ctx.text_option("concurrency", "Parallel requests:")
 
-    return StepContext.sequence([flags, concurrency])
+    return StepContext.sequence([submission, flags, concurrency])
 
 
 def build_steps(session: Session) -> list[Step]:
-    """Return the tool's steps in order, extension steps excluded."""
+    """Return the tool's steps in order, task and extension steps excluded."""
     return [
         Step("input", "Input", ask=_ask_input, sets=("input", "select", "all")),
-        Step("output", "Output", ask=_ask_output, sets=("output", "beside_input")),
-        Step("summary", "Summary", ask=_ask_summary, sets=("summarize",)),
         Step(
-            "formats",
-            "Formats",
-            ask=_ask_formats,
-            sets=("transcription_format", "formats"),
+            "output",
+            "Output and formats",
+            ask=lambda ctx: _ask_output(ctx, session),
+            sets=("output", "beside_input", "formats"),
         ),
+        Step(
+            "summary",
+            "Summary",
+            ask=lambda ctx: _ask_summary(ctx, session),
+            sets=("summarize", "formats"),
+        ),
+        _transcription_model_step(session),
+        _summary_model_step(session),
         Step(
             "context",
             "Context",
@@ -1146,8 +1226,6 @@ def build_steps(session: Session) -> list[Step]:
             sets=("context", "fallback_context"),
             applies=_summarizing,
         ),
-        _transcription_model_step(session),
-        _summary_model_step(session),
         _images_step(session),
         _run_step(session),
     ]

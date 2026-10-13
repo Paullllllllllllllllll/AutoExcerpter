@@ -1,9 +1,11 @@
 """The run subcommand: plan and run, report on stderr, summarize on stdout.
 
 Exit codes: 0 when every item completed or, under ``--batch``, was
-submitted, 1 when an item failed or no item could be processed, 2 for usage
-and configuration errors, 130 on Ctrl+C.
-With ``--json`` exactly one JSON summary line goes to stdout on every exit.
+submitted, 1 when an item failed, 2 for usage and configuration errors (an
+input without items and a selection that matches nothing included), 130 on
+Ctrl+C. With ``--json`` exactly one JSON summary line goes to stdout on every
+exit. The deprecated ``--transcription-format`` is passed on to the spec with
+a warning.
 """
 
 from __future__ import annotations
@@ -32,10 +34,17 @@ from autoexcerpter.common.options import Condition, Option
 from autoexcerpter.common.usage import Usage, UsageTotals
 from autoexcerpter.llm import collect_usage
 from autoexcerpter.settings import SettingsError, SpecError, load, resolve
-from autoexcerpter.spec import OPTIONS, RunSpec, effective_spec
+from autoexcerpter.spec import (
+    OPTIONS,
+    TRANSCRIPTION_FORMAT_ALIAS,
+    RunSpec,
+    effective_spec,
+)
 
 __all__ = [
+    "TRANSCRIPTION_FORMAT_DEPRECATION",
     "condition_warnings",
+    "dry_run_fields",
     "execute",
     "plan_fields",
     "report_usage_error",
@@ -43,6 +52,11 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
+
+TRANSCRIPTION_FORMAT_DEPRECATION = (
+    "--transcription-format is deprecated and will be removed in version 4; "
+    "use --formats with transcription-{alias} instead."
+)
 
 
 def summary_fields(
@@ -73,10 +87,13 @@ def summary_fields(
 
 
 def plan_fields(run_plan: core.RunPlan) -> dict[str, Any]:
-    """Return the fields of the JSON summary of a dry run.
+    """Return the fields a dry run adds to the counts of the run summary.
 
-    ``skipped`` names the items left alone (complete, legacy and blocked);
-    ``spec`` holds the effective value and source of every run option.
+    ``to_process`` holds the items to process with their resume state and
+    reused pages; ``skipped`` names the items left alone (complete, legacy
+    and blocked); ``legacy``, ``blocked`` and ``refused`` list those items
+    with the reason. ``spec`` holds the effective value and source of every
+    run option.
     """
     return {
         "to_process": [
@@ -88,8 +105,23 @@ def plan_fields(run_plan: core.RunPlan) -> dict[str, Any]:
             for item in run_plan.to_process
         ],
         "skipped": [item.name for item in run_plan.not_processed],
+        "legacy": _reasons(run_plan.legacy),
+        "blocked": _reasons(run_plan.blocked),
+        "refused": _reasons(run_plan.refused),
         "spec": run_plan.effective_spec(),
     }
+
+
+def dry_run_fields(run_plan: core.RunPlan) -> dict[str, Any]:
+    """Return the JSON summary of a dry run: the counts and the plan."""
+    counts = summary_fields(
+        total=len(run_plan.to_process), skipped=len(run_plan.not_processed)
+    )
+    return {**counts, **plan_fields(run_plan)}
+
+
+def _reasons(items: Sequence[core.PlannedItem]) -> list[dict[str, str]]:
+    return [{"name": item.name, "reason": item.reason} for item in items]
 
 
 def condition_warnings(
@@ -163,6 +195,7 @@ def _execute(
 ) -> int:
     try:
         settings = load(flags.get("settings"), blocks=ext.settings_blocks())
+        configure_logging(log_file=settings.log_file())
         resolution = resolve(settings, flags)
     except (SettingsError, SpecError) as exc:
         reporter.error(str(exc))
@@ -191,7 +224,7 @@ def _execute(
         return ExitCode.USAGE
     if run_plan.dry_run:
         reporter.dry_run(run_plan)
-        emitter.emit(plan_fields(run_plan))
+        emitter.emit(dry_run_fields(run_plan))
         return ExitCode.OK
 
     events, progress = with_heartbeat(reporter)
@@ -233,6 +266,10 @@ def execute(args: argparse.Namespace) -> int:
         dry_run=bool(flags.get("dry_run")),
     )
     reporter = StderrReporter()
+    alias = getattr(args, TRANSCRIPTION_FORMAT_ALIAS, None)
+    if alias is not None:
+        flags[TRANSCRIPTION_FORMAT_ALIAS] = alias
+        reporter.warning(TRANSCRIPTION_FORMAT_DEPRECATION.format(alias=alias))
     with collect_usage() as spent:
         try:
             return int(_execute(args, flags, emitter, reporter))

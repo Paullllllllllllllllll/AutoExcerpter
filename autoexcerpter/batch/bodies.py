@@ -33,6 +33,7 @@ from typing import Any, Final
 
 from autoexcerpter.common.batch import BatchRequest, supports_batch
 from autoexcerpter.common.request_options import batch_service_tier
+from autoexcerpter.common.settings_schema import PromptCaching
 from autoexcerpter.common.structured import (
     ResponseFormat,
     anthropic_output_schema,
@@ -42,6 +43,7 @@ from autoexcerpter.common.structured import (
 )
 from autoexcerpter.llm.image_detail import resolve_request_detail
 from autoexcerpter.llm.options import build_invoke_kwargs, response_format_for
+from autoexcerpter.llm.prompts import cache_breakpoint, openai_cache_options
 from autoexcerpter.llm.summary import summary_prompt, summary_request_format
 from autoexcerpter.llm.transcription import transcription_prompt
 from autoexcerpter.llm.types import PhaseModel
@@ -69,7 +71,9 @@ class BodyPlan:
     *response_format* is the phase's format; *schema* is the schema spec
     the provider enforces, None under prompted JSON and plain text. *kwargs*
     are the request kwargs of the synchronous call; *detail* the OpenAI
-    image detail of a transcription.
+    image detail of a transcription. *cache_control* is the Anthropic
+    system prompt's cache breakpoint (None: none); *prompt_cache* the
+    OpenAI prompt-cache parameter, as the synchronous call sends them.
     """
 
     role: str
@@ -80,6 +84,10 @@ class BodyPlan:
     schema: Mapping[str, Any] | None = None
     kwargs: Mapping[str, Any] = field(default_factory=dict)
     detail: str | None = None
+    cache_control: Mapping[str, Any] | None = field(
+        default_factory=lambda: {"type": "ephemeral"}
+    )
+    prompt_cache: Mapping[str, Any] = field(default_factory=dict)
 
     def body(self, request: BatchRequest) -> dict[str, Any]:
         """Return the provider-native body of *request*.
@@ -134,6 +142,7 @@ class BodyPlan:
         if text:
             body["text"] = text
         body.update(self._samplers())
+        body.update(self.prompt_cache)
         return body
 
     def _anthropic(self, request: BatchRequest) -> dict[str, Any]:
@@ -152,16 +161,13 @@ class BodyPlan:
         else:
             content = request.text
         kwargs = self.kwargs
+        system: dict[str, Any] = {"type": "text", "text": self.system_prompt}
+        if self.cache_control is not None:
+            system["cache_control"] = dict(self.cache_control)
         params: dict[str, Any] = {
             "model": self.model,
             "max_tokens": kwargs.get("max_tokens", _ANTHROPIC_FALLBACK_LIMIT),
-            "system": [
-                {
-                    "type": "text",
-                    "text": self.system_prompt,
-                    "cache_control": {"type": "ephemeral"},
-                }
-            ],
+            "system": [system],
             "messages": [{"role": "user", "content": content}],
         }
         if "thinking" in kwargs:
@@ -231,12 +237,14 @@ def build_plan(
     *,
     context: str | None = None,
     transcription_format: str = "schema",
+    caching: PromptCaching | None = None,
 ) -> BodyPlan:
     """Return the body plan of *phase*'s requests in *role*.
 
     *role* is ``transcription`` or ``summary``. A summary's prompt carries
     *context*, and *transcription_format* (the transcription's response
-    format) selects its plain-text variant.
+    format) selects its plain-text variant. *caching* is the prompt-caching
+    setting (by default the code values).
 
     Raises:
         ValueError: The provider has no batch API, or *role* is unknown.
@@ -270,4 +278,6 @@ def build_plan(
         schema=_enforced(provider, request_format, schema, kwargs),
         kwargs=kwargs,
         detail=detail,
+        cache_control=cache_breakpoint(provider, phase.name, caching),
+        prompt_cache=openai_cache_options(provider, phase.name, caching),
     )

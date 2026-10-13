@@ -42,7 +42,13 @@ from autoexcerpter.llm.capabilities import detect_capabilities
 from autoexcerpter.llm.options import build_invoke_kwargs
 from autoexcerpter.pipeline.types import ItemSpec
 from autoexcerpter.settings import Settings, SettingsError, resolve
-from autoexcerpter.spec import OPTIONS, ModelSpec, Resolution
+from autoexcerpter.spec import (
+    EXTENSION_COMMANDS,
+    OPTIONS,
+    ModelSpec,
+    Resolution,
+    fold_transcription_format,
+)
 
 if TYPE_CHECKING:
     from rich.console import Console
@@ -87,7 +93,7 @@ TASKS: Mapping[str, str] = MappingProxyType(
         "batch-check": "check batches",
         "batch-cancel": "cancel batches",
         "render": "render files again",
-        "migrate": "import version 1.0 outputs (migrate)",
+        "migrate": "import earlier outputs (migrate)",
     }
 )
 """The wizard tasks in menu order, by name, with their titles."""
@@ -110,18 +116,35 @@ class Session:
 
 
 def new_state(session: Session, table: OptionTable = OPTIONS) -> State:
-    """Return an empty answer state over *table* and its settings defaults."""
+    """Return an empty answer state over *table* and its settings defaults.
+
+    The deprecated transcription format of the settings joins the
+    ``formats`` default (:func:`~autoexcerpter.spec.fold_transcription_format`).
+    """
     defaults = {
         name: value
-        for name, value in session.settings.defaults.items()
+        for name, value in fold_transcription_format(session.settings.defaults).items()
         if name in table and table[name].settable
     }
     return State(table, defaults)
 
 
+def unquote(text: str) -> str:
+    """Strip whitespace and one pair of surrounding quotes, as Explorer's
+    "Copy as path" adds them."""
+    text = text.strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in "\"'":
+        return text[1:-1].strip()
+    return text
+
+
 def absolute(path: Path | str) -> Path:
-    """Expand ``~`` and make *path* absolute against the current directory."""
-    return Path(os.path.abspath(os.path.expanduser(str(path).strip())))
+    """Expand ``~`` and make *path* absolute against the current directory.
+
+    A typed path loses one pair of surrounding quotes (:func:`unquote`).
+    """
+    text = unquote(path) if isinstance(path, str) else str(path)
+    return Path(os.path.abspath(os.path.expanduser(text)))
 
 
 def command_words(
@@ -130,14 +153,18 @@ def command_words(
     session: Session,
     table: OptionTable,
 ) -> list[str]:
-    """Return the full command: *program*, *argv* and the settings file.
+    """Return the full command: *program*, *argv*, settings and extension words.
 
     ``--settings`` is added when the ui was started with one and *table*
-    has the option.
+    has the option. The extension's options given to the ui follow
+    (:func:`autoexcerpter.ext.extra_argv`) when the command takes them
+    (:data:`autoexcerpter.spec.EXTENSION_COMMANDS`).
     """
     words = [*program, *argv]
     if session.settings_path is not None and "settings" in table:
         words += ["--settings", str(absolute(session.settings_path))]
+    if tuple(program[1:]) in EXTENSION_COMMANDS:
+        words += ext.extra_argv(session.args)
     return words
 
 

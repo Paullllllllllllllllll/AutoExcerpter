@@ -1,7 +1,9 @@
 usage: autoexcerpter ui [-h] [--settings FILE]
 
-Guided run: walks through input, outputs, models and image settings, shows a review screen with
-the equivalent command, then runs. Needs an interactive terminal.
+Guided session in an interactive terminal. The first step chooses the task: a new run, checking or
+cancelling batches, rendering stored documents again, or importing earlier outputs (migrate). Each
+task asks its options one step at a time, shows a review screen with the equivalent command, then
+runs it. Exit codes are those of the chosen task's command.
 
 options:
   -h, --help       show this help message and exit

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -25,7 +25,12 @@ from autoexcerpter.output.store import BatchJob, read_batch_jobs
 from autoexcerpter.pipeline.job import ItemJob, job_from_spec
 from autoexcerpter.rendering.citations import OpenAlexClient
 from autoexcerpter.settings import Settings, SettingsError
-from autoexcerpter.spec import RunSpec, SpecError, spec_from_effective
+from autoexcerpter.spec import (
+    RunSpec,
+    SpecError,
+    check_formats,
+    spec_from_effective,
+)
 
 __all__ = ["DocumentJob", "load_jobs"]
 
@@ -74,12 +79,16 @@ def _stored_spec(store: Store, run_id: str) -> Mapping[str, Any] | None:
     return raw if isinstance(raw, Mapping) else None
 
 
-def load_jobs(store: Store, settings: Settings) -> dict[int, DocumentJob]:
+def load_jobs(
+    store: Store, settings: Settings, *, formats: Sequence[str] | None = None
+) -> dict[int, DocumentJob]:
     """Return the batch jobs of *store* by document id.
 
     A job whose run spec is missing or cannot be rebuilt is left out with a
     warning; its document waits for a ``run``. The jobs share one OpenAlex
     client, as the items of a run do, so its cache is written by one owner.
+    *formats* (``batch check --formats``) replaces the formats of each
+    stored spec (:func:`~autoexcerpter.spec.check_formats`).
     """
     rows = read(store.path, read_batch_jobs)
     jobs: dict[int, DocumentJob] = {}
@@ -96,6 +105,11 @@ def load_jobs(store: Store, settings: Settings) -> dict[int, DocumentJob]:
             continue
         try:
             spec = spec_from_effective(stored)
+            if formats is not None:
+                output = replace(
+                    spec.output, formats=check_formats(formats, spec.output.formats)
+                )
+                spec = replace(spec, output=output)
             job = job_from_spec(spec, settings)
         except (SpecError, SettingsError) as exc:
             logger.warning(

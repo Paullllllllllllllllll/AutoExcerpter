@@ -173,11 +173,11 @@ def test_directory_several_items_without_selection_exits_2(
     )
 
     _assert_controlled_exit(result, 2)
-    assert "neither --all nor --select" in result.stderr
+    assert "none of --all, --select and --files" in result.stderr
     golden(_case("exit_several_items_without_selection"), result)
 
 
-def test_directory_select_matching_nothing_exits_1(
+def test_directory_select_matching_nothing_exits_2(
     tmp_path: Path, fake_llm: FakeLLM, golden: Golden
 ) -> None:
     tree = _input_root(tmp_path) / "tree"
@@ -192,12 +192,12 @@ def test_directory_select_matching_nothing_exits_1(
         selection="gamma",
     )
 
-    _assert_controlled_exit(result, 1)
+    _assert_controlled_exit(result, 2)
     assert "No items found matching 'gamma'" in result.stderr
     golden(_case("exit_select_matching_nothing"), result)
 
 
-def test_directory_empty_exits_1(
+def test_directory_empty_exits_2(
     tmp_path: Path, fake_llm: FakeLLM, golden: Golden
 ) -> None:
     empty = _input_root(tmp_path) / "empty"
@@ -205,7 +205,7 @@ def test_directory_empty_exits_1(
 
     result = run_tool(empty, llm=fake_llm, root=tmp_path, output_dir=tmp_path / "out")
 
-    _assert_controlled_exit(result, 1)
+    _assert_controlled_exit(result, 2)
     assert result.summary is not None
     assert result.summary["items_total"] == 0
     assert "No items found to process" in result.stderr

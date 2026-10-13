@@ -1,4 +1,4 @@
-# AutoExcerpter v2.5.2
+# AutoExcerpter v3.0.0
 
 AutoExcerpter transcribes PDFs and folders of page images with vision-language
 models, summarizes each page and builds a consolidated bibliography whose entries
@@ -33,21 +33,24 @@ image folder `X/`, a run writes `X_transcription.md`, `X_summary.md` and
 ## Installation
 
 AutoExcerpter needs Python 3.13 or later and [uv](https://docs.astral.sh/uv/).
-Install it from a clone, since the settings files are read from the repository's
+Install it from a clone, since the settings file is read from the repository's
 `config/` folder.
 
 ```bash
 git clone https://github.com/Paullllllllllllllllll/AutoExcerpter.git
 cd AutoExcerpter
 uv sync                      # development: uv sync --all-extras
-cp config/settings.example.yaml config/settings.yaml
+mkdir config
+cp autoexcerpter/resources/settings.example.yaml config/settings.yaml
 ```
 
-On Windows, copy the file with `copy config\settings.example.yaml
-config\settings.yaml`. Then set the API key of each provider you use as an
-environment variable. The settings name the variables (`api_keys:`); the defaults
-are `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY` and
-`OPENROUTER_API_KEY`. An OpenAlex key in `OPENALEX_API_KEY` is optional.
+On Windows, copy the file with `copy
+autoexcerpter\resources\settings.example.yaml config\settings.yaml`. Without a
+copy the tool runs on the packaged example ([Settings File](#settings-file)).
+Then set the API key of each provider you use as an environment variable. The
+settings name the variables (`api_keys:`); the defaults are `OPENAI_API_KEY`,
+`ANTHROPIC_API_KEY`, `GOOGLE_API_KEY` and `OPENROUTER_API_KEY`. An OpenAlex key
+in `OPENALEX_API_KEY` is optional.
 
 ```bash
 export OPENAI_API_KEY="sk-..."        # PowerShell: $env:OPENAI_API_KEY = "sk-..."
@@ -59,6 +62,7 @@ export OPENAI_API_KEY="sk-..."        # PowerShell: $env:OPENAI_API_KEY = "sk-..
 uv run autoexcerpter run --input paper.pdf           # outputs beside the input
 uv run autoexcerpter run --input scans --all --output excerpts
 uv run autoexcerpter run --input scans --select 1-3  # or a name: --select braudel
+uv run autoexcerpter run --input scans --files a.pdf,b.pdf --formats transcription-txt,summary-md
 uv run autoexcerpter run --input scans --all --dry-run --json
 uv run autoexcerpter ui                              # guided run
 uv run autoexcerpter run --input scans --all --output excerpts --batch
@@ -80,8 +84,8 @@ and default. They mirror the option table (`autoexcerpter/spec.py`), and
 `tests/cli/test_readme_options.py` checks them against it. Options without a
 stated default are off or unset until given. The last column says whether the
 settings `defaults:` block can set the option; its key there is the flag without
-the leading dashes, with underscores for hyphens (`--transcription-format` becomes
-`transcription_format`). `autoexcerpter ui` takes only `--settings FILE`;
+the leading dashes, with underscores for hyphens (`--fallback-context` becomes
+`fallback_context`). `autoexcerpter ui` takes only `--settings FILE`;
 `batch check` and `batch cancel` are described under
 [Batch Processing](#batch-processing), `render` and `migrate` under
 [Store](#store).
@@ -92,11 +96,15 @@ the leading dashes, with underscores for hyphens (`--transcription-format` becom
 | --- | --- | --- | --- |
 | `--input PATH` | PDF file, image folder, or folder of PDFs and image folders | | yes |
 | `--select EXPR` | select items by number (1,3), range (1-5) or name search | | yes |
+| `--files LIST` | comma-separated names of items inside the input folder | | no |
 | `--all` | process every discovered item | | yes |
 
-`--input` is required. A single discovered item needs neither `--select` nor
-`--all`; several items without either are a usage error. A name search matches
-part of a file or folder name, ignoring case.
+`--input` is required. A single discovered item needs none of `--all`, `--select`
+and `--files`; several items without one of them are a usage error (exit 2), and
+the three exclude each other. A name search matches part of a file or folder
+name, ignoring case. `--files` takes exact PDF or image folder names
+(`a.pdf,scans_1`) and fails with exit 2 when one names no discovered item, as
+does a `--select` that matches nothing.
 
 ### Output
 
@@ -104,11 +112,18 @@ part of a file or folder name, ignoring case.
 | --- | --- | --- | --- |
 | `--output DIR` | output folder | beside the input | yes |
 | `--beside-input` | write outputs beside each input | | no |
-| `--transcription-format {md,txt}` | transcription file format | md | yes |
-| `--formats LIST` | comma-separated output formats; from summary-md, summary-docx | summary-md,summary-docx | yes |
+| `--formats LIST` | comma-separated output formats, at most one transcription format (transcription-md when none is given); from transcription-md, transcription-txt, summary-md, summary-docx | transcription-md,summary-md,summary-docx | yes |
 
-The transcription file is always written. `--beside-input` overrides an `output`
-settings default.
+The transcription file is always written: a list without a transcription format
+writes `transcription-md`, and two transcription formats are a usage error.
+`--formats transcription-txt` writes only the plain-text transcription when
+summaries are off (`--no-summarize`); with summaries on, the list needs a summary
+format. `--beside-input` overrides an `output` settings default.
+
+Version 3.0 folds the former `--transcription-format {md,txt}` into `--formats`.
+The flag and the `defaults:` key `transcription_format` still work during
+version 3 with a deprecation warning: they set the transcription format of the
+formats list, and a flag wins over a settings default as usual.
 
 ### Summary
 
@@ -138,7 +153,7 @@ option, for example as `model` or `summary_verbosity`.
 | Setting | Values | Both phases | Transcription | Summary |
 | --- | --- | --- | --- | --- |
 | model provider | `{openai,anthropic,google,openrouter,custom}` | `--provider`: inferred from the model name | `--transcription-provider`: inferred from the model name | `--summary-provider`: inferred from the model name |
-| model name; a provider: prefix (anthropic:NAME) selects the provider | `NAME` | `--model`: per phase | `--transcription-model`: gpt-5.6-luna | `--summary-model`: gpt-5.6-luna |
+| model name; a provider: prefix (anthropic:NAME) selects the provider | `NAME` | `--model`: per phase | `--transcription-model`: gpt-6-luna | `--summary-model`: gpt-6-luna |
 | named custom endpoint from the settings (implies provider custom) | `NAME` | `--endpoint`: none | `--transcription-endpoint`: none | `--summary-endpoint`: none |
 | reasoning effort | `{none,minimal,low,medium,high,xhigh,max}` | `--reasoning-effort`: per phase | `--transcription-reasoning-effort`: high | `--summary-reasoning-effort`: high |
 | output verbosity | `{low,medium,high}` | `--verbosity`: per phase | `--transcription-verbosity`: high | `--summary-verbosity`: low |
@@ -164,7 +179,7 @@ option, for example as `model` or `summary_verbosity`.
 | --- | --- | --- | --- |
 | `--force` | reprocess items whose outputs exist (resume is the default) | | no |
 | `--retranscribe` | transcribe again instead of reusing stored transcriptions | | no |
-| `--concurrency N` | parallel page requests | 16 | yes |
+| `--concurrency N` | parallel requests | 16 | yes |
 | `--batch`, `--no-batch` | submit the pages and summaries to the providers' batch APIs | off | yes |
 | `--dry-run` | plan without API calls or writes | | no |
 | `--json` | print one JSON summary line on stdout | | no |
@@ -175,8 +190,8 @@ option, for example as `model` or `summary_verbosity`.
 | Code | Meaning |
 | --- | --- |
 | 0 | every item completed or, under `--batch`, was submitted, or nothing was left to do |
-| 1 | an item failed, or no item could be processed (no PDF or image folder found, `--select` matched nothing, a refused or unresolved batch submission, an unexpected error) |
-| 2 | usage or configuration error (invalid flags or settings, several items without `--all` or `--select`, two items with one output name in one folder, a stored document in the output folder that belongs to another input of the same name, summaries on without a summary format, an unset API key variable, a database the store refuses, `--batch` on a provider without a batch API) |
+| 1 | an item failed (a refused or unresolved batch submission and an unexpected error included) |
+| 2 | usage or configuration error (invalid flags or settings, an input without a PDF or image folder, several items without `--all`, `--select` or `--files`, a `--select` or `--files` that matches nothing, two items with one output name in one folder, a stored document in the output folder that belongs to another input of the same name, summaries on without a summary format, an unset API key variable in a real run, a database the store refuses, `--batch` on a provider without a batch API) |
 | 130 | interrupted (Ctrl+C) |
 
 Progress, warnings and errors go to stderr. With `--json`, stdout carries exactly
@@ -193,11 +208,15 @@ one JSON line on every exit, errors and interrupts included. Each line holds
 | `outputs` | absolute paths of the files written, item by item, then the databases |
 | `usage` | tokens per role (`transcription`, `summary`) and their sum under `total`, each with `input_tokens`, `output_tokens`, `total_tokens`, `cached_tokens` (input read from the provider's prompt cache) and `reasoning_tokens` |
 
-A dry run that plans successfully prints the plan instead: `to_process` lists each
-item's `name`, resume `state` and `completed_pages`; `skipped` lists the complete
-items; `spec` maps every field of the effective run specification, such as
-`transcription_model.model`, to its `value` and `source` (`flag`, `settings` or
-`default`). The plan has no `usage` field, since a dry run makes no calls.
+A dry run that plans successfully prints the same fields, with `items_total` the
+items it would process, `items_skipped` the items it would leave alone and a
+zero `usage`, and adds the plan: `to_process` lists each item's `name`, resume
+`state` and `completed_pages`; `skipped` names the items left alone (complete,
+legacy and blocked); `legacy`, `blocked` and `refused` list those items with
+their `name` and `reason`; `spec` maps every field of the effective run
+specification, such as `transcription_model.model`, to its `value` and `source`
+(`flag`, `settings` or `default`). A dry run needs no API key: each unset key
+variable the run would need is a warning on stderr, and the dry run exits 0.
 
 When the environment variable `CHRONO_HEARTBEAT_FILE` names a file, `run` and
 `batch check --wait` also write their progress there as one JSON object for a job
@@ -213,7 +232,7 @@ affecting the run.
 
 `autoexcerpter ui` first asks for the task: a new run, checking or cancelling
 batches (`batch check`, `batch cancel`), rendering the files of stored documents
-again (`render`) or importing version 1.0 outputs (`migrate`). A task chosen
+again (`render`) or importing earlier outputs (`migrate`). A task chosen
 there opens at its first step, and Back from it returns to the task question.
 The batch check task asks for the folder, the batch IDs and what to do with an
 unresolved submission, and makes one pass (`--wait` is a command-line option);
@@ -222,12 +241,18 @@ task asks for the input, the formats, whether to
 replace files changed outside the tool and whether to dry-run; the migrate task
 asks for the input and whether to dry-run, and its review shows what a dry run
 would import. The new run asks one step at a time: input (with the PDFs, image
-folders and pages found, and the item selection), output location, summary on or
-off, formats, summary context, transcription model, summary model, page images
-("Recommended" or "Customize") and run options, which offer `--batch` when every
-phase's provider has a batch API. Every list ends with Back; a text
-or path prompt takes `<` alone as Back. Settings defaults are preselected, and
-answers act like flags over them. The review screen marks values taken from
+folders and pages found, and the item selection), output location and
+transcription format, summary on or off with the summary formats, transcription
+model, summary model, summary context, page images ("Recommended" or
+"Customize"; Anthropic and Google models are not offered the OpenAI-only
+`original` detail) and run options. The run options start with a `Submission:`
+question, synchronous or Batch API, asked when every phase's provider has a batch
+API and the extension allows batch submission; the parallel requests are asked
+only for a synchronous run. Every list ends with Back; a text or path prompt
+takes `<` alone as Back. A typed path may be quoted: one pair of surrounding
+quotes is removed. A folder without a PDF or image folder asks for the path
+again. Settings defaults are preselected, and answers act like flags over them.
+The review screen marks values taken from
 settings defaults with `(s)`, previews the plan and prints the equivalent command:
 
 ```text
@@ -257,20 +282,23 @@ progress bars and ends with a summary table. Edit a step returns to one step;
 the answers of steps it turns off come back when they apply again. Copy command
 and quit prints the command on stdout and copies it to the clipboard where one is
 available. Quit exits. When items are already complete, the review offers to reprocess them
-(`--force`). Run is withheld while the plan fails or a needed API key variable is
-unset; the review names the variable. Under `--batch` the plan fails, and Run is
+(`--force`). Run is withheld while the plan fails or, unless the run is a dry run,
+a needed API key variable is unset; the review names each missing variable and
+the phase that needs it. Under `--batch` the plan fails, and Run is
 withheld, when a provider or the extension refuses batch submission. The UI needs
 an interactive terminal on
 stdin and stdout; anything else exits with code 2.
 
 ## Settings File
 
-AutoExcerpter reads `config/settings.yaml` (gitignored). When it is missing, the
-tool reads the tracked `config/settings.example.yaml` and logs one informational
-line that asks you to copy it. `--settings FILE` reads another file, which must
-exist. Every key is optional and keeps its code value when missing; unknown keys
-are an error that names the file and the key. The example file, with its
-`defaults:` block shown uncommented:
+AutoExcerpter reads `config/settings.yaml` in the repository (gitignored). When it
+is missing, the tool reads the packaged example
+`autoexcerpter/resources/settings.example.yaml` and logs one informational line
+that asks you to copy it; when neither exists, the code values apply.
+`--settings FILE` reads another file, which must exist. Every key is optional
+and keeps its code value when missing; unknown keys are an error that names the
+file and the key. The example file, with its `defaults:` block shown
+uncommented:
 
 ```yaml
 api_keys: {openai: OPENAI_API_KEY, anthropic: ANTHROPIC_API_KEY, google: GOOGLE_API_KEY, openrouter: OPENROUTER_API_KEY}
@@ -290,17 +318,23 @@ retry:
       transcription_not_possible: {enabled: true, max_attempts: 3, backoff_base: 0.1, backoff_multiplier: 1.5}
     summary:
       validation_failure: {enabled: true, max_attempts: 3, backoff_base: 0.5, backoff_multiplier: 1.5}
+concurrency: {delay_between_tasks: 0}   # seconds between two request starts
 state_dir: ''                       # '' means ~/.autoexcerpter
+logs_dir: ''                        # '' writes no log file
 openalex: {email: '', api_key_env: OPENALEX_API_KEY, max_requests: 300}
 images: {original_max_side_px: null}   # null keeps the model's default
+prompt_caching:
+  enabled: true
+  anthropic: {ttl: 5m}              # 5m or 1h
+  openai: {prompt_cache_retention: null}   # or 24h
+  openrouter: {anthropic_cache_control: true}
 defaults:
-  model: gpt-5.6-terra
+  model: gpt-6-luna
   reasoning_effort: high
   transcription_verbosity: high
   summary_verbosity: low
   service_tier: flex
-  transcription_format: md
-  formats: [summary-md, summary-docx]
+  formats: [transcription-md, summary-md, summary-docx]
   concurrency: 16
   batch: false
   fallback_context: path/to/summary_topics.txt
@@ -313,8 +347,13 @@ The rate limits hold per provider. A failed API call waits `backoff_base *
 multiplier^n` plus jitter, at most `backoff_cap` seconds, a server's
 `Retry-After` included. `schema_retries` covers retries driven by the model
 output: invalid JSON (`validation_failure`) or a flag the model sets on a page.
-`state_dir` and `openalex` are described under
-[Citations and OpenAlex](#citations-and-openalex), `images` under
+`concurrency.delay_between_tasks` spaces the starts of an item's page requests
+by that many seconds; `--concurrency` still bounds the requests in flight.
+`logs_dir` names a log folder, which receives `application.log`, or a file
+ending in `.log`; the log holds the informational lines as well, while the
+console shows warnings and errors only. `state_dir` and `openalex` are described
+under [Citations and OpenAlex](#citations-and-openalex), `images` and
+`prompt_caching` under
 [Providers and Response Formats](#providers-and-response-formats).
 
 The `defaults:` block holds run defaults keyed by option names. Unknown keys,
@@ -366,10 +405,16 @@ page text as Markdown (null for a page without text) and the two flags
 `no_transcribable_text` and `transcription_not_possible`; unreadable words become
 `[illegible]`, and the uncertain part of a partly legible word becomes `[?]`. The
 summary has a prompt variant for plain-text transcriptions, and the transcription
-in the `text` format uses a plain-text prompt without schema. For Anthropic
-models the system prompt carries a cache breakpoint, and an item's first page
-runs alone before the others start, so later pages read the prompt and schema
-from the prompt cache; `cached_tokens` counts these reads.
+in the `text` format uses a plain-text prompt without schema. Prompt caching is
+on by default (`prompt_caching.enabled`). For Anthropic models, and for Claude
+models through OpenRouter unless `openrouter.anthropic_cache_control` is false,
+the system prompt carries a cache breakpoint with `anthropic.ttl` (5 minutes or
+1 hour), and an item's first page runs alone before the others start, so later
+pages read the prompt and schema from the prompt cache; `cached_tokens` counts
+these reads. OpenAI caches long prompts without a breakpoint; a set
+`openai.prompt_cache_retention` (`24h`) also sends the retention parameter the
+model documents, which for GPT-5.6 and later models is a 30-minute
+`prompt_cache_options` TTL.
 
 Reasoning effort reaches OpenAI reasoning models as `reasoning.effort`. Claude
 models with adaptive thinking receive an effort level, other Claude reasoning
@@ -414,10 +459,10 @@ OpenAI); custom endpoints use the custom preset.
 
 | Family | `--dpi` | `--image-detail` | Format | JPEG quality | Grayscale | Base64 cap |
 | --- | --- | --- | --- | --- | --- | --- |
-| openai | native | original | jpeg | 95 | yes | 50 MB |
-| anthropic | native | auto | jpeg | 95 | yes | 10 MB |
-| google | 300 | high | jpeg | 95 | yes | 20 MB |
-| custom | 150 | high | jpeg | 85 | yes | none |
+| openai | native | original | jpeg | 95 | no | 50 MB |
+| anthropic | native | auto | jpeg | 95 | no | 10 MB |
+| google | 300 | high | jpeg | 95 | no | 20 MB |
+| custom | 150 | high | jpeg | 95 | no | none |
 
 `native` renders each PDF page at the density of its scan; pages without a
 page-spanning scan render at 300 DPI. Payloads are sized to the model's documented
@@ -434,7 +479,7 @@ For an input `X.pdf` or an image folder `X/`, written beside the input or into
 `--output`:
 
 ```text
-X_transcription.md       (X_transcription.txt with --transcription-format txt)
+X_transcription.md       transcription-md (X_transcription.txt: transcription-txt)
 X_summary.md             summary-md
 X_summary.docx           summary-docx
 autoexcerpter.sqlite     the store; one database per output folder, always written
@@ -537,10 +582,12 @@ Without `--formats` each document gets the formats it was rendered in before;
 `summary-docx`. A file that matches neither its recorded hash nor the new
 rendering was changed outside the tool and is left as it is unless `--force`; so
 is a file that changes while the render waits for the database.
-`--dry-run` reports what would be written. Exit codes: 0 when every file holds
+`--dry-run` reports what would be written. `--settings FILE` names the settings
+file, whose `logs_dir` receives the log. Exit codes: 0 when every file holds
 its rendering or was left as edited, 1 when a file could not be replaced or
-another run holds a document, 2 for a usage error or a refused database; a
-database written before the store names the migrate command.
+another run holds a document, 2 for a usage error, a missing or invalid settings
+file or a refused database; a database written before the store names the
+migrate command.
 
 ### Migrate
 
@@ -578,13 +625,16 @@ carries one summary line with `databases`, `converted`, `documents`, `units`,
 
 Without `--batch`, every page is a direct request. A folder run processes the
 selected items one after another, with up to `--concurrency` pages of an item
-(default 16) in flight at once. The rate limits apply per provider across the run.
+(default 16) in flight at once, their starts spaced by
+`concurrency.delay_between_tasks`. The rate limits apply per provider across the
+run.
 A failed item is counted, and the run continues.
 
 `run --batch` sends the same requests to the batch APIs of OpenAI, Anthropic and
 Google instead, which cost about half as much and finish within a day. Both
 phases need such a provider: OpenRouter and custom endpoints exit with code 2 at
-planning, dry runs included, as does an unset key variable. Each item is planned
+planning, dry runs included. An unset key variable exits with code 2 as well,
+except in a dry run, which warns. Each item is planned
 and classified as in a direct run. Its pages to transcribe are rendered and
 submitted as one transcription batch, and the summaries of pages already
 transcribed as one summary batch; a page that fails to render fails at once, and
@@ -608,8 +658,10 @@ limit is soft: a check fails an expired batch, and the wait then ends on its own
 the limit bounds a wait whose checks cannot read the batch statuses. The
 later steps follow the `run --batch` that submitted the document: its stored spec
 sets the summary model, the formats and OpenAlex, and the summary context it read
-is kept with the document. Prompts, schemas and machine settings come from the
-installed version and the current settings file.
+is kept with the document. `--formats` replaces the stored formats for the files
+this check writes; a list without a transcription format keeps the stored one.
+Prompts, schemas and machine settings come from the installed version and the
+current settings file.
 
 ```bash
 autoexcerpter run --input scans --all --output excerpts --batch
@@ -627,6 +679,7 @@ autoexcerpter batch check --input excerpts --wait   # or: both, as batches finis
 | `--wait` | check again every --poll-minutes until no batch work is pending, or until --wait-hours have passed | | no |
 | `--poll-minutes N` | minutes between two checks with --wait | 15 | no |
 | `--wait-hours N` | hours after which --wait starts no further check; a running check finishes | 98 | no |
+| `--formats LIST` | comma-separated formats of the finished documents, replacing those of the submitting run (whose transcription format stays when none is given); from transcription-md, transcription-txt, summary-md, summary-docx | the formats of the submitting run | no |
 | `--json` | print one JSON summary line on stdout | | no |
 | `--settings FILE` | alternate settings file | config/settings.yaml | no |
 
@@ -720,7 +773,12 @@ stops with exit 2 before any work; give one of them another output folder.
 `--force` processes every selected item from scratch; the earlier provider
 responses stay in the store. `--retranscribe` keeps resume but transcribes the
 stored pages again and summarizes them again. The image settings are compared key
-by key with the record stored with the document. Switching the transcription
+by key with the record stored with the document. When they differ only because
+the run takes a preset value, as for an item stored under an earlier preset
+(grayscale, or the custom preset's JPEG quality 85), each image option the run
+leaves unset (`--dpi`, `--image-format`, `--jpeg-quality`, `--grayscale`) takes
+the stored value, and the item resumes; an option given by flag or settings
+default that differs still refuses it. Switching the transcription
 model on resume is allowed: the model and the settings derived from it (detail
 resolution, image cap, the defaults of its model family) are not compared, the
 run records a note, and the
@@ -779,7 +837,7 @@ autoexcerpter/
   output/       the store's tables, views and resume, the renderers, item paths
   pipeline/     item processing, pages, units, context
   rendering/    transcription, Markdown, DOCX, equations, citations/
-  resources/    prompts and the transcription and summary schemas
+  resources/    prompts, the transcription and summary schemas, the settings example
 ```
 
 The core imports nothing from `cli/` or `ui/`. It never prints, prompts or exits
@@ -799,8 +857,9 @@ images, output location, run control, batch check and cancel, render) come from
 `common/standard_options.py` with AutoExcerpter's defaults and help texts, and
 `settings.py` reads the shared settings blocks through
 `common/settings_schema.py`; `retry` and `openalex` stay its own. `ext.py` holds
-the extension hooks (extra arguments, settings blocks and wizard steps, a startup
-hook, batch consent, the key variables of a call, an attempt context around every
+the extension hooks (extra arguments, the extra arguments the wizard appends to
+the commands that take them, settings blocks and wizard steps, a startup hook,
+batch consent, the key variables of a call, an attempt context around every
 model and batch call); its defaults pass everything through.
 
 ## Development
@@ -827,12 +886,13 @@ diff.
 ## Troubleshooting
 
 **API key not found.** A run whose model key variable is unset stops before any
-work, names the variable and exits with code 2; the UI withholds Run and names
-the variable on the review screen.
+work, names the variable and exits with code 2; a dry run only warns. The UI
+withholds Run and names the variable on the review screen.
 
 **Image settings changed.** A resumed item with pages left to transcribe fails
-when its image settings differ from those stored with it. Rerun with the earlier
-settings, or pass `--force` to start the item over.
+when an image option given by flag or settings default differs from the value
+stored with it. Rerun with the earlier value, or pass `--force` to start the
+item over.
 
 **Pages failed with `content_filter` or `refusal`.** A provider's content filter
 can stop pages dense with long verbatim passages. Rerun the item with another
@@ -855,8 +915,8 @@ conservative profile applies. A model on an OpenAI-compatible server can run as 
 named endpoint whose settings declare its image and schema support.
 
 **No sign of the example settings.** The console shows warnings and errors only,
-so a run on `config/settings.example.yaml` does not mention it. Copy the example
-to `config/settings.yaml`.
+so a run on the packaged example does not mention it. Copy
+`autoexcerpter/resources/settings.example.yaml` to `config/settings.yaml`.
 
 ## Versioning
 

@@ -143,9 +143,10 @@ def assert_json_last_line(result: RunResult) -> dict[str, Any]:
 
 
 def plan_summary(result: RunResult) -> dict[str, Any]:
-    """Return a dry run's JSON summary without its effective spec.
+    """Return a dry run's JSON summary without its effective spec and counts.
 
-    The spec must carry every run option with its value and source.
+    The spec must carry every run option with its value and source; the
+    counts must match the planned and skipped items.
     """
     assert result.summary is not None, result.stdout
     summary = dict(result.summary)
@@ -153,6 +154,12 @@ def plan_summary(result: RunResult) -> dict[str, Any]:
     assert spec["run.dry_run"] == {"value": True, "source": "flag"}
     assert spec["run.concurrency"] == {"value": 16, "source": "default"}
     assert all(set(entry) == {"value", "source"} for entry in spec.values())
+    assert summary.pop("items_total") == len(summary["to_process"])
+    assert summary.pop("items_skipped") == len(summary["skipped"])
+    for key in ("items_complete", "items_failed", "items_submitted"):
+        assert summary.pop(key) == 0
+    assert summary.pop("outputs") == []
+    summary.pop("usage")
     return summary
 
 
@@ -341,6 +348,9 @@ def test_transcription_only_then_summary(runner: Runner, pdf: Path) -> None:
             {"name": "doc", "state": "transcription_only", "completed_pages": 3}
         ],
         "skipped": [],
+        "legacy": [],
+        "blocked": [],
+        "refused": [],
     }
 
     second = runner.run(pdf, summarize=True)
@@ -379,6 +389,9 @@ def test_dry_run_plan(tmp_path: Path, runner: Runner) -> None:
             {"name": "beta", "state": "partial", "completed_pages": 2},
         ],
         "skipped": ["gamma"],
+        "legacy": [],
+        "blocked": [],
+        "refused": [],
     }
     assert_json_last_line(result)
     assert result.calls() == []
@@ -396,6 +409,9 @@ def test_dry_run_fresh_output_folder_is_not_created(runner: Runner, pdf: Path) -
         "dry_run": True,
         "to_process": [{"name": "doc", "state": "none", "completed_pages": 0}],
         "skipped": [],
+        "legacy": [],
+        "blocked": [],
+        "refused": [],
     }
     assert not runner.output_dir.exists()
     assert result.calls() == []

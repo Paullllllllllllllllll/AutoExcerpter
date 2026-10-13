@@ -1,12 +1,17 @@
 """Settings resolve the same through the shared settings schema.
 
 ``settings_before_schema`` is ``settings.py`` as it stood before the shared
-blocks moved into ``common/settings_schema.py``. Every settings text below,
-the tracked example, and each file named in ``CHRONO_SETTINGS_PARITY``
-(paths separated by ``os.pathsep``) load through both modules with the
-extension's blocks; the resolved values, or the error messages, must agree.
-A difference is reported by key path only, never by value, so files with
-private values can be checked.
+blocks moved into ``common/settings_schema.py``. Every settings text below
+and each file named in ``CHRONO_SETTINGS_PARITY`` (paths separated by
+``os.pathsep``) load through both modules with the extension's blocks; the
+resolved values, or the error messages, must agree. A difference is reported
+by key path only, never by value, so files with private values can be
+checked.
+
+Version 3.0 accepts the blocks of :data:`NEW_BLOCKS`, which the earlier
+module refused; the texts that set them, the packaged example (which shows
+them) and the new fields of the code defaults are left out of the
+comparison and tested in ``tests/core/test_settings.py``.
 """
 
 from __future__ import annotations
@@ -104,6 +109,14 @@ TEXTS = (
 )
 
 
+NEW_BLOCKS = ("concurrency", "logs_dir", "prompt_caching")
+"""Top-level blocks that version 3.0 added to the accepted settings."""
+
+COMPARED = tuple(
+    text for text in TEXTS if not text.startswith(tuple(f"{b}:" for b in NEW_BLOCKS))
+)
+
+
 def _extra_files() -> list[Path]:
     raw = os.environ.get(PARITY_ENV, "")
     return [Path(item) for item in raw.split(os.pathsep) if item.strip()]
@@ -130,7 +143,13 @@ def _outcome(module: ModuleType, path: Path) -> tuple[str, Any]:
         loaded = module.load(path, blocks=ext.settings_blocks())
     except SettingsError as exc:
         return "error", str(exc)
-    return "ok", _normalize(loaded)
+    return "ok", _without_new_blocks(_normalize(loaded))
+
+
+def _without_new_blocks(value: Any) -> Any:
+    if isinstance(value, dict) and value.get("__type__") == "Settings":
+        return {key: item for key, item in value.items() if key not in NEW_BLOCKS}
+    return value
 
 
 def _differences(old: Any, new: Any, path: str = "") -> list[str]:
@@ -162,18 +181,14 @@ def _compare(path: Path) -> list[str]:
     return _differences(old_value, new_value)
 
 
-@pytest.mark.parametrize("index", range(len(TEXTS)))
+@pytest.mark.parametrize("index", range(len(COMPARED)))
 def test_settings_texts_resolve_alike(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, index: int
 ) -> None:
     monkeypatch.chdir(tmp_path)
     path = tmp_path / "settings.yaml"
-    path.write_text(TEXTS[index], encoding="utf-8")
+    path.write_text(COMPARED[index], encoding="utf-8")
     assert _compare(path) == []
-
-
-def test_example_resolves_alike() -> None:
-    assert _compare(current.EXAMPLE_SETTINGS_PATH) == []
 
 
 @pytest.mark.parametrize(
@@ -185,7 +200,6 @@ def test_named_files_resolve_alike(path: Path) -> None:
 
 
 def test_code_defaults_alike() -> None:
-    assert (
-        _differences(_normalize(before.Settings()), _normalize(current.Settings()))
-        == []
-    )
+    old = _normalize(before.Settings())
+    new = _without_new_blocks(_normalize(current.Settings()))
+    assert _differences(old, new) == []

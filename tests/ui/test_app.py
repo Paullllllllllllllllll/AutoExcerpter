@@ -54,23 +54,24 @@ def _text(console: Console) -> str:
 
 def _answers(pdf: Path, *review: Any, run_options: Any = KEEP) -> list[Any]:
     return [
-        KEEP,
-        str(pdf),
-        "beside",
-        True,
-        "md",
-        KEEP,
-        "auto",
-        "none",
-        "openai",
-        "gpt-5.6-luna",
-        KEEP,
-        KEEP,
-        "recommended",
-        "same",
-        "recommended",
-        run_options,
-        KEEP,
+        KEEP,  # task
+        str(pdf),  # input
+        "beside",  # output
+        "md",  # transcription format
+        True,  # summarize
+        KEEP,  # summary formats
+        "openai",  # transcription provider
+        "gpt-6-luna",  # transcription model
+        KEEP,  # reasoning effort
+        KEEP,  # response format
+        "recommended",  # model parameters
+        "same",  # summary model
+        "auto",  # context
+        "none",  # fallback context
+        "recommended",  # page images
+        KEEP,  # submission
+        run_options,  # run options
+        KEEP,  # concurrency
         *review,
     ]
 
@@ -394,6 +395,24 @@ def test_ctrl_c_in_the_wizard_exits_130(
     assert code == 130
     assert "Interrupted by the user." in _text(console)
     assert startup.calls == []
+
+
+def test_an_unexpected_error_is_printed_and_exits_1(
+    pdf: Path, startup: _Calls, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    async def run(*args: Any, **kwargs: Any) -> core.RunResult:
+        raise RuntimeError("disk on fire")
+
+    monkeypatch.setattr(core, "run", run)
+    code, console, _prompter = _launch(_answers(pdf, "run"))
+    assert code == 1
+    assert "Unexpected error: disk on fire" in _text(console)
+
+
+def test_the_migrate_task_has_its_new_title() -> None:
+    assert TASKS["migrate"] == "import earlier outputs (migrate)"
 
 
 def test_ctrl_c_during_the_run_exits_130(

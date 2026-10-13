@@ -10,10 +10,13 @@
       },
       "messages": [
         {
-          "text": {
-            "chars": 3690,
-            "digest": "ae9a319f0c2b4661"
-          },
+          "blocks": [
+            {
+              "chars": 3690,
+              "digest": "ae9a319f0c2b4661",
+              "type": "text"
+            }
+          ],
           "type": "system"
         },
         {
@@ -58,10 +61,13 @@
       },
       "messages": [
         {
-          "text": {
-            "chars": 5932,
-            "digest": "f4ccaa329d6b6bba"
-          },
+          "blocks": [
+            {
+              "chars": 5932,
+              "digest": "f4ccaa329d6b6bba",
+              "type": "text"
+            }
+          ],
           "type": "system"
         },
         {
@@ -105,10 +111,13 @@
       },
       "messages": [
         {
-          "text": {
-            "chars": 3690,
-            "digest": "ae9a319f0c2b4661"
-          },
+          "blocks": [
+            {
+              "chars": 3690,
+              "digest": "ae9a319f0c2b4661",
+              "type": "text"
+            }
+          ],
           "type": "system"
         },
         {
@@ -153,10 +162,13 @@
       },
       "messages": [
         {
-          "text": {
-            "chars": 5932,
-            "digest": "f4ccaa329d6b6bba"
-          },
+          "blocks": [
+            {
+              "chars": 5932,
+              "digest": "f4ccaa329d6b6bba",
+              "type": "text"
+            }
+          ],
           "type": "system"
         },
         {
@@ -200,10 +212,13 @@
       },
       "messages": [
         {
-          "text": {
-            "chars": 3690,
-            "digest": "ae9a319f0c2b4661"
-          },
+          "blocks": [
+            {
+              "chars": 3690,
+              "digest": "ae9a319f0c2b4661",
+              "type": "text"
+            }
+          ],
           "type": "system"
         },
         {
@@ -248,10 +263,13 @@
       },
       "messages": [
         {
-          "text": {
-            "chars": 5932,
-            "digest": "f4ccaa329d6b6bba"
-          },
+          "blocks": [
+            {
+              "chars": 5932,
+              "digest": "f4ccaa329d6b6bba",
+              "type": "text"
+            }
+          ],
           "type": "system"
         },
         {

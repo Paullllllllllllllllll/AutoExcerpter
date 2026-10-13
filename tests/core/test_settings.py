@@ -11,8 +11,10 @@ from autoexcerpter.common.options import Source
 from autoexcerpter.common.retry import RetryPolicy
 from autoexcerpter.settings import (
     EXAMPLE_SETTINGS_PATH,
+    Concurrency,
     Endpoint,
     Images,
+    PromptCaching,
     RetryRule,
     Settings,
     SettingsError,
@@ -58,9 +60,21 @@ def test_real_file_wins_over_the_example(settings_paths: Path) -> None:
     assert load().openalex.max_requests == 7
 
 
-def test_missing_file_gives_a_clear_error(settings_paths: Path) -> None:
-    with pytest.raises(SettingsError, match="settings.yaml"):
-        load()
+def test_without_any_settings_file_the_code_values_apply(
+    settings_paths: Path,
+) -> None:
+    assert load() == Settings()
+
+
+def test_the_example_is_packaged() -> None:
+    assert EXAMPLE_SETTINGS_PATH.parent.name == "resources"
+    assert EXAMPLE_SETTINGS_PATH.parent.parent.name == "autoexcerpter"
+    assert EXAMPLE_SETTINGS_PATH.is_file()
+
+
+def test_a_missing_explicit_file_is_an_error(settings_paths: Path) -> None:
+    with pytest.raises(SettingsError, match="other.yaml"):
+        load(settings_paths / "other.yaml")
 
 
 def test_explicit_settings_path_wins(settings_paths: Path) -> None:
@@ -138,6 +152,12 @@ def test_endpoints_and_key_variables(settings_paths: Path) -> None:
         "defaults:\n  retranscribe: true\n",
         "defaults:\n  beside_input: true\n",
         "defaults:\n  concurrency: 0\n",
+        "defaults:\n  files: [a.pdf]\n",
+        "defaults:\n  transcription_format: rtf\n",
+        "concurrency:\n  delay_between_tasks: -1\n",
+        "concurrency:\n  image_processing: 2\n",
+        "prompt_caching:\n  anthropic:\n    ttl: 2h\n",
+        "logs_dir: 5\n",
     ],
 )
 def test_invalid_settings_are_errors(settings_paths: Path, text: str) -> None:
@@ -164,7 +184,7 @@ def test_precedence_flag_then_settings_default_then_code_default(
     assert sources["transcription_model.model"] is Source.SETTINGS
     assert spec.summary_model.verbosity == "medium"
     assert sources["summary_model.verbosity"] is Source.SETTINGS
-    assert spec.output.formats == ("summary-md",)
+    assert spec.output.formats == ("transcription-md", "summary-md")
     assert spec.transcription_model.verbosity == "high"
     assert sources["transcription_model.verbosity"] is Source.DEFAULT
     assert spec.transcription_model.reasoning_effort == "high"
@@ -188,6 +208,47 @@ def test_resolve_checks_endpoint_names() -> None:
         resolve(value, {"input": Path("x"), "endpoint": "remote"})
     with pytest.raises(SpecError):
         resolve(value, {"input": Path("x"), "provider": "custom"})
+
+
+def test_shared_blocks_of_version_3(
+    settings_paths: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(settings_paths)
+    _write(
+        settings_paths / "settings.yaml",
+        "concurrency:\n  delay_between_tasks: 0.25\nlogs_dir: logs\n"
+        "prompt_caching:\n  enabled: false\n  anthropic:\n    ttl: 1h\n"
+        "  openai:\n    prompt_cache_retention: 24h\n",
+    )
+    value = load()
+    assert value.concurrency == Concurrency(delay_between_tasks=0.25)
+    assert value.log_file() == settings_paths / "logs" / "application.log"
+    assert value.prompt_caching == PromptCaching(
+        enabled=False, anthropic_ttl="1h", openai_retention="24h"
+    )
+
+
+def test_code_values_of_the_version_3_blocks() -> None:
+    value = Settings()
+    assert value.concurrency.delay_between_tasks == 0.0
+    assert value.log_file() is None
+    assert value.prompt_caching.enabled
+    assert value.prompt_caching.openai_retention is None
+    assert Settings(logs_dir=Path("x.log")).log_file() == Path("x.log")
+
+
+def test_the_deprecated_transcription_format_default_warns_and_applies(
+    settings_paths: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    _write(
+        settings_paths / "settings.yaml",
+        "defaults:\n  transcription_format: txt\n  formats: [summary-docx]\n",
+    )
+    with caplog.at_level("WARNING", logger="autoexcerpter.settings"):
+        value = load()
+    assert "transcription_format is deprecated" in caplog.text
+    spec = resolve(value, {"input": Path("x")}).spec
+    assert spec.output.formats == ("transcription-txt", "summary-docx")
 
 
 def test_retry_policy_and_state_directory(tmp_path: Path) -> None:

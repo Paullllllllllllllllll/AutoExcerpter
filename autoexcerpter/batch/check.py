@@ -677,6 +677,7 @@ class _Advance:
                 ROLE_SUMMARY,
                 context=job.context,
                 transcription_format=job.transcription_format,
+                caching=self.database.clients.settings.prompt_caching,
             )
             submitted = await submit_units(
                 self.database.store,
@@ -759,9 +760,10 @@ async def _check_database(
     wanted: set[str],
     targets: _Targets,
     result: CheckResult,
+    formats: Sequence[str] | None = None,
 ) -> None:
     """Mark, reconcile and finalize the submissions of one database; then
-    advance its batch jobs."""
+    advance its batch jobs, rendered in *formats* when given."""
     async with open_store(database.root) as store:
         await store.begin_run(
             "batch check",
@@ -777,7 +779,7 @@ async def _check_database(
                         submission_id,
                         database.path,
                     )
-                jobs = load_jobs(store, settings)
+                jobs = load_jobs(store, settings, formats=formats)
                 work = _DatabaseCheck(store, database.path, clients, jobs, targets)
                 for submission in store.submissions(_WORKED):
                     if (
@@ -819,7 +821,7 @@ def _name(store: Store, doc_id: int) -> str:
     return row.name if row is not None else str(doc_id)
 
 
-async def check_batches(
+async def check_batches(  # noqa: PLR0913 - the check options plus its objects
     directory: Path,
     settings: Settings,
     *,
@@ -829,10 +831,13 @@ async def check_batches(
     args: argparse.Namespace | None = None,
     clients: BatchClients | None = None,
     result: CheckResult | None = None,
+    formats: Sequence[str] | None = None,
 ) -> CheckResult:
     """Check the open batch work of every database below *directory*.
 
-    *batch_ids*, when given, limit the finalization to those batches;
+    *formats*, when given, replaces the formats of the submitting runs
+    (``batch check --formats``). *batch_ids*, when given, limit the
+    finalization to those batches;
     unresolved submissions are reconciled and batch jobs advanced in every
     check. *adopt* records a provider batch for the unresolved submission it
     fits, *abandon* gives an unresolved submission, or a submitted one whose
@@ -864,7 +869,9 @@ async def check_batches(
     for database in found:
         if not (database.submissions or database.jobs):
             continue
-        await _check_database(database, clients, settings, wanted, targets, result)
+        await _check_database(
+            database, clients, settings, wanted, targets, result, formats
+        )
     return result
 
 
@@ -1152,6 +1159,7 @@ async def check_until_settled(  # noqa: PLR0913 - the check options plus hooks
     on_pass: Callable[[int, CheckResult], None] = _ignore,
     on_wait: Callable[[WaitTick], None] = _ignore,
     on_retry: Callable[[int, Exception], None] = _ignore,
+    formats: Sequence[str] | None = None,
 ) -> WaitProgress:
     """Check every *limits* interval until no batch work a check can advance
     is pending; start no check after the timeout.
@@ -1186,6 +1194,7 @@ async def check_until_settled(  # noqa: PLR0913 - the check options plus hooks
                 args=args,
                 clients=clients,
                 result=result,
+                formats=formats,
             )
         finally:
             progress.ledger.record(result)

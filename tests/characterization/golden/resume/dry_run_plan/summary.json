@@ -1,7 +1,16 @@
 {
   "exit_code": 0,
   "json_line": {
+    "blocked": [],
     "dry_run": true,
+    "items_complete": 0,
+    "items_failed": 0,
+    "items_skipped": 1,
+    "items_submitted": 0,
+    "items_total": 2,
+    "legacy": [],
+    "outputs": [],
+    "refused": [],
     "skipped": [
       "gamma"
     ],
@@ -34,6 +43,10 @@
         "source": "flag",
         "value": true
       },
+      "input.files": {
+        "source": "flag",
+        "value": []
+      },
       "input.path": {
         "source": "flag",
         "value": "<tmp>/in/tree"
@@ -49,13 +62,10 @@
       "output.formats": {
         "source": "flag",
         "value": [
+          "transcription-md",
           "summary-md",
           "summary-docx"
         ]
-      },
-      "output.transcription_format": {
-        "source": "default",
-        "value": "md"
       },
       "run.batch": {
         "source": "default",
@@ -185,6 +195,15 @@
         "name": "beta",
         "state": "partial"
       }
-    ]
+    ],
+    "usage": {
+      "total": {
+        "cached_tokens": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "reasoning_tokens": 0,
+        "total_tokens": 0
+      }
+    }
   }
 }

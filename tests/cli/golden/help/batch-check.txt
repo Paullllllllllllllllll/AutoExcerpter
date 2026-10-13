@@ -1,6 +1,6 @@
 usage: autoexcerpter batch check [-h] [--input DIR] [--batch-ids IDS] [--adopt BATCH_ID |
                                  --abandon SUBMISSION_ID] [--wait] [--poll-minutes N]
-                                 [--wait-hours N] [--json] [--settings FILE]
+                                 [--wait-hours N] [--formats LIST] [--json] [--settings FILE]
 
 Check the batch submissions found below a folder: store the results of every finished batch,
 submit the summaries of the pages it transcribed, and write the files of every document left with
@@ -24,6 +24,12 @@ batches:
   --poll-minutes N      minutes between two checks with --wait; default: 15
   --wait-hours N        hours after which --wait starts no further check; a running check
                         finishes; default: 98
+
+output:
+  --formats LIST        comma-separated formats of the finished documents, replacing those of the
+                        submitting run (whose transcription format stays when none is given); from
+                        transcription-md, transcription-txt, summary-md, summary-docx; default:
+                        the formats of the submitting run
 
 run control:
   --json                print one JSON summary line on stdout

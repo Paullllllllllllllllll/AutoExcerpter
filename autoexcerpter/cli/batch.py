@@ -184,6 +184,7 @@ def _prepare(
         settings = settings_module.load(settings_path, blocks=ext.settings_blocks())
     except settings_module.SettingsError as exc:
         return str(exc)
+    configure_logging(log_file=settings.log_file())
     if directory is not None and not directory.is_dir():
         return f"Input folder does not exist: {directory}"
     try:
@@ -215,6 +216,7 @@ def _execute_check(
                 adopt=spec.adopt,
                 abandon=spec.abandon,
                 args=args,
+                formats=spec.formats,
             )
         )
     except CheckTargetError as exc:
@@ -326,6 +328,7 @@ def _execute_wait(
                 on_pass=on_pass,
                 on_wait=on_wait,
                 on_retry=lambda number, exc: _write(retry_line(number, exc)),
+                formats=spec.formats,
             )
         )
     except CheckTargetError as exc:

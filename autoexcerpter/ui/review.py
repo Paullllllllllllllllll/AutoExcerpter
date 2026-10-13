@@ -19,7 +19,6 @@ from autoexcerpter.common.options import Source
 from autoexcerpter.common.wizard import Line, Part, Review, ReviewAction, State
 from autoexcerpter.imaging.settings import detect_model_type
 from autoexcerpter.output.store import ItemState
-from autoexcerpter.settings import SettingsError
 from autoexcerpter.spec import (
     CONTEXT_NONE,
     OPTIONS,
@@ -32,6 +31,7 @@ from autoexcerpter.spec import (
 from autoexcerpter.ui.session import (
     Session,
     absolute,
+    command_words,
     inventory_of,
     plural,
     resolution,
@@ -80,10 +80,8 @@ def equivalent_command(state: State, session: Session) -> list[str]:
             be undone on the command line.
     """
     spec = resolution(state, session).spec
-    words = [*PROGRAM, *to_argv(spec, session.settings.defaults)]
-    if session.settings_path is not None:
-        words += ["--settings", str(absolute(session.settings_path))]
-    return words
+    argv = to_argv(spec, session.settings.defaults)
+    return command_words(PROGRAM, argv, session, OPTIONS)
 
 
 def image_family(model: ModelSpec | None) -> str:
@@ -133,16 +131,14 @@ def _input_line(state: State, spec: RunSpec, mark: _Mark) -> Line:
 def _output_line(spec: RunSpec, mark: _Mark) -> Line:
     output = spec.output
     where = "beside input" if output.directory is None else str(output.directory)
-    formats = ", ".join(output.formats) or "none"
+    formats = [f"transcription-{output.transcription_format}"]
+    if spec.summary.enabled:
+        formats += output.summary_formats
     return Line(
         "output",
         [
             mark("output.directory", where),
-            mark(
-                "output.transcription_format",
-                f"transcription {output.transcription_format}",
-            ),
-            mark("output.formats", f"formats {formats}"),
+            mark("output.formats", f"formats {', '.join(formats)}"),
         ],
     )
 
@@ -277,26 +273,30 @@ def _force(state: State) -> None:
     state.set("force", True)
 
 
-def _missing_keys(spec: RunSpec, session: Session) -> tuple[list[str], list[str]]:
-    """Return the notes and the withheld reasons for unset key variables."""
-    phases = ["transcription", *(["summary"] if spec.summary.enabled else [])]
-    missing: dict[str, list[str]] = {}
-    errors: list[str] = []
-    for phase in phases:
-        model = spec.model(phase)
-        try:
-            variable = session.settings.api_key_env(model.provider, model.endpoint)
-        except SettingsError as exc:
-            errors.append(str(exc))
-            continue
-        if not session.environ.get(variable):
-            missing.setdefault(variable, []).append(phase)
+def _missing_keys(plan: core.RunPlan, session: Session) -> tuple[list[str], list[str]]:
+    """Return the notes and the withheld reasons for unset key variables.
+
+    The variables are those the plan's phases need, looked up in the
+    session's environment.
+    """
+    try:
+        missing = core.missing_keys(
+            plan.job,
+            session.settings,
+            batch=plan.batch,
+            args=session.args,
+            environ=session.environ,
+        )
+    except core.PlanError as exc:
+        return [], [str(exc)]
     notes = [
-        f"Missing API key: {variable} is not set ({', '.join(used)})"
-        for variable, used in missing.items()
+        f"Missing API key: {key.variable} is not set ({', '.join(key.roles)})"
+        for key in missing
     ]
+    errors = []
     if missing:
-        errors.append(f"set {', '.join(missing)} in the environment")
+        names = ", ".join(key.variable for key in missing)
+        errors.append(f"set {names} in the environment")
     return notes, errors
 
 
@@ -324,6 +324,7 @@ def build_review(state: State, session: Session) -> Review:
     notes: list[str] = []
     withheld: list[str] = []
     actions: list[ReviewAction] = []
+    plan: core.RunPlan | None = None
     try:
         plan = core.plan(spec, session.settings, sources=sources, args=session.args)
     except core.PlanError as exc:
@@ -348,8 +349,8 @@ def build_review(state: State, session: Session) -> Review:
         )
     if spec.run.dry_run:
         notes.append("Dry run: Run shows the plan only, with no API calls or writes.")
-    else:
-        key_notes, key_errors = _missing_keys(spec, session)
+    elif plan is not None:
+        key_notes, key_errors = _missing_keys(plan, session)
         notes += key_notes
         withheld += key_errors
     return Review(

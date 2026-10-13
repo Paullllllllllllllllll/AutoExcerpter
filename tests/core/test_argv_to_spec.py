@@ -12,6 +12,7 @@ import pytest
 from autoexcerpter.common.options import Source
 from autoexcerpter.spec import (
     OPTIONS,
+    TRANSCRIPTION_FORMAT_ALIAS,
     CitationSpec,
     ImageSpec,
     InputSpec,
@@ -20,6 +21,7 @@ from autoexcerpter.spec import (
     Resolution,
     RunControl,
     RunSpec,
+    SpecError,
     SummarySpec,
     resolve_spec,
 )
@@ -32,14 +34,13 @@ CODE_DEFAULTS = RunSpec(
     input=InputSpec(path=Path("in.pdf"), select=None, all=False),
     output=OutputSpec(
         directory=None,
-        transcription_format="md",
-        formats=("summary-md", "summary-docx"),
+        formats=("transcription-md", "summary-md", "summary-docx"),
     ),
     summary=SummarySpec(enabled=True, context=None, fallback_context=None),
     citations=CitationSpec(openalex=True),
     transcription_model=ModelSpec(
         provider="openai",
-        model="gpt-5.6-luna",
+        model="gpt-6-luna",
         endpoint=None,
         reasoning_effort="high",
         verbosity="high",
@@ -51,7 +52,7 @@ CODE_DEFAULTS = RunSpec(
     ),
     summary_model=ModelSpec(
         provider="openai",
-        model="gpt-5.6-luna",
+        model="gpt-6-luna",
         endpoint=None,
         reasoning_effort="high",
         verbosity="low",
@@ -110,9 +111,23 @@ ROWS = [
         "select",
         "--select",
         "1-3",
-        sets={"input.select": "1-3", "input.all": False},
+        sets={"input.select": "1-3", "input.all": False, "input.files": ()},
     ),
-    _row("all", "--all", sets={"input.all": True, "input.select": None}),
+    _row(
+        "all",
+        "--all",
+        sets={"input.all": True, "input.select": None, "input.files": ()},
+    ),
+    _row(
+        "files",
+        "--files",
+        "b.pdf,a b",
+        sets={
+            "input.files": ("b.pdf", "a b"),
+            "input.all": False,
+            "input.select": None,
+        },
+    ),
     _row("output", "--output", "x y", sets={"output.directory": Path("x y")}),
     _row(
         "beside_input",
@@ -121,16 +136,16 @@ ROWS = [
         defaults={"output": "out"},
     ),
     _row(
-        "transcription_format",
-        "--transcription-format",
-        "txt",
-        sets={"output.transcription_format": "txt"},
+        "formats",
+        "--formats",
+        "summary-docx,transcription-txt",
+        sets={"output.formats": ("transcription-txt", "summary-docx")},
     ),
     _row(
         "formats",
         "--formats",
-        "summary-docx,summary-md",
-        sets={"output.formats": ("summary-md", "summary-docx")},
+        "summary-md",
+        sets={"output.formats": ("transcription-md", "summary-md")},
     ),
     _row("summarize", "--no-summarize", sets={"summary.enabled": False}),
     _row(
@@ -412,8 +427,7 @@ COMMAND_LINES: list[tuple[list[str], RunSpec]] = [
             input=InputSpec(path=Path("scans"), select=None, all=True),
             output=OutputSpec(
                 directory=None,
-                transcription_format="md",
-                formats=("summary-md",),
+                formats=("transcription-md", "summary-md"),
             ),
             summary=SummarySpec(
                 enabled=True, context="Food History, Wages", fallback_context=None
@@ -478,8 +492,7 @@ COMMAND_LINES: list[tuple[list[str], RunSpec]] = [
             input=InputSpec(path=Path("a b/c.pdf"), select="1-3", all=False),
             output=OutputSpec(
                 directory=Path("out"),
-                transcription_format="md",
-                formats=("summary-md", "summary-docx"),
+                formats=("transcription-md", "summary-md", "summary-docx"),
             ),
             summary=SummarySpec(
                 enabled=True, context=None, fallback_context="fallback.txt"
@@ -544,8 +557,7 @@ COMMAND_LINES: list[tuple[list[str], RunSpec]] = [
             input=InputSpec(path=Path("scans"), select="Mennell", all=False),
             output=OutputSpec(
                 directory=None,
-                transcription_format="md",
-                formats=("summary-md", "summary-docx"),
+                formats=("transcription-md", "summary-md", "summary-docx"),
             ),
             summary=SummarySpec(enabled=True, context="none", fallback_context=None),
             citations=CitationSpec(openalex=False),
@@ -600,10 +612,8 @@ COMMAND_LINES: list[tuple[list[str], RunSpec]] = [
             "0.3",
             "--top-p",
             "0.9",
-            "--transcription-format",
-            "txt",
             "--formats",
-            "summary-docx",
+            "transcription-txt,summary-docx",
             "--no-summarize",
             "--image-format",
             "png",
@@ -616,8 +626,7 @@ COMMAND_LINES: list[tuple[list[str], RunSpec]] = [
             input=InputSpec(path=Path("scans"), select=None, all=True),
             output=OutputSpec(
                 directory=None,
-                transcription_format="txt",
-                formats=("summary-docx",),
+                formats=("transcription-txt", "summary-docx"),
             ),
             summary=SummarySpec(enabled=False, context=None, fallback_context=None),
             citations=CitationSpec(openalex=True),
@@ -678,8 +687,7 @@ COMMAND_LINES: list[tuple[list[str], RunSpec]] = [
             input=InputSpec(path=Path("in.pdf"), select=None, all=False),
             output=OutputSpec(
                 directory=None,
-                transcription_format="md",
-                formats=("summary-md", "summary-docx"),
+                formats=("transcription-md", "summary-md", "summary-docx"),
             ),
             summary=SummarySpec(
                 enabled=True, context=None, fallback_context="Prices, Wages"
@@ -789,12 +797,80 @@ PRECEDENCE: list[tuple[list[str], dict[str, Any], str, Any, Source]] = [
         "openai",
         FLAG,
     ),
-    ([], {"formats": ["summary-md"]}, "output.formats", ("summary-md",), SETTINGS),
+    (
+        [],
+        {"formats": ["summary-md"]},
+        "output.formats",
+        ("transcription-md", "summary-md"),
+        SETTINGS,
+    ),
     ([], {"dpi": 300}, "images.dpi", 300, SETTINGS),
     (["--dpi", "native"], {"dpi": 300}, "images.dpi", "native", FLAG),
     ([], {"summarize": False}, "summary.enabled", False, SETTINGS),
     (["--summarize"], {"summarize": False}, "summary.enabled", True, FLAG),
 ]
+
+
+ALIAS = TRANSCRIPTION_FORMAT_ALIAS
+
+DEPRECATED_FORMAT: list[
+    tuple[list[str], str | None, dict[str, Any], tuple[str, ...], Source]
+] = [
+    ([], "txt", {}, ("transcription-txt", "summary-md", "summary-docx"), FLAG),
+    (
+        [],
+        None,
+        {ALIAS: "txt", "formats": ["summary-md"]},
+        ("transcription-txt", "summary-md"),
+        SETTINGS,
+    ),
+    (
+        ["--formats", "summary-docx"],
+        None,
+        {ALIAS: "txt"},
+        ("transcription-txt", "summary-docx"),
+        FLAG,
+    ),
+    (
+        ["--formats", "transcription-md,summary-md"],
+        None,
+        {ALIAS: "txt"},
+        ("transcription-md", "summary-md"),
+        FLAG,
+    ),
+    (["--formats", "transcription-md"], "txt", {}, ("transcription-txt",), FLAG),
+]
+
+
+@pytest.mark.parametrize(
+    ("argv", "flag", "defaults", "formats", "source"), DEPRECATED_FORMAT
+)
+def test_the_deprecated_transcription_format_folds_into_the_formats(
+    argv: list[str],
+    flag: str | None,
+    defaults: dict[str, Any],
+    formats: tuple[str, ...],
+    source: Source,
+) -> None:
+    flags = OPTIONS.parse(["--input", "in.pdf", *argv])
+    if flag is not None:
+        flags[ALIAS] = flag
+    settings = dict(defaults)
+    alias = settings.pop(ALIAS, None)
+    checked = OPTIONS.check_defaults(settings)
+    if alias is not None:
+        checked[ALIAS] = alias
+    resolution = resolve_spec(flags, checked)
+    assert resolution.spec.output.formats == formats
+    assert resolution.sources["output.formats"] is source
+
+
+def test_two_transcription_formats_are_an_error() -> None:
+    flags = OPTIONS.parse(
+        ["--input", "in.pdf", "--formats", "transcription-md,transcription-txt"]
+    )
+    with pytest.raises(SpecError, match="one transcription format"):
+        resolve_spec(flags)
 
 
 @pytest.mark.parametrize(("argv", "defaults", "path", "value", "source"), PRECEDENCE)

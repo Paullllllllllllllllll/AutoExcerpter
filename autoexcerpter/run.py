@@ -83,7 +83,7 @@ from autoexcerpter.pipeline.scanner import scan_input_path
 from autoexcerpter.pipeline.types import ItemSpec
 from autoexcerpter.pipeline.units import DocumentHandle, Stamp
 from autoexcerpter.settings import Settings, SettingsError
-from autoexcerpter.spec import CONTEXT_NONE, RunSpec, effective_spec
+from autoexcerpter.spec import CONTEXT_NONE, ImageSpec, RunSpec, effective_spec
 
 __all__ = [
     "BUSY_TIMEOUT",
@@ -92,6 +92,7 @@ __all__ = [
     "ConfigurationError",
     "DuplicateOutputError",
     "ItemResult",
+    "MissingKey",
     "NoItemsError",
     "PlanError",
     "PlannedItem",
@@ -100,6 +101,7 @@ __all__ = [
     "SelectionError",
     "StoreRefusedError",
     "discover",
+    "missing_keys",
     "plan",
     "run",
 ]
@@ -143,19 +145,16 @@ class StoreRefusedError(ConfigurationError):
 
 
 class NoItemsError(PlanError):
-    """The input holds no PDF or image folder (exit 1)."""
-
-    exit_code = ExitCode.FAILURE
+    """The input holds no PDF or image folder (exit 2)."""
 
 
 class SelectionError(PlanError):
-    """``--select`` matched no item (exit 1)."""
-
-    exit_code = ExitCode.FAILURE
+    """``--select`` matched no item, or ``--files`` named one not found (exit 2)."""
 
 
 class AmbiguousSelectionError(PlanError):
-    """Several items were found without ``--all`` or ``--select`` (exit 2)."""
+    """Several items were found without ``--all``, ``--select`` or ``--files``
+    (exit 2)."""
 
 
 class DuplicateOutputError(PlanError):
@@ -170,7 +169,9 @@ class PlannedItem:
     *completed_pages* counts the pages an earlier run transcribed that this
     run keeps. *context* is the item's summary context as it enters the
     prompt; *transcription_format* the transcription file's extension;
-    *input_sha256* the hash of the input at planning.
+    *input_sha256* the hash of the input at planning. *images*, when set,
+    replaces the run's image options for this item: the values stored with
+    its pages (see :meth:`_Classifier._stored_images`).
     """
 
     item: ItemSpec
@@ -180,6 +181,7 @@ class PlannedItem:
     transcription_format: str = "md"
     input_sha256: str | None = None
     completed_pages: int = 0
+    images: ImageSpec | None = None
 
     @property
     def name(self) -> str:
@@ -213,9 +215,11 @@ class RunPlan:
     *legacy* items have outputs without store rows, *blocked* items are
     leased by another run, *refused* items were stored with other image
     settings; none of them is processed. *warnings* are notes for the user,
-    such as ignored ``--select`` parts. *settings* are the machine settings
-    the run uses. *sources* maps spec fields to where their values came
-    from; fields it omits were given by the caller and count as flags.
+    such as ignored ``--select`` parts and, in a dry run, unset key
+    variables. *settings* are the machine settings the run uses. *sources*
+    maps spec fields to where their values came from; fields it omits were
+    given by the caller and count as flags. *missing_keys* are the key
+    variables the run needs that are unset; a real run stops on them.
     """
 
     spec: RunSpec
@@ -231,6 +235,7 @@ class RunPlan:
     legacy: tuple[PlannedItem, ...] = ()
     blocked: tuple[PlannedItem, ...] = ()
     refused: tuple[PlannedItem, ...] = ()
+    missing_keys: tuple[MissingKey, ...] = ()
 
     @property
     def force(self) -> bool:
@@ -281,13 +286,31 @@ def _item_output_dir(item: ItemSpec, base: Path | None) -> Path:
     return item.path.parent if base is None else base
 
 
+def _select_files(items: list[ItemSpec], names: tuple[str, ...]) -> list[ItemSpec]:
+    """Return the items named exactly by *names*, in discovery order.
+
+    Raises:
+        SelectionError: A name matches no discovered item.
+    """
+    found = {item.path.name for item in items}
+    missing = [name for name in names if name not in found]
+    if missing:
+        raise SelectionError(
+            f"--files names no item found in the input: {', '.join(missing)}"
+        )
+    wanted = set(names)
+    return [item for item in items if item.path.name in wanted]
+
+
 def _select(
     items: list[ItemSpec], spec: RunSpec
 ) -> tuple[list[ItemSpec], tuple[str, ...]]:
-    """Apply ``--all`` or ``--select``; a single item needs neither."""
+    """Apply ``--all``, ``--select`` or ``--files``; a single item needs none."""
     selection = spec.input
     if selection.all:
         return list(items), ()
+    if selection.files:
+        return _select_files(items, selection.files), ()
     if selection.select:
         result = select_items([item.path.name for item in items], selection.select)
         warnings: tuple[str, ...] = ()
@@ -303,9 +326,9 @@ def _select(
     if len(items) == 1:
         return list(items), ()
     raise AmbiguousSelectionError(
-        f"{len(items)} items found but neither --all nor --select was given. "
-        "Refusing to silently process only the first item; pass --all to "
-        "process every item or --select to choose specific ones."
+        f"{len(items)} items found but none of --all, --select and --files was "
+        "given. Pass --all to process every item, --select to choose items by "
+        "number, range or name search, or --files to name them exactly."
     )
 
 
@@ -352,15 +375,81 @@ def _batch_phases(job: ItemJob) -> list[tuple[str, PhaseModel]]:
     return phases
 
 
+@dataclass(frozen=True)
+class MissingKey:
+    """An unset API key variable and the phases of the run that need it."""
+
+    variable: str
+    provider: str
+    roles: tuple[str, ...]
+
+    def describe(self) -> str:
+        """Return ``OPENAI_API_KEY (openai; transcription, summary)``."""
+        return f"{self.variable} ({self.provider}; {', '.join(self.roles)})"
+
+
+def missing_keys(
+    job: ItemJob,
+    settings: Settings,
+    *,
+    batch: bool = False,
+    args: argparse.Namespace | None = None,
+    environ: Mapping[str, str] | None = None,
+) -> tuple[MissingKey, ...]:
+    """Return the key variables the run's phases need that are unset.
+
+    A phase needs one of the variables the extension names for its provider
+    (:func:`autoexcerpter.ext.key_variables`, batch clients under *batch*);
+    the first of them is reported. *environ* defaults to ``os.environ``.
+
+    Raises:
+        ConfigurationError: The settings name no key variable for a phase.
+    """
+    env = os.environ if environ is None else environ
+    phases = [("transcription", job.transcription)]
+    if job.summarize:
+        phases.append(("summary", job.summary))
+    found: dict[str, MissingKey] = {}
+    for role, phase in phases:
+        try:
+            variables = ext.key_variables(
+                phase.provider,
+                phase.endpoint,
+                kind="batch" if batch else "chat",
+                settings=settings,
+                args=args,
+            )
+        except SettingsError as exc:
+            raise ConfigurationError(str(exc)) from exc
+        if not variables or any(env.get(name) for name in variables):
+            continue
+        known = found.get(variables[0])
+        roles = (*known.roles, role) if known else (role,)
+        found[variables[0]] = MissingKey(variables[0], phase.provider, roles)
+    return tuple(found.values())
+
+
+def _key_warning(missing: MissingKey, *, batch: bool = False) -> str:
+    roles = " and ".join(missing.roles)
+    if batch:
+        needs = f"--batch needs it for the {roles} batches"
+    else:
+        plural = "s" if len(missing.roles) > 1 else ""
+        needs = f"a real run needs it for the {roles} phase{plural}"
+    return (
+        f"The API key variable {missing.variable} of provider {missing.provider} "
+        f"is not set; {needs}."
+    )
+
+
 def _check_batch(
     spec: RunSpec, job: ItemJob, settings: Settings, args: argparse.Namespace | None
 ) -> None:
-    """Require a batch API for every phase, the extension's consent and the keys.
+    """Require a batch API for every phase and the extension's consent.
 
     Raises:
         ConfigurationError: A phase's provider has no batch API or uses a
-            custom endpoint, the extension refuses batch submission, or no
-            batch key variable of a phase is set.
+            custom endpoint, or the extension refuses batch submission.
     """
     for role, phase in _batch_phases(job):
         if phase.endpoint is not None or not supports_batch(phase.provider):
@@ -379,18 +468,6 @@ def _check_batch(
         raise ConfigurationError(str(exc)) from exc
     if not allowed:
         raise ConfigurationError("Batch submission is not available for this run.")
-    for role, phase in _batch_phases(job):
-        try:
-            variables = ext.key_variables(
-                phase.provider, kind="batch", settings=settings, args=args
-            )
-        except SettingsError as exc:
-            raise ConfigurationError(str(exc)) from exc
-        if variables and not any(os.environ.get(name) for name in variables):
-            raise ConfigurationError(
-                f"The API key variable {variables[0]} of provider {phase.provider} "
-                f"is not set; --batch needs it for the {role} batches."
-            )
 
 
 def _context(item: ItemSpec, job: ItemJob) -> str | None:
@@ -491,13 +568,11 @@ class _Classifier:
             summarize=job.summarize,
             settings_for=functools.partial(_image_record, job),
         )
-        try:
-            state = classify(output_dir, item.output_stem, request)
-        except StoreError as exc:
-            raise _refused(output_dir, exc) from exc
-        except InputMismatchError as exc:
-            raise DuplicateOutputError(str(exc)) from exc
+        state = _classify(output_dir, item.output_stem, request)
         run = self.spec.run
+        images: ImageSpec | None = None
+        if state.state is ItemState.REFUSED and not (run.force or run.retranscribe):
+            state, images = self._stored_images(output_dir, item, request, state)
         if run.force and state.state is not ItemState.BLOCKED:
             state = Classification(
                 ItemState.NONE, item.output_stem, state.doc_id, reason="overwrite mode"
@@ -516,7 +591,78 @@ class _Classifier:
             transcription_format=job.transcription_format,
             input_sha256=digest,
             completed_pages=_completed_pages(output_dir, state),
+            images=images,
         )
+
+    def _stored_images(
+        self,
+        output_dir: Path,
+        item: ItemSpec,
+        request: ResumeRequest,
+        refused: Classification,
+    ) -> tuple[Classification, ImageSpec | None]:
+        """Resume a refused item with the image values stored with it.
+
+        Each image option the run leaves unset takes the value of the
+        document's stored record, so an item stored under an earlier preset
+        version is not refused because a preset value changed. The item
+        stays refused when an option the run sets, or a value the record
+        does not hold, differs.
+        """
+        stored = _stored_record(output_dir, item.output_stem)
+        if stored is None:
+            return refused, None
+        images = _pinned_images(self.spec.images, stored)
+        if images == self.spec.images:
+            return refused, None
+        job = replace(self.job, images=images)
+        retry = replace(
+            request,
+            image_settings=_image_record(job),
+            settings_for=functools.partial(_image_record, job),
+        )
+        state = _classify(output_dir, item.output_stem, retry)
+        if state.state is ItemState.REFUSED:
+            return refused, None
+        return state, images
+
+
+def _classify(root: Path, name: str, request: ResumeRequest) -> Classification:
+    """Classify one item, mapping store refusals to plan errors."""
+    try:
+        return classify(root, name, request)
+    except StoreError as exc:
+        raise _refused(root, exc) from exc
+    except InputMismatchError as exc:
+        raise DuplicateOutputError(str(exc)) from exc
+
+
+def _stored_record(root: Path, name: str) -> Mapping[str, Any] | None:
+    """Return the image-settings record stored with document *name*."""
+    reader = read_store(root)
+    resume = reader.resume_state(name) if reader is not None else None
+    record = resume.image_settings if resume is not None else None
+    return record if isinstance(record, Mapping) else None
+
+
+_PINNED_KEYS = {
+    "dpi": "target_dpi",
+    "format": "payload_format",
+    "jpeg_quality": "jpeg_quality",
+    "grayscale": "grayscale_conversion",
+}
+"""The image options a resumed item takes from its stored record, with the
+record key of each; the detail is resolved per model and stays the run's."""
+
+
+def _pinned_images(images: ImageSpec, record: Mapping[str, Any]) -> ImageSpec:
+    """Return *images* with each unset pinnable option from *record*."""
+    values = {
+        name: record[key]
+        for name, key in _PINNED_KEYS.items()
+        if getattr(images, name) is None and record.get(key) is not None
+    }
+    return replace(images, **values)
 
 
 def _plan_warnings(groups: Mapping[ItemState, list[PlannedItem]]) -> tuple[str, ...]:
@@ -550,6 +696,12 @@ def plan(
     job = _job(spec, settings)
     if spec.run.batch:
         _check_batch(spec, job, settings, args)
+    unset = missing_keys(job, settings, batch=spec.run.batch, args=args)
+    key_warnings: tuple[str, ...] = ()
+    if unset and spec.run.dry_run:
+        key_warnings = tuple(_key_warning(missing) for missing in unset)
+    elif unset and spec.run.batch:
+        raise ConfigurationError(_key_warning(unset[0], batch=True))
     input_path = _absolute(spec.input.path)
     base = _absolute(spec.output.directory) if spec.output.directory else None
     logger.info("Input=%s, Output=%s", input_path, base or "beside input")
@@ -598,12 +750,13 @@ def plan(
         discovered=tuple(discovered),
         to_process=tuple(to_process),
         skipped=tuple(skipped),
-        warnings=warnings + _plan_warnings(groups),
+        warnings=warnings + _plan_warnings(groups) + key_warnings,
         settings=settings,
         sources=dict(sources or {}),
         legacy=tuple(groups[ItemState.LEGACY]),
         blocked=tuple(groups[ItemState.BLOCKED]),
         refused=tuple(groups[ItemState.REFUSED]),
+        missing_keys=unset,
     )
 
 
@@ -849,6 +1002,13 @@ class _ItemRun:
         await handle.store.write(handle.lease, prepare)
 
 
+def _item_job(run_plan: RunPlan, planned: PlannedItem) -> ItemJob:
+    """Return the run's item job with the item's own image options, if any."""
+    if planned.images is None:
+        return run_plan.job
+    return replace(run_plan.job, images=planned.images)
+
+
 async def _submit_item(
     run_plan: RunPlan,
     planned: PlannedItem,
@@ -860,7 +1020,7 @@ async def _submit_item(
     outcome = await BatchItem(
         planned.item,
         planned.output_dir,
-        run_plan.job,
+        _item_job(run_plan, planned),
         handle,
         context=planned.context,
         clients=clients,
@@ -951,7 +1111,7 @@ async def _run_item(  # noqa: PLR0913 - the item, its place and the run's object
         processor = ItemProcessor(
             planned.item,
             planned.output_dir,
-            run_plan.job,
+            _item_job(run_plan, planned),
             handle,
             context=planned.context,
             events=events,

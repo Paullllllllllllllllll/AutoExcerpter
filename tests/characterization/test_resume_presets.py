@@ -1,12 +1,15 @@
-"""Resume of an item stored before the image presets moved to ``common/``.
+"""Resume of an item stored under an earlier image preset.
 
 ``tests/fixtures/resume_before_presets/`` holds a three-page PDF and the
-output folder of a run by v2.4.0 before the move: page 2 refused, pages 1
-and 3 transcribed and summarized. The test copies both into a fresh root and
-runs again, which retries the failed page. Resume compares the stored image
-settings with the current ones and refuses a partly done item whose settings
-differ, so the rerun requesting only page 2 proves that the record is
-unchanged; the test also compares the stored record text before and after.
+output folder of a run by v2.4.0, before the presets moved to ``common/``
+and before version 3.0 made the pages colour: page 2 refused, pages 1 and 3
+transcribed and summarized, all as grayscale. The test copies both into a
+fresh root and runs again, which retries the failed page. Resume compares
+the stored image settings with the current ones and refuses a partly done
+item whose settings differ; an image option the run leaves unset takes the
+stored value, so the rerun requesting only page 2 proves that the item
+resumes under its stored grayscale preset. The test also compares the
+stored record text before and after.
 The fixture keeps its absolute paths, which tie the item to its input, under
 a placeholder root (``tests/fixture_paths.py``).
 
@@ -18,6 +21,7 @@ the earlier code.
 from __future__ import annotations
 
 import contextlib
+import json
 import os
 import shutil
 import sqlite3
@@ -66,7 +70,7 @@ def _write_fixture(llm: FakeLLM, root: Path, write_guard: WriteGuard) -> None:
     write_guard.consume(FIXTURE.parent)
 
 
-def test_rerun_resumes_an_item_stored_before_the_move(
+def test_rerun_resumes_an_item_stored_under_the_grayscale_preset(
     fake_llm: FakeLLM, tmp_path: Path, write_guard: WriteGuard
 ) -> None:
     root = tmp_path / "resume"
@@ -80,6 +84,7 @@ def test_rerun_resumes_an_item_stored_before_the_move(
     relocate(root, ROOT_PLACEHOLDER, str(root))
     database = root / "out" / DATABASE_NAME
     stored = _image_settings(database)
+    assert [json.loads(text)["grayscale_conversion"] for text in stored] == [True]
 
     rerun = _run(fake_llm, root)
 

@@ -85,6 +85,25 @@ def _by_index(units: Sequence[UnitRow]) -> dict[int, UnitRow]:
     return {unit.idx: unit for unit in units}
 
 
+class _StartGate:
+    """Spaces the starts of page requests at least *delay* seconds apart."""
+
+    def __init__(self, delay: float) -> None:
+        self.delay = delay
+        self._lock = asyncio.Lock()
+        self._next = 0.0
+
+    async def wait(self) -> None:
+        """Return once this start is *delay* after the previous one."""
+        if self.delay <= 0:
+            return
+        async with self._lock:
+            pause = self._next - time.monotonic()
+            if pause > 0:
+                await asyncio.sleep(pause)
+            self._next = time.monotonic() + self.delay
+
+
 def open_source(item: ItemSpec, job: ItemJob) -> PayloadSource:
     """Open the lazy payload source of *item*; no page is rendered yet."""
     model = job.transcription
@@ -488,7 +507,8 @@ class ItemProcessor:
         error that escapes the page runner propagates after the remaining
         pages are cancelled; cancellation of the item cancels every page.
         When a phase runs on Anthropic, the first page runs alone before the
-        others start, so that they read its cached system prompt.
+        others start, so that they read its cached system prompt. Two pages
+        start at least the job's ``start_delay`` apart.
         """
         progress = PageProgress(
             len(pending),
@@ -498,9 +518,11 @@ class ItemProcessor:
         )
         self._progress = progress
         semaphore = asyncio.Semaphore(workers)
+        gate = _StartGate(self.job.start_delay)
 
         async def run_page(index: int) -> tuple[int, str]:
             async with semaphore:
+                await gate.wait()
                 return index, await self.runner.run(index, source, progress)
 
         managers = (self.runner.transcribe_manager, self.runner.summary_manager)

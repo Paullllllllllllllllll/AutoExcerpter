@@ -1,27 +1,33 @@
 """Typed settings: machine values and optional run defaults.
 
-``config/settings.yaml`` (gitignored) holds this machine's values; the
-tracked ``config/settings.example.yaml`` is read when it is missing. Every
-key is optional and falls back to the code value. The ``defaults`` block sets
-run options by option name (see :mod:`autoexcerpter.spec`); a flag overrides
-it, and it overrides the code default. Further top-level blocks are accepted
-only when the caller passes a parser for them; :attr:`Settings.extensions`
-holds their parsed values.
+``load`` reads ``--settings FILE`` when given, else ``config/settings.yaml``
+in the repository (gitignored), else the packaged
+``resources/settings.example.yaml``; without any file the code values apply.
+Every key is optional and falls back to the code value. The ``defaults``
+block sets run options by option name (see :mod:`autoexcerpter.spec`); a
+flag overrides it, and it overrides the code default. Its deprecated key
+``transcription_format`` is accepted with a warning during v3.x. Further
+top-level blocks are accepted only when the caller passes a parser for
+them; :attr:`Settings.extensions` holds their parsed values.
 
 The shared blocks (``api_keys``, ``endpoints``, ``timeouts``,
-``rate_limits``, ``images``, ``state_dir``) are read by
-:mod:`autoexcerpter.common.settings_schema`; ``retry`` and ``openalex`` are
-this tool's own.
+``rate_limits``, ``concurrency``, ``images``, ``prompt_caching``,
+``state_dir``, ``logs_dir``) are read by
+:mod:`autoexcerpter.common.settings_schema` with this tool's defaults;
+``retry`` and ``openalex`` are this tool's own.
 """
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
 
+from autoexcerpter.common import settings_schema as schema
+from autoexcerpter.common.options import OptionError
 from autoexcerpter.common.retry import DEFAULT_BACKOFF_MULTIPLIERS, RetryPolicy
 from autoexcerpter.common.settings_loader import SettingsError, load_settings
 from autoexcerpter.common.settings_schema import (
@@ -29,19 +35,32 @@ from autoexcerpter.common.settings_schema import (
     BlockParser,
     Endpoint,
     Images,
+    PromptCaching,
     Reader,
     Timeouts,
+    ValueKind,
     check_blocks,
+    log_file,
     read_api_keys,
+    read_concurrency,
     read_endpoints,
     read_extensions,
     read_images,
+    read_logs_dir,
+    read_prompt_caching,
     read_rate_limits,
     read_state_dir,
     read_timeouts,
     state_directory,
 )
-from autoexcerpter.spec import OPTIONS, Resolution, SpecError, resolve_spec
+from autoexcerpter.spec import (
+    OPTIONS,
+    TRANSCRIPTION_FORMAT_ALIAS,
+    TRANSCRIPTION_FORMATS,
+    Resolution,
+    SpecError,
+    resolve_spec,
+)
 from autoexcerpter.state import DEFAULT_DIR_NAME
 
 __all__ = [
@@ -49,9 +68,11 @@ __all__ = [
     "DEFAULT_API_KEYS",
     "DEFAULT_SETTINGS_PATH",
     "EXAMPLE_SETTINGS_PATH",
+    "Concurrency",
     "Endpoint",
     "Images",
     "OpenAlexSettings",
+    "PromptCaching",
     "RetryRule",
     "RetrySettings",
     "Settings",
@@ -62,9 +83,11 @@ __all__ = [
     "resolve",
 ]
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_SETTINGS_PATH = _PROJECT_ROOT / "config" / "settings.yaml"
-EXAMPLE_SETTINGS_PATH = _PROJECT_ROOT / "config" / "settings.example.yaml"
+logger = logging.getLogger(__name__)
+
+_PACKAGE_DIR = Path(__file__).resolve().parent
+DEFAULT_SETTINGS_PATH = _PACKAGE_DIR.parent / "config" / "settings.yaml"
+EXAMPLE_SETTINGS_PATH = _PACKAGE_DIR / "resources" / "settings.example.yaml"
 
 RATE_LIMITS: tuple[tuple[int, int], ...] = ((10, 1), (600, 60), (600, 3600))
 """The code default of ``rate_limits``: ``[requests, seconds]`` windows."""
@@ -126,6 +149,22 @@ class RetrySettings:
 
 
 @dataclass(frozen=True)
+class Concurrency(schema.Concurrency):
+    """The pause in seconds between starting two page requests; none by default.
+
+    ``--concurrency`` bounds the page requests in flight; the page images
+    render in the page pool, so ``image_processing`` is not read here.
+    """
+
+    delay_between_tasks: float = 0.0
+
+
+_CONCURRENCY_KEYS: tuple[tuple[str, ValueKind], ...] = (
+    ("delay_between_tasks", "number"),
+)
+
+
+@dataclass(frozen=True)
 class OpenAlexSettings:
     """OpenAlex contact and request limit per document."""
 
@@ -149,12 +188,25 @@ class Settings:
     timeouts: Timeouts = field(default_factory=Timeouts)
     rate_limits: tuple[tuple[int, int], ...] = RATE_LIMITS
     retry: RetrySettings = field(default_factory=RetrySettings)
+    concurrency: Concurrency = field(default_factory=Concurrency)
     state_dir: Path | None = None
+    logs_dir: Path | None = None
     openalex: OpenAlexSettings = field(default_factory=OpenAlexSettings)
     images: Images = field(default_factory=Images)
+    prompt_caching: PromptCaching = field(default_factory=PromptCaching)
     defaults: Mapping[str, Any] = field(default_factory=lambda: MappingProxyType({}))
     source: Path | None = None
     extensions: Mapping[str, Any] = field(default_factory=lambda: MappingProxyType({}))
+
+    def log_file(self) -> Path | None:
+        """Return the log file, or None to log to the console only.
+
+        ``logs_dir`` names a ``.log`` file or the folder of
+        ``application.log``; unset, no log file is written.
+        """
+        if self.logs_dir is None:
+            return None
+        return log_file(self.logs_dir, self.logs_dir)
 
     def api_key_env(self, provider: str, endpoint: str | None = None) -> str:
         """Return the environment variable that holds the key of a provider.
@@ -220,9 +272,16 @@ class Settings:
             timeouts=read_timeouts(reader, data.get("timeouts")),
             rate_limits=read_rate_limits(reader, data.get("rate_limits"), RATE_LIMITS),
             retry=_retry(reader, data.get("retry")),
+            concurrency=read_concurrency(
+                reader, data.get("concurrency"), Concurrency(), _CONCURRENCY_KEYS
+            ),
             state_dir=state_dir,
+            logs_dir=read_logs_dir(reader, data),
             openalex=_openalex(reader, data.get("openalex")),
             images=read_images(reader, data.get("images")),
+            prompt_caching=read_prompt_caching(
+                reader, data.get("prompt_caching"), PromptCaching()
+            ),
             defaults=MappingProxyType(dict(defaults or {})),
             source=source,
             extensions=read_extensions(reader, data, blocks),
@@ -236,9 +295,12 @@ _TOP_KEYS = frozenset(
         "timeouts",
         "rate_limits",
         "retry",
+        "concurrency",
         "state_dir",
+        "logs_dir",
         "openalex",
         "images",
+        "prompt_caching",
     }
 )
 
@@ -335,23 +397,59 @@ def _openalex(reader: Reader, raw: Any) -> OpenAlexSettings:
 def load(
     path: Path | None = None, *, blocks: Mapping[str, BlockParser] | None = None
 ) -> Settings:
-    """Load the settings file; an explicit ``path`` (``--settings``) wins.
+    """Load the settings; an explicit ``path`` (``--settings``) wins.
 
+    Without ``path`` the repository's ``config/settings.yaml`` is read, else
+    the packaged example; when neither exists the code values apply.
     *blocks* maps extra top-level block names to their parsers (see
     :meth:`Settings.from_mapping`).
 
     Raises:
         SettingsError: The file is missing or invalid.
     """
+    if path is None and not (
+        DEFAULT_SETTINGS_PATH.is_file() or EXAMPLE_SETTINGS_PATH.is_file()
+    ):
+        return Settings()
     loaded = load_settings(
-        DEFAULT_SETTINGS_PATH,
-        example=EXAMPLE_SETTINGS_PATH,
-        explicit=path,
-        options=OPTIONS,
+        DEFAULT_SETTINGS_PATH, example=EXAMPLE_SETTINGS_PATH, explicit=path
     )
     return Settings.from_mapping(
-        loaded.data, defaults=loaded.defaults, source=loaded.path, blocks=blocks
+        loaded.data,
+        defaults=_checked_defaults(loaded.defaults, loaded.path),
+        source=loaded.path,
+        blocks=blocks,
     )
+
+
+def _checked_defaults(raw: Mapping[str, Any], path: Path) -> dict[str, Any]:
+    """Validate the ``defaults`` block; keep the deprecated transcription format.
+
+    Raises:
+        SettingsError: An unknown option or an invalid value.
+    """
+    values = dict(raw)
+    alias = values.pop(TRANSCRIPTION_FORMAT_ALIAS, None)
+    try:
+        checked = OPTIONS.check_defaults(values)
+    except OptionError as exc:
+        raise SettingsError(f"{path}: defaults: {exc}") from exc
+    if alias is None:
+        return checked
+    if alias not in TRANSCRIPTION_FORMATS:
+        raise SettingsError(
+            f"{path}: defaults: {TRANSCRIPTION_FORMAT_ALIAS}: {alias!r} is not "
+            "one of md, txt"
+        )
+    logger.warning(
+        "%s: the defaults key %s is deprecated and will be removed in version 4; "
+        "put transcription-%s into formats instead.",
+        path,
+        TRANSCRIPTION_FORMAT_ALIAS,
+        alias,
+    )
+    checked[TRANSCRIPTION_FORMAT_ALIAS] = alias
+    return checked
 
 
 def resolve(settings: Settings, flags: Mapping[str, Any]) -> Resolution:

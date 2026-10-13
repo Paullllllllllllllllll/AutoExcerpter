@@ -25,9 +25,17 @@ from autoexcerpter.common.wizard import (
 )
 from autoexcerpter.output.store import Classification, ItemState
 from autoexcerpter.settings import Endpoint, Settings
-from autoexcerpter.spec import OPTIONS, RunSpec, parse
+from autoexcerpter.spec import (
+    BATCH_CHECK_OPTIONS,
+    OPTIONS,
+    RENDER_OPTIONS,
+    RunSpec,
+    parse,
+)
+from autoexcerpter.ui.batch import CHECK_PROGRAM
 from autoexcerpter.ui.review import FORCE_ACTION, PROGRAM
-from autoexcerpter.ui.session import Session, resolution
+from autoexcerpter.ui.session import Session, command_words, resolution, unquote
+from autoexcerpter.ui.store import RENDER_PROGRAM
 from autoexcerpter.ui.wizard import STEP_NAMES, build_steps, build_wizard
 from tests.conftest import make_settings
 
@@ -100,22 +108,23 @@ def _run(answers: Sequence[Any], session: Session | None = None) -> Run:
 def _pdf_answers(pdf: Path, *review: Any) -> list[Any]:
     """Answers for one PDF with summary and every recommended value."""
     return [
-        str(pdf),  # input
-        "beside",  # output
-        True,  # summarize
-        "md",  # transcription format
-        KEEP,  # output formats
-        "auto",  # context
-        "none",  # fallback context
-        "openai",  # transcription provider
-        "gpt-5.6-luna",  # transcription model
-        KEEP,  # reasoning effort
-        KEEP,  # response format
-        "recommended",  # model parameters
-        "same",  # summary model
-        "recommended",  # page images
-        KEEP,  # run options
-        KEEP,  # concurrency
+        str(pdf),  # 0 input
+        "beside",  # 1 output
+        "md",  # 2 transcription format
+        True,  # 3 summarize
+        KEEP,  # 4 summary formats
+        "openai",  # 5 transcription provider
+        "gpt-6-luna",  # 6 transcription model
+        KEEP,  # 7 reasoning effort
+        KEEP,  # 8 response format
+        "recommended",  # 9 model parameters
+        "same",  # 10 summary model
+        "auto",  # 11 context
+        "none",  # 12 fallback context
+        "recommended",  # 13 page images
+        KEEP,  # 14 submission
+        KEEP,  # 15 run options
+        KEEP,  # 16 concurrency
         *review,
     ]
 
@@ -147,16 +156,32 @@ def test_every_option_but_json_and_settings_belongs_to_a_step() -> None:
         for name in OPTIONS.names
         if any(f"{phase}_{name}" in OPTIONS for phase in ("transcription", "summary"))
     }
-    assert set(OPTIONS.names) - declared == {"json", "settings", *unprefixed}
+    assert set(OPTIONS.names) - declared == {"json", "settings", "files", *unprefixed}
     assert [step.name for step in build_steps(_session())] == list(STEP_NAMES)
+
+
+def test_the_steps_follow_the_shared_order() -> None:
+    titles = [step.title for step in build_steps(_session())]
+    assert titles == [
+        "Input",
+        "Output and formats",
+        "Summary",
+        "Transcription model",
+        "Summary model",
+        "Context",
+        "Page images",
+        "Run options",
+    ]
 
 
 def test_pdf_session_with_summary_runs_with_recommended_values(pdf: Path) -> None:
     run = _run(_pdf_answers(pdf, "run"))
     assert run.outcome.action is Decision.RUN
     assert "  found 1 PDF, 3 pages" in run.prompter.lines
-    assert len(_headers(run)) == 9
-    assert _headers(run)[0].endswith("step 1 of 9")
+    assert len(_headers(run)) == 8
+    assert _headers(run)[0].endswith("step 1 of 8")
+    assert "? Submission:" in run.prompter.lines
+    assert "? Parallel requests: [16] 16" in run.prompter.lines
     spec = run.spec()
     assert spec.input.path == pdf
     assert spec.summary.enabled
@@ -171,16 +196,16 @@ def test_pdf_session_with_summary_runs_with_recommended_values(pdf: Path) -> Non
 
 def test_back_returns_to_the_previous_question_and_step(pdf: Path) -> None:
     answers = _pdf_answers(pdf, "quit")
-    answers[2:2] = [BACK, "folder", BACK, "beside"]
-    answers[11:11] = ["anthropic", BACK]
+    answers[3:3] = [BACK, "folder", BACK, "beside", "md"]
+    answers[10:10] = ["anthropic", BACK]
     run = _run(answers)
     assert run.outcome.action is Decision.QUIT
     headers = _headers(run)
     assert [header.split("|")[1].strip() for header in headers[1:5]] == [
-        "new run   step 2 of 9",
-        "new run   step 3 of 9",
-        "new run   step 2 of 9",
-        "new run   step 3 of 9",
+        "new run   step 2 of 8",
+        "new run   step 3 of 8",
+        "new run   step 2 of 8",
+        "new run   step 3 of 8",
     ]
     assert run.prompter.lines.count("? Transcription provider:") == 2
     assert run.spec().transcription_model.provider == "openai"
@@ -191,14 +216,15 @@ def test_summary_off_skips_context_and_summary_model(pdf: Path) -> None:
         [
             str(pdf),
             "beside",
-            False,
             "txt",
+            False,
             "openai",
-            "gpt-5.6-luna",
+            "gpt-6-luna",
             KEEP,
             KEEP,
             "recommended",
             "recommended",
+            KEEP,
             KEEP,
             KEEP,
             "run",
@@ -209,11 +235,11 @@ def test_summary_off_skips_context_and_summary_model(pdf: Path) -> None:
     assert "? Summary model:" not in transcript
     assert "OpenAlex" not in transcript
     assert "Summary as Markdown" not in transcript
-    assert _headers(run)[-1].endswith("step 7 of 7")
+    assert _headers(run)[-1].endswith("step 6 of 6")
     spec = run.spec()
     assert not spec.summary.enabled
     assert spec.output.transcription_format == "txt"
-    assert spec.output.formats == ("summary-md", "summary-docx")
+    assert spec.output.formats == ("transcription-txt", "summary-md", "summary-docx")
     _assert_round_trip(run)
 
 
@@ -259,18 +285,19 @@ def test_settings_defaults_are_preselected_marked_and_spelled_out(pdf: Path) -> 
         [
             str(pdf),
             "beside",
-            True,
             "md",
+            True,
             KEEP,
-            "auto",
-            "none",
             "openai",
             KEEP,
             KEEP,
             KEEP,
             "recommended",
             "same",
+            "auto",
+            "none",
             "recommended",
+            KEEP,
             KEEP,
             KEEP,
             "run",
@@ -281,20 +308,21 @@ def test_settings_defaults_are_preselected_marked_and_spelled_out(pdf: Path) -> 
     assert " > gpt-5.6-terra (s)" in lines
     assert " > medium (s)" in lines
     assert "   [x] Summary as Markdown (X_summary.md) (s)" in lines
-    assert "? Parallel page requests: [4 (s)] 4" in lines
+    assert "? Parallel requests: [4 (s)] 4" in lines
     assert any("300 DPI (s)" in line for line in lines)
+    assert "formats" not in run.outcome.answers
     review = run.transcript.split("\nReview")[-1]
     assert SETTINGS_LEGEND in review
     assert "openai / gpt-5.6-terra (s)" in review
     assert "reasoning medium (s)" in review
-    assert "formats summary-md (s)" in review
+    assert "formats transcription-md, summary-md (s)" in review
     assert "300 DPI (s)" in review
     command = run.outcome.command
     assert command is not None
     for words in (
         ("--model", "gpt-5.6-terra"),
         ("--reasoning-effort", "medium"),
-        ("--formats", "summary-md"),
+        ("--formats", "transcription-md,summary-md"),
         ("--dpi", "300"),
         ("--concurrency", "4"),
     ):
@@ -327,13 +355,13 @@ def test_resets_are_offered_only_without_a_settings_default(pdf: Path) -> None:
 def _tuned(pdf: Path, block: Sequence[Any]) -> list[Any]:
     """Answers with gpt-4o and customized parameters: tokens, temperature, top p."""
     answers = _pdf_answers(pdf, "run")
-    answers[8:12] = ["<other>", "gpt-4o", KEEP, "customize", *block, KEEP]
+    answers[6:10] = ["<other>", "gpt-4o", KEEP, "customize", *block, KEEP]
     return answers
 
 
 def _response(pdf: Path, block: Sequence[Any]) -> list[Any]:
     answers = _pdf_answers(pdf, "run")
-    answers[10:11] = block
+    answers[8:9] = block
     return answers
 
 
@@ -497,7 +525,7 @@ RESET_CASES = [
         new=True,
         reset=None,
         shown=" > No (s)",
-        hint="Recommended (yes)",
+        hint="Recommended (no)",
         words=("--grayscale",),
         stem="grayscale",
         field=lambda spec: spec.images.grayscale,
@@ -572,7 +600,7 @@ def test_same_summary_model_copies_an_unset_value_without_a_default(
 
 def test_custom_parameters_and_own_summary_model(pdf: Path) -> None:
     answers = _pdf_answers(pdf)
-    answers[7:12] = [
+    answers[5:10] = [
         "openai",
         "<other>",
         "gpt-4o",
@@ -583,7 +611,7 @@ def test_custom_parameters_and_own_summary_model(pdf: Path) -> None:
         "0.9",
         "priority",
     ]
-    answers[16:17] = [
+    answers[14:15] = [
         "own",
         "anthropic",
         "<other>",
@@ -609,7 +637,7 @@ def test_custom_parameters_and_own_summary_model(pdf: Path) -> None:
 
 def test_model_name_implies_its_provider(pdf: Path) -> None:
     answers = _pdf_answers(pdf, "quit")
-    answers[8:10] = ["<other>", "gemini-3.1-pro", KEEP]
+    answers[6:8] = ["<other>", "gemini-3.1-pro", KEEP]
     run = _run(answers, _session(environ={"GOOGLE_API_KEY": "x"}))
     assert "  provider google, as the model name implies" in run.prompter.lines
     model = run.spec().transcription_model
@@ -623,8 +651,10 @@ def test_named_endpoints_from_the_settings(pdf: Path) -> None:
     )
     settings = make_settings(endpoints=MappingProxyType({"local": endpoint}))
     answers = _pdf_answers(pdf, "run")
-    answers[7:12] = ["endpoint:local", "qwen-vl", "schema", "recommended"]
+    answers[5:10] = ["endpoint:local", "qwen-vl", "schema", "recommended"]
+    del answers[13]  # a custom endpoint has no batch API: no submission question
     run = _run(answers, _session(settings, environ={"LOCAL_KEY": "x"}))
+    assert "? Submission:" not in run.prompter.lines
     assert "   Endpoint local  http://127.0.0.1:8000/v1" in run.prompter.lines
     spec = run.spec()
     for phase in ("transcription", "summary"):
@@ -645,12 +675,12 @@ def test_context_text_and_fallback_file(tmp_path: Path, pdf: Path) -> None:
     topics = tmp_path / "topics.txt"
     topics.write_text("trade; prices\n", encoding="utf-8")
     answers = _pdf_answers(pdf, "run")
-    answers[5:7] = ["auto", "file", str(topics)]
+    answers[11:13] = ["auto", "file", f'"{topics}"']
     run = _run(answers)
     assert run.spec().summary.fallback_context == str(topics)
     _assert_round_trip(run)
     answers = _pdf_answers(pdf, "run")
-    answers[5:7] = ["text", "early modern spice trade"]
+    answers[11:13] = ["text", "early modern spice trade"]
     run = _run(answers)
     assert run.spec().summary.context == "early modern spice trade"
     assert "context: early modern spice trade" in run.transcript
@@ -666,9 +696,9 @@ def test_extension_steps_follow_the_tool_steps(
     step = Step("extension", "Extension", ask=ask, sets=("concurrency",))
     monkeypatch.setattr(ext, "wizard_steps", lambda: (step,))
     answers = _pdf_answers(pdf, "run")
-    answers.insert(16, "3")
+    answers.insert(17, "3")
     run = _run(answers)
-    assert _headers(run)[-1].endswith("step 10 of 10")
+    assert _headers(run)[-1].endswith("step 9 of 9")
     assert run.spec().run.concurrency == 3
     _assert_round_trip(run)
 
@@ -719,7 +749,7 @@ def test_a_plan_error_withholds_run_until_a_step_is_edited(
     empty = tmp_path / "empty.txt"
     empty.write_text("", encoding="utf-8")
     answers = _pdf_answers(pdf)
-    answers[5:7] = ["file", str(empty)]
+    answers[11:13] = ["file", str(empty)]
     with pytest.raises(ScriptError, match="'run' is not one of"):
         _run([*answers, "run"])
     run = _run([*answers, "edit", "context", "auto", "none", "run"])
@@ -739,7 +769,70 @@ def test_a_missing_key_variable_withholds_run(pdf: Path) -> None:
     assert "Run unavailable: set OPENAI_API_KEY in the environment" in lines
     assert "   Run" not in lines and " > Run" not in lines
     dry = _pdf_answers(pdf, "run")
-    dry[14] = ["openalex", "dry_run"]
+    dry[15] = ["openalex", "dry_run"]
     run = _run(dry, _session(environ={}))
     assert run.spec().run.dry_run
     assert "Missing API key" not in run.transcript
+    assert (
+        "Warning: The API key variable OPENAI_API_KEY of provider openai is not "
+        "set; a real run needs it for the transcription and summary phases."
+    ) in run.prompter.lines
+
+
+def test_the_submission_is_offered_only_when_the_extension_allows_batch(
+    monkeypatch: pytest.MonkeyPatch, pdf: Path
+) -> None:
+    answers = _pdf_answers(pdf, "quit")
+    answers[14:17] = [True, KEEP]
+    run = _run(answers)
+    assert run.spec().run.batch
+    assert "Parallel requests:" not in run.transcript
+    _assert_round_trip(run)
+    monkeypatch.setattr(ext, "batch_allowed", lambda *args, **kwargs: False)
+    answers = _pdf_answers(pdf, "quit")
+    del answers[14]
+    run = _run(answers)
+    assert "? Submission:" not in run.prompter.lines
+    assert not run.spec().run.batch
+
+
+@pytest.mark.parametrize(
+    ("model", "offered"),
+    [("gpt-6-luna", True), ("claude-haiku-5-5", False), ("gemini-3.1-pro", False)],
+)
+def test_original_detail_is_offered_only_where_the_pages_take_it(
+    pdf: Path, model: str, offered: bool
+) -> None:
+    session = _session()
+    state = State(OPTIONS, {}, {"input": pdf, "transcription_model": model})
+    images = [step for step in build_steps(session) if step.name == "images"]
+    prompter = ScriptedPrompter(["customize", "", KEEP, KEEP, KEEP, KEEP, "quit"])
+    wizard = build_wizard(session, prompter, state=state, steps=images, width=100)
+    with prompter:
+        wizard.run()
+    details = prompter.transcript.split("? Image detail:")[1].split("?")[0]
+    assert ("original" in details.replace("Recommended (original)", "")) is offered
+
+
+def test_quotes_around_a_typed_path_are_stripped(pdf: Path) -> None:
+    answers = _pdf_answers(pdf, "quit")
+    answers[0] = f'"{pdf}"'
+    run = _run(answers)
+    assert run.spec().input.path == pdf
+    assert unquote(f"'{pdf}'") == str(pdf)
+    assert unquote('"a b"') == "a b"
+    assert unquote('"a') == '"a'
+
+
+def test_extension_words_join_only_the_commands_that_take_them(
+    monkeypatch: pytest.MonkeyPatch, pdf: Path
+) -> None:
+    monkeypatch.setattr(ext, "extra_argv", lambda args: ("--access", "x"))
+    run = _run(_pdf_answers(pdf, "copy"))
+    assert run.outcome.command is not None
+    assert run.outcome.command[-2:] == ("--access", "x")
+    session = _session()
+    check = command_words(CHECK_PROGRAM, [], session, BATCH_CHECK_OPTIONS)
+    assert check[-2:] == ["--access", "x"]
+    render = command_words(RENDER_PROGRAM, [], session, RENDER_OPTIONS)
+    assert "--access" not in render

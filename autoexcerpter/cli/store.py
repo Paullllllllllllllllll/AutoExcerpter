@@ -2,8 +2,10 @@
 
 ``render`` exits 0 when every file holds its rendering or was left alone
 because it was edited, 1 when a file could not be replaced or a document is
-held by another run, 2 for a missing input or a database it refuses; a
-database written before the store names the migrate command. ``migrate``
+held by another run, 2 for a missing input, an invalid settings file or a
+database it refuses; a database written before the store names the migrate
+command. Both read the settings (``--settings FILE``) for the log file;
+``migrate`` also for the OpenAlex cache in ``state_dir``. ``migrate``
 exits 0 when every import verified, 1 on a verification mismatch or an
 import that failed, 2 for a missing input or a database it refuses (newer,
 unreadable or of an unknown layout). With ``--json`` both write one JSON
@@ -18,6 +20,7 @@ import asyncio
 import logging
 import sys
 from collections.abc import Callable, Sequence
+from pathlib import Path
 from typing import Any
 
 from autoexcerpter import ext
@@ -115,7 +118,22 @@ def _report(results: list[DocumentRender], dry_run: bool) -> None:
     )
 
 
+def _load_settings(path: Path | None) -> settings_module.Settings | str:
+    """Load the settings and start the log file; return the error message."""
+    try:
+        loaded = settings_module.load(path, blocks=ext.settings_blocks())
+    except settings_module.SettingsError as exc:
+        return str(exc)
+    configure_logging(log_file=loaded.log_file())
+    return loaded
+
+
 def _execute(spec: RenderSpec, emitter: SummaryEmitter) -> int:
+    loaded = _load_settings(spec.settings)
+    if isinstance(loaded, str):
+        _write(f"[ERROR] {loaded}")
+        emitter.emit(render_fields())
+        return ExitCode.USAGE
     path = spec.input.expanduser().resolve()
     if not path.exists():
         _write(f"[ERROR] Input path does not exist: {path}")
@@ -255,10 +273,9 @@ def _execute_migrate(spec: MigrateSpec, emitter: SummaryEmitter) -> int:
         _write(f"[ERROR] Input path does not exist: {path}")
         emitter.emit(migrate_fields())
         return ExitCode.USAGE
-    try:
-        loaded = settings_module.load(spec.settings, blocks=ext.settings_blocks())
-    except settings_module.SettingsError as exc:
-        _write(f"[ERROR] {exc}")
+    loaded = _load_settings(spec.settings)
+    if isinstance(loaded, str):
+        _write(f"[ERROR] {loaded}")
         emitter.emit(migrate_fields())
         return ExitCode.USAGE
     report = asyncio.run(

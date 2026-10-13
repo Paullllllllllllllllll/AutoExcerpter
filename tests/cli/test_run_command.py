@@ -97,7 +97,7 @@ class TestJobFromSpec:
     def test_run_switches(self) -> None:
         spec = make_spec(
             summarize=False,
-            formats="summary-md",
+            formats=("transcription-txt", "summary-md"),
             openalex=False,
             concurrency=3,
         )
@@ -106,9 +106,11 @@ class TestJobFromSpec:
         assert job.summarize is False
         assert job.output_markdown is True
         assert job.output_docx is False
+        assert job.transcription_format == "txt"
         assert job.openalex_enabled is False
         assert job.openalex is None
         assert job.concurrency == 3
+        assert job.start_delay == 0.0
         assert job.timeout == 900
 
     def test_key_variables_come_from_the_settings(
@@ -258,6 +260,12 @@ def _select_nothing(tmp_path: Path, make_pdf: MakePdf) -> list[str]:
     return ["--input", str(tmp_path / "in"), "--select", "gamma"]
 
 
+def _files_nothing(tmp_path: Path, make_pdf: MakePdf) -> list[str]:
+    (tmp_path / "in").mkdir()
+    make_pdf("in/alpha.pdf")
+    return ["--input", str(tmp_path / "in"), "--files", "alpha.pdf,gamma.pdf"]
+
+
 def _several_items(tmp_path: Path, make_pdf: MakePdf) -> list[str]:
     (tmp_path / "in").mkdir()
     make_pdf("in/alpha.pdf")
@@ -295,8 +303,9 @@ def _parse_error(tmp_path: Path, make_pdf: MakePdf) -> list[str]:
         pytest.param(_complete, 0, 1, id="complete"),
         pytest.param(_item_failed, 1, 1, id="item_failed"),
         pytest.param(_dry_run, 0, None, id="dry_run"),
-        pytest.param(_no_items, 1, 0, id="no_items"),
-        pytest.param(_select_nothing, 1, 0, id="select_nothing"),
+        pytest.param(_no_items, 2, 0, id="no_items"),
+        pytest.param(_select_nothing, 2, 0, id="select_nothing"),
+        pytest.param(_files_nothing, 2, 0, id="files_nothing"),
         pytest.param(_several_items, 2, 0, id="several_items"),
         pytest.param(_duplicate, 2, 2, id="duplicate_output"),
         pytest.param(_missing_settings, 2, 0, id="missing_settings"),
@@ -413,7 +422,7 @@ def test_interrupt_during_the_run_exits_130(
 def test_without_json_stdout_stays_empty(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert _run("--input", str(tmp_path / "missing")) == 1
+    assert _run("--input", str(tmp_path / "missing")) == 2
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "[ERROR] No items found to process" in captured.err
@@ -466,11 +475,29 @@ class TestDryRun:
         captured = capsys.readouterr()
         (payload,) = _json_lines(captured.out)
         spec = payload.pop("spec")
+        usage = payload.pop("usage")
         assert payload == {
             "dry_run": True,
+            "items_total": 1,
+            "items_complete": 0,
+            "items_failed": 0,
+            "items_skipped": 1,
+            "items_submitted": 0,
+            "outputs": [],
             "to_process": [{"name": "Alpha", "state": "none", "completed_pages": 0}],
             "skipped": ["Beta"],
+            "legacy": [
+                {
+                    "name": "Beta",
+                    "reason": "Beta_transcription.md exists without units in "
+                    "autoexcerpter.sqlite; migrate imports it, --force processes "
+                    "it again",
+                }
+            ],
+            "blocked": [],
+            "refused": [],
         }
+        assert usage["total"]["total_tokens"] == 0
         assert spec["summary.enabled"] == {"value": False, "source": "flag"}
         assert spec["output.directory"] == {"value": str(out), "source": "flag"}
         assert spec["run.concurrency"]["source"] == "default"
@@ -621,7 +648,75 @@ def test_plan_fields_match_the_dry_run_contract(
     assert fields == {
         "to_process": [{"name": "doc", "state": "none", "completed_pages": 0}],
         "skipped": [],
+        "legacy": [],
+        "blocked": [],
+        "refused": [],
     }
+    line = command.dry_run_fields(run_plan)
+    assert (line["items_total"], line["items_skipped"]) == (1, 0)
+    assert set(command.summary_fields()) <= set(line)
+
+
+def test_a_dry_run_plans_without_key_variables_and_warns(
+    tmp_path: Path,
+    make_pdf: MakePdf,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    pdf = make_pdf("doc.pdf")
+
+    assert _run("--input", str(pdf), "--dry-run", "--json") == 0
+
+    captured = capsys.readouterr()
+    (payload,) = _json_lines(captured.out)
+    assert payload["to_process"] == [
+        {"name": "doc", "state": "none", "completed_pages": 0}
+    ]
+    assert (
+        "[WARNING] The API key variable OPENAI_API_KEY of provider openai is not "
+        "set; a real run needs it for the transcription and summary phases."
+    ) in captured.err
+
+
+def test_the_deprecated_transcription_format_still_works(
+    tmp_path: Path, make_pdf: MakePdf, capsys: pytest.CaptureFixture[str]
+) -> None:
+    pdf = make_pdf("doc.pdf")
+
+    code = _run(
+        "--input", str(pdf), "--transcription-format", "txt", "--dry-run", "--json"
+    )
+
+    assert code == 0
+    captured = capsys.readouterr()
+    (payload,) = _json_lines(captured.out)
+    assert payload["spec"]["output.formats"] == {
+        "value": ["transcription-txt", "summary-md", "summary-docx"],
+        "source": "flag",
+    }
+    assert "--transcription-format is deprecated" in captured.err
+
+
+def test_files_name_the_items_exactly(
+    tmp_path: Path, make_pdf: MakePdf, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / "in").mkdir()
+    for name in ("alpha", "beta", "alphabet"):
+        make_pdf(f"in/{name}.pdf")
+
+    code = _run(
+        "--input",
+        str(tmp_path / "in"),
+        "--files",
+        "beta.pdf,alpha.pdf",
+        "--dry-run",
+        "--json",
+    )
+
+    assert code == 0
+    (payload,) = _json_lines(capsys.readouterr().out)
+    assert [item["name"] for item in payload["to_process"]] == ["alpha", "beta"]
 
 
 def test_run_summary_reports_tokens_per_role_and_in_total() -> None:

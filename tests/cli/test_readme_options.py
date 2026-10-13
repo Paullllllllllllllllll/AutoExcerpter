@@ -197,8 +197,8 @@ def test_default_text_is_what_help_prints() -> None:
 
 DRIFT = [
     pytest.param(
-        "| `--concurrency N` | parallel page requests | 16 | yes |",
-        "| `--concurrency N` | parallel page requests | 32 | yes |",
+        "| `--concurrency N` | parallel requests | 16 | yes |",
+        "| `--concurrency N` | parallel requests | 32 | yes |",
         "--concurrency: default",
         id="changed-default",
     ),

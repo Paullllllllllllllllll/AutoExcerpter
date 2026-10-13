@@ -34,6 +34,7 @@ from autoexcerpter.common.options import (
 )
 from autoexcerpter.common.polling import DEFAULT_POLL_MINUTES, wait_options
 from autoexcerpter.common.standard_options import (
+    DRY_RUN_HELP,
     IMAGE_DETAILS,
     IMAGE_FORMATS,
     JSON_HELP,
@@ -72,7 +73,9 @@ __all__ = [
     "BATCH_CHECK_OPTIONS",
     "CONTEXT_AUTO",
     "CONTEXT_NONE",
+    "DEFAULT_FORMATS",
     "DEFAULT_MODEL",
+    "EXTENSION_COMMANDS",
     "IMAGE_DETAILS",
     "IMAGE_FORMATS",
     "IMAGE_PRESETS",
@@ -87,7 +90,9 @@ __all__ = [
     "REASONING_EFFORTS",
     "RESPONSE_FORMATS",
     "SERVICE_TIERS",
+    "SUMMARY_FORMATS",
     "TRANSCRIPTION_FORMATS",
+    "TRANSCRIPTION_FORMAT_ALIAS",
     "VERBOSITIES",
     "BatchCancelSpec",
     "BatchCheckSpec",
@@ -105,7 +110,9 @@ __all__ = [
     "RunSpec",
     "SpecError",
     "SummarySpec",
+    "check_formats",
     "effective_spec",
+    "fold_transcription_format",
     "model_suggestions",
     "parse",
     "recommended_images",
@@ -116,14 +123,29 @@ __all__ = [
     "resolve_spec",
     "spec_from_effective",
     "to_argv",
+    "transcription_format_of",
+    "with_transcription_format",
 ]
 
 TRANSCRIPTION_FORMATS = ("md", "txt")
-OUTPUT_FORMATS = ("summary-md", "summary-docx")
 RENDER_FORMATS = ("transcription-md", "transcription-txt", "summary-md", "summary-docx")
+OUTPUT_FORMATS = RENDER_FORMATS
+SUMMARY_FORMATS = ("summary-md", "summary-docx")
+DEFAULT_FORMATS = ("transcription-md", *SUMMARY_FORMATS)
+TRANSCRIPTION_PREFIX = "transcription-"
 PHASES = ("transcription", "summary")
 
-DEFAULT_MODEL = "gpt-5.6-luna"
+EXTENSION_COMMANDS: frozenset[tuple[str, ...]] = frozenset(
+    {("run",), ("batch", "check"), ("batch", "cancel"), ("ui",)}
+)
+"""The commands that call providers and so take the extension's arguments
+(``ext.register_args``); ``render`` and ``migrate`` do not."""
+
+TRANSCRIPTION_FORMAT_ALIAS = "transcription_format"
+"""The deprecated ``--transcription-format`` (and settings key of that name):
+``md`` or ``txt``, folded into ``--formats`` during v3.x."""
+
+DEFAULT_MODEL = "gpt-6-luna"
 DEFAULT_REASONING_EFFORT = "high"
 DEFAULT_VERBOSITY = {"transcription": "high", "summary": "low"}
 DEFAULT_TEMPERATURE = 1.0
@@ -134,7 +156,16 @@ CONTEXT_AUTO = "auto"
 CONTEXT_NONE = "none"
 
 MODEL_SUGGESTIONS: Mapping[str, tuple[str, ...]] = {
-    "openai": (DEFAULT_MODEL, "gpt-5.6-terra", "gpt-5.6-sol", "gpt-5.5"),
+    "openai": (
+        DEFAULT_MODEL,
+        "gpt-6-sol",
+        "gpt-6-astra",
+        "gpt-6.1-sol",
+        "gpt-5.6-luna",
+        "gpt-5.6-terra",
+        "gpt-5.6-sol",
+        "gpt-5.5",
+    ),
     "anthropic": ("claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"),
     "google": ("gemini-3.7-flash", "gemini-3.1-pro", "gemini-3.5-flash"),
     "openrouter": (
@@ -151,24 +182,76 @@ class SpecError(ValueError):
 
 @dataclass(frozen=True)
 class InputSpec:
-    """The input path and the selection of discovered items."""
+    """The input path and the selection of discovered items.
+
+    ``select`` is a selection expression, ``files`` names items exactly and
+    ``all`` takes every item; at most one of them is set.
+    """
 
     path: Path
     select: str | None
     all: bool
+    files: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
 class OutputSpec:
     """Where and what to write; ``directory`` None means beside the input.
 
-    ``formats`` are the summary files; the transcription file and the
-    database are always written.
+    ``formats`` names the rendered files (:data:`OUTPUT_FORMATS`): exactly
+    one transcription format and the summary formats. The transcription
+    file and the database are always written.
     """
 
     directory: Path | None
-    transcription_format: str
     formats: tuple[str, ...]
+
+    @property
+    def transcription_format(self) -> str:
+        """The transcription file's extension, ``md`` or ``txt``."""
+        return transcription_format_of(self.formats) or "md"
+
+    @property
+    def summary_formats(self) -> tuple[str, ...]:
+        """The summary formats among ``formats``."""
+        return tuple(name for name in self.formats if name in SUMMARY_FORMATS)
+
+
+def transcription_format_of(formats: Sequence[str]) -> str | None:
+    """Return ``md`` or ``txt`` from the transcription format in *formats*."""
+    for name in formats:
+        if name.startswith(TRANSCRIPTION_PREFIX):
+            return name.removeprefix(TRANSCRIPTION_PREFIX)
+    return None
+
+
+def with_transcription_format(
+    formats: Sequence[str], extension: str | None
+) -> tuple[str, ...]:
+    """Return *formats* with exactly one transcription format.
+
+    *extension* (``md`` or ``txt``) replaces the transcription format of
+    *formats*; None keeps it, and a list without one takes ``md``.
+
+    Raises:
+        SpecError: *formats* names both transcription formats.
+    """
+    given = [name for name in formats if name.startswith(TRANSCRIPTION_PREFIX)]
+    if len(given) > 1:
+        raise SpecError(
+            "--formats takes one transcription format: transcription-md or "
+            "transcription-txt"
+        )
+    if extension is None:
+        extension = transcription_format_of(given) or "md"
+    if extension not in TRANSCRIPTION_FORMATS:
+        raise SpecError(
+            f"{TRANSCRIPTION_FORMAT_ALIAS}: {extension!r} is not one of md, txt"
+        )
+    wanted = {TRANSCRIPTION_PREFIX + extension} | {
+        name for name in formats if name in SUMMARY_FORMATS
+    }
+    return tuple(name for name in OUTPUT_FORMATS if name in wanted)
 
 
 @dataclass(frozen=True)
@@ -277,10 +360,10 @@ class RunSpec:
 
 IMAGE_PRESETS = ImagePresets(
     families={
-        "openai": openai_preset(),
-        "anthropic": anthropic_preset(),
-        "google": google_preset(),
-        "custom": custom_preset(),
+        "openai": openai_preset(grayscale=False),
+        "anthropic": anthropic_preset(grayscale=False),
+        "google": google_preset(grayscale=False),
+        "custom": custom_preset(jpeg_quality=95, grayscale=False),
     },
     detail=DetailRules(
         filter_overrides=False,
@@ -305,9 +388,13 @@ IMAGE_PRESETS = ImagePresets(
         ),
     ),
     resampling="bilinear",
+    version=2,
 )
 """The image presets of each model family: the values the wizard recommends
-and the request sections of ``imaging.settings``. A run's detail is written
+and the request sections of ``imaging.settings``. Version 2 sends every
+family's pages in colour at JPEG quality 95 (version 1: grayscale, and
+quality 85 for custom endpoints); an item stored under version 1 resumes
+with the values of its stored record (``run.plan``). A run's detail is written
 into the section as given. OpenAI pages follow the request's ``image_size``
 option: low, high and auto stay, original stays where the model takes it and
 becomes high elsewhere, and any other detail, or a model without image
@@ -397,6 +484,19 @@ def _build_table() -> OptionTable:
             target="input.select",
         ),
         Option(
+            "files",
+            "--files",
+            "comma-separated names of items inside the input folder",
+            group="input",
+            kind=Kind.LIST,
+            type=nonempty_text,
+            metavar="LIST",
+            default=(),
+            exclusive="selection",
+            target="input.files",
+            settable=False,
+        ),
+        Option(
             "all",
             "--all",
             "process every discovered item",
@@ -408,22 +508,16 @@ def _build_table() -> OptionTable:
         ),
         *output_options(),
         Option(
-            "transcription_format",
-            "--transcription-format",
-            "transcription file format",
-            group="output",
-            choices=TRANSCRIPTION_FORMATS,
-            default="md",
-            target="output.transcription_format",
-        ),
-        Option(
             "formats",
             "--formats",
-            "comma-separated output formats",
+            (
+                "comma-separated output formats, at most one transcription "
+                "format (transcription-md when none is given)"
+            ),
             group="output",
             kind=Kind.LIST,
             choices=OUTPUT_FORMATS,
-            default=OUTPUT_FORMATS,
+            default=DEFAULT_FORMATS,
             metavar="LIST",
             target="output.formats",
         ),
@@ -485,7 +579,7 @@ def _build_table() -> OptionTable:
             target="run.retranscribe",
             settable=False,
         ),
-        concurrency_option(DEFAULT_CONCURRENCY, help="parallel page requests"),
+        concurrency_option(DEFAULT_CONCURRENCY),
         batch_option("submit the pages and summaries to the providers' batch APIs"),
         dry_run_option("run.dry_run"),
         json_option("run.json"),
@@ -509,25 +603,33 @@ OPTIONS = _build_table()
 
 
 RENDER_OPTIONS = OptionTable(
-    render_options(
-        input_help="output folder or autoexcerpter.sqlite to render",
-        formats=RENDER_FORMATS,
-        dry_run_help="print what would be written without writing",
-        json_help=JSON_HELP,
-    ),
+    [
+        *render_options(
+            input_help="output folder or autoexcerpter.sqlite to render",
+            formats=RENDER_FORMATS,
+            dry_run_help=DRY_RUN_HELP,
+            json_help=JSON_HELP,
+        ),
+        settings_option(target="settings"),
+    ],
     group_titles={"input": "input", "output": "output", "run": "run control"},
 )
 
 
 @dataclass(frozen=True)
 class RenderSpec:
-    """The options of ``render``; ``formats`` None renders the registered ones."""
+    """The options of ``render``; ``formats`` None renders the registered ones.
+
+    ``settings`` names the settings file (its ``logs_dir``); render makes no
+    model call.
+    """
 
     input: Path
     formats: tuple[str, ...] | None = None
     force: bool = False
     dry_run: bool = False
     json: bool = False
+    settings: Path | None = None
 
 
 def resolve_render(flags: Mapping[str, Any]) -> RenderSpec:
@@ -557,11 +659,8 @@ MIGRATE_OPTIONS = OptionTable(
             target="input",
             settable=False,
         ),
-        settings_option(
-            help="settings file whose state_dir holds the OpenAlex cache",
-            target="settings",
-        ),
-        dry_run_option("dry_run", "print what would be imported without writing"),
+        settings_option(target="settings"),
+        dry_run_option("dry_run"),
         json_option("json"),
     ],
     group_titles={"input": "input", "run": "run control"},
@@ -611,10 +710,26 @@ BATCH_CHECK_OPTIONS = OptionTable(
             "and its documents wait for a run"
         ),
         *wait_options(group="batch", default_hours=WAIT_HOURS),
+        Option(
+            "formats",
+            "--formats",
+            (
+                "comma-separated formats of the finished documents, replacing "
+                "those of the submitting run (whose transcription format stays "
+                "when none is given)"
+            ),
+            group="output",
+            kind=Kind.LIST,
+            choices=OUTPUT_FORMATS,
+            metavar="LIST",
+            default_help="the formats of the submitting run",
+            target="formats",
+            settable=False,
+        ),
         json_option("json"),
         settings_option(target="settings"),
     ],
-    group_titles=_BATCH_TITLES,
+    group_titles={**_BATCH_TITLES, "output": "output"},
 )
 
 BATCH_CANCEL_OPTIONS = OptionTable(
@@ -630,7 +745,9 @@ class BatchCheckSpec:
     ``adopt`` names a provider batch to record for an unresolved submission;
     ``abandon`` names an unresolved submission whose pages return to pending.
     With ``wait`` the check repeats every ``poll_minutes`` until no batch
-    work is pending; no check starts after ``wait_hours``.
+    work is pending; no check starts after ``wait_hours``. ``formats``, when
+    given, replaces the formats of the submitting run (see
+    :func:`check_formats`).
     """
 
     directory: Path
@@ -640,8 +757,41 @@ class BatchCheckSpec:
     wait: bool = False
     poll_minutes: float = DEFAULT_POLL_MINUTES
     wait_hours: float = WAIT_HOURS
+    formats: tuple[str, ...] | None = None
     json: bool = False
     settings: Path | None = None
+
+
+def fold_transcription_format(defaults: Mapping[str, Any]) -> dict[str, Any]:
+    """Return *defaults* with the deprecated transcription format in ``formats``.
+
+    The settings key :data:`TRANSCRIPTION_FORMAT_ALIAS` becomes the
+    transcription format of the ``formats`` default (the code default
+    formats when the block sets none), so the block holds option names only.
+    """
+    folded = dict(defaults)
+    alias = folded.pop(TRANSCRIPTION_FORMAT_ALIAS, None)
+    if alias is not None:
+        formats = folded.get("formats", DEFAULT_FORMATS)
+        folded["formats"] = with_transcription_format(formats, str(alias))
+    return folded
+
+
+def check_formats(
+    override: Sequence[str] | None, stored: Sequence[str]
+) -> tuple[str, ...]:
+    """Return the formats ``batch check`` renders a document in.
+
+    *override* is ``batch check --formats`` (None: *stored*, the formats of
+    the submitting run); an override without a transcription format keeps
+    the stored one.
+    """
+    if override is None:
+        return tuple(stored)
+    keep = None
+    if transcription_format_of(override) is None:
+        keep = transcription_format_of(stored)
+    return with_transcription_format(override, keep)
 
 
 @dataclass(frozen=True)
@@ -679,6 +829,11 @@ def resolve_batch_check(flags: Mapping[str, Any]) -> BatchCheckSpec:
                 raise SpecError(f"{flag} needs --wait")
     resolved = BATCH_CHECK_OPTIONS.resolve(flags, None)
     values, _ = BATCH_CHECK_OPTIONS.by_targets(resolved)
+    formats = values["formats"]
+    if formats is not None:
+        if not formats:
+            raise SpecError("--formats needs at least one format")
+        with_transcription_format(formats, None)
     return BatchCheckSpec(**values)
 
 
@@ -729,6 +884,7 @@ def effective_spec(
 
 
 _PATH_FIELDS = frozenset({"input.path", "output.directory"})
+_LEGACY_FORMAT_FIELD = "output.transcription_format"
 
 
 def spec_from_effective(stored: Mapping[str, Any]) -> RunSpec:
@@ -737,7 +893,9 @@ def spec_from_effective(stored: Mapping[str, Any]) -> RunSpec:
     *stored* maps dotted field paths to ``{"value": ..., "source": ...}``,
     as the store keeps a run's spec; lists become tuples and the path fields
     paths. A field the stored spec lacks, from an earlier version, takes its
-    dataclass default.
+    dataclass default. A spec of version 2 kept the transcription format in
+    ``output.transcription_format`` and the summary formats in
+    ``output.formats``; both join ``output.formats``.
 
     Raises:
         SpecError: A field without a default is missing or a value is invalid.
@@ -750,6 +908,11 @@ def spec_from_effective(stored: Mapping[str, Any]) -> RunSpec:
         elif isinstance(value, list):
             value = tuple(value)
         values[path] = value
+    legacy = values.pop(_LEGACY_FORMAT_FIELD, None)
+    if legacy is not None and isinstance(values.get("output.formats"), tuple):
+        values["output.formats"] = with_transcription_format(
+            values["output.formats"], str(legacy)
+        )
     try:
         return RunSpec(
             input=InputSpec(**_part(values, "input")),
@@ -840,18 +1003,28 @@ def resolve_spec(
 
     ``flags`` are converted values keyed by option name, as returned by
     ``OPTIONS.parse``; ``defaults`` is a checked settings defaults block.
+    Both may hold the deprecated :data:`TRANSCRIPTION_FORMAT_ALIAS` (``md``
+    or ``txt``); see :func:`_resolve_formats`.
 
     Raises:
-        SpecError: No input path, a custom provider without an endpoint, or
-            a model prefix that contradicts the provider.
+        SpecError: No input path, a custom provider without an endpoint, a
+            model prefix that contradicts the provider, or two transcription
+            formats.
     """
+    flags = dict(flags)
+    settings_defaults = dict(defaults or {})
+    aliases = (
+        (Source.FLAG, flags.pop(TRANSCRIPTION_FORMAT_ALIAS, None)),
+        (Source.SETTINGS, settings_defaults.pop(TRANSCRIPTION_FORMAT_ALIAS, None)),
+    )
     unknown = set(flags) - set(OPTIONS.names)
     if unknown:
         raise SpecError(f"unknown options: {', '.join(sorted(unknown))}")
-    resolved = OPTIONS.resolve(flags, defaults)
+    resolved = OPTIONS.resolve(flags, settings_defaults)
     for phase in PHASES:
         _resolve_endpoint(resolved, phase)
         _resolve_provider(resolved, phase)
+    resolved["formats"] = _resolve_formats(resolved["formats"], aliases)
     values, sources = OPTIONS.by_targets(resolved)
     if values["input.path"] is None:
         raise SpecError("an input path is required (--input PATH)")
@@ -866,6 +1039,33 @@ def resolve_spec(
         run=RunControl(**_part(values, "run")),
     )
     return Resolution(spec, sources)
+
+
+def _resolve_formats(
+    formats: Resolved, aliases: Sequence[tuple[Source, Any]]
+) -> Resolved:
+    """Give the resolved formats exactly one transcription format.
+
+    The first given alias of *aliases* (the deprecated transcription format
+    as a flag, then as a settings default) replaces the transcription format
+    of *formats* when it is set at the level of *formats* or above, and
+    fills it in when *formats* names none; otherwise ``md`` does.
+    """
+    level, alias = next(
+        ((source, value) for source, value in aliases if value is not None),
+        (Source.DEFAULT, None),
+    )
+    value = tuple(formats.value)
+    source = formats.source
+    replaces = alias is not None and level.rank >= source.rank
+    if alias is not None and (replaces or transcription_format_of(value) is None):
+        value = with_transcription_format(
+            [name for name in value if not name.startswith(TRANSCRIPTION_PREFIX)],
+            str(alias),
+        )
+        if level.rank > source.rank:
+            source = level
+    return Resolved(with_transcription_format(value, None), source)
 
 
 def _part(values: Mapping[str, Any], name: str) -> dict[str, Any]:
@@ -949,7 +1149,7 @@ def to_argv(spec: RunSpec, defaults: Mapping[str, Any] | None = None) -> list[st
         SpecError: The defaults change a value that has no spelling, such
             as an unset ``--top-p``.
     """
-    settings_defaults = defaults or {}
+    settings_defaults = fold_transcription_format(defaults or {})
     flat = _flatten(spec)
     targeted = [
         option

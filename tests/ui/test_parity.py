@@ -38,7 +38,13 @@ from autoexcerpter.common.wizard import (
 )
 from autoexcerpter.output.store import Classification, ItemState
 from autoexcerpter.settings import Settings, load, resolve
-from autoexcerpter.spec import OPTIONS, PHASES, RunSpec
+from autoexcerpter.spec import (
+    DEFAULT_FORMATS,
+    OPTIONS,
+    PHASES,
+    TRANSCRIPTION_FORMAT_ALIAS,
+    RunSpec,
+)
 from autoexcerpter.ui.review import FORCE_ACTION, PROGRAM
 from autoexcerpter.ui.session import Session, resolution
 from autoexcerpter.ui.wizard import build_steps, build_wizard
@@ -47,6 +53,7 @@ EXEMPT: Final[Mapping[str, str]] = MappingProxyType(
     {
         "json": "agent-contract output (one JSON line on stdout); no use in the UI",
         "settings": "the ui subcommand's own flag, checked against the ui parser",
+        "files": "exact item names for scripts; the UI selects by number or name",
     }
 )
 WIDTH: Final = 100
@@ -158,22 +165,23 @@ def _quoted(path: Path) -> str:
 def _base(input_path: Path, *rest: Any) -> list[Any]:
     """Answers for one PDF with summary and recommended values, then *rest*."""
     return [
-        str(input_path),  # input
-        "beside",  # output
-        True,  # summarize
-        "md",  # transcription format
-        KEEP,  # output formats
-        "auto",  # context
-        "none",  # fallback context
-        "openai",  # transcription provider
-        "gpt-5.6-luna",  # transcription model
-        KEEP,  # reasoning effort
-        KEEP,  # response format
-        "recommended",  # model parameters
-        "same",  # summary model
-        "recommended",  # page images
-        KEEP,  # run options
-        KEEP,  # concurrency
+        str(input_path),  # 0 input
+        "beside",  # 1 output
+        "md",  # 2 transcription format
+        True,  # 3 summarize
+        KEEP,  # 4 summary formats
+        "openai",  # 5 transcription provider
+        "gpt-6-luna",  # 6 transcription model
+        KEEP,  # 7 reasoning effort
+        KEEP,  # 8 response format
+        "recommended",  # 9 model parameters
+        "same",  # 10 summary model
+        "auto",  # 11 context
+        "none",  # 12 fallback context
+        "recommended",  # 13 page images
+        KEEP,  # 14 submission
+        KEEP,  # 15 run options
+        KEEP,  # 16 concurrency
         *rest,
     ]
 
@@ -193,19 +201,20 @@ def settings_defaults(ws: Workspace) -> Script:
         str(pdf),
         "folder",
         KEEP,  # output folder from settings
-        True,
         "md",
+        True,
         KEEP,
-        "auto",
-        KEEP,  # fallback mode: text, from settings
-        KEEP,  # fallback topics from settings
         KEEP,  # provider
         KEEP,  # model from settings
         KEEP,
         KEEP,
         "recommended",
         "same",
+        "auto",
+        KEEP,  # fallback mode: text, from settings
+        KEEP,  # fallback topics from settings
         "recommended",
+        KEEP,
         KEEP,
         KEEP,
         "run",
@@ -227,8 +236,8 @@ def back_to_code_defaults(ws: Workspace) -> Script:
         f"  output: {_quoted(ws.tmp / 'excerpts')}\n"
     )
     answers = _base(pdf, "copy")
-    answers[9] = "high"
-    answers[14:16] = [["openalex"], "16"]
+    answers[7] = "high"
+    answers[15:17] = [["openalex"], "16"]
     return Script(session, answers)
 
 
@@ -249,11 +258,9 @@ def named_endpoints(ws: Workspace) -> Script:
     answers = [
         str(pdf),
         "beside",
-        True,
         "md",
+        True,
         KEEP,
-        "file",
-        str(topics),
         "endpoint:local",
         "qwen-vl",
         "schema",
@@ -263,6 +270,8 @@ def named_endpoints(ws: Workspace) -> Script:
         "llava-next",
         "text",
         "recommended",
+        "file",
+        str(topics),
         "recommended",
         KEEP,
         KEEP,
@@ -292,7 +301,7 @@ def own_summary_model(ws: Workspace) -> Script:
     """A separate summary model, both phases with custom parameters."""
     pdf = ws.pdf()
     answers = _base(pdf, "copy")
-    answers[7:12] = [
+    answers[5:10] = [
         "openai",
         "<other>",
         "gpt-4o",
@@ -303,7 +312,7 @@ def own_summary_model(ws: Workspace) -> Script:
         "0.9",
         "priority",
     ]
-    answers[16:17] = [
+    answers[14:15] = [
         "own",
         "openai",
         "gpt-5.6-terra",
@@ -320,8 +329,12 @@ def own_summary_model(ws: Workspace) -> Script:
 def custom_images_and_parameters(ws: Workspace) -> Script:
     """Customized page images and model parameters."""
     pdf = ws.pdf()
-    answers = _base(pdf, "copy")
-    answers[7:12] = [
+    answers = [
+        str(pdf),
+        "beside",
+        "md",
+        True,
+        KEEP,
         "openai",
         "gpt-5.6-terra",
         "low",
@@ -330,8 +343,6 @@ def custom_images_and_parameters(ws: Workspace) -> Script:
         "medium",
         "12000",
         "priority",
-    ]
-    answers[15:17] = [
         "own",
         "openai",
         "<other>",
@@ -342,12 +353,18 @@ def custom_images_and_parameters(ws: Workspace) -> Script:
         "0.2",
         "0.5",
         "default",
+        "auto",
+        "none",
         "customize",
         "200",
         "high",
         "jpeg",
         "80",
         False,
+        KEEP,
+        KEEP,
+        KEEP,
+        "copy",
     ]
     return Script(ws.session(), answers)
 
@@ -377,14 +394,15 @@ def all_items_without_summary(ws: Workspace) -> Script:
         "all",
         "folder",
         str(output),
-        False,
         "txt",
+        False,
         "openai",
-        "gpt-5.6-luna",
+        "gpt-6-luna",
         KEEP,
         KEEP,
         "recommended",
         "recommended",
+        KEEP,
         ["retranscribe"],
         "2",
         "copy",
@@ -400,30 +418,33 @@ def back_navigation(ws: Workspace) -> Script:
         str(pdf),
         "folder",
         str(ws.tmp / "out"),
-        BACK,  # summary: back to the output step
-        "beside",
-        True,
         "md",
-        BACK,  # formats: back to the transcription format
+        BACK,  # summarize: back to the output step
+        "beside",
         "txt",
+        True,
+        BACK,  # summary formats: back to summarize
+        True,
         KEEP,
+        "anthropic",
+        BACK,  # model name: back to the provider
+        "openai",
+        "gpt-6-luna",
+        KEEP,
+        KEEP,
+        "recommended",
+        "same",
         "auto",
         "text",
         BACK,  # topics: back to the fallback mode
         "file",
         str(topics),
-        "anthropic",
-        BACK,  # model name: back to the provider
-        "openai",
-        "gpt-5.6-luna",
-        KEEP,
-        KEEP,
         "recommended",
-        "same",
-        "recommended",
+        KEEP,
         KEEP,
         KEEP,
         BACK,  # review: back to the run options
+        KEEP,
         KEEP,
         "8",
         "quit",
@@ -451,7 +472,8 @@ def force_review_action(ws: Workspace) -> Script:
     ws.monkeypatch.setattr(core, "plan", plan)
     pdf = ws.pdf()
     answers = _base(pdf, FORCE_ACTION, "run")
-    answers[4:7] = [["summary-md"], "none"]
+    answers[11:13] = ["none"]
+    answers[4] = ["summary-md"]
     return Script(ws.session(), answers)
 
 
@@ -459,8 +481,8 @@ def dry_run(ws: Workspace) -> Script:
     """A dry run with every run flag and quoted context text."""
     pdf = ws.pdf("dir with space/book.pdf")
     answers = _base(pdf, "run")
-    answers[5:7] = ["text", 'early modern "spice" trade, 1600\\1800']
-    answers[14:16] = [["force", "retranscribe", "dry_run"], "3"]
+    answers[11:13] = ["text", 'early modern "spice" trade, 1600\\1800']
+    answers[15:17] = [["force", "retranscribe", "dry_run"], "3"]
     return Script(ws.session(), answers)
 
 
@@ -469,7 +491,7 @@ def batch_submission(ws: Workspace) -> Script:
     ws.keys("OPENAI_API_KEY")
     pdf = ws.pdf()
     answers = _base(pdf, "run")
-    answers[14:16] = [["openalex", "batch", "dry_run"], KEEP]
+    answers[14:17] = [True, ["openalex", "dry_run"]]
     return Script(ws.session(), answers)
 
 
@@ -600,7 +622,14 @@ def _command_spec(words: Sequence[str], settings: Settings) -> RunSpec:
 
 def test_every_option_is_an_argument_of_the_run_parser() -> None:
     arguments = _arguments(_subparser("run"))
-    assert set(arguments) == {*OPTIONS.names, *_extension_dests()}
+    assert set(arguments) == {
+        *OPTIONS.names,
+        *_extension_dests(),
+        TRANSCRIPTION_FORMAT_ALIAS,
+    }
+    alias = arguments[TRANSCRIPTION_FORMAT_ALIAS]
+    assert alias.option_strings == ["--transcription-format"]
+    assert alias.help == argparse.SUPPRESS
     for option in OPTIONS:
         strings = set(arguments[option.name].option_strings)
         expected = {option.flag}
@@ -619,7 +648,7 @@ def test_the_ui_parser_accepts_the_settings_option(tmp_path: Path) -> None:
 
 
 def test_the_exemptions_are_options_with_reasons() -> None:
-    assert set(EXEMPT) == {"json", "settings"}
+    assert set(EXEMPT) == {"json", "settings", "files"}
     assert set(EXEMPT) <= set(OPTIONS.names)
     assert all(reason.strip() for reason in EXEMPT.values())
     declared = {name for step in build_steps(Session(Settings())) for name in step.sets}
@@ -718,13 +747,13 @@ def test_code_defaults_chosen_against_settings_are_spelled_out(
     played = play(back_to_code_defaults(workspace))
     answers = played.outcome.answers
     assert answers["beside_input"] is True
-    assert answers["transcription_format"] == "md"
+    assert answers["formats"] == DEFAULT_FORMATS
     assert answers["concurrency"] == 16
     assert answers["openalex"] is True
     words = played.command
     for flag, value in (
         ("--reasoning-effort", "high"),
-        ("--transcription-format", "md"),
+        ("--formats", ",".join(DEFAULT_FORMATS)),
         ("--context", "auto"),
         ("--fallback-context", "none"),
         ("--concurrency", "16"),
@@ -744,7 +773,7 @@ def test_a_provider_model_replaces_settings_endpoint_and_summary_model(
         assert (model.provider, model.endpoint, model.model) == (
             "openai",
             None,
-            "gpt-5.6-luna",
+            "gpt-6-luna",
         )
         assert model.reasoning_effort == "high"
     assert _flag_value(played.command, "--provider") == "openai"
@@ -782,7 +811,8 @@ def test_the_batch_option_reaches_the_command_and_the_review(
     assert played.outcome.action is Decision.RUN
     assert played.spec().run.batch
     assert "--batch" in played.command
-    assert "Submit to the providers' batch APIs (--batch)" in played.prompter.transcript
+    assert "? Submission:" in played.prompter.lines
+    assert "Parallel requests:" not in played.prompter.transcript
     review = [
         line
         for line in played.prompter.transcript.splitlines()
@@ -796,4 +826,16 @@ def test_the_batch_option_is_not_offered_without_a_batch_api(
     workspace: Workspace,
 ) -> None:
     played = play(named_endpoints(workspace))
-    assert "(--batch)" not in played.prompter.transcript
+    assert "Submission:" not in played.prompter.transcript
+
+
+def test_the_batch_option_is_not_offered_when_the_extension_refuses(
+    workspace: Workspace,
+) -> None:
+    workspace.monkeypatch.setattr(ext, "batch_allowed", lambda *a, **k: False)
+    script = settings_endpoint_overridden(workspace)
+    answers = list(script.answers)
+    del answers[14]  # no submission question
+    played = play(Script(script.session, answers))
+    assert "Submission:" not in played.prompter.transcript
+    assert not played.spec().run.batch

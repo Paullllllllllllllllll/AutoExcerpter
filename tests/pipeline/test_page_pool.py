@@ -7,14 +7,16 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+import itertools
 import threading
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
-from autoexcerpter.pipeline.item import ItemProcessor
+from autoexcerpter.pipeline.item import ItemProcessor, _StartGate
 from autoexcerpter.pipeline.progress import PageProgress
 from tests.pipeline.helpers import (
     make_processor,
@@ -255,3 +257,25 @@ def test_progress_denominator_is_pending_count(
     assert captured, "spy was never called"
     assert all(total == 3 for total, _ in captured)
     assert all(done == 2 for _, done in captured)
+
+
+@pytest.mark.parametrize("delay", [0.0, 0.1])
+def test_the_start_gate_spaces_page_starts_by_the_delay(delay: float) -> None:
+    """The bounds leave room for the event loop's clock resolution."""
+    gate = _StartGate(delay)
+    starts: list[float] = []
+
+    async def start() -> None:
+        await gate.wait()
+        starts.append(time.monotonic())
+
+    async def main() -> None:
+        await asyncio.gather(*(start() for _ in range(3)))
+
+    asyncio.run(main())
+
+    gaps = [later - earlier for earlier, later in itertools.pairwise(starts)]
+    if delay:
+        assert all(gap >= delay * 0.7 for gap in gaps)
+    else:
+        assert all(gap < 0.05 for gap in gaps)

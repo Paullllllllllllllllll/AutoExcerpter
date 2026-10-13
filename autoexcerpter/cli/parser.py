@@ -1,4 +1,8 @@
-"""Argument parsing: the top-level parser and one function per subcommand."""
+"""Argument parsing: the top-level parser and one function per subcommand.
+
+The commands of :data:`autoexcerpter.spec.EXTENSION_COMMANDS`, those that
+call providers, also take the extension's arguments.
+"""
 
 from __future__ import annotations
 
@@ -14,6 +18,8 @@ from autoexcerpter.spec import (
     MIGRATE_OPTIONS,
     OPTIONS,
     RENDER_OPTIONS,
+    TRANSCRIPTION_FORMAT_ALIAS,
+    TRANSCRIPTION_FORMATS,
 )
 
 __all__ = [
@@ -53,8 +59,9 @@ config/settings.yaml.
 Exit codes:
   0    every item completed or, under --batch, was submitted, or nothing
        was left to do
-  1    an item failed, or no item could be processed
-  2    usage or configuration error
+  1    an item failed
+  2    usage or configuration error, also an input without items and a
+       --select or --files that matches nothing
   130  interrupted (Ctrl+C)
 
 With --json, stdout carries exactly one JSON summary line on every exit; \
@@ -65,6 +72,9 @@ Examples:
     autoexcerpter run --input book.pdf
   Every item in a folder, outputs in one folder:
     autoexcerpter run --input scans --all --output excerpts
+  Two items of a folder by name, plain-text transcription and Markdown summary:
+    autoexcerpter run --input scans --files a.pdf,b.pdf
+      --formats transcription-txt,summary-md
   Separate transcription and summary models:
     autoexcerpter run --input book.pdf --transcription-model gpt-5.6-sol
       --summary-model claude-sonnet-5
@@ -76,9 +86,12 @@ Examples:
 """
 
 UI_DESCRIPTION = (
-    "Guided run: walks through input, outputs, models and image settings, "
-    "shows a review screen with the equivalent command, then runs. Needs an "
-    "interactive terminal."
+    "Guided session in an interactive terminal. The first step chooses the "
+    "task: a new run, checking or cancelling batches, rendering stored "
+    "documents again, or importing earlier outputs (migrate). Each task asks "
+    "its options one step at a time, shows a review screen with the "
+    "equivalent command, then runs it. Exit codes are those of the chosen "
+    "task's command."
 )
 
 
@@ -107,8 +120,19 @@ Commands = Any
 
 
 def add_run_arguments(parser: argparse.ArgumentParser) -> None:
-    """Add the option table and the extension arguments to *parser*."""
+    """Add the option table, the deprecated alias and the extension arguments.
+
+    ``--transcription-format`` stays hidden from the help during v3.x; the
+    run command folds it into ``--formats`` with a warning.
+    """
     OPTIONS.add_arguments(parser)
+    parser.add_argument(
+        "--transcription-format",
+        dest=TRANSCRIPTION_FORMAT_ALIAS,
+        choices=TRANSCRIPTION_FORMATS,
+        default=argparse.SUPPRESS,
+        help=argparse.SUPPRESS,
+    )
     ext.register_args(parser)
 
 
@@ -138,8 +162,8 @@ in before. A file changed outside the tool is left as it is unless --force.
 Exit codes:
   0    every file holds its rendering or was left as edited
   1    a file could not be replaced, or another run holds a document
-  2    usage error, or a database the store refuses (one written before
-       the store names autoexcerpter migrate)
+  2    usage error, a missing settings file, or a database the store
+       refuses (one written before the store names autoexcerpter migrate)
   130  interrupted (Ctrl+C)
 """
 
@@ -294,7 +318,7 @@ def add_ui_command(commands: Commands) -> argparse.ArgumentParser:
     """Add the ui subcommand: the settings option and the extension arguments."""
     ui: argparse.ArgumentParser = commands.add_parser(
         "ui",
-        help="guided run in an interactive terminal",
+        help="guided session in an interactive terminal",
         description=UI_DESCRIPTION,
         formatter_class=HelpFormatter,
     )
