@@ -389,11 +389,16 @@ _RETRY_KEYS: tuple[tuple[str, ValueKind], ...] = (
 
 
 def read_retry[R: RetrySettings](reader: Reader, raw: Any, base: R) -> R:
-    """Return the retry block over *base*."""
+    """Return the retry block over *base*; a missing or null key keeps its value."""
     allowed = frozenset(key for key, _ in _RETRY_KEYS) | {"page_timeout"}
     section = reader.section(raw, "retry", allowed)
     values = reader.flat(section, _RETRY_KEYS, base, "retry.")
-    page_timeout = read_page_timeout(reader, section.get("page_timeout"))
+    raw_timeout = section.get("page_timeout")
+    page_timeout = (
+        base.page_timeout
+        if raw_timeout is None
+        else read_page_timeout(reader, raw_timeout)
+    )
     return replace(base, **values, page_timeout=page_timeout)
 
 

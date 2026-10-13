@@ -73,6 +73,15 @@ def test_retry_block(tmp_path: Path) -> None:
     assert RetrySettings().page_deadline(900.0) == 900.0 * 3 + 300.0
 
 
+@pytest.mark.parametrize("raw", [None, {}, {"max_attempts": 4}, {"page_timeout": None}])
+@pytest.mark.parametrize("deadline", [60.0, 0.0])
+def test_retry_keeps_an_injected_deadline(
+    tmp_path: Path, raw: dict[str, object] | None, deadline: float
+) -> None:
+    base = RetrySettings(page_timeout=deadline)
+    assert read_retry(_reader(tmp_path), raw, base).page_timeout == deadline
+
+
 def test_rate_limits_take_the_injected_default(tmp_path: Path) -> None:
     default = ((1, 1),)
     assert read_rate_limits(_reader(tmp_path), None, default) == default

@@ -1,5 +1,9 @@
 # Changelog
 
+- **v3.0.1** (13 October 2026) -- Patch release. A `retry` settings block
+  without `page_timeout`, or with `page_timeout: null`, keeps the deadline the
+  tool passes as its default instead of resetting it to `auto`; the shipped
+  default is `auto`, so no current run changes.
 - **v3.0.0** (13 October 2026) -- The command-line interface, defaults and
   settings follow the standard AutoExcerpter, ChronoTranscriber and ChronoMiner
   now share. `--formats` takes the transcription format too

@@ -27,7 +27,7 @@
     "retry.py": "d668135ff7b2ac27dac051f405a9935a5fc1333ee55c0ed8148b4bdc1cf3dbf6",
     "selection.py": "9644e19e0077a4ec667e47dbd45843dd32a328830adbc79a4049fe0787dc1f35",
     "settings_loader.py": "2148461c53a5cc6a04b77c732bbfdbb7e9071e2cf5670aae36fe0851dfcd7729",
-    "settings_schema.py": "9d2fca78ce4cdd4b831bbd1f748f88394375a49159b2013057347da4f9e577ee",
+    "settings_schema.py": "fd77f45a0d4896a528e4512803a4c720724ced4d9de3df8807b310058d9ae78d",
     "sqlite.py": "73b6ed83a32d0013e9010274569b4c3cf35fc2c821b03e1521f909e3a6c0d2f9",
     "standard_options.py": "aa972971fa72f0fef27bccd8c3dcb9954626e7f82c87bd5a159586f6045cc7aa",
     "store.py": "3fad131f6b4d48ffc75cf514d241550f02ad8277a8c76dbb6110e41512a5bd17",
