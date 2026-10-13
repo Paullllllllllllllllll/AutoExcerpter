@@ -4,9 +4,12 @@
 effort, verbosity, temperature, top_p) into the invoke kwargs its provider
 accepts, guarded by the model's capabilities. An unset output limit takes the
 model's limit from the capability table on OpenAI, Anthropic and Google
-(:data:`LIMITS`). The shared tables and mechanics come from
-``common.request_options``; the tables below are this tool's variants.
-:func:`response_format_for` decides between schema, json and text.
+(:data:`LIMITS`). The capability table also decides the OpenAI service tier
+(``flex`` only for the models listed for it), the reasoning effort or
+thinking level a model documents and whether it takes a verbosity. The
+shared tables and mechanics come from ``common.request_options``; the tables
+below are this tool's variants. :func:`response_format_for` decides between
+schema, json and text.
 """
 
 from __future__ import annotations
@@ -22,6 +25,9 @@ from autoexcerpter.common.request_options import (
     GOOGLE_LEVELS,
     OutputLimits,
     anthropic_effort,
+    clamp_effort,
+    google_thinking_level,
+    openai_service_tier,
 )
 from autoexcerpter.common.structured import RESPONSE_FORMATS, ResponseFormat
 from autoexcerpter.llm.capabilities import (
@@ -64,14 +70,9 @@ _ANTHROPIC_EFFORT_TO_BUDGET: Mapping[str, int] = {
 }
 
 # Adaptive-thinking Claude models reject thinking.budget_tokens and take only
-# the effort. "none" sends no effort here; claude-sonnet-5.5 takes none.
+# the effort. "none" sends no effort here.
 _ANTHROPIC_EFFORTS: Mapping[str, str] = {
     effort: level for effort, level in ANTHROPIC_EFFORTS.items() if effort != "none"
-}
-_ANTHROPIC_EFFORT_LEVELS: Mapping[str, tuple[str, ...]] = {
-    family: levels
-    for family, levels in ANTHROPIC_EFFORT_LEVELS.items()
-    if family != "claude-sonnet-5.5"
 }
 
 _GOOGLE_EFFORT_TO_BUDGET: Mapping[str, int] = {
@@ -119,7 +120,10 @@ def response_format_for(
 
 
 def request_service_tier(provider: str, service_tier: str | None) -> str:
-    """Return the service tier sent with each call ("auto" outside OpenAI)."""
+    """Return the service tier a call asks for ("auto" outside OpenAI).
+
+    :func:`build_invoke_kwargs` sends it where the model takes it.
+    """
     if provider != "openai":
         return "auto"
     return service_tier or DEFAULT_SERVICE_TIER
@@ -145,17 +149,23 @@ def _max_tokens(
 def _anthropic_effort(family: str, effort: str) -> str | None:
     """Return the effort level *family* takes for *effort*, or None for none."""
     return anthropic_effort(
-        family, effort, efforts=_ANTHROPIC_EFFORTS, levels=_ANTHROPIC_EFFORT_LEVELS
+        family, effort, efforts=_ANTHROPIC_EFFORTS, levels=ANTHROPIC_EFFORT_LEVELS
     )
 
 
 def _reasoning(
-    provider: str, model_name: str, caps: ProviderCapabilities, effort: str | None
+    provider: str, caps: ProviderCapabilities, effort: str | None
 ) -> dict[str, Any]:
-    """Return the reasoning kwargs the provider and model accept."""
+    """Return the reasoning kwargs the provider and model accept.
+
+    OpenAI and Gemini models get an effort or thinking level they document
+    (``clamp_effort``); models without an effort control get none.
+    """
     reasoning = caps.is_reasoning_model
     if provider == "openai" and reasoning:
-        return {"reasoning": {"effort": effort}} if effort is not None else {}
+        if effort is None or not caps.supports_reasoning_effort:
+            return {}
+        return {"reasoning": {"effort": clamp_effort(effort, caps, log=logger)}}
     family = caps.provider_name
     adaptive = caps.uses_adaptive_thinking and family == "anthropic"
     extended = reasoning and family == "anthropic" and not caps.uses_adaptive_thinking
@@ -171,11 +181,11 @@ def _reasoning(
             thinking = {"type": "enabled", "budget_tokens": budget}
             return {"thinking": thinking, **output_config}
         return {}
-    if provider == "google" and reasoning and family == "google":
+    if provider == "google" and caps.supports_reasoning_effort and family == "google":
         if effort is None:
             return {}
-        if "gemini-3" in model_name.lower():
-            level = _GOOGLE_EFFORT_TO_LEVEL.get(effort)
+        if not caps.family.startswith("gemini-2"):
+            level = google_thinking_level(effort, caps, _GOOGLE_EFFORT_TO_LEVEL)
             return {"thinking_config": {"thinking_level": level}} if level else {}
         budget = _GOOGLE_EFFORT_TO_BUDGET.get(effort)
         return {"thinking_config": {"thinking_budget": budget}} if budget else {}
@@ -196,8 +206,10 @@ def build_invoke_kwargs(
     caps = detect_capabilities(model_name)
     kwargs: dict[str, Any] = _max_tokens(provider, caps, options)
     if provider == "openai":
-        kwargs["service_tier"] = request_service_tier(provider, service_tier)
-    kwargs.update(_reasoning(provider, model_name, caps, _effort(options)))
+        tier = openai_service_tier(request_service_tier(provider, service_tier), caps)
+        if tier is not None:
+            kwargs["service_tier"] = tier
+    kwargs.update(_reasoning(provider, caps, _effort(options)))
 
     text = options.get("text")
     if (

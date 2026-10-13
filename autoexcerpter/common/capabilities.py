@@ -1,8 +1,9 @@
-"""Model capability resolution from per-tool family rules.
+"""Model capability resolution from family rules.
 
-Each tool passes a ``CapabilityTable``: provider detection rules, family rules
-matched in order (first match wins), and overrides for the conservative
-profile used for unknown models. The engine holds no model data.
+A ``CapabilityTable`` holds provider detection rules, family rules matched in
+order (first match wins), and overrides for the conservative profile used for
+unknown models. The engine holds no model data; the tools share the table of
+:mod:`.capability_table`.
 
 Model ids are matched lowercased after removing a ``provider:`` prefix and
 Google's ``models/`` prefix, unless the table keeps prefixes. Ids of the form
@@ -34,7 +35,14 @@ _warned_models: set[tuple[str, str]] = set()
 class Capabilities:
     """What one model accepts; the defaults form the conservative profile.
 
-    ``extras`` holds tool-specific flags that have no field here.
+    ``reasoning_efforts`` lists the reasoning efforts (OpenAI) or thinking
+    levels (Gemini) the vendor documents for the model, lowest first; an
+    empty tuple sends a requested effort unchanged. ``supports_flex_tier``
+    marks the models OpenAI lists for Flex processing.
+    ``prompt_cache_parameter`` names the OpenAI parameter that sets the
+    prompt-cache lifetime (``prompt_cache_options`` or
+    ``prompt_cache_retention``), None where none is documented. ``extras``
+    holds tool-specific flags that have no field here.
     """
 
     provider_name: str
@@ -55,6 +63,7 @@ class Capabilities:
 
     is_reasoning_model: bool = False
     supports_reasoning_effort: bool = False
+    reasoning_efforts: tuple[str, ...] = ()
     uses_adaptive_thinking: bool = False
     supports_text_verbosity: bool = False
 
@@ -62,6 +71,9 @@ class Capabilities:
     supports_top_p: bool = True
     supports_frequency_penalty: bool = False
     supports_presence_penalty: bool = False
+
+    supports_flex_tier: bool = False
+    prompt_cache_parameter: str | None = None
 
     max_context_tokens: int = 128000
     max_output_tokens: int = 4096

@@ -1,5 +1,38 @@
 # Changelog
 
+- **v2.5.0** (13 October 2026) -- Model capabilities follow the vendors'
+  documentation, and requests change with them. AutoExcerpter, ChronoTranscriber
+  and ChronoMiner now share one capability table, the vendored
+  `common/capability_table.py`, which replaces `llm/capabilities.py`'s rules;
+  ids lose a `provider:` or Google `models/` prefix before they are matched, as
+  in the sibling tools. OpenAI: `flex` is sent only to the models OpenAI lists
+  for Flex processing (gpt-4o, the codex, chat-latest and gpt-5.2-pro models
+  get no tier); an effort a model does not document becomes the next one it
+  does, with one warning per run (`none` and `minimal` give `low` on
+  gpt-6-astra and gpt-6.1-sol, `minimal` gives `low` on GPT-6 Luna and Sol and
+  GPT-5.6, `max` gives `xhigh` on gpt-5.5 and gpt-5.4, `none` gives `minimal`
+  on gpt-5, the pro models take `medium` to `xhigh`); o1 and o1-mini get no
+  effort; the chat-latest models are non-reasoning models with 128,000 tokens
+  of context and no effort, verbosity or samplers; the codex models accept
+  images and take `low` to `xhigh`; the pro and codex models get no verbosity;
+  gpt-5.4-mini and gpt-5.4-nano take `original` detail; gpt-5.2-pro and
+  gpt-5.4-pro use prompted JSON; o1, o1-pro and o3 use the enforced schema;
+  gpt-4.1-nano gets 32,768 and gpt-4 8,192 output tokens; `gpt-5.3` and
+  `gpt-5.3-chat`, which OpenAI does not document, take the conservative
+  profile. Anthropic: retired Claude 3 and 4.0/4.1 models use prompted JSON,
+  Claude Sonnet 4 thinks with 64,000 output tokens, Claude Opus 4 and 4.1 get
+  32,000, and Claude Sonnet 4.5 has 200,000 tokens of context. Google: Gemini
+  `minimal` becomes `low` on Gemini 3.1 Pro and 3.7/3.8 Flash; the Gemini image
+  models get no thinking level and use prompted JSON; Gemini 3.5 Flash, routed
+  to 3.6 Flash, gets no samplers; Gemma 4 takes images and a `high` or
+  `minimal` thinking level. OpenRouter: anthropic/claude Opus and Haiku 5.5 and
+  the other Claude models that reject samplers get none, deepseek-r1 keeps its
+  samplers, openai/o3-mini takes no images, and openai/gpt-6 ids are reasoning
+  models without samplers. Z.ai GLM ids called directly use JSON mode without
+  penalties; `glm-flash-latest` and `glm-5.3-flash:batch` take the conservative
+  profile. Image settings recorded for gpt-5.4-mini or gpt-5.4-nano at
+  `original` detail, and for `gpt-5.3`, now differ; as with any change of image
+  settings, resume refuses such items while pages remain, until `--force`.
 - **v2.4.1** (13 October 2026) -- A refactor with no change in behavior. The image
   presets (the recommended values the wizard shows and the request settings of
   each model family) and the building of provider request options move to the

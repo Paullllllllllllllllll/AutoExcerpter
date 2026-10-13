@@ -17,6 +17,8 @@ LOG = logging.getLogger("tests.image_detail")
     [
         ("gpt-5.4-mini", {"image_size": "high"}, "openai", "high"),
         ("gpt-5.6-sol", {"image_size": "original"}, "openai", "original"),
+        # OpenAI's image guide lists original detail for gpt-5.4-mini.
+        ("gpt-5.4-mini", {"image_size": "original"}, "openai", "original"),
         ("gpt-5.4-mini", {}, "openai", None),
         ("gpt-5.4-mini", {"image_size": "gigantic"}, "openai", None),
         ("openai/gpt-5.4-mini", {"image_size": "high"}, "openrouter", None),
@@ -34,7 +36,7 @@ def test_original_falls_back_to_high_with_a_warning(
 ) -> None:
     with caplog.at_level(logging.WARNING, logger=LOG.name):
         detail = resolve_request_detail(
-            {"image_size": "original"}, "openai", "gpt-5.4-mini", LOG
+            {"image_size": "original"}, "openai", "gpt-5.2", LOG
         )
     assert detail == "high"
     assert "falling back to 'high'" in caplog.text

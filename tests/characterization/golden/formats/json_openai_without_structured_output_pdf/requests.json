@@ -7,10 +7,6 @@
         "max_output_tokens": 128000,
         "reasoning": {
           "effort": "high"
-        },
-        "service_tier": "flex",
-        "text": {
-          "verbosity": "high"
         }
       },
       "messages": [
@@ -47,10 +43,6 @@
         "max_output_tokens": 128000,
         "reasoning": {
           "effort": "high"
-        },
-        "service_tier": "flex",
-        "text": {
-          "verbosity": "low"
         }
       },
       "messages": [
@@ -85,10 +77,6 @@
         "max_output_tokens": 128000,
         "reasoning": {
           "effort": "high"
-        },
-        "service_tier": "flex",
-        "text": {
-          "verbosity": "high"
         }
       },
       "messages": [
@@ -125,10 +113,6 @@
         "max_output_tokens": 128000,
         "reasoning": {
           "effort": "high"
-        },
-        "service_tier": "flex",
-        "text": {
-          "verbosity": "high"
         }
       },
       "messages": [
@@ -165,10 +149,6 @@
         "max_output_tokens": 128000,
         "reasoning": {
           "effort": "high"
-        },
-        "service_tier": "flex",
-        "text": {
-          "verbosity": "low"
         }
       },
       "messages": [
@@ -203,10 +183,6 @@
         "max_output_tokens": 128000,
         "reasoning": {
           "effort": "high"
-        },
-        "service_tier": "flex",
-        "text": {
-          "verbosity": "high"
         }
       },
       "messages": [
@@ -243,10 +219,6 @@
         "max_output_tokens": 128000,
         "reasoning": {
           "effort": "high"
-        },
-        "service_tier": "flex",
-        "text": {
-          "verbosity": "low"
         }
       },
       "messages": [
@@ -281,10 +253,6 @@
         "max_output_tokens": 128000,
         "reasoning": {
           "effort": "high"
-        },
-        "service_tier": "flex",
-        "text": {
-          "verbosity": "low"
         }
       },
       "messages": [

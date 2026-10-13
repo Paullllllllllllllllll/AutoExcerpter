@@ -7,8 +7,9 @@ option of a transcription model, and the image settings that
 options, with the stored image-settings record of each model's defaults.
 Key order is recorded too, since the record is stored as JSON and compared on
 resume. ``golden/image_presets.json`` holds the values of v2.4.0 before the
-presets moved to ``common/image_presets.py``; the move must leave every case
-identical.
+presets moved to ``common/image_presets.py``; the move left every case
+identical. The settled capability facts of v2.5.0 changed the cases listed in
+:data:`FACT_CHANGES`, each with the fact it follows.
 """
 
 from __future__ import annotations
@@ -60,6 +61,14 @@ IMAGES: Mapping[str, ImageSpec | None] = {
 }
 ORIGINAL_SIDES = (None, 2000)
 
+FACT_CHANGES: Mapping[str, str] = {
+    "openai:gpt-5.3:": (
+        "OpenAI documents no gpt-5.3 id: the id takes the conservative profile "
+        "without image detail, so pages are sized and recorded at auto."
+    ),
+}
+"""The golden cases, by case-name prefix, that the capability facts changed."""
+
 
 def _outcome(build: Callable[..., Any], *args: Any) -> Any:
     """Return what *build* returns for *args*, or the error it raises."""
@@ -104,3 +113,9 @@ def _cases() -> Iterator[tuple[str, Any]]:
 
 def test_image_presets_match_the_golden(write_guard: WriteGuard) -> None:
     check_matrix(__file__, "image_presets", dict(_cases()), write_guard.consume)
+
+
+def test_every_fact_change_names_golden_cases() -> None:
+    names = [name for name, _ in _cases()]
+    for prefix in FACT_CHANGES:
+        assert any(name.startswith(prefix) for name in names), prefix

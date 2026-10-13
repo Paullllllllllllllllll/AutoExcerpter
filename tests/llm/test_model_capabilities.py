@@ -36,27 +36,13 @@ def test_vendor_output_limits(model: str, limit: int) -> None:
     assert detect_capabilities(model).max_output_tokens == limit
 
 
-@pytest.mark.parametrize(
-    ("model", "base"),
-    [
-        ("gpt-5-chat-latest", "gpt-5"),
-        ("gpt-5.1-chat-latest", "gpt-5.1"),
-        ("gpt-5.2-chat-latest", "gpt-5.2"),
-        ("gpt-5.3-chat-latest", "gpt-5.3"),
-        ("gemini-3-pro-image-preview", "gemini-3-pro"),
-        ("gemini-3.1-flash-image-preview", "gemini-3"),
-    ],
-)
-def test_vendor_limit_changes_only_the_output_limit(model: str, base: str) -> None:
-    """The specific rule keeps every other field of the version prefix."""
-    skip = {"model_name", "max_output_tokens"}
-    assert _fields(model, skip) == _fields(base, skip)
-
-
-def test_gpt_6_1_sol_has_the_gpt_6_sol_profile() -> None:
+def test_gpt_6_1_sol_has_the_gpt_6_sol_profile_without_effort_none() -> None:
+    """GPT-6.1 Sol takes no ``none`` effort; the rest matches GPT-6 Sol."""
     assert detect_capabilities("gpt-6.1-sol").family == "gpt-6.1-sol"
-    skip = {"model_name", "family"}
+    skip = {"model_name", "family", "reasoning_efforts"}
     assert _fields("gpt-6.1-sol", skip) == _fields("gpt-6-sol", skip)
+    assert detect_capabilities("gpt-6-sol").reasoning_efforts[0] == "none"
+    assert detect_capabilities("gpt-6.1-sol").reasoning_efforts[0] == "low"
 
 
 def _fields(model: str, skip: set[str]) -> dict[str, object]:
@@ -75,18 +61,24 @@ def test_longer_prefix_wins_over_shorter_family(model: str) -> None:
     assert detect_capabilities("gpt-5.4").family == "gpt-5.4"
 
 
-@pytest.mark.parametrize("model", ["z-ai/glm-5.3-flash", "glm-5.3-flash"])
-def test_glm_5_3_flash_takes_its_openrouter_profile(
-    model: str, caplog: pytest.LogCaptureFixture
+@pytest.mark.parametrize(
+    ("model", "structured"), [("z-ai/glm-5.3-flash", True), ("glm-5.3-flash", False)]
+)
+def test_glm_5_3_flash_matches_on_openrouter_and_directly(
+    model: str, structured: bool, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """The OpenRouter id and the bare model segment both match, silently."""
+    """Both ids match silently; only OpenRouter lists structured outputs.
+
+    Z.ai documents 128K output tokens, the lower of the two published limits.
+    """
     with caplog.at_level("WARNING"):
         caps = detect_capabilities(model)
 
     assert caps.family == "glm-5.3-flash"
-    assert caps.supports_vision and caps.supports_structured_output
+    assert caps.supports_vision and caps.supports_json_mode
+    assert caps.supports_structured_output is structured
     assert caps.supports_reasoning_effort
-    assert (caps.max_context_tokens, caps.max_output_tokens) == (1048576, 943718)
+    assert (caps.max_context_tokens, caps.max_output_tokens) == (1048576, 131072)
     assert "No exact capability profile" not in caplog.text
 
 

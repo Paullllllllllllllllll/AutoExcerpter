@@ -48,12 +48,8 @@ def _options(**changes: Any) -> dict[str, Any]:
             "openai",
             "gpt-4o",
             _options(temperature=0.5, top_p=0.9),
-            {
-                "max_output_tokens": 128000,
-                "service_tier": "flex",
-                "temperature": 0.5,
-                "top_p": 0.9,
-            },
+            # OpenAI lists no Flex price for gpt-4o: the flex default is not sent.
+            {"max_output_tokens": 128000, "temperature": 0.5, "top_p": 0.9},
             id="openai-sampling",
         ),
         pytest.param(

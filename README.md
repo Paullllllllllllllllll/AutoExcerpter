@@ -1,4 +1,4 @@
-# AutoExcerpter v2.4.1
+# AutoExcerpter v2.5.0
 
 AutoExcerpter transcribes PDFs and folders of page images with vision-language
 models, summarizes each page and builds a consolidated bibliography whose entries
@@ -371,21 +371,36 @@ from the prompt cache; `cached_tokens` counts these reads.
 Reasoning effort reaches OpenAI reasoning models as `reasoning.effort`. Claude
 models with adaptive thinking receive an effort level, other Claude reasoning
 models a thinking limit of 2,048 (`low`) to 16,384 (`xhigh`) tokens; Gemini 3
-models receive a thinking level, earlier Gemini models a limit of 512 to 16,384
-tokens. OpenRouter and custom endpoints receive no reasoning parameter. Verbosity
-reaches the OpenAI models that support it. Temperature and top-p are left out
-while reasoning is active and for models that reject them. Without
-`--max-output-tokens`, OpenAI, Anthropic and Google models get their family's
-output limit. The service tier is sent with OpenAI calls only; a tier given for
-another provider by flag or settings default is ignored with a warning on stderr.
+models and Gemma 4 receive a thinking level, earlier Gemini models a limit of
+512 to 16,384 tokens, and the Gemini image models none. An effort a model does
+not document becomes the next level it does, or its highest, with one warning
+per run: `none` and `minimal` become `low` on gpt-6-astra and gpt-6.1-sol,
+`max` becomes `xhigh` on gpt-5.5, `none` becomes `minimal` on gpt-5, the pro
+models take `medium` to `xhigh`, and Gemini `minimal` becomes `low` on Gemini
+3.1 Pro and 3.7/3.8 Flash. o1, o1-mini and the chat-latest models receive no
+effort. OpenRouter and custom endpoints receive no reasoning parameter.
+Verbosity reaches the GPT-5 and GPT-6 reasoning models only, not the pro,
+codex or chat-latest models. Temperature and top-p are left out while reasoning
+is active and for models that reject them. Without `--max-output-tokens`,
+OpenAI, Anthropic and Google models get their family's output limit. The
+service tier is sent with OpenAI calls only; a tier given for another provider
+by flag or settings default is ignored with a warning on stderr. `flex` goes
+only to the models OpenAI lists for Flex processing (GPT-6, GPT-5.6, 5.5, 5.4,
+5.2, 5.1, 5 and their mini, nano and pro variants where listed, o3, o4-mini);
+other models are sent no tier, with one warning per run.
 
-The family rules in `autoexcerpter/llm/capabilities.py` feed the shared resolver
-in `autoexcerpter/common/capabilities.py`. Rules match the lowercased model name
-in order and the first match wins, so specific names (`gpt-5.6-terra`) precede
-general ones (`gpt-5`). A rule sets image input, structured output, reasoning,
-verbosity, sampling parameters, context and output limits and image size caps.
-Any model name is accepted. One that no rule matches gets a conservative profile
-(no image input, no structured output, no reasoning parameters) and a warning.
+The family rules in `autoexcerpter/common/capability_table.py`, shared with
+ChronoTranscriber and ChronoMiner, feed the resolver in
+`autoexcerpter/common/capabilities.py`. Every value follows the vendor's
+documentation (read 13.10.2026). Rules match the lowercased model name in order
+and the first match wins, so specific names (`gpt-5.6-terra`) precede general
+ones (`gpt-5`); a `provider:` or Google `models/` prefix is removed first. A
+rule sets image input, structured output, reasoning and the
+documented effort levels, verbosity, sampling parameters, the Flex tier,
+context and output limits and image size caps. Any model name is accepted. One
+that no rule matches, or that the vendor does not document (`gpt-5.3`,
+`glm-flash-latest`), gets a conservative profile (no image input, no structured
+output, no reasoning parameters) and a warning.
 
 The image options default to the preset of the transcription model's family.
 OpenRouter models use the family their name points to (Claude, Gemini, else
@@ -753,7 +768,7 @@ autoexcerpter/
   batch/        run --batch items, request bodies, submit, check, finalize, cancel
   common/       vendored modules shared with the sibling tools, the store and the
                 batch backends among them
-  llm/          client factory, model calls with attempt capture, capability table
+  llm/          client factory, model calls with attempt capture, capabilities
   imaging/      page payload sources and the resolved image settings
   output/       the store's tables, views and resume, the renderers, item paths
   pipeline/     item processing, pages, units, context
@@ -765,7 +780,8 @@ The core imports nothing from `cli/` or `ui/`. It never prints, prompts or exits
 and reports through the run events, which the CLI writes to stderr and the UI
 shows as progress bars. `common/` holds tool-agnostic modules (option tables,
 wizard framework, settings loader, structured calls, retry, rate limiting, HTTP
-timeouts, images, image presets, provider request options, the run store and its
+timeouts, images, image presets, the model capability table, provider request
+options, the run store and its
 SQLite writer, attempt capture, the batch backends of OpenAI, Anthropic and Google,
 the poll loop of `batch check --wait`, agent contract) kept byte-identical across
 the sibling tools: `common/MANIFEST.json` pins each file by its SHA-256, and

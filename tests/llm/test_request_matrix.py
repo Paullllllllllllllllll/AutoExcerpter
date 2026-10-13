@@ -7,8 +7,9 @@ transcription and of a summary. The cases cover the providers,
 representative models and the options that shape a request (reasoning effort,
 verbosity, temperature, top_p, service tier, output limit and image detail).
 ``golden/request_matrix.json`` holds the requests of v2.4.0 before the
-request options moved to ``common/request_options.py``; the move must leave
-every case identical.
+request options moved to ``common/request_options.py``; the move left every
+case identical. The settled capability facts of v2.5.0 changed the cases
+listed in :data:`FACT_CHANGES`, each with the fact it follows.
 """
 
 from __future__ import annotations
@@ -82,6 +83,20 @@ IMAGE = BatchRequest(
 )
 TEXT = BatchRequest(custom_id="summary-0", text="## Page text", order_index=0)
 LOGGER = logging.getLogger(__name__)
+
+FACT_CHANGES: Mapping[str, str] = {
+    "openai:gpt-5.3:": (
+        "OpenAI documents no gpt-5.3 id (no model page, no pricing row): the "
+        "id takes the conservative profile, so no reasoning, no image input "
+        "and prompted JSON."
+    ),
+    "anthropic:claude-sonnet-4-0:": (
+        "One shared row for the retired Claude Sonnet 4: no structured outputs "
+        "(not in Anthropic's structured-output model list), thinking and "
+        "64,000 output tokens."
+    ),
+}
+"""The golden cases, by case-name prefix, that the capability facts changed."""
 
 
 def _model(provider: str, model: str, phase: str, **changes: Any) -> ModelSpec:
@@ -166,3 +181,9 @@ def _cases() -> Iterator[tuple[str, dict[str, Any]]]:
 
 def test_requests_match_the_golden(write_guard: WriteGuard) -> None:
     check_matrix(__file__, "request_matrix", dict(_cases()), write_guard.consume)
+
+
+def test_every_fact_change_names_golden_cases() -> None:
+    names = [name for name, _ in _cases()]
+    for prefix in FACT_CHANGES:
+        assert any(name.startswith(prefix) for name in names), prefix

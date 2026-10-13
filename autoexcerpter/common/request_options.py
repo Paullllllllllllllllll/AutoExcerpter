@@ -7,16 +7,19 @@ providers outside OpenAI, Anthropic and Google, and a clamp for the providers
 a tool names. :class:`RequestRules` holds a tool's choices for the
 synchronous options that :func:`openai_options`, :func:`anthropic_options`,
 :func:`google_options` and :func:`openrouter_options` build. The other
-functions build what synchronous calls and batch bodies share: the batch
-service tier, sampler values, Anthropic's effort level and thinking block,
-Gemini's thinking level (Gemini 3) or budget (Gemini 2) and OpenRouter's
-reasoning object. Each table is a default that a tool may replace with its
-own.
+functions build what synchronous calls and batch bodies share: the OpenAI
+and batch service tiers, the reasoning effort a model documents, the OpenAI
+prompt-cache parameter, sampler values, Anthropic's effort level and
+thinking block, Gemini's thinking level (Gemini 3) or budget (Gemini 2) and
+OpenRouter's reasoning object. Each table is a default that a tool may
+replace with its own.
 
-A synchronous OpenAI request sends the verbosity of a reasoning model
-(:func:`openai_options`); a batch body sends it for a model that takes a
-reasoning effort (:func:`batch_reasoning`). Both rules stay until the
-capability facts are settled.
+The capability table decides what an OpenAI request carries, in synchronous
+calls and batch bodies alike: ``flex`` only for the models OpenAI lists for
+Flex processing (:func:`openai_service_tier`), a reasoning effort the model
+documents (:func:`clamp_effort`), the verbosity only where
+``supports_text_verbosity`` is set, and the prompt-cache parameter the model
+takes (:func:`openai_prompt_cache`).
 """
 
 from __future__ import annotations
@@ -37,6 +40,7 @@ __all__ = [
     "ANTHROPIC_EFFORT_LEVELS",
     "ANTHROPIC_EFFORT_ORDER",
     "BATCH_SERVICE_TIERS",
+    "EFFORT_ORDER",
     "GOOGLE_BUDGET_CAP",
     "GOOGLE_BUDGET_CAPS",
     "GOOGLE_BUDGET_RATIOS",
@@ -45,6 +49,7 @@ __all__ = [
     "OPENROUTER_BUDGET_CAP",
     "OPENROUTER_DEFAULT_RATIO",
     "OPENROUTER_RATIOS",
+    "PROMPT_CACHE_TTL",
     "ROUTED_LIMIT",
     "SAMPLERS",
     "THINKING_FLOOR",
@@ -56,11 +61,14 @@ __all__ = [
     "anthropic_thinking",
     "batch_reasoning",
     "batch_service_tier",
+    "clamp_effort",
     "disabled_params",
     "google_options",
     "google_thinking_budget",
     "google_thinking_level",
     "openai_options",
+    "openai_prompt_cache",
+    "openai_service_tier",
     "openrouter_options",
     "openrouter_reasoning",
     "sampler_values",
@@ -79,6 +87,12 @@ THINKING_FLOOR = 1024
 """The smallest thinking budget sent."""
 ANSWER_RESERVE = 256
 """Tokens of the output limit a thinking budget leaves for the answer."""
+EFFORT_ORDER = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
+"""Every reasoning effort and thinking level, lowest first."""
+PROMPT_CACHE_TTL = "30m"
+"""The ``prompt_cache_options.ttl`` of GPT-5.6 and later, its only value."""
+
+_logged: set[tuple[str, str, str]] = set()
 
 ANTHROPIC_EFFORT_ORDER = ("low", "medium", "high", "xhigh", "max")
 ANTHROPIC_EFFORTS: Mapping[str, str] = MappingProxyType(
@@ -241,14 +255,88 @@ class RequestRules:
     gemini2_budget: bool = False
 
 
+def _log_once(log: logging.Logger, key: tuple[str, str, str], message: str) -> None:
+    """Log *message* with the parts of *key*, once per *key* and process."""
+    if key in _logged:
+        return
+    _logged.add(key)
+    log.warning(message, *key)
+
+
+def clamp_effort(
+    effort: str, caps: Capabilities, *, log: logging.Logger = logger
+) -> str:
+    """Return the reasoning effort or thinking level sent for *effort*.
+
+    A level in ``caps.reasoning_efforts`` stays; another steps up to the next
+    level the model documents, or down to its highest level when none lies
+    above. A model without documented levels, or an effort outside
+    :data:`EFFORT_ORDER`, keeps *effort*. Each substitution is logged once per
+    model and effort.
+    """
+    levels = caps.reasoning_efforts
+    if not levels or effort in levels or effort not in EFFORT_ORDER:
+        return effort
+    rank = EFFORT_ORDER.index(effort)
+    ranked = sorted(levels, key=EFFORT_ORDER.index)
+    sent = next(
+        (level for level in ranked if EFFORT_ORDER.index(level) > rank), ranked[-1]
+    )
+    _log_once(
+        log,
+        (caps.model_name, effort, sent),
+        "Model %s does not take reasoning effort %r; sending %r",
+    )
+    return sent
+
+
+def openai_service_tier(
+    tier: str | None, caps: Capabilities, *, log: logging.Logger = logger
+) -> str | None:
+    """Return the service tier an OpenAI request carries, or None to send none.
+
+    ``flex`` goes only to the models OpenAI lists for Flex processing
+    (``caps.supports_flex_tier``); elsewhere no tier is sent, which is
+    logged once per model.
+    """
+    if not tier:
+        return None
+    if tier == "flex" and not caps.supports_flex_tier:
+        _log_once(
+            log,
+            (caps.model_name, tier, "no service tier"),
+            "Model %s does not take service tier %r; sending %s",
+        )
+        return None
+    return tier
+
+
 def batch_service_tier(tier: str | None) -> str | None:
     """Return the service tier a batch body carries, or None to send none.
 
-    The Batch API takes no ``flex``; it becomes ``auto``.
+    The Batch API takes no ``flex``; it becomes ``auto``. Pass the tier of
+    :func:`openai_service_tier`, so a model without Flex sends none.
     """
     if tier == "flex":
         return "auto"
     return tier if tier in BATCH_SERVICE_TIERS else None
+
+
+def openai_prompt_cache(caps: Capabilities, retention: str | None) -> dict[str, Any]:
+    """Return the prompt-cache parameter of an OpenAI request.
+
+    With a configured *retention*, GPT-5.6 and later take
+    ``prompt_cache_options.ttl`` (:data:`PROMPT_CACHE_TTL`), the models
+    documented for extended retention ``prompt_cache_retention``, and every
+    other model nothing.
+    """
+    if not retention:
+        return {}
+    if caps.prompt_cache_parameter == "prompt_cache_options":
+        return {"prompt_cache_options": {"ttl": PROMPT_CACHE_TTL}}
+    if caps.prompt_cache_parameter == "prompt_cache_retention":
+        return {"prompt_cache_retention": retention}
+    return {}
 
 
 def disabled_params(caps: Capabilities) -> dict[str, None] | None:
@@ -288,42 +376,45 @@ def openai_options(
 ) -> dict[str, Any]:
     """Return the service tier, limit, samplers, reasoning and verbosity.
 
-    A reasoning model takes ``max_completion_tokens``, no sampler values,
-    its reasoning effort where the model takes one, and the verbosity;
-    another model takes ``max_tokens`` and the samplers it accepts.
+    A reasoning model takes ``max_completion_tokens``, no sampler values and,
+    where the model takes one, a reasoning effort it documents; another model
+    takes ``max_tokens`` and the samplers it accepts. The verbosity goes to
+    models with ``supports_text_verbosity``, ``flex`` to the models listed
+    for it (:func:`openai_service_tier`).
     """
     options: dict[str, Any] = {}
-    if model.service_tier and (
-        caps.is_reasoning_model or not rules.reasoning_only_service_tier
-    ):
-        options["service_tier"] = model.service_tier
+    tier = openai_service_tier(model.service_tier, caps)
+    if tier and (caps.is_reasoning_model or not rules.reasoning_only_service_tier):
+        options["service_tier"] = tier
     if caps.is_reasoning_model:
         if limit is not None:
             options["max_completion_tokens"] = limit
         options.update(dict.fromkeys(SAMPLERS))
         if caps.supports_reasoning_effort:
-            options["reasoning"] = {"effort": model.reasoning_effort}
-        if model.verbosity:
-            options["verbosity"] = model.verbosity
+            options["reasoning"] = {
+                "effort": clamp_effort(model.reasoning_effort, caps)
+            }
     else:
         if limit is not None:
             options["max_tokens"] = limit
         options.update(sampler_values(caps, model.temperature, model.top_p, 0.0))
+    if caps.supports_text_verbosity and model.verbosity:
+        options["verbosity"] = model.verbosity
     return options
 
 
 def batch_reasoning(model: ModelOptions, caps: Capabilities) -> dict[str, Any]:
     """Return the verbosity and reasoning of an OpenAI batch body.
 
-    A model that takes a reasoning effort gets ``reasoning`` and, when set,
-    ``verbosity``; other models get neither.
+    As in :func:`openai_options`: the verbosity where the model has
+    ``supports_text_verbosity``, ``reasoning`` with a documented effort where
+    it takes one.
     """
-    if not caps.supports_reasoning_effort:
-        return {}
     options: dict[str, Any] = {}
-    if model.verbosity:
+    if caps.supports_text_verbosity and model.verbosity:
         options["verbosity"] = model.verbosity
-    options["reasoning"] = {"effort": model.reasoning_effort}
+    if caps.supports_reasoning_effort:
+        options["reasoning"] = {"effort": clamp_effort(model.reasoning_effort, caps)}
     return options
 
 
@@ -417,7 +508,9 @@ def google_thinking_level(
 ) -> str | None:
     """Return Gemini's ``thinking_level`` for *effort*, or None to send none.
 
-    Gemini 2 models and efforts without a level send none.
+    Gemini 2 models, models without a thinking-level control and efforts
+    without a level send none; a level the model does not document becomes
+    one it does (:func:`clamp_effort`).
     """
     level = levels.get(effort)
     if (
@@ -425,7 +518,7 @@ def google_thinking_level(
         and level is not None
         and not caps.family.startswith("gemini-2")
     ):
-        return level
+        return clamp_effort(level, caps)
     return None
 
 

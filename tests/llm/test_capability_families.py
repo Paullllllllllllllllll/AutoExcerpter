@@ -1,13 +1,10 @@
-"""The family table reproduces the recorded capability of every model id.
+"""The capability table reproduces the recorded capability of every model id.
 
-``data/capability_expectations.json`` was generated once from the static
-registry the family table replaced, with these changes: the vendors' output
-limits for the GPT-5 chat-latest ids, the Gemini 3 image models, gpt-4.1-mini
-and gemini-2.5-flash-lite, the ``gpt-6.1-sol`` family and the original-detail
-side limit of ``gpt-6-luna`` (its ``extras``). It covers every
-registry prefix, dated
-variants, and unknown ids: bare, ``provider:``-prefixed, ``vendor/model``
-and ``models/gemini-*``.
+``data/capability_expectations.json`` records the shared table of
+``common/capability_table.py`` (regenerated when the tables of the three
+tools merged and the vendor facts were settled). It covers every family
+prefix, dated variants, and unknown ids: bare, ``provider:``-prefixed,
+``vendor/model`` and ``models/gemini-*``.
 """
 
 from __future__ import annotations
@@ -29,6 +26,10 @@ _DATA = Path(__file__).parent / "data" / "capability_expectations.json"
 _ROWS: list[dict[str, Any]] = json.loads(_DATA.read_text(encoding="utf-8"))
 
 
+def _recorded(value: Any) -> Any:
+    return list(value) if isinstance(value, tuple) else value
+
+
 @pytest.mark.parametrize("row", _ROWS, ids=[repr(row["model"]) for row in _ROWS])
 def test_family_table_matches_recorded_capabilities(row: dict[str, Any]) -> None:
     expected = dict(row)
@@ -39,7 +40,7 @@ def test_family_table_matches_recorded_capabilities(row: dict[str, Any]) -> None
 
     assert detect_provider(model) == provider
     assert caps.model_name == model
-    assert {name: getattr(caps, name) for name in expected} == expected
+    assert {name: _recorded(getattr(caps, name)) for name in expected} == expected
     assert dict(caps.extras) == extras
 
 
@@ -52,11 +53,11 @@ def test_expectations_cover_every_kind_of_id() -> None:
     assert any(row["family"] == "unknown" for row in _ROWS)
 
 
-def test_ids_keep_their_prefixes() -> None:
-    assert split_model_id("OpenAI:GPT-5", TABLE) == (None, "openai:gpt-5")
+def test_ids_lose_their_prefixes() -> None:
+    assert split_model_id("OpenAI:GPT-5", TABLE) == ("openai", "gpt-5")
     assert split_model_id("models/gemini-2.5-flash", TABLE) == (
-        None,
-        "models/gemini-2.5-flash",
+        "google",
+        "gemini-2.5-flash",
     )
 
 

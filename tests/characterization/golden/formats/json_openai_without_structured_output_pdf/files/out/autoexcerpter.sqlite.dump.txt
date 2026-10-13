@@ -185,10 +185,6 @@
       "max_output_tokens": 128000,
       "reasoning": {
         "effort": "high"
-      },
-      "service_tier": "flex",
-      "text": {
-        "verbosity": "low"
       }
     },
     "model": "gpt-5.2-pro",
@@ -259,10 +255,6 @@
       "max_output_tokens": 128000,
       "reasoning": {
         "effort": "high"
-      },
-      "service_tier": "flex",
-      "text": {
-        "verbosity": "low"
       }
     },
     "model": "gpt-5.2-pro",
@@ -333,10 +325,6 @@
       "max_output_tokens": 128000,
       "reasoning": {
         "effort": "high"
-      },
-      "service_tier": "flex",
-      "text": {
-        "verbosity": "low"
       }
     },
     "model": "gpt-5.2-pro",
@@ -407,10 +395,6 @@
       "max_output_tokens": 128000,
       "reasoning": {
         "effort": "high"
-      },
-      "service_tier": "flex",
-      "text": {
-        "verbosity": "low"
       }
     },
     "model": "gpt-5.2-pro",
@@ -481,10 +465,6 @@
       "max_output_tokens": 128000,
       "reasoning": {
         "effort": "high"
-      },
-      "service_tier": "flex",
-      "text": {
-        "verbosity": "high"
       }
     },
     "model": "gpt-5.2-pro",
@@ -556,10 +536,6 @@
       "max_output_tokens": 128000,
       "reasoning": {
         "effort": "high"
-      },
-      "service_tier": "flex",
-      "text": {
-        "verbosity": "high"
       }
     },
     "model": "gpt-5.2-pro",
@@ -631,10 +607,6 @@
       "max_output_tokens": 128000,
       "reasoning": {
         "effort": "high"
-      },
-      "service_tier": "flex",
-      "text": {
-        "verbosity": "high"
       }
     },
     "model": "gpt-5.2-pro",
@@ -706,10 +678,6 @@
       "max_output_tokens": 128000,
       "reasoning": {
         "effort": "high"
-      },
-      "service_tier": "flex",
-      "text": {
-        "verbosity": "high"
       }
     },
     "model": "gpt-5.2-pro",
