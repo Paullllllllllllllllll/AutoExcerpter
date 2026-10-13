@@ -57,6 +57,7 @@ from autoexcerpter.batch.report import (
     wait_end_lines,
     wait_line,
 )
+from autoexcerpter.cli.heartbeat import BatchHeartbeat
 from autoexcerpter.cli.parser import UsageError
 from autoexcerpter.common.contract import (
     USAGE_KEY,
@@ -66,7 +67,7 @@ from autoexcerpter.common.contract import (
     usage_field,
 )
 from autoexcerpter.common.log_setup import configure_logging
-from autoexcerpter.common.polling import Stop, WaitLimits
+from autoexcerpter.common.polling import Stop, WaitLimits, WaitTick
 from autoexcerpter.common.usage import Usage
 from autoexcerpter.settings import Settings
 from autoexcerpter.spec import (
@@ -298,9 +299,18 @@ def _execute_wait(
         f"{spec.poll_minutes:g} min, for up to {spec.wait_hours:g} h..."
     )
 
+    beat = BatchHeartbeat.from_env()
+
     def on_pass(number: int, result: CheckResult) -> None:
         for line in check_lines(result, pending=number == 1, totals=False):
             _write(line)
+        if beat is not None:
+            beat.on_pass(result)
+
+    def on_wait(tick: WaitTick) -> None:
+        _write(wait_line(tick))
+        if beat is not None:
+            beat.on_wait(tick)
 
     try:
         asyncio.run(
@@ -314,7 +324,7 @@ def _execute_wait(
                 args=args,
                 progress=progress,
                 on_pass=on_pass,
-                on_wait=lambda tick: _write(wait_line(tick)),
+                on_wait=on_wait,
                 on_retry=lambda number, exc: _write(retry_line(number, exc)),
             )
         )

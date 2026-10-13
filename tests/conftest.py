@@ -97,9 +97,10 @@ def _set_session_env(name: str, value: str | None) -> None:
 
 @pytest.hookimpl(trylast=True)
 def pytest_configure(config: pytest.Config) -> None:
-    """Drop key variables and redirect the home dirs."""
+    """Drop the key and heartbeat variables and redirect the home dirs."""
     for name in [name for name in os.environ if is_secret_env_var(name)]:
         _set_session_env(name, None)
+    _set_session_env("CHRONO_HEARTBEAT_FILE", None)
     session_home = _session_home(config)
     env = home_env(session_home)
     xdg_names = {*XDG_VARS, *(n for n in os.environ if n.startswith("XDG_"))}

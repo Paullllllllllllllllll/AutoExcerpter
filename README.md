@@ -1,4 +1,4 @@
-# AutoExcerpter v2.3.1
+# AutoExcerpter v2.4.0
 
 AutoExcerpter transcribes PDFs and folders of page images with vision-language
 models, summarizes each page and builds a consolidated bibliography whose entries
@@ -198,6 +198,16 @@ item's `name`, resume `state` and `completed_pages`; `skipped` lists the complet
 items; `spec` maps every field of the effective run specification, such as
 `transcription_model.model`, to its `value` and `source` (`flag`, `settings` or
 `default`). The plan has no `usage` field, since a dry run makes no calls.
+
+When the environment variable `CHRONO_HEARTBEAT_FILE` names a file, `run` and
+`batch check --wait` also write their progress there as one JSON object for a job
+launcher: `units_done` of `units_total` `unit_label`, `eta_seconds` and
+`updated_at` (ISO 8601, UTC). A run counts the current item's pages and names the
+item's position (`pages processed, item 3/12`); its ETA, from the page rate, is
+given only during the last item and is null otherwise. A wait counts the
+submissions finished of those it has seen (`batches`) before each sleep. The file
+is replaced at most every 15 seconds, and a write that fails is skipped without
+affecting the run.
 
 ## Guided UI
 

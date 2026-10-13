@@ -1,5 +1,14 @@
 # Changelog
 
+- **v2.4.0** (13 October 2026) -- `run` and `batch check --wait` write their
+  progress to the file named in `CHRONO_HEARTBEAT_FILE`, so a job launcher can
+  show it: the current item's pages processed and its position, an ETA from the
+  page rate during the last item, and the batch submissions a wait has seen
+  finish. Each write replaces the file in one step, at most every 15 seconds, and
+  a write that fails is skipped without affecting the run. The default of
+  `--wait-hours` rises from 50 to 98, two rounds of Google's 48-hour batch
+  window; the limit stays soft, since a check fails an expired batch and the wait
+  then ends on its own.
 - **v2.3.1** (13 October 2026) -- The lease heartbeat no longer reports a
   document lease that the run has just released as lost. A release now drops the
   lease from the held leases before its database write, and the heartbeat looks

@@ -17,6 +17,7 @@ from typing import Any
 
 from autoexcerpter import ext
 from autoexcerpter import run as core
+from autoexcerpter.cli.heartbeat import with_heartbeat
 from autoexcerpter.cli.parser import UsageError
 from autoexcerpter.cli.reporter import StderrReporter
 from autoexcerpter.common.contract import (
@@ -193,12 +194,15 @@ def _execute(
         emitter.emit(plan_fields(run_plan))
         return ExitCode.OK
 
+    events, progress = with_heartbeat(reporter)
     try:
-        result = asyncio.run(core.run(run_plan, reporter, args=args))
+        result = asyncio.run(core.run(run_plan, events, args=args))
     except core.PlanError as exc:
         reporter.error(str(exc))
         emitter.emit(summary_fields(total=exc.items_total, skipped=skipped))
         return exc.exit_code
+    if progress is not None:
+        progress.run_finished()
     reporter.completion(result)
     reporter.incomplete(result)
     emitter.emit(
