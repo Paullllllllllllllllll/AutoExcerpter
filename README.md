@@ -1,4 +1,4 @@
-# AutoExcerpter v3.0.1
+# AutoExcerpter v3.1.0
 
 AutoExcerpter transcribes PDFs and folders of page images with vision-language
 models, summarizes each page and builds a consolidated bibliography whose entries
@@ -63,6 +63,7 @@ uv run autoexcerpter run --input paper.pdf           # outputs beside the input
 uv run autoexcerpter run --input scans --all --output excerpts
 uv run autoexcerpter run --input scans --select 1-3  # or a name: --select braudel
 uv run autoexcerpter run --input scans --files a.pdf,b.pdf --formats transcription-txt,summary-md
+uv run autoexcerpter run --input paper.pdf --pages 7,2,15-17  # only these pages
 uv run autoexcerpter run --input scans --all --dry-run --json
 uv run autoexcerpter ui                              # guided run
 uv run autoexcerpter run --input scans --all --output excerpts --batch
@@ -98,6 +99,7 @@ the leading dashes, with underscores for hyphens (`--fallback-context` becomes
 | `--select EXPR` | select items by number (1,3), range (1-5) or name search | | yes |
 | `--files LIST` | comma-separated names of items inside the input folder | | no |
 | `--all` | process every discovered item | | yes |
+| `--pages RANGE` | pages or images: 5, first:5, last:5, 3-7, 3-, -7 or 1,3,5-8 | all | no |
 
 `--input` is required. A single discovered item needs none of `--all`, `--select`
 and `--files`; several items without one of them are a usage error (exit 2), and
@@ -105,6 +107,20 @@ the three exclude each other. A name search matches part of a file or folder
 name, ignoring case. `--files` takes exact PDF or image folder names
 (`a.pdf,scans_1`) and fails with exit 2 when one names no discovered item, as
 does a `--select` that matches nothing.
+
+`--pages` selects pages of every selected item (1-based, in source order): a bare
+number `N` is the first N pages (as `first:N`), `last:N` the last N, and a list
+of numbers and ranges such as `7,2,15-17`, `4-4` or the open `99-` the pages it
+names. Only the selected pages are transcribed and summarized; the others stay
+pending, so the document stays partial. The transcription and the summaries hold
+every stored page in source order, and the summary covers only those pages. A
+later run with another `--pages` adds its pages, and a run without `--pages`
+works only the pages still missing and completes the document. A range that
+selects no page of an item, such as `99-` on a 30-page PDF, skips the item with
+a warning that names the range, without a model call; a malformed range
+(`3-x`) is a usage error (exit 2) before any call. `--force` resets every stored
+page of the item, also outside `--pages`; `--retranscribe` transcribes only the
+selected pages again.
 
 ### Output
 
@@ -177,8 +193,8 @@ option, for example as `model` or `summary_verbosity`.
 
 | Flag | Description | Default | In `defaults:` |
 | --- | --- | --- | --- |
-| `--force` | reprocess items whose outputs exist (resume is the default) | | no |
-| `--retranscribe` | transcribe again instead of reusing stored transcriptions | | no |
+| `--force` | reprocess items whose outputs exist (resume is the default): every stored page of the item is reset, also outside --pages | | no |
+| `--retranscribe` | transcribe again instead of reusing stored transcriptions; with --pages only those of the selected pages, under the stored image settings | | no |
 | `--concurrency N` | parallel requests | 16 | yes |
 | `--batch`, `--no-batch` | submit the pages and summaries to the providers' batch APIs | off | yes |
 | `--dry-run` | plan without API calls or writes | | no |
@@ -203,7 +219,7 @@ one JSON line on every exit, errors and interrupts included. Each line holds
 | `items_total` | items processed in this run |
 | `items_complete` | items that finished with every page and output |
 | `items_failed` | items that finished incomplete |
-| `items_skipped` | items skipped because they were already complete |
+| `items_skipped` | items not processed: complete, legacy and blocked ones, and those of which `--pages` selects no page |
 | `items_submitted` | items whose units wait in batches for `batch check` (`--batch`); they count neither complete nor failed |
 | `outputs` | absolute paths of the files written, item by item, then the databases |
 | `usage` | tokens per role (`transcription`, `summary`) and their sum under `total`, each with `input_tokens`, `output_tokens`, `total_tokens`, `cached_tokens` (input read from the provider's prompt cache) and `reasoning_tokens` |
@@ -245,7 +261,8 @@ folders and pages found, and the item selection), output location and
 transcription format, summary on or off with the summary formats, transcription
 model, summary model, summary context, page images ("Recommended" or
 "Customize"; Anthropic and Google models are not offered the OpenAI-only
-`original` detail) and run options. The run options start with a `Submission:`
+`original` detail), run options and pages (all, or a range in the `--pages`
+syntax). The run options start with a `Submission:`
 question, synchronous or Batch API, asked when every phase's provider has a batch
 API and the extension allows batch submission; the parallel requests are asked
 only for a synchronous run. Every list ends with Back; a text or path prompt
@@ -770,9 +787,18 @@ scratch. When a stored document belongs to another input of the same name that
 still exists, as with two `doc.pdf` files sharing one `--output` folder, the plan
 stops with exit 2 before any work; give one of them another output folder.
 
-`--force` processes every selected item from scratch; the earlier provider
-responses stay in the store. `--retranscribe` keeps resume but transcribes the
-stored pages again and summarizes them again. The image settings are compared key
+A run with `--pages` works only the selected pages and leaves the document
+`partial`; a later run picks up the rest (see [Input](#input)).
+
+`--force` processes every selected item from scratch, resetting every stored
+page, also outside `--pages`; the earlier provider responses stay in the store.
+`--retranscribe` keeps resume but transcribes the stored pages again and
+summarizes them again; with `--pages` it acts on the selected pages only, and the
+other stored pages and their summaries stay as they are. It then also keeps the
+document's stored image settings, so a document never mixes two, and refuses an
+item whose stored settings it cannot keep; `--force`, or `--retranscribe`
+without `--pages`, changes them. The image settings are
+compared key
 by key with the record stored with the document. When they differ only because
 the run takes a preset value, as for an item stored under an earlier preset
 (grayscale, or the custom preset's JPEG quality 85), each image option the run

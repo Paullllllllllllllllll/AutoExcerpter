@@ -14,6 +14,9 @@ The key algorithm is per-section anchor-based adjustment:
 4. Conservatively infer page numbers for isolated unnumbered pages between numbered
    pages
 
+Steps 1-4 run on each block of consecutive scans on its own: a document
+stored with gaps (``--pages``) carries no correction across a gap.
+
 Sections scope page-number anchors only. Pages are always emitted in physical
 scan order: tables, per-chapter bibliographies and part titles are interleaved
 with the running text in real books, so relocating a section tears the document
@@ -78,6 +81,22 @@ def _log_final_numbering(final_ordered_summaries: list[dict[str, Any]]) -> None:
         len(page_nums) - len(numbered),
     )
     logger.debug("Final page number sequence: %s", page_nums)
+
+
+def _source_blocks(parsed: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+    """Split pages in source order into runs of consecutive source indices.
+
+    A ``--pages`` run stores some scans only; how many printed pages an
+    omitted scan holds is unknown, so no anchor reaches across the gap.
+    """
+    blocks: list[list[dict[str, Any]]] = []
+    for p in parsed:
+        index = p["original_input_order_index"]
+        if blocks and index == blocks[-1][-1]["original_input_order_index"] + 1:
+            blocks[-1].append(p)
+        else:
+            blocks.append([p])
+    return blocks
 
 
 class PageNumberProcessor:
@@ -685,29 +704,8 @@ class PageNumberProcessor:
 
         page_info["page_types"] = p["page_types"]
 
-    def adjust_and_sort_page_numbers(
-        self, summary_results: list[dict[str, Any]]
-    ) -> list[dict[str, Any]]:
-        """
-        Adjust page numbers based on per-section anchor logic.
-
-        For each section type (content, preface, abstract, appendix,
-        figures_tables_sources), finds the longest consecutive sequence of
-        model-detected page numbers and uses that as the anchor for adjusting
-        all pages in that section.
-
-        Args:
-            summary_results: List of summary results with page information.
-
-        Returns:
-            Summaries in physical scan order with adjusted page numbers.
-        """
-        if not summary_results:
-            return []
-
-        logger.info("Adjusting page numbers using per-section anchor logic...")
-
-        parsed_summaries = self._parse_summaries(summary_results)
+    def _number_block(self, parsed_summaries: list[dict[str, Any]]) -> None:
+        """Anchor, infer and write the page numbers of one source block."""
         section_anchors = self._find_section_anchors(parsed_summaries)
         page_anchors: dict[int, _Anchor] = {}
         for section in section_anchors:
@@ -731,6 +729,32 @@ class PageNumberProcessor:
                 p["primary_section"], _NO_ANCHOR
             )
             self._apply_page_numbering(p, anchor)
+
+    def adjust_and_sort_page_numbers(
+        self, summary_results: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """
+        Adjust page numbers based on per-section anchor logic.
+
+        For each section type (content, preface, abstract, appendix,
+        figures_tables_sources), finds the longest consecutive sequence of
+        model-detected page numbers and uses that as the anchor for adjusting
+        all pages in that section.
+
+        Args:
+            summary_results: List of summary results with page information.
+
+        Returns:
+            Summaries in physical scan order with adjusted page numbers.
+        """
+        if not summary_results:
+            return []
+
+        logger.info("Adjusting page numbers using per-section anchor logic...")
+
+        parsed_summaries = self._parse_summaries(summary_results)
+        for block in _source_blocks(parsed_summaries):
+            self._number_block(block)
 
         # Sections scope the anchors but never reorder the document: apparatus
         # pages are interleaved with the running text in real books.

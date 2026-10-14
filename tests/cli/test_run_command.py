@@ -296,6 +296,10 @@ def _parse_error(tmp_path: Path, make_pdf: MakePdf) -> list[str]:
     return ["--input", str(tmp_path), "--concurrency", "zero"]
 
 
+def _malformed_pages(tmp_path: Path, make_pdf: MakePdf) -> list[str]:
+    return ["--input", str(make_pdf("doc.pdf")), "--pages", "3-x"]
+
+
 @pytest.mark.usefixtures("offline")
 @pytest.mark.parametrize(
     ("setup", "code", "total"),
@@ -312,6 +316,7 @@ def _parse_error(tmp_path: Path, make_pdf: MakePdf) -> list[str]:
         pytest.param(_no_input, 2, 0, id="no_input"),
         pytest.param(_unknown_endpoint, 2, 0, id="unknown_endpoint"),
         pytest.param(_parse_error, 2, 0, id="parse_error"),
+        pytest.param(_malformed_pages, 2, 0, id="malformed_pages"),
     ],
 )
 def test_every_exit_writes_one_json_line(
@@ -696,6 +701,18 @@ def test_the_deprecated_transcription_format_still_works(
         "source": "flag",
     }
     assert "--transcription-format is deprecated" in captured.err
+
+
+def test_the_dry_run_reports_the_page_range(
+    make_pdf: MakePdf, capsys: pytest.CaptureFixture[str]
+) -> None:
+    pdf = make_pdf("doc.pdf")
+
+    code = _run("--input", str(pdf), "--pages", "7,2,15-17", "--dry-run", "--json")
+
+    assert code == 0
+    (payload,) = _json_lines(capsys.readouterr().out)
+    assert payload["spec"]["input.pages"] == {"value": "7,2,15-17", "source": "flag"}
 
 
 def test_files_name_the_items_exactly(

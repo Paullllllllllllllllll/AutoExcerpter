@@ -145,6 +145,7 @@ __all__ = [
     "delete_batch_job",
     "document_kind",
     "drop_batch_job",
+    "image_changes",
     "image_settings_record",
     "model_derived_keys",
     "open_store",
@@ -989,6 +990,15 @@ def _image_check(recorded: Any, request: ResumeRequest) -> tuple[list[str], bool
                 before, again, model_derived_keys(before, again)
             )
     return changed, not changed and before != current
+
+
+def image_changes(recorded: Any, request: ResumeRequest) -> list[str]:
+    """Return the user image settings of *request* that differ from *recorded*.
+
+    The comparison is the one that refuses an item with transcription work:
+    the keys derived from the model are left out after a change of model.
+    """
+    return _image_check(recorded, request)[0]
 
 
 def _complete(

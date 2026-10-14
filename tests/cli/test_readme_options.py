@@ -204,16 +204,17 @@ DRIFT = [
     ),
     pytest.param(
         "| `--retranscribe` | transcribe again instead of reusing stored "
-        "transcriptions | | no |\n",
+        "transcriptions; with --pages only those of the selected pages, under the "
+        "stored image settings | | no |\n",
         "",
         "--retranscribe: 0 README rows",
         id="missing-row",
     ),
     pytest.param(
-        "| `--force` | reprocess items whose outputs exist (resume is the default)"
-        " | | no |",
-        "| `--force` | reprocess items whose outputs exist (resume is the default)"
-        " | | yes |",
+        "| `--force` | reprocess items whose outputs exist (resume is the default):"
+        " every stored page of the item is reset, also outside --pages | | no |",
+        "| `--force` | reprocess items whose outputs exist (resume is the default):"
+        " every stored page of the item is reset, also outside --pages | | yes |",
         "--force: defaults column",
         id="flipped-defaults-column",
     ),

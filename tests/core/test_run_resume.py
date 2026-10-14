@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import re
 import sqlite3
 import time
@@ -412,6 +413,250 @@ def test_a_file_the_render_cannot_write_fails_the_run(
     assert result.failed == 1
     assert result.items[0].name == "doc"
     assert result.skipped == ()
+
+
+# ============================================================================
+# Page selection
+# ============================================================================
+LONG_PAGES = 20
+
+
+@pytest.fixture
+def long_pdf(offline: Offline, make_pdf: MakePdf) -> Offline:
+    """The offline runner on a PDF of LONG_PAGES pages, document ``long``."""
+    offline.pdf = make_pdf("long.pdf", num_pages=LONG_PAGES)
+    return offline
+
+
+def _done(offline: Offline, kind: str = "transcription") -> list[int]:
+    units = read_rows(offline.db, "units", order_by=["idx"])
+    return [
+        int(unit["idx"])
+        for unit in units
+        if unit["kind"] == kind and unit["status"] == "done"
+    ]
+
+
+def _rendered_pages(offline: Offline) -> list[int]:
+    """Return the pages of the transcription file, in the order it holds them."""
+    text = ItemPaths.for_item("long", offline.out).transcription.read_text(
+        encoding="utf-8"
+    )
+    return [int(page) for page in re.findall(r"Text of page (\d+)\.", text)]
+
+
+def test_pages_work_only_the_selected_pages_and_render_them_in_order(
+    long_pdf: Offline,
+) -> None:
+    _, result, _ = long_pdf.run(pages="7,2,15-17")
+
+    selected = [1, 6, 14, 15, 16]
+    assert sorted(long_pdf.transcribed) == selected
+    assert sorted(long_pdf.summarized) == selected
+    assert (result.complete, result.failed) == (1, 0)
+    assert _done(long_pdf) == selected
+    assert _done(long_pdf, "summary") == selected
+    rows = read_rows(long_pdf.db, "summaries", order_by=["idx"])
+    assert [row["idx"] for row in rows] == selected
+    assert _rendered_pages(long_pdf) == selected
+    assert ItemPaths.for_item("long", long_pdf.out).summary_md.is_file()
+    assert _planned_state(long_pdf.plan()) == "partial"
+
+
+def test_later_page_ranges_add_pages_and_a_run_without_pages_completes(
+    long_pdf: Offline,
+) -> None:
+    long_pdf.run(pages="3")
+    assert sorted(long_pdf.transcribed) == [0, 1, 2]
+
+    long_pdf.run(pages="last:3")
+    assert sorted(long_pdf.transcribed) == [17, 18, 19]
+    assert _rendered_pages(long_pdf) == [0, 1, 2, 17, 18, 19]
+
+    run_plan, result, _ = long_pdf.run()
+
+    assert _planned_state(run_plan) == "partial"
+    assert sorted(long_pdf.transcribed) == list(range(3, 17))
+    assert sorted(long_pdf.summarized) == list(range(3, 17))
+    assert (result.complete, result.failed) == (1, 0)
+    assert _rendered_pages(long_pdf) == list(range(LONG_PAGES))
+    assert _planned_state(long_pdf.plan()) == "complete"
+
+
+def test_a_range_beyond_the_last_page_skips_the_item_without_a_call(
+    long_pdf: Offline,
+) -> None:
+    long_pdf.run(pages="1-2")
+    before = long_pdf.statuses()
+
+    _, result, events = long_pdf.run(pages="99-", force=True)
+
+    assert long_pdf.transcribed == long_pdf.summarized == []
+    assert result.skipped == ("long",)
+    assert (result.complete, result.failed) == (0, 0)
+    assert long_pdf.statuses() == before
+    assert (
+        "Page range 'pages 99-' yielded no pages for 'long' (20 pages). Skipping."
+        in events.of("warning")
+    )
+
+
+def test_force_with_pages_resets_every_stored_page_of_the_item(
+    long_pdf: Offline,
+) -> None:
+    long_pdf.run(pages="1-5")
+
+    _, result, _ = long_pdf.run(pages="4-4", force=True)
+
+    assert long_pdf.transcribed == [3]
+    assert (result.complete, result.failed) == (1, 0)
+    assert _done(long_pdf) == [3]
+    assert _done(long_pdf, "summary") == [3]
+    assert _rendered_pages(long_pdf) == [3]
+
+
+def test_retranscribe_with_pages_resets_only_the_selected_pages(
+    long_pdf: Offline,
+) -> None:
+    long_pdf.run(pages="1-5")
+
+    _, result, _ = long_pdf.run(pages="4-4", retranscribe=True)
+
+    assert long_pdf.transcribed == long_pdf.summarized == [3]
+    assert (result.complete, result.failed) == (1, 0)
+    assert _done(long_pdf) == _done(long_pdf, "summary") == [0, 1, 2, 3, 4]
+    summaries = read_rows(long_pdf.db, "units", order_by=["idx"])
+    assert [u["stale"] for u in summaries if u["kind"] == "summary"] == [0] * 20
+    assert _rendered_pages(long_pdf) == [0, 1, 2, 3, 4]
+
+
+def _image_settings(offline: Offline) -> dict[str, Any]:
+    (document,) = read_rows(offline.db, "documents")
+    value = document["image_settings"]
+    return dict(json.loads(value) if isinstance(value, str) else value)
+
+
+def test_retranscribe_with_pages_keeps_the_stored_image_settings(
+    long_pdf: Offline, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    long_pdf.run(pages="1-5")
+    stored = _image_settings(long_pdf)
+    qualities: list[Any] = []
+    real = item_module.open_source
+
+    def spy(item: Any, job: Any) -> Any:
+        qualities.append(job.images.jpeg_quality)
+        return real(item, job)
+
+    monkeypatch.setattr(item_module, "open_source", spy)
+
+    run_plan, result, events = long_pdf.run(
+        pages="2-2", retranscribe=True, jpeg_quality=80
+    )
+
+    assert _planned_state(run_plan) == "partial"
+    assert long_pdf.transcribed == [1]
+    assert (result.complete, result.failed) == (1, 0)
+    assert qualities == [stored["jpeg_quality"]] != [80]
+    assert _image_settings(long_pdf) == stored
+    assert _done(long_pdf) == [0, 1, 2, 3, 4]
+    assert any(
+        "keeps the stored image settings (jpeg_quality)" in m
+        for m in events.of("warning")
+    )
+
+
+@pytest.mark.parametrize("summarized", ["", "1-3"], ids=["no_summaries", "some"])
+def test_retranscribe_with_pages_keeps_the_image_settings_of_a_transcribed_item(
+    long_pdf: Offline, monkeypatch: pytest.MonkeyPatch, summarized: str
+) -> None:
+    long_pdf.run(summarize=False)
+    if summarized:
+        long_pdf.run(pages=summarized)
+    stored = _image_settings(long_pdf)
+    qualities: list[Any] = []
+    real = item_module.open_source
+
+    def spy(item: Any, job: Any) -> Any:
+        qualities.append(job.images.jpeg_quality)
+        return real(item, job)
+
+    monkeypatch.setattr(item_module, "open_source", spy)
+
+    run_plan, result, _ = long_pdf.run(pages="2-2", retranscribe=True, jpeg_quality=80)
+
+    assert _planned_state(run_plan) == "transcription_only"
+    assert long_pdf.transcribed == long_pdf.summarized == [1]
+    assert (result.complete, result.failed) == (1, 0)
+    assert qualities == [stored["jpeg_quality"]] != [80]
+    assert _image_settings(long_pdf) == stored
+    assert _done(long_pdf) == list(range(LONG_PAGES))
+
+
+def _edit_image_record(db: Path, edit: Callable[[dict[str, Any]], None]) -> None:
+    """Apply *edit* to every stored image record."""
+    connection = sqlite3.connect(db, timeout=30)
+    with contextlib.closing(connection), connection:
+        for doc_id, value in connection.execute(
+            "SELECT doc_id, image_settings FROM documents"
+        ).fetchall():
+            record = json.loads(value)
+            edit(record)
+            connection.execute(
+                "UPDATE documents SET image_settings = ? WHERE doc_id = ?",
+                (json.dumps(record), doc_id),
+            )
+
+
+def _stored_with_low_detail(record: dict[str, Any]) -> None:
+    """The record of pages sent with --image-detail low (the test sections
+    ignore the run's detail, so the stored side carries the difference)."""
+    record.update(llm_detail="low", request_detail="low", resolved_detail="low")
+
+
+def _migrated(record: dict[str, Any]) -> None:
+    """A record imported by migrate, which version 1.0 wrote without it."""
+    del record["payload_format"]
+
+
+@pytest.mark.parametrize(
+    "edit", [_stored_with_low_detail, _migrated], ids=["image_detail", "migrated"]
+)
+def test_retranscribe_with_pages_refuses_image_settings_it_cannot_keep(
+    long_pdf: Offline, edit: Callable[[dict[str, Any]], None]
+) -> None:
+    long_pdf.run(summarize=False)
+    _edit_image_record(long_pdf.db, edit)
+    stored = _image_settings(long_pdf)
+
+    run_plan, result, events = long_pdf.run(pages="2-2", retranscribe=True)
+
+    assert _planned_state(run_plan) == "refused"
+    assert long_pdf.transcribed == long_pdf.summarized == []
+    assert (result.complete, result.failed) == (0, 1)
+    assert _image_settings(long_pdf) == stored
+    assert _done(long_pdf) == list(range(LONG_PAGES))
+    (warning,) = [m for m in events.of("warning") if "Image settings changed" in m]
+    assert "--retranscribe without --pages" in warning
+
+
+def test_retranscribe_with_pages_refuses_a_document_without_an_image_record(
+    long_pdf: Offline,
+) -> None:
+    long_pdf.run(summarize=False)
+    connection = sqlite3.connect(long_pdf.db, timeout=30)
+    with contextlib.closing(connection), connection:
+        connection.execute("UPDATE documents SET image_settings = NULL")
+
+    run_plan, result, events = long_pdf.run(pages="2-2", retranscribe=True)
+
+    assert _planned_state(run_plan) == "refused"
+    assert long_pdf.transcribed == long_pdf.summarized == []
+    assert (result.complete, result.failed) == (0, 1)
+    (document,) = read_rows(long_pdf.db, "documents")
+    assert document["image_settings"] is None
+    (warning,) = [m for m in events.of("warning") if "are unknown" in m]
+    assert "--retranscribe without --pages" in warning
 
 
 # ============================================================================

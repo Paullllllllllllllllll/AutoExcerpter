@@ -10,6 +10,7 @@ input:
   --select EXPR         select items by number (1,3), range (1-5) or name search
   --files LIST          comma-separated names of items inside the input folder
   --all                 process every discovered item
+  --pages RANGE         pages or images: 5, first:5, last:5, 3-7, 3-, -7 or 1,3,5-8; default: all
 
 output:
   --output DIR          output folder; default: beside the input
@@ -119,8 +120,10 @@ images:
                         value
 
 run control:
-  --force               reprocess items whose outputs exist (resume is the default)
-  --retranscribe        transcribe again instead of reusing stored transcriptions
+  --force               reprocess items whose outputs exist (resume is the default): every stored
+                        page of the item is reset, also outside --pages
+  --retranscribe        transcribe again instead of reusing stored transcriptions; with --pages
+                        only those of the selected pages, under the stored image settings
   --concurrency N       parallel requests; default: 16
   --batch, --no-batch   submit the pages and summaries to the providers' batch APIs; default: off
   --dry-run             plan without API calls or writes

@@ -1,5 +1,5 @@
 
-AutoExcerpter | new run   step 1 of 9
+AutoExcerpter | new run   step 1 of 10
 ? Task:
  > new run
    check batches
@@ -9,11 +9,11 @@ AutoExcerpter | new run   step 1 of 9
    Back
   answer: new run
 
-AutoExcerpter | new run   step 2 of 9
+AutoExcerpter | new run   step 2 of 10
 ? Input (PDF, image folder, or a folder of them): <tmp>/docs/doc.pdf
   found 1 PDF, 3 pages
 
-AutoExcerpter | new run   step 3 of 9
+AutoExcerpter | new run   step 3 of 10
 ? Where should the outputs go?
  > Beside each input
    Into one folder  created when missing
@@ -26,14 +26,14 @@ AutoExcerpter | new run   step 3 of 9
    Back
   answer: Markdown (X_transcription.md)
 
-AutoExcerpter | new run   step 4 of 9
+AutoExcerpter | new run   step 4 of 10
 ? Summarize after transcribing?
  > Yes, transcribe and summarize
    No, transcribe only
    Back
   answer: Back
 
-AutoExcerpter | new run   step 3 of 9
+AutoExcerpter | new run   step 3 of 10
 ? Where should the outputs go?
    Beside each input
  > Into one folder  created when missing
@@ -46,7 +46,7 @@ AutoExcerpter | new run   step 3 of 9
    Back
   answer: Markdown (X_transcription.md)
 
-AutoExcerpter | new run   step 4 of 9
+AutoExcerpter | new run   step 4 of 10
 ? Summarize after transcribing?
  > Yes, transcribe and summarize
    No, transcribe only
@@ -58,7 +58,7 @@ AutoExcerpter | new run   step 4 of 9
    [ ] Back
   answer: Summary as Markdown (X_summary.md), Summary as Word (X_summary.docx)
 
-AutoExcerpter | new run   step 5 of 9
+AutoExcerpter | new run   step 5 of 10
 ? Transcription provider:
  > OpenAI (s)
    Anthropic
@@ -102,14 +102,14 @@ AutoExcerpter | new run   step 5 of 9
    Back
   answer: Recommended
 
-AutoExcerpter | new run   step 6 of 9
+AutoExcerpter | new run   step 6 of 10
 ? Summary model:
  > Same as transcription  openai / gpt-5.6-terra
    Choose a summary model
    Back
   answer: Same as transcription
 
-AutoExcerpter | new run   step 7 of 9
+AutoExcerpter | new run   step 7 of 10
 ? Summary context:
  > Sidecar files (auto)  X_summary_context.txt beside the input
    Topics as text
@@ -119,14 +119,14 @@ AutoExcerpter | new run   step 7 of 9
   answer: Topics as text
 ? Topics: bread prices, real wages
 
-AutoExcerpter | new run   step 8 of 9
+AutoExcerpter | new run   step 8 of 10
 ? Page images:
  > Recommended for openai models  native DPI, detail original, JPEG 95, color
    Customize
    Back
   answer: Recommended for openai models
 
-AutoExcerpter | new run   step 9 of 9
+AutoExcerpter | new run   step 9 of 10
 ? Submission:
  > Synchronous  results now
    Batch API  collected later with batch check
@@ -140,6 +140,13 @@ AutoExcerpter | new run   step 9 of 9
    [ ] Back
   answer: Look up citations in OpenAlex
 ? Parallel requests: [16] 16
+
+AutoExcerpter | new run   step 10 of 10
+? Which pages?
+ > All pages
+   A range  such as 5, first:5, last:5, 3-7, 3-, -7 or 1,3,5-8
+   Back
+  answer: All pages
 
 Review                                                                  (s) = from settings defaults
   input                 <tmp>/docs/doc.pdf  (1 PDF, 3 pages)

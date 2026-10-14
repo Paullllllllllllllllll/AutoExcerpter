@@ -128,6 +128,8 @@ ROWS = [
             "input.select": None,
         },
     ),
+    _row("pages", "--pages", " 7,2,15-17 ", sets={"input.pages": "7,2,15-17"}),
+    _row("pages", "--pages", "last:3", sets={"input.pages": "last:3"}),
     _row("output", "--output", "x y", sets={"output.directory": Path("x y")}),
     _row(
         "beside_input",
@@ -398,6 +400,16 @@ def test_one_option_sets_its_fields(row: Row) -> None:
         for path in resolution.sources
     }
     assert dict(resolution.sources) == expected_sources
+
+
+@pytest.mark.parametrize("value", ["3-x", "0", "5-3", "last:0", "-", ""])
+def test_a_malformed_page_range_exits_2(
+    value: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit) as exc:
+        OPTIONS.parse(["--input", "in.pdf", "--pages", value])
+    assert exc.value.code == 2
+    assert "--pages" in capsys.readouterr().err
 
 
 def test_the_settings_option_sets_the_settings_path() -> None:

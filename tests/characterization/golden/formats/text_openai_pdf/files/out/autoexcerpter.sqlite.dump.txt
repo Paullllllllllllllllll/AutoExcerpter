@@ -1261,6 +1261,10 @@
       "source": "flag",
       "value": []
     },
+    "input.pages": {
+      "source": "default",
+      "value": null
+    },
     "input.path": {
       "source": "flag",
       "value": "<tmp>/in/doc.pdf"

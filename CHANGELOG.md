@@ -1,5 +1,23 @@
 # Changelog
 
+- **v3.1.0** (14 October 2026) -- Minor release. `run --pages RANGE` selects
+  pages of every selected item in the range syntax ChronoTranscriber and
+  ChronoMiner share: `N` or `first:N` (the first N pages), `last:N`, and lists
+  of numbers and ranges such as `7,2,15-17`, `4-4` or `99-`. Only the selected
+  pages are transcribed and summarized, by direct calls and under `--batch`
+  alike; the other pages stay pending and the document partial, and its files
+  hold the stored pages in source order, the summary covering only those. A
+  later run with another range adds its pages, and a run without `--pages`
+  completes the document. A range that selects no page of an item skips it
+  with a warning naming the range and makes no call; a malformed range exits 2.
+  `--force` still resets every stored page of the item, also outside
+  `--pages`, as its help now says, while `--retranscribe` with `--pages`
+  transcribes only the selected pages again, under the document's stored image
+  settings, and leaves the other stored pages and their summaries as they are.
+  Page numbers are resolved within each run of consecutive stored scans, so the
+  pages a selection leaves out shift no printed number. The guided UI asks for
+  the pages after the run options, and the review shows a chosen range on the
+  input line.
 - **v3.0.1** (13 October 2026) -- Patch release. A `retry` settings block
   without `page_timeout`, or with `page_timeout: null`, keeps the deadline the
   tool passes as its default instead of resetting it to `auto`; the shipped

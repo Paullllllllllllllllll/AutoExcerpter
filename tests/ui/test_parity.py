@@ -182,6 +182,7 @@ def _base(input_path: Path, *rest: Any) -> list[Any]:
         KEEP,  # 14 submission
         KEEP,  # 15 run options
         KEEP,  # 16 concurrency
+        KEEP,  # 17 pages
         *rest,
     ]
 
@@ -214,6 +215,7 @@ def settings_defaults(ws: Workspace) -> Script:
         KEEP,  # fallback mode: text, from settings
         KEEP,  # fallback topics from settings
         "recommended",
+        KEEP,
         KEEP,
         KEEP,
         KEEP,
@@ -273,6 +275,7 @@ def named_endpoints(ws: Workspace) -> Script:
         "file",
         str(topics),
         "recommended",
+        KEEP,
         KEEP,
         KEEP,
         "copy",
@@ -364,6 +367,7 @@ def custom_images_and_parameters(ws: Workspace) -> Script:
         KEEP,
         KEEP,
         KEEP,
+        KEEP,
         "copy",
     ]
     return Script(ws.session(), answers)
@@ -405,6 +409,7 @@ def all_items_without_summary(ws: Workspace) -> Script:
         KEEP,
         ["retranscribe"],
         "2",
+        KEEP,
         "copy",
     ]
     return Script(ws.session(), answers)
@@ -443,10 +448,13 @@ def back_navigation(ws: Workspace) -> Script:
         KEEP,
         KEEP,
         KEEP,
-        BACK,  # review: back to the run options
+        KEEP,
+        BACK,  # review: back to the pages
+        BACK,  # pages: back to the run options
         KEEP,
         KEEP,
         "8",
+        KEEP,
         "quit",
     ]
     return Script(ws.session(), answers)
@@ -495,6 +503,14 @@ def batch_submission(ws: Workspace) -> Script:
     return Script(ws.session(), answers)
 
 
+def page_range(ws: Workspace) -> Script:
+    """A page range typed in the pages step."""
+    pdf = ws.pdf(pages=5)
+    answers = _base(pdf, "copy")
+    answers[17:18] = ["range", "4-5,2"]
+    return Script(ws.session(), answers)
+
+
 SESSIONS: Final[Mapping[str, Callable[[Workspace], Script]]] = MappingProxyType(
     {
         builder.__name__: builder
@@ -512,6 +528,7 @@ SESSIONS: Final[Mapping[str, Callable[[Workspace], Script]]] = MappingProxyType(
             force_review_action,
             dry_run,
             batch_submission,
+            page_range,
         )
     }
 )
@@ -820,6 +837,16 @@ def test_the_batch_option_reaches_the_command_and_the_review(
     ]
     assert review and all("batch" in line for line in review)
     assert all("concurrency" not in line for line in review)
+
+
+def test_the_page_range_reaches_the_command_and_the_review(
+    workspace: Workspace,
+) -> None:
+    played = play(page_range(workspace))
+    assert played.spec().input.pages == "4-5,2"
+    assert _flag_value(played.command, "--pages") == "4-5,2"
+    review = played.prompter.transcript.split("\nReview")[-1]
+    assert "pages 4-5,2" in review
 
 
 def test_the_batch_option_is_not_offered_without_a_batch_api(

@@ -128,6 +128,7 @@ def _answers(pdf: Path, output: Path) -> list[Any]:
         KEEP,  # submission
         KEEP,  # run options
         KEEP,  # concurrency
+        KEEP,  # pages
         "run",
     ]
 

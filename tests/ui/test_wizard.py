@@ -125,6 +125,7 @@ def _pdf_answers(pdf: Path, *review: Any) -> list[Any]:
         KEEP,  # 14 submission
         KEEP,  # 15 run options
         KEEP,  # 16 concurrency
+        KEEP,  # 17 pages
         *review,
     ]
 
@@ -171,6 +172,7 @@ def test_the_steps_follow_the_shared_order() -> None:
         "Context",
         "Page images",
         "Run options",
+        "Pages",
     ]
 
 
@@ -178,8 +180,8 @@ def test_pdf_session_with_summary_runs_with_recommended_values(pdf: Path) -> Non
     run = _run(_pdf_answers(pdf, "run"))
     assert run.outcome.action is Decision.RUN
     assert "  found 1 PDF, 3 pages" in run.prompter.lines
-    assert len(_headers(run)) == 8
-    assert _headers(run)[0].endswith("step 1 of 8")
+    assert len(_headers(run)) == 9
+    assert _headers(run)[0].endswith("step 1 of 9")
     assert "? Submission:" in run.prompter.lines
     assert "? Parallel requests: [16] 16" in run.prompter.lines
     spec = run.spec()
@@ -202,10 +204,10 @@ def test_back_returns_to_the_previous_question_and_step(pdf: Path) -> None:
     assert run.outcome.action is Decision.QUIT
     headers = _headers(run)
     assert [header.split("|")[1].strip() for header in headers[1:5]] == [
-        "new run   step 2 of 8",
-        "new run   step 3 of 8",
-        "new run   step 2 of 8",
-        "new run   step 3 of 8",
+        "new run   step 2 of 9",
+        "new run   step 3 of 9",
+        "new run   step 2 of 9",
+        "new run   step 3 of 9",
     ]
     assert run.prompter.lines.count("? Transcription provider:") == 2
     assert run.spec().transcription_model.provider == "openai"
@@ -227,6 +229,7 @@ def test_summary_off_skips_context_and_summary_model(pdf: Path) -> None:
             KEEP,
             KEEP,
             KEEP,
+            KEEP,
             "run",
         ]
     )
@@ -235,7 +238,7 @@ def test_summary_off_skips_context_and_summary_model(pdf: Path) -> None:
     assert "? Summary model:" not in transcript
     assert "OpenAlex" not in transcript
     assert "Summary as Markdown" not in transcript
-    assert _headers(run)[-1].endswith("step 6 of 6")
+    assert _headers(run)[-1].endswith("step 7 of 7")
     spec = run.spec()
     assert not spec.summary.enabled
     assert spec.output.transcription_format == "txt"
@@ -297,6 +300,7 @@ def test_settings_defaults_are_preselected_marked_and_spelled_out(pdf: Path) -> 
             "auto",
             "none",
             "recommended",
+            KEEP,
             KEEP,
             KEEP,
             KEEP,
@@ -696,9 +700,9 @@ def test_extension_steps_follow_the_tool_steps(
     step = Step("extension", "Extension", ask=ask, sets=("concurrency",))
     monkeypatch.setattr(ext, "wizard_steps", lambda: (step,))
     answers = _pdf_answers(pdf, "run")
-    answers.insert(17, "3")
+    answers.insert(18, "3")
     run = _run(answers)
-    assert _headers(run)[-1].endswith("step 9 of 9")
+    assert _headers(run)[-1].endswith("step 10 of 10")
     assert run.spec().run.concurrency == 3
     _assert_round_trip(run)
 
@@ -812,6 +816,25 @@ def test_original_detail_is_offered_only_where_the_pages_take_it(
         wizard.run()
     details = prompter.transcript.split("? Image detail:")[1].split("?")[0]
     assert ("original" in details.replace("Recommended (original)", "")) is offered
+
+
+def test_the_pages_step_takes_a_valid_range_and_all_clears_it(pdf: Path) -> None:
+    answers = _pdf_answers(pdf, "copy")
+    answers[17:18] = ["range", "3-x"]
+    with pytest.raises(ScriptError, match=r"^'Range:': .*rejected"):
+        _run(answers)
+    answers[18] = "last:2"
+    run = _run(answers)
+    assert run.spec().input.pages == "last:2"
+    assert run.outcome.command is not None
+    assert _has_words(run.outcome.command, ("--pages", "last:2"))
+    assert "pages last:2" in run.transcript.split("\nReview")[-1]
+    _assert_round_trip(run)
+    answers[19:19] = ["edit", "pages", "all"]
+    run = _run(answers)
+    assert run.spec().input.pages is None
+    assert run.outcome.command is not None
+    assert "--pages" not in run.outcome.command
 
 
 def test_quotes_around_a_typed_path_are_stripped(pdf: Path) -> None:

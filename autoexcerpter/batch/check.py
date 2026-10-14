@@ -634,9 +634,21 @@ class _Advance:
         )
 
     async def run(self) -> DocumentAdvance:
+        """Advance the pages the submitting run's ``--pages`` selected (every
+        page without it); the others stay pending and the document partial."""
         store, item_job = self.database.store, self.job.job
+        pages = sum(
+            1
+            for unit in store.units(self.job.doc_id)
+            if unit.kind == KIND_TRANSCRIPTION
+        )
+        chosen = set(item_job.selected_pages(pages))
+
+        def selected(unit: UnitRow) -> bool:
+            return unit.idx in chosen and _summary_selected(unit)
+
         if item_job.summarize:
-            work = summary_work(store, self.job.doc_id, selected=_summary_selected)
+            work = summary_work(store, self.job.doc_id, selected=selected)
             await write_placeholders(
                 store,
                 self.lease,
@@ -650,8 +662,11 @@ class _Advance:
         relevant = [
             unit
             for unit in units
-            if unit.kind == KIND_TRANSCRIPTION
-            or (item_job.summarize and unit.kind == KIND_SUMMARY)
+            if unit.idx in chosen
+            and (
+                unit.kind == KIND_TRANSCRIPTION
+                or (item_job.summarize and unit.kind == KIND_SUMMARY)
+            )
         ]
         waiting = [
             unit

@@ -2,7 +2,8 @@
 
 The processor opens the payload source, plans one transcription unit and,
 when summarizing, one summary unit per page, and works the units the store
-still lacks: pending and failed pages are transcribed on an asyncio page
+still lacks among the pages ``--pages`` selects (every page without it):
+pending and failed pages are transcribed on an asyncio page
 pool, and pages whose summary is missing, failed or stale are summarized
 from their stored text. It then consolidates and enriches the citations,
 stores them and renders the final files from the store. It reads no
@@ -351,6 +352,11 @@ class ItemProcessor:
         return self.files.stop
 
     @property
+    def selected(self) -> list[int]:
+        """The pages of the item this run works, in source order."""
+        return self.job.selected_pages(self.page_count)
+
+    @property
     def written_outputs(self) -> list[Path]:
         """The absolute paths of the files written."""
         return self.files.written
@@ -388,18 +394,18 @@ class ItemProcessor:
         return open_source(self.item, self.job)
 
     async def _run(self, source: PayloadSource) -> bool:
-        """Plan the units, work the missing ones and write the outputs."""
+        """Plan the units, work the missing ones and write the outputs.
+
+        Every page is planned, but only the pages ``--pages`` selects are
+        worked; the others stay pending and the document partial.
+        """
         self.page_count = len(source)
         suffix = " and summarization" if self.job.summarize else ""
         logger.info(f"Prepared {self.page_count} images for transcription{suffix}.")
         await self._store_artifacts()
         await self._plan(source)
         transcriptions = _by_index(self.document.units(KIND_TRANSCRIPTION))
-        pending = [
-            idx
-            for idx in range(self.page_count)
-            if transcriptions[idx].status != "done"
-        ]
+        pending = [idx for idx in self.selected if transcriptions[idx].status != "done"]
         if pending:
             await self.document.set_image_settings(
                 image_settings_record(source.img_cfg)
@@ -439,14 +445,15 @@ class ItemProcessor:
     async def _summarize_stored(
         self, transcriptions: dict[int, UnitRow], pending: Sequence[int]
     ) -> None:
-        """Summarize the stored pages whose summary is missing, failed or stale."""
+        """Summarize the selected stored pages whose summary is missing, failed
+        or stale."""
         if self.runner.summary_manager is None:
             return
         summaries = _by_index(self.document.units(KIND_SUMMARY))
         transcribing = set(pending)
         redo = [
             idx
-            for idx in range(self.page_count)
+            for idx in self.selected
             if idx not in transcribing
             and (summaries[idx].status, summaries[idx].stale) != ("done", 0)
         ]
@@ -473,7 +480,7 @@ class ItemProcessor:
                 "summaries reused or made from the stored text."
             )
             return
-        already_complete = self.page_count - len(pending)
+        already_complete = len(self.selected) - len(pending)
         workers = max(1, min(self.job.concurrency, len(pending)))
         resume_note = (
             f" ({already_complete} skipped via resume)" if already_complete else ""
@@ -561,7 +568,10 @@ class ItemProcessor:
     async def _finish(self) -> bool:
         """Write the outputs, record the run report and return the verdict."""
         elapsed_s = time.time() - self.started_at
-        units = self.document.units()
+        # Pages --pages leaves out stay pending; they neither withhold the
+        # files nor fail the item, which render the stored pages.
+        chosen = set(self.selected)
+        units = [u for u in self.document.units() if u.idx in chosen]
         transcriptions = [u for u in units if u.kind == KIND_TRANSCRIPTION]
         # Summary units of an earlier run stay stored when this run does not
         # summarize; only the requested work decides the outcome.
@@ -584,7 +594,7 @@ class ItemProcessor:
                 "pages stay for a later run.",
                 self.name,
                 pages_deferred,
-                self.page_count,
+                len(self.selected),
                 summaries_pending,
             )
         else:

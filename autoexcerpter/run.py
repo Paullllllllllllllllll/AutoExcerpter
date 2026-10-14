@@ -72,12 +72,18 @@ from autoexcerpter.output.store import (
     classify,
     document_kind,
     drop_batch_job,
+    image_changes,
     image_settings_record,
     open_store,
     read_store,
 )
 from autoexcerpter.pipeline.context import ContextError, summary_context
-from autoexcerpter.pipeline.item import ItemFiles, ItemProcessor, input_sha256
+from autoexcerpter.pipeline.item import (
+    ItemFiles,
+    ItemProcessor,
+    input_sha256,
+    open_source,
+)
 from autoexcerpter.pipeline.job import ItemJob, job_from_spec
 from autoexcerpter.pipeline.scanner import scan_input_path
 from autoexcerpter.pipeline.types import ItemSpec
@@ -570,14 +576,30 @@ class _Classifier:
         )
         state = _classify(output_dir, item.output_stem, request)
         run = self.spec.run
+        # --retranscribe --pages works some pages only, so it keeps the
+        # stored image values in every state it resets pages from: a
+        # document never mixes two image settings.
+        keep_images = (
+            run.retranscribe and self.spec.input.pages is not None and not run.force
+        )
         images: ImageSpec | None = None
-        if state.state is ItemState.REFUSED and not (run.force or run.retranscribe):
-            state, images = self._stored_images(output_dir, item, request, state)
+        if keep_images:
+            pin = state.state in (ItemState.REFUSED, *_RESUMABLE)
+        else:
+            pin = state.state is ItemState.REFUSED and not (
+                run.force or run.retranscribe
+            )
+        if pin:
+            state, images = self._stored_images(
+                output_dir, item, request, state, every=keep_images
+            )
+        if keep_images and pin:
+            state = self._kept_images(output_dir, item, request, state, images)
         if run.force and state.state is not ItemState.BLOCKED:
             state = Classification(
                 ItemState.NONE, item.output_stem, state.doc_id, reason="overwrite mode"
             )
-        elif run.retranscribe and state.state is ItemState.REFUSED:
+        elif run.retranscribe and not keep_images and state.state is ItemState.REFUSED:
             state = Classification(
                 ItemState.PARTIAL,
                 item.output_stem,
@@ -594,25 +616,82 @@ class _Classifier:
             images=images,
         )
 
+    def _kept_images(
+        self,
+        output_dir: Path,
+        item: ItemSpec,
+        request: ResumeRequest,
+        state: Classification,
+        images: ImageSpec | None,
+    ) -> Classification:
+        """Refuse a ``--retranscribe --pages`` item whose stored image settings
+        the run's pinned *images* cannot keep, in any state it resumes from.
+
+        The comparison is the one that refuses an item with transcription
+        work, applied here to items without it as well. An item that keeps
+        stored transcriptions without an image-settings record, as migrate
+        can leave it, is refused too: its settings are unknown.
+        """
+        stored = _stored_record(output_dir, item.output_stem)
+        if stored is None:
+            if not _stores_transcriptions(output_dir, state):
+                return state
+            return Classification(
+                ItemState.REFUSED,
+                item.output_stem,
+                state.doc_id,
+                reason=(
+                    f"The image settings of '{item.output_stem}' are unknown: its "
+                    "stored pages have no image-settings record. Skipping it; use "
+                    "--force, or --retranscribe without --pages, to replace the "
+                    "existing run."
+                ),
+            )
+        job = replace(
+            self.job, images=images if images is not None else self.job.images
+        )
+        check = replace(
+            request,
+            image_settings=_image_record(job),
+            settings_for=functools.partial(_image_record, job),
+        )
+        changed = image_changes(stored, check)
+        if not changed:
+            return state
+        return Classification(
+            ItemState.REFUSED,
+            item.output_stem,
+            state.doc_id,
+            reason=(
+                f"Image settings changed: {', '.join(changed)}. Skipping "
+                f"'{item.output_stem}'; use --force, or --retranscribe without "
+                "--pages, to replace the existing run."
+            ),
+        )
+
     def _stored_images(
         self,
         output_dir: Path,
         item: ItemSpec,
         request: ResumeRequest,
         refused: Classification,
+        *,
+        every: bool = False,
     ) -> tuple[Classification, ImageSpec | None]:
-        """Resume a refused item with the image values stored with it.
+        """Resume an item with the image values stored with it.
 
         Each image option the run leaves unset takes the value of the
         document's stored record, so an item stored under an earlier preset
-        version is not refused because a preset value changed. The item
-        stays refused when an option the run sets, or a value the record
-        does not hold, differs.
+        version is not refused because a preset value changed; with *every*
+        (``--retranscribe --pages``) the options the run sets do as well,
+        with a note. The item keeps its state *refused* (refused, or the
+        resumable state it was classified in) when an option the run sets,
+        or a value the record does not hold, still differs.
         """
         stored = _stored_record(output_dir, item.output_stem)
         if stored is None:
             return refused, None
-        images = _pinned_images(self.spec.images, stored)
+        images = _pinned_images(self.spec.images, stored, every=every)
         if images == self.spec.images:
             return refused, None
         job = replace(self.job, images=images)
@@ -624,6 +703,19 @@ class _Classifier:
         state = _classify(output_dir, item.output_stem, retry)
         if state.state is ItemState.REFUSED:
             return refused, None
+        given = [
+            name
+            for name in _PINNED_KEYS
+            if getattr(self.spec.images, name) not in (None, getattr(images, name))
+        ]
+        if given:
+            kept = (
+                f"'{item.output_stem}': --retranscribe --pages keeps the stored "
+                f"image settings ({', '.join(given)}); use --force, or "
+                "--retranscribe without --pages, to change them."
+            )
+            note = f"{state.note} {kept}" if state.note else kept
+            state = replace(state, note=note)
         return state, images
 
 
@@ -635,6 +727,15 @@ def _classify(root: Path, name: str, request: ResumeRequest) -> Classification:
         raise _refused(root, exc) from exc
     except InputMismatchError as exc:
         raise DuplicateOutputError(str(exc)) from exc
+
+
+def _stores_transcriptions(root: Path, state: Classification) -> bool:
+    """Whether the classified document holds a transcribed page."""
+    reader = read_store(root) if state.doc_id is not None else None
+    if reader is None or state.doc_id is None:
+        return False
+    units = reader.units(state.doc_id, kind=KIND_TRANSCRIPTION)
+    return any(unit.status == "done" for unit in units)
 
 
 def _stored_record(root: Path, name: str) -> Mapping[str, Any] | None:
@@ -655,12 +756,15 @@ _PINNED_KEYS = {
 record key of each; the detail is resolved per model and stays the run's."""
 
 
-def _pinned_images(images: ImageSpec, record: Mapping[str, Any]) -> ImageSpec:
-    """Return *images* with each unset pinnable option from *record*."""
+def _pinned_images(
+    images: ImageSpec, record: Mapping[str, Any], *, every: bool = False
+) -> ImageSpec:
+    """Return *images* with each unset pinnable option, or with *every* each
+    pinnable option, from *record*."""
     values = {
         name: record[key]
         for name, key in _PINNED_KEYS.items()
-        if getattr(images, name) is None and record.get(key) is not None
+        if (every or getattr(images, name) is None) and record.get(key) is not None
     }
     return replace(images, **values)
 
@@ -786,7 +890,8 @@ class RunResult:
     *usage* holds the tokens of the run's model calls per role
     (transcription, summary), failed attempts included where the provider
     reported them. *skipped* names the items not processed: complete,
-    legacy and blocked ones. *databases* are the absolute paths of the
+    legacy and blocked ones, and those of which ``--pages`` selects no
+    page. *databases* are the absolute paths of the
     database files the run opened.
     """
 
@@ -972,7 +1077,8 @@ class _ItemRun:
 
     async def reset(self, handle: DocumentHandle) -> None:
         """Reset the units this run works again: all of them under ``--force``
-        or after an input change, the transcriptions under ``--retranscribe``.
+        or after an input change, the transcriptions under ``--retranscribe``
+        (those of the pages ``--pages`` selects, when given).
 
         A reset transcription marks its page's summary stale. The input hash
         is recorded after the reset, so that an interruption between the two
@@ -985,7 +1091,11 @@ class _ItemRun:
         if spec.run.force or planned.resume.reset:
             await handle.reset()
         elif spec.run.retranscribe and planned.resume.state in _RESUMABLE:
-            await handle.reset(KIND_TRANSCRIPTION)
+            pages = self.run_plan.job.pages
+            idxs = None
+            if pages is not None:
+                idxs = pages.resolve(len(handle.units(KIND_TRANSCRIPTION)))
+            await handle.reset(KIND_TRANSCRIPTION, idxs)
         digest, doc_id = planned.input_sha256, handle.doc_id
 
         def prepare(connection: sqlite3.Connection) -> None:
@@ -1007,6 +1117,37 @@ def _item_job(run_plan: RunPlan, planned: PlannedItem) -> ItemJob:
     if planned.images is None:
         return run_plan.job
     return replace(run_plan.job, images=planned.images)
+
+
+def _page_count(planned: PlannedItem, job: ItemJob) -> int | None:
+    """Return the item's page count; None when its input cannot be opened."""
+    try:
+        source = open_source(planned.item, job)
+    except Exception:  # noqa: BLE001 - the item fails when it is processed
+        return None
+    try:
+        return len(source)
+    finally:
+        source.close()
+
+
+async def _beyond_pages(run_plan: RunPlan, planned: PlannedItem) -> str | None:
+    """Return why ``--pages`` selects none of the item's pages, else None.
+
+    An input that cannot be opened or holds no page is left to the item,
+    which fails it.
+    """
+    pages = run_plan.job.pages
+    if pages is None:
+        return None
+    count = await asyncio.to_thread(_page_count, planned, _item_job(run_plan, planned))
+    if not count or pages.resolve(count):
+        return None
+    noun = "pages" if planned.item.kind == "pdf" else "images"
+    return (
+        f"Page range '{pages.describe()}' yielded no {noun} for '{planned.name}' "
+        f"({count} {noun}). Skipping."
+    )
 
 
 async def _submit_item(
@@ -1075,8 +1216,9 @@ async def _run_item(  # noqa: PLR0913 - the item, its place and the run's object
     """Process one item; None when another run holds its document.
 
     An item whose pages a batch submission took since the plan is skipped
-    as well. With *clients*, the item's missing units are submitted to the
-    batch APIs instead of called.
+    as well, and so is an item of which ``--pages`` selects no page, before
+    ``--force`` resets it. With *clients*, the item's missing units are
+    submitted to the batch APIs instead of called.
     """
     events = env.events
     total = len(run_plan.to_process)
@@ -1087,13 +1229,14 @@ async def _run_item(  # noqa: PLR0913 - the item, its place and the run's object
         return None
     store, doc_id, lease = leased
     if store.blocked_units(doc_id):
-        await _note(
-            store,
-            doc_id,
+        skip: str | None = (
             f"Skipping '{name}': its pages wait in a batch submitted since the "
-            "plan; run 'autoexcerpter batch check'.",
-            events,
+            "plan; run 'autoexcerpter batch check'."
         )
+    else:
+        skip = await _beyond_pages(run_plan, planned)
+    if skip is not None:
+        await _note(store, doc_id, skip, events)
         with contextlib.suppress(sqlite3.Error):
             await store.release(lease)
         return None

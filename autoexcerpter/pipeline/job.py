@@ -6,6 +6,7 @@ import os
 from dataclasses import dataclass
 from typing import Any
 
+from autoexcerpter.common.selection import PageRange, parse_page_range
 from autoexcerpter.imaging.settings import request_detail_option
 from autoexcerpter.llm.types import PhaseModel
 from autoexcerpter.rendering.citations import OpenAlexClient
@@ -28,7 +29,8 @@ class ItemJob:
     item. *transcription_format* is the transcription file's extension.
     *original_max_side_px* is the ``images`` setting of that name.
     *start_delay* is the pause in seconds between starting two page
-    requests (``concurrency.delay_between_tasks``).
+    requests (``concurrency.delay_between_tasks``). *pages* is the run's
+    ``--pages`` range; None works every page (see :meth:`selected_pages`).
     """
 
     transcription: PhaseModel
@@ -47,6 +49,14 @@ class ItemJob:
     images: ImageSpec | None = None
     openalex: OpenAlexClient | None = None
     original_max_side_px: int | None = None
+    pages: PageRange | None = None
+
+    def selected_pages(self, count: int) -> list[int]:
+        """Return the 0-based pages of an item of *count* pages that the run
+        works: every page, or those *pages* selects, in source order."""
+        if self.pages is None:
+            return list(range(count))
+        return self.pages.resolve(count)
 
 
 def _seconds(value: float) -> float:
@@ -149,6 +159,7 @@ def job_from_spec(spec: RunSpec, settings: Settings) -> ItemJob:
         images=spec.images,
         openalex=openalex,
         original_max_side_px=settings.images.original_max_side_px,
+        pages=parse_page_range(spec.input.pages) if spec.input.pages else None,
     )
 
 

@@ -125,6 +125,8 @@ def _input_line(state: State, spec: RunSpec, mark: _Mark) -> Line:
             )
         else:
             parts.append(Part("no selection"))
+    if spec.input.pages is not None:
+        parts.append(Part(f"pages {spec.input.pages}"))
     return Line("input", parts)
 
 

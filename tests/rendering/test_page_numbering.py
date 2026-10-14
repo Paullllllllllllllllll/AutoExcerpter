@@ -1242,6 +1242,70 @@ class TestPhysicalScanOrdering:
         assert page["page_number_type"] == "arabic"
 
 
+class TestSparsePageSelection:
+    """A ``--pages`` run stores some pages only; the gaps keep their width."""
+
+    @staticmethod
+    def _page(index: int, number: int, end: int | None = None) -> dict[str, Any]:
+        return {
+            "original_input_order_index": index,
+            "page_information": {
+                "page_number_integer": number,
+                "is_two_page_spread": end is not None,
+                "page_number_integer_end": end,
+                "page_number_type": "arabic",
+                "page_types": ["content"],
+            },
+            "bullet_points": ["bp"],
+        }
+
+    @staticmethod
+    def _printed(results: list[dict[str, Any]]) -> list[int]:
+        return [r["page_information"]["page_number_integer"] for r in results]
+
+    def test_printed_numbers_survive_the_gaps(self) -> None:
+        """Pages 2 and 7 stay 2 and 7 beside the run 15-17."""
+        pages = [self._page(i, i + 1) for i in (1, 6, 14, 15, 16)]
+
+        result = PageNumberProcessor().adjust_and_sort_page_numbers(pages)
+
+        assert self._printed(result) == [2, 7, 15, 16, 17]
+
+    def test_a_spread_before_a_gap_shifts_the_later_pages_by_one(self) -> None:
+        """Images 0-3 hold pages 1, 2-3, 4 and 5; images 6-7 pages 8 and 9.
+
+        The misread number of image 2 is corrected within its block, across
+        the spread; the pages after the gap keep their own numbers.
+        """
+        pages = [
+            self._page(0, 1),
+            self._page(1, 2, end=3),
+            self._page(2, 40),
+            self._page(3, 5),
+            self._page(6, 8),
+            self._page(7, 9),
+        ]
+
+        result = PageNumberProcessor().adjust_and_sort_page_numbers(pages)
+
+        assert self._printed(result) == [1, 2, 4, 5, 8, 9]
+
+    def test_an_omitted_spread_does_not_shift_the_later_scans(self) -> None:
+        """Scans 0 and 4 of a book of spreads hold pages 1-2 and 9-10."""
+        pages = [self._page(0, 1, end=2), self._page(4, 9, end=10)]
+
+        result = PageNumberProcessor().adjust_and_sort_page_numbers(pages)
+
+        spans = [
+            (
+                r["page_information"]["page_number_integer"],
+                r["page_information"]["page_number_integer_end"],
+            )
+            for r in result
+        ]
+        assert spans == [(1, 2), (9, 10)]
+
+
 def _flat_summary(
     index: int, page_types: list[str], number: int | None
 ) -> dict[str, Any]:

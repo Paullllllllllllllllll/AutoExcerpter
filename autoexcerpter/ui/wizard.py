@@ -2,8 +2,8 @@
 
 Steps in order, after the task: input and item selection, output and
 transcription format, summary and summary formats, transcription model,
-summary model, context, page images and run options (submission, flags,
-concurrency), then the extension steps and the review. Each :class:`Step`
+summary model, context, page images, run options (submission, flags,
+concurrency) and pages, then the extension steps and the review. Each :class:`Step`
 names the options it may set. Answers act like command-line flags over the
 settings defaults; a reset to an unset code default is offered only where no
 settings default applies, since the equivalent command could not express it.
@@ -18,7 +18,7 @@ from typing import Any, Final
 from autoexcerpter import ext
 from autoexcerpter.common.batch import supports_batch
 from autoexcerpter.common.options import OptionError, Source
-from autoexcerpter.common.selection import is_numeric_selection
+from autoexcerpter.common.selection import is_numeric_selection, parse_page_range
 from autoexcerpter.common.wizard import (
     BACK,
     DONE,
@@ -134,6 +134,7 @@ STEP_NAMES: Final = (
     "context",
     "images",
     "run",
+    "pages",
 )
 
 _PROVIDER_TITLES = {
@@ -1201,6 +1202,52 @@ def _ask_run(ctx: StepContext, session: Session) -> Nav:
     return StepContext.sequence([submission, flags, concurrency])
 
 
+def _page_range(text: str) -> str | None:
+    try:
+        parse_page_range(text)
+    except ValueError as exc:
+        return str(exc)
+    return None
+
+
+def _ask_pages(ctx: StepContext) -> Nav:
+    state = ctx.state
+    chosen: dict[str, str] = {}
+
+    def mode() -> Nav:
+        answer = ctx.prompter.select(
+            "Which pages?",
+            [
+                Choice("all", "All pages"),
+                Choice(
+                    "range",
+                    "A range",
+                    "such as 5, first:5, last:5, 3-7, 3-, -7 or 1,3,5-8",
+                ),
+            ],
+            default="range" if state.value("pages") else "all",
+        )
+        if answer is BACK:
+            return BACK
+        chosen["mode"] = answer
+        if answer == "all":
+            state.clear("pages")
+        return DONE
+
+    def text() -> Nav | None:
+        if chosen.get("mode") != "range":
+            return None
+        answer = ctx.prompter.text(
+            "Range:", default=state.value("pages") or "", validate=_page_range
+        )
+        if answer is BACK:
+            return BACK
+        state.set("pages", answer.strip())
+        return DONE
+
+    return StepContext.sequence([mode, text])
+
+
 def build_steps(session: Session) -> list[Step]:
     """Return the tool's steps in order, task and extension steps excluded."""
     return [
@@ -1228,6 +1275,7 @@ def build_steps(session: Session) -> list[Step]:
         ),
         _images_step(session),
         _run_step(session),
+        Step("pages", "Pages", ask=_ask_pages, sets=("pages",)),
     ]
 
 

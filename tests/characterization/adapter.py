@@ -197,9 +197,11 @@ def run_tool(
     retranscribe: bool = False,
     dry_run: bool = False,
     jpeg_quality: int | None = None,
+    image_detail: str | None = None,
     reroute_formats: bool = True,
     transcription_file_format: str | None = None,
     batch: bool = False,
+    pages: str | None = None,
 ) -> RunResult:
     """Run AutoExcerpter once, in process, as a fresh CLI invocation would.
 
@@ -219,9 +221,10 @@ def run_tool(
     prompted JSON (a custom endpoint rejects None). With *reroute_formats*
     False a registry model keeps its provider for every format and the
     format is passed as ``--<phase>-response-format``. *jpeg_quality* is
-    passed as ``--jpeg-quality`` and *transcription_file_format* (``md`` or
-    ``txt``) joins ``--formats`` as ``transcription-md`` or
-    ``transcription-txt``; *batch* adds ``--batch``.
+    passed as ``--jpeg-quality``, *image_detail* as ``--image-detail``, and
+    *transcription_file_format* (``md`` or ``txt``) joins ``--formats`` as
+    ``transcription-md`` or ``transcription-txt``; *batch* adds ``--batch``
+    and *pages* ``--pages``.
     During the run ``time.sleep`` returns at once and ``asyncio.sleep`` only
     yields; neither shapes the outputs.
     The fake LLM must already be installed (see ``conftest.fake_llm``).
@@ -274,8 +277,12 @@ def run_tool(
         argv.append("--dry-run")
     if jpeg_quality is not None:
         argv.extend(["--jpeg-quality", str(jpeg_quality)])
+    if image_detail is not None:
+        argv.extend(["--image-detail", image_detail])
     if batch:
         argv.append("--batch")
+    if pages is not None:
+        argv.extend(["--pages", pages])
 
     llm.text_roles = {
         role

@@ -25,6 +25,7 @@ from typing import Any
 
 import pytest
 
+import autoexcerpter.pipeline.item as pipeline_item
 from autoexcerpter.output.store import DATABASE_NAME
 from tests.characterization.adapter import (
     ResponseFormat,
@@ -322,6 +323,158 @@ def test_failed_request_gets_a_placeholder_and_a_rerun_retries_it(
     assert run.statuses(TRANSCRIPTION) == dict.fromkeys(range(PAGES), "done")
 
     run.golden(f"{provider}_failed_request", write_guard)
+
+
+def test_pages_submit_only_the_selected_pages_and_a_run_without_completes(
+    case: Callable[[Provider], Case],
+) -> None:
+    run = case("openai")
+
+    submitted = run.submit(pages="3,1")
+    assert submitted.result.exit_code == 0, submitted.result.stderr
+    assert [r["page"] for r in submitted.requests(TRANSCRIPTION)] == [0, 2]
+    first = run.check("check1")
+    assert [r["page"] for r in first.requests(SUMMARY)] == [0, 2]
+    assert run.statuses(TRANSCRIPTION) == {0: "done", 1: "pending", 2: "done"}
+    second = run.check("check2")
+    _assert_complete(second)
+    assert run.jobs() == 0
+    transcript = (run.output / DOC.transcription).read_text(encoding="utf-8")
+    assert run.llm.page(0).key in transcript
+    assert run.llm.page(2).key in transcript
+    assert run.llm.page(1).key not in transcript
+
+    rest = run.submit("rest")
+    assert [r["page"] for r in rest.requests()] == [1]
+    third = run.check("check3")
+    assert [r["page"] for r in third.requests(SUMMARY)] == [1]
+    _assert_complete(run.check("check4"))
+    assert run.statuses(SUMMARY) == dict.fromkeys(range(PAGES), "done")
+
+
+def test_retranscribe_with_pages_submits_only_the_selected_pages(
+    case: Callable[[Provider], Case],
+) -> None:
+    run = case("openai")
+    run.submit(pages="1-2")
+    run.check("check1")
+    run.check("check2")
+    assert run.statuses(SUMMARY) == {0: "done", 1: "done", 2: "pending"}
+
+    redo = run.submit("redo", retranscribe=True, pages="2-2")
+
+    assert redo.result.exit_code == 0, redo.result.stderr
+    assert [r["page"] for r in redo.requests()] == [1]
+    assert run.statuses(TRANSCRIPTION) == {0: "done", 1: "pending", 2: "pending"}
+    stale = run.rows("SELECT idx, stale FROM units WHERE kind = 'summary'")
+    assert dict(stale)[0] == 0
+    assert [r["page"] for r in run.check("check3").requests(SUMMARY)] == [1]
+    _assert_complete(run.check("check4"))
+    assert run.statuses(TRANSCRIPTION) == {0: "done", 1: "done", 2: "pending"}
+
+
+def test_retranscribe_with_pages_keeps_the_stored_image_settings(
+    case: Callable[[Provider], Case], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run = case("openai")
+    run.submit(pages="1-2")
+    run.check("check1")
+    run.check("check2")
+    (stored,) = run.rows("SELECT image_settings FROM documents")
+    qualities: list[Any] = []
+    real = pipeline_item.open_source
+
+    def spy(item: Any, job: Any) -> Any:
+        qualities.append(job.images.jpeg_quality)
+        return real(item, job)
+
+    monkeypatch.setattr("autoexcerpter.batch.item.open_source", spy)
+
+    redo = run.submit("redo", retranscribe=True, pages="2-2", jpeg_quality=80)
+
+    assert redo.result.exit_code == 0, redo.result.stderr
+    assert [r["page"] for r in redo.requests()] == [1]
+    assert qualities == [json.loads(stored[0])["jpeg_quality"]] != [80]
+    assert run.rows("SELECT image_settings FROM documents") == [stored]
+    assert "keeps the stored image settings (jpeg_quality)" in redo.result.stderr
+
+
+@pytest.mark.parametrize("summarized", [False, True], ids=["no_summaries", "some"])
+def test_retranscribe_with_pages_keeps_the_image_settings_of_a_transcribed_item(
+    case: Callable[[Provider], Case], monkeypatch: pytest.MonkeyPatch, summarized: bool
+) -> None:
+    run = case("openai")
+    run.submit(summarize=False, docx=False, markdown=False)
+    run.check("check1")
+    if summarized:
+        run.submit("summaries", pages="1-1")
+        run.check("check2")
+        assert run.statuses(SUMMARY) == {0: "done", 1: "pending", 2: "pending"}
+    (stored,) = run.rows("SELECT image_settings FROM documents")
+    qualities: list[Any] = []
+    real = pipeline_item.open_source
+
+    def spy(item: Any, job: Any) -> Any:
+        qualities.append(job.images.jpeg_quality)
+        return real(item, job)
+
+    monkeypatch.setattr("autoexcerpter.batch.item.open_source", spy)
+
+    redo = run.submit("redo", retranscribe=True, pages="2-2", jpeg_quality=80)
+
+    assert redo.result.exit_code == 0, redo.result.stderr
+    assert [r["page"] for r in redo.requests()] == [1]
+    assert redo.requests(TRANSCRIPTION) == redo.requests()
+    assert qualities == [json.loads(stored[0])["jpeg_quality"]] != [80]
+    assert run.rows("SELECT image_settings FROM documents") == [stored]
+    assert run.statuses(TRANSCRIPTION) == {0: "done", 1: "pending", 2: "done"}
+
+
+@pytest.mark.parametrize("change", ["image_detail", "migrated"])
+def test_retranscribe_with_pages_refuses_image_settings_it_cannot_keep(
+    case: Callable[[Provider], Case], change: str
+) -> None:
+    run = case("openai")
+    run.submit(summarize=False, docx=False, markdown=False)
+    run.check("check1")
+    options: dict[str, Any] = {}
+    if change == "image_detail":
+        options["image_detail"] = "low"
+    else:
+        with contextlib.closing(sqlite3.connect(run.database)) as db, db:
+            (value,) = db.execute("SELECT image_settings FROM documents").fetchone()
+            record = json.loads(value)
+            del record["payload_format"]
+            db.execute("UPDATE documents SET image_settings = ?", (json.dumps(record),))
+    (stored,) = run.rows("SELECT image_settings FROM documents")
+
+    redo = run.submit("redo", retranscribe=True, pages="2-2", **options)
+
+    assert redo.result.exit_code == 1, redo.result.stderr
+    assert redo.calls == []
+    assert redo.summary["items_failed"] == 1
+    assert "--retranscribe without --pages" in redo.result.stderr
+    assert run.rows("SELECT image_settings FROM documents") == [stored]
+    assert run.statuses(TRANSCRIPTION) == dict.fromkeys(range(PAGES), "done")
+
+
+def test_retranscribe_with_pages_refuses_a_document_without_an_image_record(
+    case: Callable[[Provider], Case],
+) -> None:
+    run = case("openai")
+    run.submit(summarize=False, docx=False, markdown=False)
+    run.check("check1")
+    with contextlib.closing(sqlite3.connect(run.database)) as db, db:
+        db.execute("UPDATE documents SET image_settings = NULL")
+
+    redo = run.submit("redo", retranscribe=True, pages="2-2")
+
+    assert redo.result.exit_code == 1, redo.result.stderr
+    assert redo.calls == []
+    assert redo.summary["items_failed"] == 1
+    assert "are unknown" in redo.result.stderr
+    assert run.rows("SELECT image_settings FROM documents") == [(None,)]
+    assert run.statuses(TRANSCRIPTION) == dict.fromkeys(range(PAGES), "done")
 
 
 def test_missing_result_fails_the_page(

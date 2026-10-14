@@ -1,7 +1,8 @@
 """One item of ``run --batch``: plan its units and submit them to batch APIs.
 
 :class:`BatchItem` works one leased document. It plans the page units as a
-synchronous run does, then submits the work the store still lacks: the
+synchronous run does, then submits the work the store still lacks among the
+pages ``--pages`` selects (every page without it): the
 pages to transcribe as image requests to the transcription model's batch API,
 and the summaries of pages already transcribed as text requests to the
 summary model's. Pages whose transcription it submits wait for ``batch
@@ -37,10 +38,10 @@ from autoexcerpter.batch.submit import (
     UnitRequest,
     submit_units,
 )
-from autoexcerpter.batch.work import summary_work, write_placeholders
+from autoexcerpter.batch.work import needs_summary, summary_work, write_placeholders
 from autoexcerpter.common.batch import BatchRequest
 from autoexcerpter.common.images import PagePayload
-from autoexcerpter.common.store import UnitResult
+from autoexcerpter.common.store import UnitResult, UnitRow
 from autoexcerpter.events import NullEvents, RunEvents
 from autoexcerpter.llm.options import response_format_for
 from autoexcerpter.output.store import (
@@ -147,6 +148,11 @@ class BatchItem:
             tx.response_format, tx.provider, tx.name
         )
         self._job_written = False
+        self.selected: set[int] = set()
+
+    def _needs_summary(self, unit: UnitRow) -> bool:
+        """Whether a selected page's summary is to be made."""
+        return unit.idx in self.selected and needs_summary(unit)
 
     def _plan(self, role: str) -> BodyPlan:
         caching = self.clients.settings.prompt_caching
@@ -191,10 +197,11 @@ class BatchItem:
             plans.append(self._plan(ROLE_SUMMARY))
         await self._store_artifacts(plans)
         await plan_document(document, source, pdf=self.item.kind == "pdf")
+        self.selected = set(self.job.selected_pages(len(source)))
         pending = [
             unit.idx
             for unit in document.units(KIND_TRANSCRIPTION)
-            if unit.status != "done"
+            if unit.status != "done" and unit.idx in self.selected
         ]
         if pending:
             await document.set_image_settings(image_settings_record(source.img_cfg))
@@ -204,7 +211,12 @@ class BatchItem:
             await self._submit(transcriptions, plans[0], outcome)
         if self.job.summarize and outcome.status != "failed":
             waiting = {request.unit.idx for request in transcriptions}
-            work = summary_work(document.store, document.doc_id, waiting=waiting)
+            work = summary_work(
+                document.store,
+                document.doc_id,
+                selected=self._needs_summary,
+                waiting=waiting,
+            )
             summary = self.job.summary
             await write_placeholders(
                 document.store,
@@ -312,13 +324,17 @@ class BatchItem:
         )
 
     async def _finish(self, outcome: BatchItemOutcome) -> BatchItemOutcome:
-        """Store the citations and render the files when no unit is pending."""
+        """Store the citations and render the files when no selected unit is
+        pending."""
         units = self.document.units()
         relevant = [
             unit
             for unit in units
-            if unit.kind == KIND_TRANSCRIPTION
-            or (self.job.summarize and unit.kind == KIND_SUMMARY)
+            if unit.idx in self.selected
+            and (
+                unit.kind == KIND_TRANSCRIPTION
+                or (self.job.summarize and unit.kind == KIND_SUMMARY)
+            )
         ]
         if any(unit.status == "pending" for unit in relevant):
             return outcome

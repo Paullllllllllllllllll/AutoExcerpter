@@ -33,6 +33,7 @@ from autoexcerpter.common.options import (
     Source,
 )
 from autoexcerpter.common.polling import DEFAULT_POLL_MINUTES, wait_options
+from autoexcerpter.common.selection import parse_page_range
 from autoexcerpter.common.standard_options import (
     DRY_RUN_HELP,
     IMAGE_DETAILS,
@@ -182,16 +183,19 @@ class SpecError(ValueError):
 
 @dataclass(frozen=True)
 class InputSpec:
-    """The input path and the selection of discovered items.
+    """The input path, the selection of discovered items and of their pages.
 
     ``select`` is a selection expression, ``files`` names items exactly and
-    ``all`` takes every item; at most one of them is set.
+    ``all`` takes every item; at most one of them is set. ``pages`` is a page
+    range (:func:`~autoexcerpter.common.selection.parse_page_range`) applied
+    to every selected item; None takes every page.
     """
 
     path: Path
     select: str | None
     all: bool
     files: tuple[str, ...] = ()
+    pages: str | None = None
 
 
 @dataclass(frozen=True)
@@ -437,6 +441,11 @@ def _context(value: str) -> str | None:
     return nonempty_text(value)
 
 
+def _pages(value: str) -> str:
+    parse_page_range(value)
+    return value.strip()
+
+
 def _fallback_context(value: str) -> str | None:
     if value.strip().lower() == CONTEXT_NONE:
         return None
@@ -506,6 +515,17 @@ def _build_table() -> OptionTable:
             exclusive="selection",
             target="input.all",
         ),
+        Option(
+            "pages",
+            "--pages",
+            "pages or images: 5, first:5, last:5, 3-7, 3-, -7 or 1,3,5-8",
+            group="input",
+            type=_pages,
+            metavar="RANGE",
+            default_help="all",
+            target="input.pages",
+            settable=False,
+        ),
         *output_options(),
         Option(
             "formats",
@@ -568,11 +588,18 @@ def _build_table() -> OptionTable:
         ),
         *_model_options(),
         *image_options(),
-        force_option("reprocess items whose outputs exist (resume is the default)"),
+        force_option(
+            "reprocess items whose outputs exist (resume is the default): every "
+            "stored page of the item is reset, also outside --pages"
+        ),
         Option(
             "retranscribe",
             "--retranscribe",
-            "transcribe again instead of reusing stored transcriptions",
+            (
+                "transcribe again instead of reusing stored transcriptions; "
+                "with --pages only those of the selected pages, under the "
+                "stored image settings"
+            ),
             group="run",
             kind=Kind.FLAG,
             default=False,
