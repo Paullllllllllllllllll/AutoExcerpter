@@ -1,0 +1,44 @@
+[Title] rich
+[Normal] Processed <datetime> | 6 content pages | 9 total pages
+[Heading 1] Document Structure
+[Normal] <b>Preface: </b>p. iii
+[Normal] <b>Bibliography: </b>p. 10
+[Heading 2] [Preface] Page iii
+[List Bullet] <b>Bold claim</b> with <i>italic aside</i> and <b><i>both at once</i></b>.
+[List Bullet] A product a * b * c stays literal.
+[List Bullet] A bullet split across two lines.
+[Heading 2] Page 1
+[List Bullet] Fraction <math>ab</math> inline.
+[List Bullet] Sum <math>i=1nxi</math> inline.
+[List Bullet] Scripts <math>xt2</math> inline.
+[List Bullet] Matrix <math>abcd</math> inline.
+[List Bullet] Aligned <math>a=bc=d</math> inline.
+[List Bullet] Unconvertible <i> \frac{a}{ </i> inline.
+[List Bullet] Wages rose from $3 to $5 per week, and bread cost $0.25.
+[List Bullet] A fee of $10 and the ratio <math>wp</math> at a price of $5.
+[Heading 2] Page 2
+[List Bullet] Fraction <mathpara>pq</mathpara> display.
+[List Bullet] Sum <mathpara>k=0∞rk</mathpara> display.
+[List Bullet] Scripts <mathpara>yi,t−1</mathpara> display.
+[List Bullet] Matrix <mathpara>1001</mathpara> display.
+[List Bullet] Aligned <mathpara>w=p·qv=w−c</mathpara> display.
+[List Bullet] Unconvertible <i> x^ </i> display.
+[List Bullet] Inline <math>z2</math> beside display <mathpara>z0</mathpara> in one bullet.
+[Heading 2] [No printed number; PDF p. 4]
+[List Bullet] An unnumbered page cites a Czech source.
+[Heading 2] Pages 4-5
+[List Bullet] A two-page spread on Zürich prices.
+[Heading 2] [No printed number; PDF p. 7]
+[List Bullet] [Error generating summary: Rate limit exceeded]
+[Heading 2] [Figures/Tables] Page 11
+[List Bullet] Table 3 lists grain prices in $ and £.
+[Normal] [page-break]
+[Heading 1] Consolidated References
+[Normal] <i>The following references were extracted from the document and consolidated. Duplicate citations have been merged, showing all pages where each citation appears. Where available, hyperlinks provide access to extended metadata via OpenAlex.</i>
+[Normal] <b>[1] </b>Allen, R. C. (2001). The great divergence in European wages and prices. <i>Explorations in Economic History</i>, 38(4), 411-447. doi:10.1006/exeh.2001.0775<i> (pp. 1-2, 10)</i>
+[Normal] <b>[2] </b>Braudel, F. (1979). Civilisation matérielle, économie et capitalisme. Paris: Armand Colin.<i> (p. 10)</i>
+[Normal] <b>[3] </b>Clark, G. (2005). The condition of the working class in England. Retrieved from https://example.org/clark-2005<i> (p. 10)</i>
+[Normal] <b>[4] </b>Dvořák, A. (1890). Ceny obilí v Čechách. Praha: Šimáček.<i> (p. 10; PDF p. 4)</i>
+[Normal] <b>[5] </b><a href="https://doi.org/10.1016/S0140-6736(00)12345-6">Lancet, T. (2000). A controlled trial of rationing. The Lancet, 355.</a><i> (p. 1)</i><i> [DOI: 10.1016/S0140-6736(00)12345-6, Year: 2000]</i>
+[Normal] <b>[6] </b>Müller, J., & Østergaard, K. (1998). Über die Preise in Zürich. Basel.<i> (pp. 4-5, 10)</i>
+[oMath elements: 13]

@@ -1,0 +1,17 @@
+[Title] beta
+[Normal] Processed <datetime> | 2 content pages | 2 total pages
+[Heading 1] Document Structure
+[Normal] <b>Preface: </b>p. xi
+[Heading 2] [Preface] Page xi
+[List Bullet] The preface introduces new research on the <i>material culture</i> of eating in early modern Europe between 1500 and 1800.
+[List Bullet] It frames the chapters around prices, wages and diets and follows Braudel's long-run view of material life.
+[Heading 2] Page 1
+[List Bullet] Bread prices rose faster than wages after 1550, shifting the economic burden onto <b>urban households</b>.
+[List Bullet] The real wage index is defined as <math>wt/pt</math>, nominal wages deflated by the bread price.
+[List Bullet] A consumer basket weights goods so that <mathpara>i=1nωi=1</mathpara> holds in every year.
+[Normal] [page-break]
+[Heading 1] Consolidated References
+[Normal] <i>The following references were extracted from the document and consolidated. Duplicate citations have been merged, showing all pages where each citation appears. Where available, hyperlinks provide access to extended metadata via OpenAlex.</i>
+[Normal] <b>[1] </b>Allen, R. C. (2001). The great divergence in European wages and prices from the Middle Ages to the First World War. <i>Explorations in Economic History, 38</i>(4), 411-447. https://doi.org/10.1006/exeh.2001.0775<i> (p. 1)</i>
+[Normal] <b>[2] </b>Braudel, F. (1979). <i>Civilisation matérielle, économie et capitalisme, XVe-XVIIIe siècle</i>. Paris: Armand Colin.<i> (p. xi; p. 1)</i>
+[oMath elements: 2]

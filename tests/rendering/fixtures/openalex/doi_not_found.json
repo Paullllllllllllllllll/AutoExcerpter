@@ -1,0 +1,7 @@
+{
+  "status": 404,
+  "body": {
+    "error": "404 Not Found",
+    "message": "The requested URL was not found on the server."
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "calls": [
+    {
+      "call": "google.batches.get",
+      "name": "batches/fake0011"
+    },
+    {
+      "call": "google.batches.get",
+      "name": "batches/fake0011"
+    },
+    {
+      "call": "google.files.download",
+      "file": "files/fake-out0012"
+    },
+    {
+      "call": "google.batches.get",
+      "name": "batches/fake0011"
+    },
+    {
+      "call": "google.files.delete",
+      "name": "files/fake0010"
+    },
+    {
+      "call": "google.files.delete",
+      "name": "files/fake-out0012"
+    }
+  ],
+  "clients": [
+    {
+      "kwargs": {
+        "api_key": "<env:GOOGLE_API_KEY>",
+        "http_options": {
+          "timeout": 900000
+        }
+      },
+      "provider": "google"
+    }
+  ],
+  "prompts": {},
+  "requests": []
+}

@@ -1,0 +1,32 @@
+usage: autoexcerpter drop --input PATH (--select EXPR | --files LIST | --all) [options]
+
+Delete stored documents from autoexcerpter.sqlite with their pages, summaries, citations and
+provider responses, and delete their rendered files, so the next run processes them from scratch.
+
+options:
+  -h, --help       show this help message and exit
+
+input:
+  --input PATH     output folder holding autoexcerpter.sqlite, or the database itself
+  --select EXPR    select stored documents by number (1,3), range (1-5) or name search
+  --files LIST     comma-separated document names or input file names
+  --all            drop every stored document
+
+run control:
+  --settings FILE  alternate settings file; default: config/settings.yaml
+  --dry-run        report what would be dropped; change nothing
+  --json           print one JSON summary line on stdout
+
+--select numbers the stored documents from 1 in name order; --files names documents by name or by
+the file name of their input. A rendered file is deleted only while it holds the tool's rendering;
+a file changed outside the tool is kept and named. A document that another live run leases, or
+whose pages an unfinished batch holds, is refused.
+
+Exit codes:
+  0    every selected document was dropped (or would be, with --dry-run)
+  1    a document was refused
+  2    usage error, no store at the input, a selection that is malformed or
+       matches nothing, or a database the store refuses
+  130  interrupted (Ctrl+C or Ctrl+Break)
+
+With --json, stdout carries exactly one JSON summary line on every exit.

@@ -1,0 +1,1454 @@
+## artifacts
+{
+  "created_at": "<datetime>+00:00",
+  "kind": "summary_prompt",
+  "run_id": "<run-1>",
+  "sha256": "f4ccaa329d6b6bba15b6f02fba5d080f32ae1b1ba80c216846b33f13afb67cc7",
+  "text": "<5932 characters>"
+}
+{
+  "created_at": "<datetime>+00:00",
+  "kind": "summary_schema",
+  "run_id": "<run-1>",
+  "sha256": "0bc58a02aaf99fff031fb171ee83cf3e5800a238e3128b7529b4134ba02942fb",
+  "text": "<5427 characters>"
+}
+{
+  "created_at": "<datetime>+00:00",
+  "kind": "transcription_prompt",
+  "run_id": "<run-1>",
+  "sha256": "ae9a319f0c2b46616a4ec1f492a6ebd2af6560482e8096f020b960c9f9bdfa62",
+  "text": "<3690 characters>"
+}
+{
+  "created_at": "<datetime>+00:00",
+  "kind": "transcription_schema",
+  "run_id": "<run-1>",
+  "sha256": "e5b5bfa70ecf479eff64f1b886a2be45f913f19e2f6be29b806b4fc4c4ee9f37",
+  "text": "<3520 characters>"
+}
+## batch_jobs
+{
+  "context": null,
+  "doc_id": 1,
+  "run_id": "<run-1>"
+}
+## citations
+## documents
+{
+  "doc_id": 1,
+  "first_run_id": "<run-1>",
+  "image_settings": {
+    "cap_policy": "openai-original-30k-v1",
+    "grayscale_conversion": false,
+    "handle_transparency": true,
+    "high_target_box": [
+      768,
+      1536
+    ],
+    "image_high_res_tier": false,
+    "image_original_patch_cap_30k": true,
+    "jpeg_quality": 95,
+    "llm_detail": "original",
+    "low_max_side_px": 512,
+    "max_image_bytes": 50000000,
+    "max_pixels_per_page": 24000000,
+    "model_name": "gpt-5.6-terra",
+    "model_type": "openai",
+    "native_fallback_dpi": 300,
+    "payload_format": "jpeg",
+    "provider": "openai",
+    "render_strategy": "direct",
+    "request_detail": "original",
+    "resampling_algorithm": "bilinear",
+    "resize_profile": "high",
+    "resolved_detail": "original",
+    "target_dpi": "native"
+  },
+  "input_path": "<tmp>/docs/doc.pdf",
+  "input_sha256": "<sha256>",
+  "kind": "pdf",
+  "last_run_id": "<run-2>",
+  "lease_generation": 2,
+  "lease_run_id": null,
+  "lease_until": null,
+  "name": "doc",
+  "status": "partial",
+  "tool": "autoexcerpter",
+  "units_done": 3,
+  "units_failed": 1,
+  "units_pending": 2,
+  "units_total": 6,
+  "updated_at": "<datetime>+00:00"
+}
+## meta
+{
+  "component": "core",
+  "version": 2
+}
+{
+  "component": "autoexcerpter",
+  "version": 2
+}
+## notes
+## outputs
+## responses
+{
+  "attempt": 1,
+  "created_at": "<datetime>+00:00",
+  "custom_id": "<submission-1>-00000",
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "http_status": 200,
+  "idx": 0,
+  "kind": "transcription",
+  "latency": null,
+  "model": "gpt-5.6-terra",
+  "provider": "openai",
+  "raw": {
+    "custom_id": "<submission-1>-00000",
+    "error": null,
+    "id": "batch_req_fake0001",
+    "response": {
+      "body": {
+        "created_at": 1767225600,
+        "id": "resp_fake0001",
+        "model": "gpt-5.6-terra",
+        "object": "response",
+        "output": [
+          {
+            "content": [
+              {
+                "annotations": [],
+                "text": "{\"transcription\": \"# Preface\\n\\nThis volume brings together **new research** on the *material\\nculture* of eating in early modern Europe. Its chapters trace how\\nprices, wages and diets changed between 1500 and 1800.[^1]\\n\\n[^1]: See Braudel (1979) for the classic statement of this view.\\n\\n<page_number>xi</page_number>\", \"no_transcribable_text\": false, \"transcription_not_possible\": false}",
+                "type": "output_text"
+              }
+            ],
+            "id": "msg_fake0001",
+            "role": "assistant",
+            "status": "completed",
+            "type": "message"
+          }
+        ],
+        "status": "completed",
+        "usage": {
+          "input_tokens": 1500,
+          "input_tokens_details": {
+            "cached_tokens": 0
+          },
+          "output_tokens": 400,
+          "output_tokens_details": {
+            "reasoning_tokens": 0
+          },
+          "total_tokens": 1900
+        }
+      },
+      "request_id": "req_fake0001",
+      "status_code": 200
+    }
+  },
+  "raw_kind": "line",
+  "request": {
+    "input": [
+      {
+        "content": [
+          {
+            "text": "<3690 characters>",
+            "type": "input_text"
+          }
+        ],
+        "role": "system"
+      },
+      {
+        "content": [
+          {
+            "detail": "original",
+            "image_url": "<omitted data:image/jpeg;base64, 27271 chars>",
+            "type": "input_image"
+          }
+        ],
+        "role": "user"
+      }
+    ],
+    "max_output_tokens": 128000,
+    "model": "gpt-5.6-terra",
+    "reasoning": {
+      "effort": "xhigh"
+    },
+    "service_tier": "default",
+    "text": {
+      "format": {
+        "name": "markdown_transcription_schema",
+        "schema": {
+          "additionalProperties": false,
+          "properties": {
+            "no_transcribable_text": {
+              "description": "True only when the image holds no text at all, such as a blank or purely pictorial page; false whenever any text can be transcribed, even in part.",
+              "type": "boolean"
+            },
+            "transcription": {
+              "description": "<2582 characters>",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "transcription_not_possible": {
+              "description": "True only when the image cannot be transcribed at all, such as a corrupted or entirely unreadable scan; false whenever any part can be transcribed, even with [illegible] markers.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "transcription",
+            "no_transcribable_text",
+            "transcription_not_possible"
+          ],
+          "type": "object"
+        },
+        "strict": true,
+        "type": "json_schema"
+      },
+      "verbosity": "high"
+    }
+  },
+  "response_id": 1,
+  "role": "transcription",
+  "run_id": "<run-2>",
+  "submission_id": "<submission-1>",
+  "tool": "autoexcerpter",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 1500,
+    "output_tokens": 400,
+    "reasoning_tokens": 0,
+    "total_tokens": 1900
+  }
+}
+{
+  "attempt": 1,
+  "created_at": "<datetime>+00:00",
+  "custom_id": "<submission-1>-00001",
+  "doc_id": 1,
+  "error": "Error code: 400 - invalid request",
+  "error_type": "invalid_request",
+  "http_status": 400,
+  "idx": 1,
+  "kind": "transcription",
+  "latency": null,
+  "model": "gpt-5.6-terra",
+  "provider": "openai",
+  "raw": {
+    "custom_id": "<submission-1>-00001",
+    "error": null,
+    "id": "batch_req_fake0002",
+    "response": {
+      "body": {
+        "error": {
+          "code": "invalid_request",
+          "message": "Error code: 400 - invalid request",
+          "param": null,
+          "type": "invalid_request_error"
+        }
+      },
+      "request_id": "req_fake0002",
+      "status_code": 400
+    }
+  },
+  "raw_kind": "line",
+  "request": {
+    "input": [
+      {
+        "content": [
+          {
+            "text": "<3690 characters>",
+            "type": "input_text"
+          }
+        ],
+        "role": "system"
+      },
+      {
+        "content": [
+          {
+            "detail": "original",
+            "image_url": "<omitted data:image/jpeg;base64, 27035 chars>",
+            "type": "input_image"
+          }
+        ],
+        "role": "user"
+      }
+    ],
+    "max_output_tokens": 128000,
+    "model": "gpt-5.6-terra",
+    "reasoning": {
+      "effort": "xhigh"
+    },
+    "service_tier": "default",
+    "text": {
+      "format": {
+        "name": "markdown_transcription_schema",
+        "schema": {
+          "additionalProperties": false,
+          "properties": {
+            "no_transcribable_text": {
+              "description": "True only when the image holds no text at all, such as a blank or purely pictorial page; false whenever any text can be transcribed, even in part.",
+              "type": "boolean"
+            },
+            "transcription": {
+              "description": "<2582 characters>",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "transcription_not_possible": {
+              "description": "True only when the image cannot be transcribed at all, such as a corrupted or entirely unreadable scan; false whenever any part can be transcribed, even with [illegible] markers.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "transcription",
+            "no_transcribable_text",
+            "transcription_not_possible"
+          ],
+          "type": "object"
+        },
+        "strict": true,
+        "type": "json_schema"
+      },
+      "verbosity": "high"
+    }
+  },
+  "response_id": 2,
+  "role": "transcription",
+  "run_id": "<run-2>",
+  "submission_id": "<submission-1>",
+  "tool": "autoexcerpter",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "reasoning_tokens": 0,
+    "total_tokens": 0
+  }
+}
+{
+  "attempt": 1,
+  "created_at": "<datetime>+00:00",
+  "custom_id": "<submission-1>-00002",
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "http_status": 200,
+  "idx": 2,
+  "kind": "transcription",
+  "latency": null,
+  "model": "gpt-5.6-terra",
+  "provider": "openai",
+  "raw": {
+    "custom_id": "<submission-1>-00002",
+    "error": null,
+    "id": "batch_req_fake0003",
+    "response": {
+      "body": {
+        "created_at": 1767225600,
+        "id": "resp_fake0003",
+        "model": "gpt-5.6-terra",
+        "object": "response",
+        "output": [
+          {
+            "content": [
+              {
+                "annotations": [],
+                "text": "{\"transcription\": \"## Bibliography\\n\\nAllen, R. C. (2001). The great divergence in European wages and prices from the Middle Ages to the First World War. *Explorations in Economic History, 38*(4), 411-447.\\n\\nMontanari, M. (1994). *The Culture of Food*. Oxford: Blackwell.\", \"no_transcribable_text\": false, \"transcription_not_possible\": false}",
+                "type": "output_text"
+              }
+            ],
+            "id": "msg_fake0003",
+            "role": "assistant",
+            "status": "completed",
+            "type": "message"
+          }
+        ],
+        "status": "completed",
+        "usage": {
+          "input_tokens": 1500,
+          "input_tokens_details": {
+            "cached_tokens": 0
+          },
+          "output_tokens": 400,
+          "output_tokens_details": {
+            "reasoning_tokens": 0
+          },
+          "total_tokens": 1900
+        }
+      },
+      "request_id": "req_fake0003",
+      "status_code": 200
+    }
+  },
+  "raw_kind": "line",
+  "request": {
+    "input": [
+      {
+        "content": [
+          {
+            "text": "<3690 characters>",
+            "type": "input_text"
+          }
+        ],
+        "role": "system"
+      },
+      {
+        "content": [
+          {
+            "detail": "original",
+            "image_url": "<omitted data:image/jpeg;base64, 26907 chars>",
+            "type": "input_image"
+          }
+        ],
+        "role": "user"
+      }
+    ],
+    "max_output_tokens": 128000,
+    "model": "gpt-5.6-terra",
+    "reasoning": {
+      "effort": "xhigh"
+    },
+    "service_tier": "default",
+    "text": {
+      "format": {
+        "name": "markdown_transcription_schema",
+        "schema": {
+          "additionalProperties": false,
+          "properties": {
+            "no_transcribable_text": {
+              "description": "True only when the image holds no text at all, such as a blank or purely pictorial page; false whenever any text can be transcribed, even in part.",
+              "type": "boolean"
+            },
+            "transcription": {
+              "description": "<2582 characters>",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "transcription_not_possible": {
+              "description": "True only when the image cannot be transcribed at all, such as a corrupted or entirely unreadable scan; false whenever any part can be transcribed, even with [illegible] markers.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "transcription",
+            "no_transcribable_text",
+            "transcription_not_possible"
+          ],
+          "type": "object"
+        },
+        "strict": true,
+        "type": "json_schema"
+      },
+      "verbosity": "high"
+    }
+  },
+  "response_id": 3,
+  "role": "transcription",
+  "run_id": "<run-2>",
+  "submission_id": "<submission-1>",
+  "tool": "autoexcerpter",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 1500,
+    "output_tokens": 400,
+    "reasoning_tokens": 0,
+    "total_tokens": 1900
+  }
+}
+## runs
+{
+  "command": "run",
+  "ended_at": "<datetime>+00:00",
+  "exit_code": 0,
+  "run_id": "<run-1>",
+  "settings_fingerprint": "<sha256>",
+  "spec": {
+    "citations.openalex": {
+      "source": "flag",
+      "value": false
+    },
+    "images.detail": {
+      "source": "default",
+      "value": null
+    },
+    "images.dpi": {
+      "source": "default",
+      "value": null
+    },
+    "images.format": {
+      "source": "default",
+      "value": null
+    },
+    "images.grayscale": {
+      "source": "default",
+      "value": null
+    },
+    "images.jpeg_quality": {
+      "source": "default",
+      "value": null
+    },
+    "input.all": {
+      "source": "flag",
+      "value": true
+    },
+    "input.files": {
+      "source": "flag",
+      "value": []
+    },
+    "input.pages": {
+      "source": "default",
+      "value": null
+    },
+    "input.path": {
+      "source": "flag",
+      "value": "<tmp>/docs/doc.pdf"
+    },
+    "input.select": {
+      "source": "flag",
+      "value": null
+    },
+    "output.directory": {
+      "source": "flag",
+      "value": "<tmp>/out"
+    },
+    "output.formats": {
+      "source": "flag",
+      "value": [
+        "transcription-md",
+        "summary-md",
+        "summary-docx"
+      ]
+    },
+    "run.batch": {
+      "source": "flag",
+      "value": true
+    },
+    "run.concurrency": {
+      "source": "default",
+      "value": 16
+    },
+    "run.dry_run": {
+      "source": "default",
+      "value": false
+    },
+    "run.force": {
+      "source": "default",
+      "value": false
+    },
+    "run.json": {
+      "source": "flag",
+      "value": true
+    },
+    "run.retranscribe": {
+      "source": "default",
+      "value": false
+    },
+    "summary.context": {
+      "source": "default",
+      "value": null
+    },
+    "summary.enabled": {
+      "source": "flag",
+      "value": true
+    },
+    "summary.fallback_context": {
+      "source": "default",
+      "value": null
+    },
+    "summary_model.endpoint": {
+      "source": "default",
+      "value": null
+    },
+    "summary_model.max_output_tokens": {
+      "source": "default",
+      "value": null
+    },
+    "summary_model.model": {
+      "source": "flag",
+      "value": "gpt-5.6-terra"
+    },
+    "summary_model.provider": {
+      "source": "flag",
+      "value": "openai"
+    },
+    "summary_model.reasoning_effort": {
+      "source": "default",
+      "value": "xhigh"
+    },
+    "summary_model.response_format": {
+      "source": "default",
+      "value": null
+    },
+    "summary_model.service_tier": {
+      "source": "default",
+      "value": "default"
+    },
+    "summary_model.temperature": {
+      "source": "default",
+      "value": 1.0
+    },
+    "summary_model.top_p": {
+      "source": "default",
+      "value": null
+    },
+    "summary_model.verbosity": {
+      "source": "default",
+      "value": "low"
+    },
+    "transcription_model.endpoint": {
+      "source": "default",
+      "value": null
+    },
+    "transcription_model.max_output_tokens": {
+      "source": "default",
+      "value": null
+    },
+    "transcription_model.model": {
+      "source": "flag",
+      "value": "gpt-5.6-terra"
+    },
+    "transcription_model.provider": {
+      "source": "flag",
+      "value": "openai"
+    },
+    "transcription_model.reasoning_effort": {
+      "source": "default",
+      "value": "xhigh"
+    },
+    "transcription_model.response_format": {
+      "source": "default",
+      "value": null
+    },
+    "transcription_model.service_tier": {
+      "source": "default",
+      "value": "default"
+    },
+    "transcription_model.temperature": {
+      "source": "default",
+      "value": 1.0
+    },
+    "transcription_model.top_p": {
+      "source": "default",
+      "value": null
+    },
+    "transcription_model.verbosity": {
+      "source": "default",
+      "value": "high"
+    }
+  },
+  "started_at": "<datetime>+00:00",
+  "tool": "autoexcerpter",
+  "tool_version": "<version>"
+}
+{
+  "command": "batch check",
+  "ended_at": "<datetime>+00:00",
+  "exit_code": 0,
+  "run_id": "<run-2>",
+  "settings_fingerprint": null,
+  "spec": {
+    "batch_ids": [],
+    "directory": "<tmp>/out"
+  },
+  "started_at": "<datetime>+00:00",
+  "tool": "autoexcerpter",
+  "tool_version": "<version>"
+}
+## submission_requests
+{
+  "custom_id": "<submission-1>-00000",
+  "doc_id": 1,
+  "idx": 0,
+  "kind": "transcription",
+  "request": {
+    "input": [
+      {
+        "content": [
+          {
+            "text": "<3690 characters>",
+            "type": "input_text"
+          }
+        ],
+        "role": "system"
+      },
+      {
+        "content": [
+          {
+            "detail": "original",
+            "image_url": "<omitted data:image/jpeg;base64, 27271 chars>",
+            "type": "input_image"
+          }
+        ],
+        "role": "user"
+      }
+    ],
+    "max_output_tokens": 128000,
+    "model": "gpt-5.6-terra",
+    "reasoning": {
+      "effort": "xhigh"
+    },
+    "service_tier": "default",
+    "text": {
+      "format": {
+        "name": "markdown_transcription_schema",
+        "schema": {
+          "additionalProperties": false,
+          "properties": {
+            "no_transcribable_text": {
+              "description": "True only when the image holds no text at all, such as a blank or purely pictorial page; false whenever any text can be transcribed, even in part.",
+              "type": "boolean"
+            },
+            "transcription": {
+              "description": "<2582 characters>",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "transcription_not_possible": {
+              "description": "True only when the image cannot be transcribed at all, such as a corrupted or entirely unreadable scan; false whenever any part can be transcribed, even with [illegible] markers.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "transcription",
+            "no_transcribable_text",
+            "transcription_not_possible"
+          ],
+          "type": "object"
+        },
+        "strict": true,
+        "type": "json_schema"
+      },
+      "verbosity": "high"
+    }
+  },
+  "submission_id": "<submission-1>"
+}
+{
+  "custom_id": "<submission-1>-00001",
+  "doc_id": 1,
+  "idx": 1,
+  "kind": "transcription",
+  "request": {
+    "input": [
+      {
+        "content": [
+          {
+            "text": "<3690 characters>",
+            "type": "input_text"
+          }
+        ],
+        "role": "system"
+      },
+      {
+        "content": [
+          {
+            "detail": "original",
+            "image_url": "<omitted data:image/jpeg;base64, 27035 chars>",
+            "type": "input_image"
+          }
+        ],
+        "role": "user"
+      }
+    ],
+    "max_output_tokens": 128000,
+    "model": "gpt-5.6-terra",
+    "reasoning": {
+      "effort": "xhigh"
+    },
+    "service_tier": "default",
+    "text": {
+      "format": {
+        "name": "markdown_transcription_schema",
+        "schema": {
+          "additionalProperties": false,
+          "properties": {
+            "no_transcribable_text": {
+              "description": "True only when the image holds no text at all, such as a blank or purely pictorial page; false whenever any text can be transcribed, even in part.",
+              "type": "boolean"
+            },
+            "transcription": {
+              "description": "<2582 characters>",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "transcription_not_possible": {
+              "description": "True only when the image cannot be transcribed at all, such as a corrupted or entirely unreadable scan; false whenever any part can be transcribed, even with [illegible] markers.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "transcription",
+            "no_transcribable_text",
+            "transcription_not_possible"
+          ],
+          "type": "object"
+        },
+        "strict": true,
+        "type": "json_schema"
+      },
+      "verbosity": "high"
+    }
+  },
+  "submission_id": "<submission-1>"
+}
+{
+  "custom_id": "<submission-1>-00002",
+  "doc_id": 1,
+  "idx": 2,
+  "kind": "transcription",
+  "request": {
+    "input": [
+      {
+        "content": [
+          {
+            "text": "<3690 characters>",
+            "type": "input_text"
+          }
+        ],
+        "role": "system"
+      },
+      {
+        "content": [
+          {
+            "detail": "original",
+            "image_url": "<omitted data:image/jpeg;base64, 26907 chars>",
+            "type": "input_image"
+          }
+        ],
+        "role": "user"
+      }
+    ],
+    "max_output_tokens": 128000,
+    "model": "gpt-5.6-terra",
+    "reasoning": {
+      "effort": "xhigh"
+    },
+    "service_tier": "default",
+    "text": {
+      "format": {
+        "name": "markdown_transcription_schema",
+        "schema": {
+          "additionalProperties": false,
+          "properties": {
+            "no_transcribable_text": {
+              "description": "True only when the image holds no text at all, such as a blank or purely pictorial page; false whenever any text can be transcribed, even in part.",
+              "type": "boolean"
+            },
+            "transcription": {
+              "description": "<2582 characters>",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "transcription_not_possible": {
+              "description": "True only when the image cannot be transcribed at all, such as a corrupted or entirely unreadable scan; false whenever any part can be transcribed, even with [illegible] markers.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "transcription",
+            "no_transcribable_text",
+            "transcription_not_possible"
+          ],
+          "type": "object"
+        },
+        "strict": true,
+        "type": "json_schema"
+      },
+      "verbosity": "high"
+    }
+  },
+  "submission_id": "<submission-1>"
+}
+{
+  "custom_id": "<submission-2>-00000",
+  "doc_id": 1,
+  "idx": 0,
+  "kind": "summary",
+  "request": {
+    "input": [
+      {
+        "content": [
+          {
+            "text": "<5932 characters>",
+            "type": "input_text"
+          }
+        ],
+        "role": "system"
+      },
+      {
+        "content": [
+          {
+            "text": "<295 characters>",
+            "type": "input_text"
+          }
+        ],
+        "role": "user"
+      }
+    ],
+    "max_output_tokens": 128000,
+    "model": "gpt-5.6-terra",
+    "reasoning": {
+      "effort": "xhigh"
+    },
+    "service_tier": "default",
+    "text": {
+      "format": {
+        "name": "article_page_summary",
+        "schema": {
+          "$schema": "Summary_2_3_0",
+          "additionalProperties": false,
+          "properties": {
+            "bullet_points": {
+              "description": "<988 characters>",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "page_information": {
+              "additionalProperties": false,
+              "description": "The page's printed number and its classification.",
+              "properties": {
+                "is_two_page_spread": {
+                  "description": "True when the transcription covers two facing pages, shown by two consecutive <page_number> tags or by text that clearly belongs to two pages; false for a single page.",
+                  "type": "boolean"
+                },
+                "page_number_integer": {
+                  "description": "<308 characters>",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "page_number_integer_end": {
+                  "description": "For a two-page spread, the right page's number from its <page_number> tag, converted like page_number_integer; null for a single page or when the right page has no tag.",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "page_number_type": {
+                  "description": "The numbering system of page_number_integer as printed: 'roman' or 'arabic'; 'none' when page_number_integer is null.",
+                  "enum": [
+                    "roman",
+                    "arabic",
+                    "none"
+                  ],
+                  "type": "string"
+                },
+                "page_types": {
+                  "description": "<420 characters>",
+                  "items": {
+                    "enum": [
+                      "content",
+                      "table_of_contents",
+                      "bibliography",
+                      "title_page",
+                      "index",
+                      "blank",
+                      "preface",
+                      "appendix",
+                      "figures_tables_sources",
+                      "abstract",
+                      "copyright",
+                      "other"
+                    ],
+                    "type": "string"
+                  },
+                  "maxItems": 3,
+                  "minItems": 1,
+                  "type": "array"
+                }
+              },
+              "required": [
+                "page_number_integer",
+                "is_two_page_spread",
+                "page_number_integer_end",
+                "page_number_type",
+                "page_types"
+              ],
+              "type": "object"
+            },
+            "references": {
+              "description": "Every bibliographic citation on the page, from pages of any type, in APA style; null when the page cites nothing.",
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "citation": {
+                    "description": "<232 characters>",
+                    "type": "string"
+                  },
+                  "is_partial": {
+                    "description": "True when the page gives only an in-text pointer, such as author and year, op. cit. or ibid., without title and venue; false for a complete reference, such as a bibliography entry or a full footnote.",
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "citation",
+                  "is_partial"
+                ],
+                "type": "object"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "page_information",
+            "bullet_points",
+            "references"
+          ],
+          "title": "Article Page Summary",
+          "type": "object"
+        },
+        "strict": true,
+        "type": "json_schema"
+      },
+      "verbosity": "low"
+    }
+  },
+  "submission_id": "<submission-2>"
+}
+{
+  "custom_id": "<submission-2>-00001",
+  "doc_id": 1,
+  "idx": 2,
+  "kind": "summary",
+  "request": {
+    "input": [
+      {
+        "content": [
+          {
+            "text": "<5932 characters>",
+            "type": "input_text"
+          }
+        ],
+        "role": "system"
+      },
+      {
+        "content": [
+          {
+            "text": "<250 characters>",
+            "type": "input_text"
+          }
+        ],
+        "role": "user"
+      }
+    ],
+    "max_output_tokens": 128000,
+    "model": "gpt-5.6-terra",
+    "reasoning": {
+      "effort": "xhigh"
+    },
+    "service_tier": "default",
+    "text": {
+      "format": {
+        "name": "article_page_summary",
+        "schema": {
+          "$schema": "Summary_2_3_0",
+          "additionalProperties": false,
+          "properties": {
+            "bullet_points": {
+              "description": "<988 characters>",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "page_information": {
+              "additionalProperties": false,
+              "description": "The page's printed number and its classification.",
+              "properties": {
+                "is_two_page_spread": {
+                  "description": "True when the transcription covers two facing pages, shown by two consecutive <page_number> tags or by text that clearly belongs to two pages; false for a single page.",
+                  "type": "boolean"
+                },
+                "page_number_integer": {
+                  "description": "<308 characters>",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "page_number_integer_end": {
+                  "description": "For a two-page spread, the right page's number from its <page_number> tag, converted like page_number_integer; null for a single page or when the right page has no tag.",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "page_number_type": {
+                  "description": "The numbering system of page_number_integer as printed: 'roman' or 'arabic'; 'none' when page_number_integer is null.",
+                  "enum": [
+                    "roman",
+                    "arabic",
+                    "none"
+                  ],
+                  "type": "string"
+                },
+                "page_types": {
+                  "description": "<420 characters>",
+                  "items": {
+                    "enum": [
+                      "content",
+                      "table_of_contents",
+                      "bibliography",
+                      "title_page",
+                      "index",
+                      "blank",
+                      "preface",
+                      "appendix",
+                      "figures_tables_sources",
+                      "abstract",
+                      "copyright",
+                      "other"
+                    ],
+                    "type": "string"
+                  },
+                  "maxItems": 3,
+                  "minItems": 1,
+                  "type": "array"
+                }
+              },
+              "required": [
+                "page_number_integer",
+                "is_two_page_spread",
+                "page_number_integer_end",
+                "page_number_type",
+                "page_types"
+              ],
+              "type": "object"
+            },
+            "references": {
+              "description": "Every bibliographic citation on the page, from pages of any type, in APA style; null when the page cites nothing.",
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "citation": {
+                    "description": "<232 characters>",
+                    "type": "string"
+                  },
+                  "is_partial": {
+                    "description": "True when the page gives only an in-text pointer, such as author and year, op. cit. or ibid., without title and venue; false for a complete reference, such as a bibliography entry or a full footnote.",
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "citation",
+                  "is_partial"
+                ],
+                "type": "object"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "page_information",
+            "bullet_points",
+            "references"
+          ],
+          "title": "Article Page Summary",
+          "type": "object"
+        },
+        "strict": true,
+        "type": "json_schema"
+      },
+      "verbosity": "low"
+    }
+  },
+  "submission_id": "<submission-2>"
+}
+## submissions
+{
+  "batch_id": "batch_fake0002",
+  "counts": {
+    "completed": 2,
+    "failed": 1,
+    "pending": 0,
+    "total": 3
+  },
+  "error": null,
+  "finalized_at": "<datetime>+00:00",
+  "intent_at": "<datetime>+00:00",
+  "last_checked_at": "<datetime>+00:00",
+  "model": "gpt-5.6-terra",
+  "part": 1,
+  "provider": "openai",
+  "provider_status": "completed",
+  "request_count": 3,
+  "run_id": "<run-1>",
+  "status": "finalized",
+  "submission_id": "<submission-1>",
+  "tool": "autoexcerpter",
+  "updated_at": "<datetime>+00:00",
+  "upload_ref": "file-fake0001"
+}
+{
+  "batch_id": "batch_fake0006",
+  "counts": null,
+  "error": null,
+  "finalized_at": null,
+  "intent_at": "<datetime>+00:00",
+  "last_checked_at": null,
+  "model": "gpt-5.6-terra",
+  "part": 1,
+  "provider": "openai",
+  "provider_status": null,
+  "request_count": 2,
+  "run_id": "<run-2>",
+  "status": "submitted",
+  "submission_id": "<submission-2>",
+  "tool": "autoexcerpter",
+  "updated_at": "<datetime>+00:00",
+  "upload_ref": "file-fake0005"
+}
+## summaries
+{
+  "bullet_points": [
+    "[Transcription failed: [transcription error; code invalid_request; Error code: 400 - invalid request]]"
+  ],
+  "doc_id": 1,
+  "idx": 1,
+  "page": 2,
+  "page_information": {
+    "is_two_page_spread": false,
+    "page_number_integer": null,
+    "page_number_integer_end": null,
+    "page_number_type": "none",
+    "page_types": [
+      "other"
+    ]
+  },
+  "page_references": null
+}
+## units
+{
+  "attempts": 0,
+  "content": null,
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "idx": 0,
+  "kind": "summary",
+  "label": "page_0001.jpg",
+  "model": "gpt-5.6-terra",
+  "outcome": null,
+  "provenance": null,
+  "provider": "openai",
+  "response_id": null,
+  "run_id": "<run-1>",
+  "source_index": 0,
+  "stale": 0,
+  "status": "pending",
+  "tool": "autoexcerpter",
+  "updated_at": "<datetime>+00:00",
+  "usage": null
+}
+{
+  "attempts": 1,
+  "content": null,
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "idx": 1,
+  "kind": "summary",
+  "label": "page_0002.jpg",
+  "model": "gpt-5.6-terra",
+  "outcome": "placeholder",
+  "provenance": null,
+  "provider": "openai",
+  "response_id": null,
+  "run_id": "<run-2>",
+  "source_index": 1,
+  "stale": 0,
+  "status": "done",
+  "tool": "autoexcerpter",
+  "updated_at": "<datetime>+00:00",
+  "usage": null
+}
+{
+  "attempts": 0,
+  "content": null,
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "idx": 2,
+  "kind": "summary",
+  "label": "page_0003.jpg",
+  "model": "gpt-5.6-terra",
+  "outcome": null,
+  "provenance": null,
+  "provider": "openai",
+  "response_id": null,
+  "run_id": "<run-1>",
+  "source_index": 2,
+  "stale": 0,
+  "status": "pending",
+  "tool": "autoexcerpter",
+  "updated_at": "<datetime>+00:00",
+  "usage": null
+}
+{
+  "attempts": 1,
+  "content": "# Preface\n\nThis volume brings together **new research** on the *material\nculture* of eating in early modern Europe. Its chapters trace how\nprices, wages and diets changed between 1500 and 1800.[^1]\n\n[^1]: See Braudel (1979) for the classic statement of this view.\n\n<page_number>xi</page_number>\n",
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "idx": 0,
+  "kind": "transcription",
+  "label": "page_0001.jpg",
+  "model": "gpt-5.6-terra",
+  "outcome": "ok",
+  "provenance": {
+    "image_provenance": {
+      "byte_size": "<bytes>",
+      "cap_policy": "openai-original-30k-v1",
+      "downscale_reason": "none",
+      "dpi_source": "fallback",
+      "effective_dpi": 300.0,
+      "format_fallback": false,
+      "height": 1250,
+      "mime_type": "image/jpeg",
+      "payload_format": "jpeg",
+      "render_dpi": 300.0,
+      "sent_dpi": 300.0,
+      "source_dpi_x": 300.0,
+      "source_dpi_y": 300.0,
+      "source_height": 1250,
+      "source_width": 834,
+      "width": 834
+    },
+    "source_file": "<tmp>/docs/doc.pdf"
+  },
+  "provider": "openai",
+  "response_id": 1,
+  "run_id": "<run-2>",
+  "source_index": 0,
+  "stale": 0,
+  "status": "done",
+  "tool": "autoexcerpter",
+  "updated_at": "<datetime>+00:00",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 1500,
+    "output_tokens": 400,
+    "reasoning_tokens": 0,
+    "total_tokens": 1900
+  }
+}
+{
+  "attempts": 1,
+  "content": "[transcription error; code invalid_request; Error code: 400 - invalid request]",
+  "doc_id": 1,
+  "error": "[transcription error; code invalid_request; Error code: 400 - invalid request]",
+  "error_type": "invalid_request",
+  "idx": 1,
+  "kind": "transcription",
+  "label": "page_0002.jpg",
+  "model": "gpt-5.6-terra",
+  "outcome": "failed",
+  "provenance": {
+    "image_provenance": {
+      "byte_size": "<bytes>",
+      "cap_policy": "openai-original-30k-v1",
+      "downscale_reason": "none",
+      "dpi_source": "fallback",
+      "effective_dpi": 300.0,
+      "format_fallback": false,
+      "height": 1250,
+      "mime_type": "image/jpeg",
+      "payload_format": "jpeg",
+      "render_dpi": 300.0,
+      "sent_dpi": 300.0,
+      "source_dpi_x": 300.0,
+      "source_dpi_y": 300.0,
+      "source_height": 1250,
+      "source_width": 834,
+      "width": 834
+    },
+    "source_file": "<tmp>/docs/doc.pdf"
+  },
+  "provider": "openai",
+  "response_id": 2,
+  "run_id": "<run-2>",
+  "source_index": 1,
+  "stale": 0,
+  "status": "failed",
+  "tool": "autoexcerpter",
+  "updated_at": "<datetime>+00:00",
+  "usage": null
+}
+{
+  "attempts": 1,
+  "content": "## Bibliography\n\nAllen, R. C. (2001). The great divergence in European wages and prices from the Middle Ages to the First World War. *Explorations in Economic History, 38*(4), 411-447.\n\nMontanari, M. (1994). *The Culture of Food*. Oxford: Blackwell.\n",
+  "doc_id": 1,
+  "error": null,
+  "error_type": null,
+  "idx": 2,
+  "kind": "transcription",
+  "label": "page_0003.jpg",
+  "model": "gpt-5.6-terra",
+  "outcome": "ok",
+  "provenance": {
+    "image_provenance": {
+      "byte_size": "<bytes>",
+      "cap_policy": "openai-original-30k-v1",
+      "downscale_reason": "none",
+      "dpi_source": "fallback",
+      "effective_dpi": 300.0,
+      "format_fallback": false,
+      "height": 1250,
+      "mime_type": "image/jpeg",
+      "payload_format": "jpeg",
+      "render_dpi": 300.0,
+      "sent_dpi": 300.0,
+      "source_dpi_x": 300.0,
+      "source_dpi_y": 300.0,
+      "source_height": 1250,
+      "source_width": 834,
+      "width": 834
+    },
+    "source_file": "<tmp>/docs/doc.pdf"
+  },
+  "provider": "openai",
+  "response_id": 3,
+  "run_id": "<run-2>",
+  "source_index": 2,
+  "stale": 0,
+  "status": "done",
+  "tool": "autoexcerpter",
+  "updated_at": "<datetime>+00:00",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 1500,
+    "output_tokens": 400,
+    "reasoning_tokens": 0,
+    "total_tokens": 1900
+  }
+}

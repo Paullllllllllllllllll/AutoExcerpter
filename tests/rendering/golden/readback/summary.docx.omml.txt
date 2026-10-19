@@ -1,0 +1,397 @@
+paragraph 10:
+  m:oMath
+    m:box
+      m:e
+        m:f
+          m:num
+            m:box
+              m:e
+                m:r
+                  m:rPr
+                    m:sty [m:val="i"]
+                  m:t 'a'
+          m:den
+            m:box
+              m:e
+                m:r
+                  m:rPr
+                    m:sty [m:val="i"]
+                  m:t 'b'
+paragraph 11:
+  m:oMath
+    m:box
+      m:e
+        m:nary
+          m:naryPr
+            m:chr [m:val="∑"]
+            m:limLoc [m:val="undOvr"]
+          m:sub
+            m:box
+              m:e
+                m:r
+                  m:rPr
+                    m:sty [m:val="i"]
+                  m:t 'i'
+                m:r
+                  m:rPr
+                    m:sty [m:val="p"]
+                  m:t '='
+                m:r
+                  m:rPr
+                    m:sty [m:val="p"]
+                  m:t '1'
+          m:sup
+            m:box
+              m:e
+                m:r
+                  m:rPr
+                    m:sty [m:val="i"]
+                  m:t 'n'
+          m:e
+            m:sSub
+              m:e
+                m:r
+                  m:rPr
+                    m:sty [m:val="i"]
+                  m:t 'x'
+              m:sub
+                m:r
+                  m:rPr
+                    m:sty [m:val="i"]
+                  m:t 'i'
+paragraph 12:
+  m:oMath
+    m:box
+      m:e
+        m:sSubSup
+          m:e
+            m:r
+              m:rPr
+                m:sty [m:val="i"]
+              m:t 'x'
+          m:sub
+            m:box
+              m:e
+                m:r
+                  m:rPr
+                    m:sty [m:val="i"]
+                  m:t 't'
+          m:sup
+            m:box
+              m:e
+                m:r
+                  m:rPr
+                    m:sty [m:val="p"]
+                  m:t '2'
+paragraph 13:
+  m:oMath
+    m:box
+      m:e
+        m:d
+          m:dPr
+            m:begChr [m:val="("]
+            m:endChr [m:val=")"]
+          m:e
+            m:box
+              m:e
+                m:m
+                  m:mr
+                    m:e
+                      m:box
+                        m:e
+                          m:r
+                            m:rPr
+                              m:sty [m:val="i"]
+                            m:t 'a'
+                    m:e
+                      m:box
+                        m:e
+                          m:r
+                            m:rPr
+                              m:sty [m:val="i"]
+                            m:t 'b'
+                  m:mr
+                    m:e
+                      m:box
+                        m:e
+                          m:r
+                            m:rPr
+                              m:sty [m:val="i"]
+                            m:t 'c'
+                    m:e
+                      m:box
+                        m:e
+                          m:r
+                            m:rPr
+                              m:sty [m:val="i"]
+                            m:t 'd'
+paragraph 14:
+  m:oMath
+    m:box
+      m:e
+        m:box
+          m:e
+            m:r
+              m:rPr
+                m:sty [m:val="i"]
+              m:t 'a'
+            m:r
+              m:rPr
+                m:sty [m:val="p"]
+              m:t '='
+            m:r
+              m:rPr
+                m:sty [m:val="i"]
+              m:t 'b'
+            m:r
+              m:rPr
+                m:sty [m:val="i"]
+              m:t 'c'
+            m:r
+              m:rPr
+                m:sty [m:val="p"]
+              m:t '='
+            m:r
+              m:rPr
+                m:sty [m:val="i"]
+              m:t 'd'
+paragraph 17:
+  m:oMath
+    m:box
+      m:e
+        m:f
+          m:num
+            m:box
+              m:e
+                m:r
+                  m:rPr
+                    m:sty [m:val="i"]
+                  m:t 'w'
+          m:den
+            m:box
+              m:e
+                m:r
+                  m:rPr
+                    m:sty [m:val="i"]
+                  m:t 'p'
+paragraph 19:
+  m:oMathPara
+    m:oMath
+      m:box
+        m:e
+          m:f
+            m:num
+              m:box
+                m:e
+                  m:r
+                    m:rPr
+                      m:sty [m:val="i"]
+                    m:t 'p'
+            m:den
+              m:box
+                m:e
+                  m:r
+                    m:rPr
+                      m:sty [m:val="i"]
+                    m:t 'q'
+paragraph 20:
+  m:oMathPara
+    m:oMath
+      m:box
+        m:e
+          m:nary
+            m:naryPr
+              m:chr [m:val="∑"]
+              m:limLoc [m:val="undOvr"]
+            m:sub
+              m:box
+                m:e
+                  m:r
+                    m:rPr
+                      m:sty [m:val="i"]
+                    m:t 'k'
+                  m:r
+                    m:rPr
+                      m:sty [m:val="p"]
+                    m:t '='
+                  m:r
+                    m:rPr
+                      m:sty [m:val="p"]
+                    m:t '0'
+            m:sup
+              m:box
+                m:e
+                  m:r
+                    m:rPr
+                      m:sty [m:val="p"]
+                    m:t '∞'
+            m:e
+              m:sSup
+                m:e
+                  m:r
+                    m:rPr
+                      m:sty [m:val="i"]
+                    m:t 'r'
+                m:sup
+                  m:r
+                    m:rPr
+                      m:sty [m:val="i"]
+                    m:t 'k'
+paragraph 21:
+  m:oMathPara
+    m:oMath
+      m:box
+        m:e
+          m:sSubSup
+            m:e
+              m:r
+                m:rPr
+                  m:sty [m:val="i"]
+                m:t 'y'
+            m:sub
+              m:box
+                m:e
+                  m:r
+                    m:rPr
+                      m:sty [m:val="i"]
+                    m:t 'i'
+                  m:r
+                    m:rPr
+                      m:sty [m:val="p"]
+                    m:t ','
+                  m:r
+                    m:rPr
+                      m:sty [m:val="i"]
+                    m:t 't'
+            m:sup
+              m:box
+                m:e
+                  m:r
+                    m:rPr
+                      m:sty [m:val="p"]
+                    m:t '−'
+                  m:r
+                    m:rPr
+                      m:sty [m:val="p"]
+                    m:t '1'
+paragraph 22:
+  m:oMathPara
+    m:oMath
+      m:box
+        m:e
+          m:d
+            m:dPr
+              m:begChr [m:val="("]
+              m:endChr [m:val=")"]
+            m:e
+              m:box
+                m:e
+                  m:m
+                    m:mr
+                      m:e
+                        m:box
+                          m:e
+                            m:r
+                              m:rPr
+                                m:sty [m:val="p"]
+                              m:t '1'
+                      m:e
+                        m:box
+                          m:e
+                            m:r
+                              m:rPr
+                                m:sty [m:val="p"]
+                              m:t '0'
+                    m:mr
+                      m:e
+                        m:box
+                          m:e
+                            m:r
+                              m:rPr
+                                m:sty [m:val="p"]
+                              m:t '0'
+                      m:e
+                        m:box
+                          m:e
+                            m:r
+                              m:rPr
+                                m:sty [m:val="p"]
+                              m:t '1'
+paragraph 23:
+  m:oMathPara
+    m:oMath
+      m:box
+        m:e
+          m:box
+            m:e
+              m:r
+                m:rPr
+                  m:sty [m:val="i"]
+                m:t 'w'
+              m:r
+                m:rPr
+                  m:sty [m:val="p"]
+                m:t '='
+              m:r
+                m:rPr
+                  m:sty [m:val="i"]
+                m:t 'p'
+              m:r
+                m:rPr
+                  m:sty [m:val="p"]
+                m:t '·'
+              m:r
+                m:rPr
+                  m:sty [m:val="i"]
+                m:t 'q'
+              m:r
+                m:rPr
+                  m:sty [m:val="i"]
+                m:t 'v'
+              m:r
+                m:rPr
+                  m:sty [m:val="p"]
+                m:t '='
+              m:r
+                m:rPr
+                  m:sty [m:val="i"]
+                m:t 'w'
+              m:r
+                m:rPr
+                  m:sty [m:val="p"]
+                m:t '−'
+              m:r
+                m:rPr
+                  m:sty [m:val="i"]
+                m:t 'c'
+paragraph 25:
+  m:oMath
+    m:box
+      m:e
+        m:sSup
+          m:e
+            m:r
+              m:rPr
+                m:sty [m:val="i"]
+              m:t 'z'
+          m:sup
+            m:r
+              m:rPr
+                m:sty [m:val="p"]
+              m:t '2'
+paragraph 25:
+  m:oMathPara
+    m:oMath
+      m:box
+        m:e
+          m:sSub
+            m:e
+              m:r
+                m:rPr
+                  m:sty [m:val="i"]
+                m:t 'z'
+            m:sub
+              m:r
+                m:rPr
+                  m:sty [m:val="p"]
+                m:t '0'

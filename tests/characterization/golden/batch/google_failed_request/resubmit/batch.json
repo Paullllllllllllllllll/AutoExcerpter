@@ -1,0 +1,127 @@
+{
+  "calls": [
+    {
+      "call": "google.files.upload",
+      "display_name": "autoexcerpter-<submission-3>-p1",
+      "lines": 1
+    },
+    {
+      "call": "google.batches.create",
+      "config": {
+        "display_name": "autoexcerpter-<submission-3>-p1"
+      },
+      "model": "models/gemini-2.5-flash-lite",
+      "src": "files/fake0007"
+    }
+  ],
+  "clients": [
+    {
+      "kwargs": {
+        "api_key": "<env:GOOGLE_API_KEY>",
+        "http_options": {
+          "timeout": 900000
+        }
+      },
+      "provider": "google"
+    }
+  ],
+  "prompts": {
+    "batch-prompt-1": {
+      "chars": 3690,
+      "sha256": "ae9a319f0c2b4661"
+    },
+    "batch-prompt-2": {
+      "chars": 2582,
+      "sha256": "44add1472db1aa4b"
+    },
+    "batch-prompt-3": {
+      "chars": 146,
+      "sha256": "98edbe011d370ce3"
+    },
+    "batch-prompt-4": {
+      "chars": 178,
+      "sha256": "d3db5925aa15ac35"
+    }
+  },
+  "requests": [
+    {
+      "batch_id": "batches/fake0008",
+      "body": {
+        "contents": [
+          {
+            "parts": [
+              {
+                "inline_data": {
+                  "data": {
+                    "image": {
+                      "height": 1536,
+                      "mime": "image/jpeg",
+                      "page": 1,
+                      "width": 768
+                    }
+                  },
+                  "mime_type": "image/jpeg"
+                }
+              }
+            ],
+            "role": "user"
+          }
+        ],
+        "generation_config": {
+          "max_output_tokens": 65536,
+          "response_json_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "no_transcribable_text": {
+                "description": {
+                  "chars": 146,
+                  "prompt": "batch-prompt-3"
+                },
+                "type": "boolean"
+              },
+              "transcription": {
+                "description": {
+                  "chars": 2582,
+                  "prompt": "batch-prompt-2"
+                },
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "transcription_not_possible": {
+                "description": {
+                  "chars": 178,
+                  "prompt": "batch-prompt-4"
+                },
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "transcription",
+              "no_transcribable_text",
+              "transcription_not_possible"
+            ],
+            "type": "object"
+          },
+          "response_mime_type": "application/json",
+          "temperature": 1.0
+        },
+        "system_instruction": {
+          "parts": [
+            {
+              "text": {
+                "chars": 3690,
+                "prompt": "batch-prompt-1"
+              }
+            }
+          ]
+        }
+      },
+      "custom_id": "<submission-3>-00000",
+      "page": 1,
+      "provider": "google",
+      "role": "transcription"
+    }
+  ]
+}

@@ -1,0 +1,166 @@
+usage: autoexcerpter run --input PATH [options]
+
+Transcribe PDFs and image folders with a vision model and summarize them.
+
+options:
+  -h, --help            show this help message and exit
+
+input:
+  --input PATH          PDF file, image folder, or folder of PDFs and image folders
+  --select EXPR         select items by number (1,3), range (1-5) or name search
+  --files LIST          comma-separated names of items inside the input folder
+  --all                 process every discovered item
+  --pages RANGE         pages or images: 5, first:5, last:5, 3-7, 3-, -7 or 1,3,5-8; default: all
+
+output:
+  --output DIR          output folder; default: beside the input
+  --beside-input        write outputs beside each input
+  --formats LIST        comma-separated output formats, at most one transcription format
+                        (transcription-md when none is given); from transcription-md,
+                        transcription-txt, summary-md, summary-docx; default:
+                        transcription-md,summary-md,summary-docx
+
+summary:
+  --summarize, --no-summarize
+                        summarize after transcribing; default: on
+  --context TEXT|PATH|auto|none
+                        summary context: topics as text or a path to a text file (overrides
+                        sidecars), auto (the item's file or folder sidecar) or none (no context);
+                        default: auto
+  --fallback-context TEXT|PATH|none
+                        summary context for items without a sidecar under --context auto: topics
+                        as text, a path to a text file, or none; default: none
+
+citations:
+  --openalex, --no-openalex
+                        enrich citations with OpenAlex metadata; default: on
+
+model (both phases):
+  --provider {openai,anthropic,google,openrouter,custom}
+                        model provider; default: inferred from the model name
+  --model NAME          model name; a provider: prefix (anthropic:NAME) selects the provider;
+                        default: per phase
+  --endpoint NAME       named custom endpoint from the settings (implies provider custom);
+                        default: none
+  --reasoning-effort {none,minimal,low,medium,high,xhigh,max}
+                        reasoning effort; default: per phase
+  --verbosity {low,medium,high}
+                        output verbosity; default: per phase
+  --max-output-tokens N
+                        maximum output tokens; default: the model's output limit
+  --temperature T       sampling temperature, 0.0 to 2.0; default: per phase
+  --top-p P             nucleus sampling, 0.0 to 1.0; sent only when given and supported; default:
+                        not sent
+  --service-tier {auto,default,flex,priority}
+                        OpenAI service tier; default: per phase; only for provider openai
+  --response-format {schema,json,text}
+                        schema (API-enforced), json (prompted, validated) or text (plain);
+                        default: schema when the model supports it, else json
+
+transcription model:
+  --transcription-provider {openai,anthropic,google,openrouter,custom}
+                        model provider; default: inferred from the model name
+  --transcription-model NAME
+                        model name; a provider: prefix (anthropic:NAME) selects the provider;
+                        default: gpt-6-luna
+  --transcription-endpoint NAME
+                        named custom endpoint from the settings (implies provider custom);
+                        default: none
+  --transcription-reasoning-effort {none,minimal,low,medium,high,xhigh,max}
+                        reasoning effort; default: xhigh
+  --transcription-verbosity {low,medium,high}
+                        output verbosity; default: high
+  --transcription-max-output-tokens N
+                        maximum output tokens; default: the model's output limit
+  --transcription-temperature T
+                        sampling temperature, 0.0 to 2.0; default: 1.0
+  --transcription-top-p P
+                        nucleus sampling, 0.0 to 1.0; sent only when given and supported; default:
+                        not sent
+  --transcription-service-tier {auto,default,flex,priority}
+                        OpenAI service tier; default: default; only for transcription-provider
+                        openai
+  --transcription-response-format {schema,json,text}
+                        schema (API-enforced), json (prompted, validated) or text (plain);
+                        default: schema when the model supports it, else json
+
+summary model:
+  --summary-provider {openai,anthropic,google,openrouter,custom}
+                        model provider; default: inferred from the model name
+  --summary-model NAME  model name; a provider: prefix (anthropic:NAME) selects the provider;
+                        default: gpt-6-luna
+  --summary-endpoint NAME
+                        named custom endpoint from the settings (implies provider custom);
+                        default: none
+  --summary-reasoning-effort {none,minimal,low,medium,high,xhigh,max}
+                        reasoning effort; default: xhigh
+  --summary-verbosity {low,medium,high}
+                        output verbosity; default: low
+  --summary-max-output-tokens N
+                        maximum output tokens; default: the model's output limit
+  --summary-temperature T
+                        sampling temperature, 0.0 to 2.0; default: 1.0
+  --summary-top-p P     nucleus sampling, 0.0 to 1.0; sent only when given and supported; default:
+                        not sent
+  --summary-service-tier {auto,default,flex,priority}
+                        OpenAI service tier; default: default; only for summary-provider openai
+  --summary-response-format {schema,json,text}
+                        schema (API-enforced), json (prompted, validated) or text (plain);
+                        default: schema when the model supports it, else json
+
+images:
+  --dpi native|N        render resolution: native or a DPI value; default: the provider's
+                        recommended value
+  --image-detail {low,high,auto,original}
+                        image detail sent to the model; default: the provider's recommended value
+  --image-format {jpeg,png}
+                        page image format; default: the provider's recommended value
+  --jpeg-quality N      JPEG quality, 1 to 100; default: the provider's recommended value
+  --grayscale, --no-grayscale
+                        convert page images to grayscale; default: the provider's recommended
+                        value
+
+run control:
+  --force               reprocess items whose outputs exist (resume is the default): every stored
+                        page of the item is reset, also outside --pages
+  --retranscribe        transcribe a partial, transcription-only or refused item again instead of
+                        reusing stored transcriptions; a complete item is skipped (--force redoes
+                        it); with --pages only those of the selected pages, under the stored image
+                        settings
+  --concurrency N       parallel requests; default: 16
+  --batch, --no-batch   submit the pages and summaries to the providers' batch APIs; default: off
+  --dry-run             plan without API calls or writes
+  --json                print one JSON summary line on stdout
+  --settings FILE       alternate settings file; default: config/settings.yaml
+
+Precedence: a flag wins over the settings defaults: block, which wins over the code default.
+--settings FILE reads another settings file instead of config/settings.yaml.
+
+Exit codes:
+  0    every item completed or, under --batch, was submitted, or nothing
+       was left to do
+  1    an item failed, or another run leases one (a killed run keeps its
+       lease until it expires)
+  2    usage or configuration error, also an input without items and a
+       --select or --files that matches nothing
+  130  interrupted (Ctrl+C or Ctrl+Break)
+
+With --json, stdout carries exactly one JSON summary line on every exit; progress, warnings and
+errors go to stderr.
+
+Examples:
+  Transcribe and summarize one PDF:
+    autoexcerpter run --input book.pdf
+  Every item in a folder, outputs in one folder:
+    autoexcerpter run --input scans --all --output excerpts
+  Two items of a folder by name, plain-text transcription and Markdown summary:
+    autoexcerpter run --input scans --files a.pdf,b.pdf
+      --formats transcription-txt,summary-md
+  Separate transcription and summary models:
+    autoexcerpter run --input book.pdf --transcription-model gpt-5.6-sol
+      --summary-model claude-sonnet-5
+  Plan a folder run without API calls and print the plan as JSON:
+    autoexcerpter run --input scans --all --dry-run --json
+  Submit a folder to the batch APIs, then collect it later:
+    autoexcerpter run --input scans --all --batch
+    autoexcerpter batch check --input scans

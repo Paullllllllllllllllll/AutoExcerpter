@@ -1,0 +1,138 @@
+{
+  "calls": [
+    {
+      "call": "anthropic.messages.batches.create",
+      "requests": 1
+    }
+  ],
+  "clients": [
+    {
+      "kwargs": {
+        "api_key": "<env:ANTHROPIC_API_KEY>",
+        "timeout": {
+          "httpx.Timeout": {
+            "connect": 10.0,
+            "pool": 30.0,
+            "read": 900.0,
+            "write": 30.0
+          }
+        }
+      },
+      "provider": "anthropic"
+    }
+  ],
+  "prompts": {
+    "batch-prompt-1": {
+      "chars": 3690,
+      "sha256": "ae9a319f0c2b4661"
+    },
+    "batch-prompt-2": {
+      "chars": 2582,
+      "sha256": "44add1472db1aa4b"
+    },
+    "batch-prompt-3": {
+      "chars": 146,
+      "sha256": "98edbe011d370ce3"
+    },
+    "batch-prompt-4": {
+      "chars": 178,
+      "sha256": "d3db5925aa15ac35"
+    }
+  },
+  "requests": [
+    {
+      "batch_id": "msgbatch_fake0003",
+      "body": {
+        "max_tokens": 64000,
+        "messages": [
+          {
+            "content": [
+              {
+                "source": {
+                  "data": {
+                    "image": {
+                      "height": 1250,
+                      "mime": "image/jpeg",
+                      "page": 1,
+                      "width": 834
+                    }
+                  },
+                  "media_type": "image/jpeg",
+                  "type": "base64"
+                },
+                "type": "image"
+              }
+            ],
+            "role": "user"
+          }
+        ],
+        "model": "claude-sonnet-4-5",
+        "output_config": {
+          "format": {
+            "schema": {
+              "additionalProperties": false,
+              "properties": {
+                "no_transcribable_text": {
+                  "description": {
+                    "chars": 146,
+                    "prompt": "batch-prompt-3"
+                  },
+                  "type": "boolean"
+                },
+                "transcription": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": {
+                    "chars": 2582,
+                    "prompt": "batch-prompt-2"
+                  }
+                },
+                "transcription_not_possible": {
+                  "description": {
+                    "chars": 178,
+                    "prompt": "batch-prompt-4"
+                  },
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "transcription",
+                "no_transcribable_text",
+                "transcription_not_possible"
+              ],
+              "title": "markdown_transcription_schema",
+              "type": "object"
+            },
+            "type": "json_schema"
+          }
+        },
+        "system": [
+          {
+            "cache_control": {
+              "type": "ephemeral"
+            },
+            "text": {
+              "chars": 3690,
+              "prompt": "batch-prompt-1"
+            },
+            "type": "text"
+          }
+        ],
+        "thinking": {
+          "budget_tokens": 24576,
+          "type": "enabled"
+        }
+      },
+      "custom_id": "<submission-3>-00000",
+      "page": 1,
+      "provider": "anthropic",
+      "role": "transcription"
+    }
+  ]
+}

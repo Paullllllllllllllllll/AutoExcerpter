@@ -1,0 +1,30 @@
+usage: autoexcerpter render [-h] [--input PATH] [--formats LIST] [--force] [--dry-run] [--json]
+                            [--settings FILE]
+
+Write the transcription and summary files of stored documents again from their
+autoexcerpter.sqlite, without model calls.
+
+options:
+  -h, --help       show this help message and exit
+
+input:
+  --input PATH     output folder or autoexcerpter.sqlite to render; default: .
+
+output:
+  --formats LIST   comma-separated formats to render; from transcription-md, transcription-txt,
+                   summary-md, summary-docx; default: the formats each document was rendered in
+
+run control:
+  --force          replace files changed outside the tool
+  --dry-run        plan without API calls or writes
+  --json           print one JSON summary line on stdout
+  --settings FILE  alternate settings file; default: config/settings.yaml
+
+Without --formats each document is rendered in the formats it was rendered in before. A file
+changed outside the tool is left as it is unless --force.
+
+Exit codes:
+  0    every file holds its rendering or was left as edited
+  1    a file could not be replaced, or another run holds a document
+  2    usage error, a missing settings file, or a database the store refuses
+  130  interrupted (Ctrl+C or Ctrl+Break)

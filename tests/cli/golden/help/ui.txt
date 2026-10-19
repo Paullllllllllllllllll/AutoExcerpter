@@ -1,0 +1,12 @@
+usage: autoexcerpter ui [-h] [--settings FILE]
+
+Guided session in an interactive terminal. The first step chooses the task: a new run, checking or
+cancelling batches, rendering stored documents again, or dropping stored documents. Each task asks
+its options one step at a time, shows a review screen with the equivalent command, then runs it.
+Exit codes are those of the chosen task's command.
+
+options:
+  -h, --help       show this help message and exit
+
+run control:
+  --settings FILE  alternate settings file; default: config/settings.yaml

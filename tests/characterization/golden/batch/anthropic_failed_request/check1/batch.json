@@ -1,0 +1,468 @@
+{
+  "calls": [
+    {
+      "batch_id": "msgbatch_fake0001",
+      "call": "anthropic.messages.batches.retrieve"
+    },
+    {
+      "batch_id": "msgbatch_fake0001",
+      "call": "anthropic.messages.batches.retrieve"
+    },
+    {
+      "batch_id": "msgbatch_fake0001",
+      "call": "anthropic.messages.batches.results"
+    },
+    {
+      "call": "anthropic.messages.batches.create",
+      "requests": 2
+    }
+  ],
+  "clients": [
+    {
+      "kwargs": {
+        "api_key": "<env:ANTHROPIC_API_KEY>",
+        "timeout": {
+          "httpx.Timeout": {
+            "connect": 10.0,
+            "pool": 30.0,
+            "read": 900.0,
+            "write": 30.0
+          }
+        }
+      },
+      "provider": "anthropic"
+    }
+  ],
+  "prompts": {
+    "batch-prompt-1": {
+      "chars": 5932,
+      "sha256": "f4ccaa329d6b6bba"
+    },
+    "batch-prompt-10": {
+      "chars": 250,
+      "sha256": "029878f966dd8a51"
+    },
+    "batch-prompt-2": {
+      "chars": 295,
+      "sha256": "077b66f2675d3228"
+    },
+    "batch-prompt-3": {
+      "chars": 308,
+      "sha256": "3f71b83792a0cc3b"
+    },
+    "batch-prompt-4": {
+      "chars": 167,
+      "sha256": "78491fb82aae9603"
+    },
+    "batch-prompt-5": {
+      "chars": 168,
+      "sha256": "47d77a1d2ab50501"
+    },
+    "batch-prompt-6": {
+      "chars": 435,
+      "sha256": "ee8f722dc78a5853"
+    },
+    "batch-prompt-7": {
+      "chars": 988,
+      "sha256": "5d8fe579be3202b5"
+    },
+    "batch-prompt-8": {
+      "chars": 232,
+      "sha256": "5bfef6338cd8bb02"
+    },
+    "batch-prompt-9": {
+      "chars": 199,
+      "sha256": "870ebbcebc253d27"
+    }
+  },
+  "requests": [
+    {
+      "batch_id": "msgbatch_fake0002",
+      "body": {
+        "max_tokens": 64000,
+        "messages": [
+          {
+            "content": [
+              {
+                "text": {
+                  "chars": 295,
+                  "prompt": "batch-prompt-2"
+                },
+                "type": "text"
+              }
+            ],
+            "role": "user"
+          }
+        ],
+        "model": "claude-sonnet-4-5",
+        "output_config": {
+          "format": {
+            "schema": {
+              "additionalProperties": false,
+              "description": "{$schema: Summary_2_3_0}",
+              "properties": {
+                "bullet_points": {
+                  "anyOf": [
+                    {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": {
+                    "chars": 988,
+                    "prompt": "batch-prompt-7"
+                  }
+                },
+                "page_information": {
+                  "additionalProperties": false,
+                  "description": "The page's printed number and its classification.",
+                  "properties": {
+                    "is_two_page_spread": {
+                      "description": {
+                        "chars": 167,
+                        "prompt": "batch-prompt-4"
+                      },
+                      "type": "boolean"
+                    },
+                    "page_number_integer": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": {
+                        "chars": 308,
+                        "prompt": "batch-prompt-3"
+                      }
+                    },
+                    "page_number_integer_end": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": {
+                        "chars": 168,
+                        "prompt": "batch-prompt-5"
+                      }
+                    },
+                    "page_number_type": {
+                      "description": "The numbering system of page_number_integer as printed: 'roman' or 'arabic'; 'none' when page_number_integer is null.",
+                      "enum": [
+                        "roman",
+                        "arabic",
+                        "none"
+                      ],
+                      "type": "string"
+                    },
+                    "page_types": {
+                      "description": {
+                        "chars": 435,
+                        "prompt": "batch-prompt-6"
+                      },
+                      "items": {
+                        "enum": [
+                          "content",
+                          "table_of_contents",
+                          "bibliography",
+                          "title_page",
+                          "index",
+                          "blank",
+                          "preface",
+                          "appendix",
+                          "figures_tables_sources",
+                          "abstract",
+                          "copyright",
+                          "other"
+                        ],
+                        "type": "string"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "page_number_integer",
+                    "is_two_page_spread",
+                    "page_number_integer_end",
+                    "page_number_type",
+                    "page_types"
+                  ],
+                  "type": "object"
+                },
+                "references": {
+                  "anyOf": [
+                    {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "citation": {
+                            "description": {
+                              "chars": 232,
+                              "prompt": "batch-prompt-8"
+                            },
+                            "type": "string"
+                          },
+                          "is_partial": {
+                            "description": {
+                              "chars": 199,
+                              "prompt": "batch-prompt-9"
+                            },
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "citation",
+                          "is_partial"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Every bibliographic citation on the page, from pages of any type, in APA style; null when the page cites nothing."
+                }
+              },
+              "required": [
+                "page_information",
+                "bullet_points",
+                "references"
+              ],
+              "title": "Article Page Summary",
+              "type": "object"
+            },
+            "type": "json_schema"
+          }
+        },
+        "system": [
+          {
+            "cache_control": {
+              "type": "ephemeral"
+            },
+            "text": {
+              "chars": 5932,
+              "prompt": "batch-prompt-1"
+            },
+            "type": "text"
+          }
+        ],
+        "thinking": {
+          "budget_tokens": 24576,
+          "type": "enabled"
+        }
+      },
+      "custom_id": "<submission-2>-00000",
+      "page": 0,
+      "provider": "anthropic",
+      "role": "summary"
+    },
+    {
+      "batch_id": "msgbatch_fake0002",
+      "body": {
+        "max_tokens": 64000,
+        "messages": [
+          {
+            "content": [
+              {
+                "text": {
+                  "chars": 250,
+                  "prompt": "batch-prompt-10"
+                },
+                "type": "text"
+              }
+            ],
+            "role": "user"
+          }
+        ],
+        "model": "claude-sonnet-4-5",
+        "output_config": {
+          "format": {
+            "schema": {
+              "additionalProperties": false,
+              "description": "{$schema: Summary_2_3_0}",
+              "properties": {
+                "bullet_points": {
+                  "anyOf": [
+                    {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": {
+                    "chars": 988,
+                    "prompt": "batch-prompt-7"
+                  }
+                },
+                "page_information": {
+                  "additionalProperties": false,
+                  "description": "The page's printed number and its classification.",
+                  "properties": {
+                    "is_two_page_spread": {
+                      "description": {
+                        "chars": 167,
+                        "prompt": "batch-prompt-4"
+                      },
+                      "type": "boolean"
+                    },
+                    "page_number_integer": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": {
+                        "chars": 308,
+                        "prompt": "batch-prompt-3"
+                      }
+                    },
+                    "page_number_integer_end": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": {
+                        "chars": 168,
+                        "prompt": "batch-prompt-5"
+                      }
+                    },
+                    "page_number_type": {
+                      "description": "The numbering system of page_number_integer as printed: 'roman' or 'arabic'; 'none' when page_number_integer is null.",
+                      "enum": [
+                        "roman",
+                        "arabic",
+                        "none"
+                      ],
+                      "type": "string"
+                    },
+                    "page_types": {
+                      "description": {
+                        "chars": 435,
+                        "prompt": "batch-prompt-6"
+                      },
+                      "items": {
+                        "enum": [
+                          "content",
+                          "table_of_contents",
+                          "bibliography",
+                          "title_page",
+                          "index",
+                          "blank",
+                          "preface",
+                          "appendix",
+                          "figures_tables_sources",
+                          "abstract",
+                          "copyright",
+                          "other"
+                        ],
+                        "type": "string"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "page_number_integer",
+                    "is_two_page_spread",
+                    "page_number_integer_end",
+                    "page_number_type",
+                    "page_types"
+                  ],
+                  "type": "object"
+                },
+                "references": {
+                  "anyOf": [
+                    {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "citation": {
+                            "description": {
+                              "chars": 232,
+                              "prompt": "batch-prompt-8"
+                            },
+                            "type": "string"
+                          },
+                          "is_partial": {
+                            "description": {
+                              "chars": 199,
+                              "prompt": "batch-prompt-9"
+                            },
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "citation",
+                          "is_partial"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Every bibliographic citation on the page, from pages of any type, in APA style; null when the page cites nothing."
+                }
+              },
+              "required": [
+                "page_information",
+                "bullet_points",
+                "references"
+              ],
+              "title": "Article Page Summary",
+              "type": "object"
+            },
+            "type": "json_schema"
+          }
+        },
+        "system": [
+          {
+            "cache_control": {
+              "type": "ephemeral"
+            },
+            "text": {
+              "chars": 5932,
+              "prompt": "batch-prompt-1"
+            },
+            "type": "text"
+          }
+        ],
+        "thinking": {
+          "budget_tokens": 24576,
+          "type": "enabled"
+        }
+      },
+      "custom_id": "<submission-2>-00001",
+      "page": 2,
+      "provider": "anthropic",
+      "role": "summary"
+    }
+  ]
+}

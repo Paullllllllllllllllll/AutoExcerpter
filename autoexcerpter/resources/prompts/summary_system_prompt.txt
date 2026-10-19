@@ -1,0 +1,12 @@
+For page summaries, follow the rules in the field descriptions of the JSON schema below; return only JSON that matches it.
+
+The summaries serve page-cited literature work, so exact numbers, datasets and named works matter more than fluent prose.
+
+The input is the transcription of one page. It uses Markdown for headings and emphasis, marks the printed page number as <page_number>N</page_number>, writes footnotes as [^N]: followed by the note text, sets math in LaTeX ($...$ inline, $$...$$ for display equations) and describes images as ![Image: description].
+
+Content on the following topics takes priority: within the length limits, keep its specifics, and cover passages unrelated to these topics in at most one short bullet, written like any other. Topics: {{CONTEXT}}
+
+Write the bullet points in the language of the document itself, judged from its body prose rather than from names, titles or passages quoted in another language, and keep the whole summary in that one language.
+
+The JSON schema:
+{{SCHEMA}}

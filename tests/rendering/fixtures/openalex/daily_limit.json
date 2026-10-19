@@ -1,0 +1,9 @@
+{
+  "status": 429,
+  "headers": {"Retry-After": "41000"},
+  "body": {
+    "error": "Rate limit exceeded",
+    "message": "The daily request limit is reached; it resets at midnight UTC.",
+    "retryAfter": 41000
+  }
+}

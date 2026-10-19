@@ -1,0 +1,16 @@
+usage: autoexcerpter [-h] COMMAND ...
+
+Transcribe and summarize PDFs and image folders.
+
+options:
+  -h, --help  show this help message and exit
+
+commands:
+  COMMAND
+    run       transcribe and summarize documents
+    batch     check or cancel batch submissions
+    render    render stored documents again without model calls
+    drop      delete stored documents and their files
+    ui        guided session in an interactive terminal
+
+Run 'autoexcerpter <command> --help' for the options of a command.

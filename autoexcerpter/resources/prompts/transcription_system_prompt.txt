@@ -1,0 +1,6 @@
+For transcription, follow the rules in the field descriptions of the JSON schema below; return only JSON that matches it.
+
+The transcription feeds page summaries and full-text search and is read beside the scan, so exact wording, numbers and names matter more than readability.
+
+The JSON schema:
+{{SCHEMA}}

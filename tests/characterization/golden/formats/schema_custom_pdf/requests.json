@@ -1,0 +1,314 @@
+{
+  "calls": [
+    {
+      "attempt": 1,
+      "bound": {},
+      "kwargs": {
+        "response_format": {
+          "json_schema": {
+            "digest": "ffd97955088fb2ce",
+            "name": "markdown_transcription_schema",
+            "properties": [
+              "no_transcribable_text",
+              "transcription",
+              "transcription_not_possible"
+            ],
+            "strict": true
+          },
+          "type": "json_schema"
+        },
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 3690,
+            "digest": "ae9a319f0c2b4661"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "height": 1024,
+              "mime": "image/jpeg",
+              "type": "image_url",
+              "width": 512
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "org/fake-model",
+      "page": 0,
+      "provider": "custom",
+      "role": "transcription",
+      "structured": null
+    },
+    {
+      "attempt": 1,
+      "bound": {},
+      "kwargs": {
+        "response_format": {
+          "json_schema": {
+            "digest": "2c713734882bdbe7",
+            "name": "article_page_summary",
+            "properties": [
+              "bullet_points",
+              "page_information",
+              "references"
+            ],
+            "strict": true
+          },
+          "type": "json_schema"
+        },
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 5932,
+            "digest": "f4ccaa329d6b6bba"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "chars": 295,
+              "digest": "077b66f2675d3228",
+              "type": "text"
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "org/fake-model",
+      "page": 0,
+      "provider": "custom",
+      "role": "summary",
+      "structured": null
+    },
+    {
+      "attempt": 1,
+      "bound": {},
+      "kwargs": {
+        "response_format": {
+          "json_schema": {
+            "digest": "ffd97955088fb2ce",
+            "name": "markdown_transcription_schema",
+            "properties": [
+              "no_transcribable_text",
+              "transcription",
+              "transcription_not_possible"
+            ],
+            "strict": true
+          },
+          "type": "json_schema"
+        },
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 3690,
+            "digest": "ae9a319f0c2b4661"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "height": 1024,
+              "mime": "image/jpeg",
+              "type": "image_url",
+              "width": 512
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "org/fake-model",
+      "page": 1,
+      "provider": "custom",
+      "role": "transcription",
+      "structured": null
+    },
+    {
+      "attempt": 1,
+      "bound": {},
+      "kwargs": {
+        "response_format": {
+          "json_schema": {
+            "digest": "2c713734882bdbe7",
+            "name": "article_page_summary",
+            "properties": [
+              "bullet_points",
+              "page_information",
+              "references"
+            ],
+            "strict": true
+          },
+          "type": "json_schema"
+        },
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 5932,
+            "digest": "f4ccaa329d6b6bba"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "chars": 544,
+              "digest": "7b77a0cc8a85c403",
+              "type": "text"
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "org/fake-model",
+      "page": 1,
+      "provider": "custom",
+      "role": "summary",
+      "structured": null
+    },
+    {
+      "attempt": 1,
+      "bound": {},
+      "kwargs": {
+        "response_format": {
+          "json_schema": {
+            "digest": "ffd97955088fb2ce",
+            "name": "markdown_transcription_schema",
+            "properties": [
+              "no_transcribable_text",
+              "transcription",
+              "transcription_not_possible"
+            ],
+            "strict": true
+          },
+          "type": "json_schema"
+        },
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 3690,
+            "digest": "ae9a319f0c2b4661"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "height": 1024,
+              "mime": "image/jpeg",
+              "type": "image_url",
+              "width": 512
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "org/fake-model",
+      "page": 2,
+      "provider": "custom",
+      "role": "transcription",
+      "structured": null
+    },
+    {
+      "attempt": 1,
+      "bound": {},
+      "kwargs": {
+        "response_format": {
+          "json_schema": {
+            "digest": "2c713734882bdbe7",
+            "name": "article_page_summary",
+            "properties": [
+              "bullet_points",
+              "page_information",
+              "references"
+            ],
+            "strict": true
+          },
+          "type": "json_schema"
+        },
+        "temperature": 1.0
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 5932,
+            "digest": "f4ccaa329d6b6bba"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "chars": 250,
+              "digest": "029878f966dd8a51",
+              "type": "text"
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "org/fake-model",
+      "page": 2,
+      "provider": "custom",
+      "role": "summary",
+      "structured": null
+    }
+  ],
+  "models": [
+    {
+      "constructor": "ChatOpenAI",
+      "kwargs": {
+        "api_key": "<env:AE_FAKE_CUSTOM_KEY>",
+        "base_url": "https://fake-endpoint.invalid/v1/",
+        "http_async_client": "<_DefaultAsyncHttpxClient>",
+        "http_client": "<_DefaultHttpxClient>",
+        "max_retries": 0,
+        "model": "org/fake-model",
+        "timeout": {
+          "httpx.Timeout": {
+            "connect": 10.0,
+            "pool": 30.0,
+            "read": 900.0,
+            "write": 30.0
+          }
+        }
+      },
+      "role": "summary"
+    },
+    {
+      "constructor": "ChatOpenAI",
+      "kwargs": {
+        "api_key": "<env:AE_FAKE_CUSTOM_KEY>",
+        "base_url": "https://fake-endpoint.invalid/v1/",
+        "http_async_client": "<_DefaultAsyncHttpxClient>",
+        "http_client": "<_DefaultHttpxClient>",
+        "max_retries": 0,
+        "model": "org/fake-model",
+        "timeout": {
+          "httpx.Timeout": {
+            "connect": 10.0,
+            "pool": 30.0,
+            "read": 900.0,
+            "write": 30.0
+          }
+        }
+      },
+      "role": "transcription"
+    }
+  ],
+  "openalex": []
+}

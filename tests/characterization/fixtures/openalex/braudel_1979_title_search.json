@@ -1,0 +1,23 @@
+{
+  "match": {"title_search": "Civilisation matérielle"},
+  "status": 200,
+  "body": {
+    "meta": {"count": 1, "page": 1, "per_page": 5},
+    "results": [
+      {
+        "id": "https://openalex.org/W1000000002",
+        "doi": null,
+        "title": "Civilisation matérielle, économie et capitalisme, XVe-XVIIIe siècle",
+        "display_name": "Civilisation matérielle, économie et capitalisme, XVe-XVIIIe siècle",
+        "publication_year": 1979,
+        "type": "book",
+        "authorships": [
+          {"author": {"id": "https://openalex.org/A1000000002", "display_name": "Fernand Braudel"}}
+        ],
+        "primary_location": {
+          "source": {"id": "https://openalex.org/S1000000002", "display_name": "Armand Colin"}
+        }
+      }
+    ]
+  }
+}

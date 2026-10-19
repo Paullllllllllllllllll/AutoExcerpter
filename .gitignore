@@ -1,0 +1,32 @@
+/.autoexcerpter_token_state.json
+.claude/
+CLAUDE.md
+AGENTS.md
+
+# User-specific runtime config (contains paths, emails, model preferences)
+# Real configs are ignored; scrubbed *.example.yaml templates are tracked.
+config/defaults/*.yaml
+!config/defaults/*.example.yaml
+config/settings.yaml
+
+.coverage
+.coverage.*
+dist/
+*.egg-info/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.venv/
+context/
+
+# Local scratch area (ad-hoc tests, backups)
+scratch/
+backup/
+
+# Transient local working documents
+docs/
+
+# Local environment files (never versioned)
+.env*

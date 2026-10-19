@@ -1,0 +1,413 @@
+{
+  "calls": [
+    {
+      "attempt": 1,
+      "bound": {},
+      "kwargs": {
+        "max_output_tokens": 65536,
+        "response_mime_type": "application/json",
+        "response_schema": {
+          "digest": "d33c4482d7849940",
+          "properties": [
+            "no_transcribable_text",
+            "transcription",
+            "transcription_not_possible"
+          ],
+          "type": "object"
+        },
+        "thinking_config": {
+          "thinking_level": "high"
+        }
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 3690,
+            "digest": "ae9a319f0c2b4661"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "height": 1536,
+              "media_resolution": "MEDIA_RESOLUTION_HIGH",
+              "mime": "image/jpeg",
+              "source_type": "base64",
+              "type": "image",
+              "width": 768
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "gemini-3.5-flash",
+      "page": 0,
+      "provider": "google",
+      "role": "transcription",
+      "structured": null
+    },
+    {
+      "attempt": 1,
+      "bound": {},
+      "kwargs": {
+        "max_output_tokens": 65536,
+        "response_mime_type": "application/json",
+        "response_schema": {
+          "digest": "1b1d2f78f5fe9719",
+          "properties": [
+            "bullet_points",
+            "page_information",
+            "references"
+          ],
+          "title": "Article Page Summary",
+          "type": "object"
+        },
+        "thinking_config": {
+          "thinking_level": "high"
+        }
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 5932,
+            "digest": "f4ccaa329d6b6bba"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "chars": 295,
+              "digest": "077b66f2675d3228",
+              "type": "text"
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "gemini-3.5-flash",
+      "page": 0,
+      "provider": "google",
+      "role": "summary",
+      "structured": null
+    },
+    {
+      "attempt": 1,
+      "bound": {},
+      "kwargs": {
+        "max_output_tokens": 65536,
+        "response_mime_type": "application/json",
+        "response_schema": {
+          "digest": "d33c4482d7849940",
+          "properties": [
+            "no_transcribable_text",
+            "transcription",
+            "transcription_not_possible"
+          ],
+          "type": "object"
+        },
+        "thinking_config": {
+          "thinking_level": "high"
+        }
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 3690,
+            "digest": "ae9a319f0c2b4661"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "height": 1536,
+              "media_resolution": "MEDIA_RESOLUTION_HIGH",
+              "mime": "image/jpeg",
+              "source_type": "base64",
+              "type": "image",
+              "width": 768
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "gemini-3.5-flash",
+      "page": 1,
+      "provider": "google",
+      "role": "transcription",
+      "structured": null
+    },
+    {
+      "attempt": 2,
+      "bound": {},
+      "kwargs": {
+        "max_output_tokens": 65536,
+        "response_mime_type": "application/json",
+        "response_schema": {
+          "digest": "d33c4482d7849940",
+          "properties": [
+            "no_transcribable_text",
+            "transcription",
+            "transcription_not_possible"
+          ],
+          "type": "object"
+        },
+        "thinking_config": {
+          "thinking_level": "high"
+        }
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 3690,
+            "digest": "ae9a319f0c2b4661"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "height": 1536,
+              "media_resolution": "MEDIA_RESOLUTION_HIGH",
+              "mime": "image/jpeg",
+              "source_type": "base64",
+              "type": "image",
+              "width": 768
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "gemini-3.5-flash",
+      "page": 1,
+      "provider": "google",
+      "role": "transcription",
+      "structured": null
+    },
+    {
+      "attempt": 1,
+      "bound": {},
+      "kwargs": {
+        "max_output_tokens": 65536,
+        "response_mime_type": "application/json",
+        "response_schema": {
+          "digest": "1b1d2f78f5fe9719",
+          "properties": [
+            "bullet_points",
+            "page_information",
+            "references"
+          ],
+          "title": "Article Page Summary",
+          "type": "object"
+        },
+        "thinking_config": {
+          "thinking_level": "high"
+        }
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 5932,
+            "digest": "f4ccaa329d6b6bba"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "chars": 544,
+              "digest": "7b77a0cc8a85c403",
+              "type": "text"
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "gemini-3.5-flash",
+      "page": 1,
+      "provider": "google",
+      "role": "summary",
+      "structured": null
+    },
+    {
+      "attempt": 1,
+      "bound": {},
+      "kwargs": {
+        "max_output_tokens": 65536,
+        "response_mime_type": "application/json",
+        "response_schema": {
+          "digest": "d33c4482d7849940",
+          "properties": [
+            "no_transcribable_text",
+            "transcription",
+            "transcription_not_possible"
+          ],
+          "type": "object"
+        },
+        "thinking_config": {
+          "thinking_level": "high"
+        }
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 3690,
+            "digest": "ae9a319f0c2b4661"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "height": 1536,
+              "media_resolution": "MEDIA_RESOLUTION_HIGH",
+              "mime": "image/jpeg",
+              "source_type": "base64",
+              "type": "image",
+              "width": 768
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "gemini-3.5-flash",
+      "page": 2,
+      "provider": "google",
+      "role": "transcription",
+      "structured": null
+    },
+    {
+      "attempt": 1,
+      "bound": {},
+      "kwargs": {
+        "max_output_tokens": 65536,
+        "response_mime_type": "application/json",
+        "response_schema": {
+          "digest": "1b1d2f78f5fe9719",
+          "properties": [
+            "bullet_points",
+            "page_information",
+            "references"
+          ],
+          "title": "Article Page Summary",
+          "type": "object"
+        },
+        "thinking_config": {
+          "thinking_level": "high"
+        }
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 5932,
+            "digest": "f4ccaa329d6b6bba"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "chars": 250,
+              "digest": "029878f966dd8a51",
+              "type": "text"
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "gemini-3.5-flash",
+      "page": 2,
+      "provider": "google",
+      "role": "summary",
+      "structured": null
+    },
+    {
+      "attempt": 2,
+      "bound": {},
+      "kwargs": {
+        "max_output_tokens": 65536,
+        "response_mime_type": "application/json",
+        "response_schema": {
+          "digest": "1b1d2f78f5fe9719",
+          "properties": [
+            "bullet_points",
+            "page_information",
+            "references"
+          ],
+          "title": "Article Page Summary",
+          "type": "object"
+        },
+        "thinking_config": {
+          "thinking_level": "high"
+        }
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 5932,
+            "digest": "f4ccaa329d6b6bba"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "chars": 250,
+              "digest": "029878f966dd8a51",
+              "type": "text"
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "gemini-3.5-flash",
+      "page": 2,
+      "provider": "google",
+      "role": "summary",
+      "structured": null
+    }
+  ],
+  "models": [
+    {
+      "constructor": "ChatGoogleGenerativeAI",
+      "kwargs": {
+        "client_args": {
+          "event_hooks": {
+            "response": [
+              "<function>"
+            ]
+          },
+          "transport": "<EitherTransport>",
+          "verify": "<SSLContext>"
+        },
+        "google_api_key": "<env:GOOGLE_API_KEY>",
+        "max_retries": 0,
+        "model": "gemini-3.5-flash",
+        "timeout": 900
+      },
+      "role": "summary"
+    },
+    {
+      "constructor": "ChatGoogleGenerativeAI",
+      "kwargs": {
+        "client_args": {
+          "event_hooks": {
+            "response": [
+              "<function>"
+            ]
+          },
+          "transport": "<EitherTransport>",
+          "verify": "<SSLContext>"
+        },
+        "google_api_key": "<env:GOOGLE_API_KEY>",
+        "max_retries": 0,
+        "model": "gemini-3.5-flash",
+        "timeout": 900
+      },
+      "role": "transcription"
+    }
+  ],
+  "openalex": []
+}

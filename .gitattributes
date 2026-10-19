@@ -1,0 +1,14 @@
+# Line-ending policy: LF in the repository and the working tree for text
+# files, so Git stops emitting CRLF conversion warnings.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.pdf binary
+*.xlsx binary
+*.xls binary
+*.zip binary
+*.duckdb binary
+*.parquet binary
+*.dta binary
