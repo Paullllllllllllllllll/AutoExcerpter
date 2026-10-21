@@ -12,7 +12,7 @@ spread as two pages, follow from the checked flags.
 The key algorithm is per-section anchor-based adjustment:
 1. Group pages by section type (content, preface, abstract, appendix, etc.)
 2. For each section, find the longest consecutive sequence of model-detected page
-   numbers
+   numbers of one number type
 3. Use that sequence as the anchor and adjust all pages in that section accordingly;
    a section with several anchor runs (runs of at least two pages with one offset
    and one number type, as in an excerpt or a PDF that skips or repeats pages)
@@ -373,6 +373,9 @@ class PageNumberProcessor:
         """
         Find the longest consecutive sequence of page numbers in document order.
 
+        A sequence holds one number type, so the anchor it yields carries the
+        type of the numbering it spans.
+
         Args:
             summaries_with_pages: List of summary wrappers with page number info.
 
@@ -391,13 +394,15 @@ class PageNumberProcessor:
                 continue
 
             # Page number and virtual position both advance by the previous
-            # item's span (2 for a spread, 1 for a single page).
+            # item's span (2 for a spread, 1 for a single page), within one
+            # number type: a roman i before arabic 2 starts no arabic run.
             prev = current_sequence[-1]
             prev_span = prev.get("span", 1)
             is_consecutive = (
                 item["model_page_number_int"]
                 == prev["model_page_number_int"] + prev_span
                 and item["virtual_pos"] == prev["virtual_pos"] + prev_span
+                and item.get("page_number_type") == prev.get("page_number_type")
             )
             if is_consecutive:
                 current_sequence.append(item)

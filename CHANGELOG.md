@@ -1,5 +1,11 @@
 # Changelog
 
+- **v1.1.1** (21 October 2026) -- The longest run of consecutive page numbers
+  that anchors a section now holds numbers of one type only. A chapter opening
+  read as roman i before arabic 2, 3 and onward no longer joins the arabic run
+  and makes the anchor roman, which rendered the whole body of a book in roman
+  numerals; roman front matter stays roman and arabic content stays arabic.
+
 - **v1.1.0** (21 October 2026) -- Every page of the transcription file now opens with
   `<page_break pdf="N"/>` (`image="N"` for image folders), so a page is the
   block from its marker to the next; the model's `<page_number>` tags stay where

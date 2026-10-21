@@ -650,6 +650,37 @@ class TestAdjustAndSortPageNumbers:
             assert page_info["page_number_type"] == "arabic"
             assert page_info["page_number_integer"] == i - 2  # 1, 2, 3
 
+    def test_roman_chapter_opening_does_not_anchor_arabic_run(
+        self, processor: PageNumberProcessor
+    ) -> None:
+        """A content page read as roman i before arabic 2, 3, ... stays arabic."""
+        summary_results = [
+            self._create_summary_result(0, 7, "roman", ["preface"]),
+            self._create_summary_result(1, 8, "roman", ["preface"]),
+            self._create_summary_result(2, 1, "roman", ["content"]),
+            self._create_summary_result(3, 2, "arabic", ["content"]),
+            self._create_summary_result(4, 3, "arabic", ["content"]),
+            self._create_summary_result(5, 4, "arabic", ["content"]),
+        ]
+
+        result = processor.adjust_and_sort_page_numbers(summary_results)
+
+        got = [
+            (
+                r["page_information"]["page_number_integer"],
+                r["page_information"]["page_number_type"],
+            )
+            for r in result
+        ]
+        assert got == [
+            (7, "roman"),
+            (8, "roman"),
+            (1, "arabic"),
+            (2, "arabic"),
+            (3, "arabic"),
+            (4, "arabic"),
+        ]
+
     def test_unnumbered_pages_stay_unnumbered(
         self, processor: PageNumberProcessor
     ) -> None:
