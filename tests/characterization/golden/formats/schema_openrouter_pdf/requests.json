@@ -22,8 +22,8 @@
         {
           "blocks": [
             {
-              "chars": 3690,
-              "digest": "ae9a319f0c2b4661",
+              "chars": 3859,
+              "digest": "dc7d9d66708e7330",
               "type": "text"
             }
           ],
@@ -49,7 +49,7 @@
         "include_raw": true,
         "method": "function_calling",
         "schema": {
-          "digest": "3c34af82f5571a3c",
+          "digest": "baca74255e044281",
           "properties": [
             "no_transcribable_text",
             "transcription",
@@ -143,8 +143,8 @@
         {
           "blocks": [
             {
-              "chars": 3690,
-              "digest": "ae9a319f0c2b4661",
+              "chars": 3859,
+              "digest": "dc7d9d66708e7330",
               "type": "text"
             }
           ],
@@ -170,7 +170,7 @@
         "include_raw": true,
         "method": "function_calling",
         "schema": {
-          "digest": "3c34af82f5571a3c",
+          "digest": "baca74255e044281",
           "properties": [
             "no_transcribable_text",
             "transcription",
@@ -264,8 +264,8 @@
         {
           "blocks": [
             {
-              "chars": 3690,
-              "digest": "ae9a319f0c2b4661",
+              "chars": 3859,
+              "digest": "dc7d9d66708e7330",
               "type": "text"
             }
           ],
@@ -291,7 +291,7 @@
         "include_raw": true,
         "method": "function_calling",
         "schema": {
-          "digest": "3c34af82f5571a3c",
+          "digest": "baca74255e044281",
           "properties": [
             "no_transcribable_text",
             "transcription",

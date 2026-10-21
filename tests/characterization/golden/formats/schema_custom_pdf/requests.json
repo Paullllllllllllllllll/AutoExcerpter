@@ -6,7 +6,7 @@
       "kwargs": {
         "response_format": {
           "json_schema": {
-            "digest": "ffd97955088fb2ce",
+            "digest": "f95b72b904d743fe",
             "name": "markdown_transcription_schema",
             "properties": [
               "no_transcribable_text",
@@ -22,8 +22,8 @@
       "messages": [
         {
           "text": {
-            "chars": 3690,
-            "digest": "ae9a319f0c2b4661"
+            "chars": 3859,
+            "digest": "dc7d9d66708e7330"
           },
           "type": "system"
         },
@@ -95,7 +95,7 @@
       "kwargs": {
         "response_format": {
           "json_schema": {
-            "digest": "ffd97955088fb2ce",
+            "digest": "f95b72b904d743fe",
             "name": "markdown_transcription_schema",
             "properties": [
               "no_transcribable_text",
@@ -111,8 +111,8 @@
       "messages": [
         {
           "text": {
-            "chars": 3690,
-            "digest": "ae9a319f0c2b4661"
+            "chars": 3859,
+            "digest": "dc7d9d66708e7330"
           },
           "type": "system"
         },
@@ -184,7 +184,7 @@
       "kwargs": {
         "response_format": {
           "json_schema": {
-            "digest": "ffd97955088fb2ce",
+            "digest": "f95b72b904d743fe",
             "name": "markdown_transcription_schema",
             "properties": [
               "no_transcribable_text",
@@ -200,8 +200,8 @@
       "messages": [
         {
           "text": {
-            "chars": 3690,
-            "digest": "ae9a319f0c2b4661"
+            "chars": 3859,
+            "digest": "dc7d9d66708e7330"
           },
           "type": "system"
         },

@@ -7,7 +7,7 @@
         "max_output_tokens": 65536,
         "response_mime_type": "application/json",
         "response_schema": {
-          "digest": "d33c4482d7849940",
+          "digest": "94556fec36ffc290",
           "properties": [
             "no_transcribable_text",
             "transcription",
@@ -20,8 +20,8 @@
       "messages": [
         {
           "text": {
-            "chars": 3690,
-            "digest": "ae9a319f0c2b4661"
+            "chars": 3859,
+            "digest": "dc7d9d66708e7330"
           },
           "type": "system"
         },
@@ -94,7 +94,7 @@
         "max_output_tokens": 65536,
         "response_mime_type": "application/json",
         "response_schema": {
-          "digest": "d33c4482d7849940",
+          "digest": "94556fec36ffc290",
           "properties": [
             "no_transcribable_text",
             "transcription",
@@ -107,8 +107,8 @@
       "messages": [
         {
           "text": {
-            "chars": 3690,
-            "digest": "ae9a319f0c2b4661"
+            "chars": 3859,
+            "digest": "dc7d9d66708e7330"
           },
           "type": "system"
         },
@@ -181,7 +181,7 @@
         "max_output_tokens": 65536,
         "response_mime_type": "application/json",
         "response_schema": {
-          "digest": "d33c4482d7849940",
+          "digest": "94556fec36ffc290",
           "properties": [
             "no_transcribable_text",
             "transcription",
@@ -194,8 +194,8 @@
       "messages": [
         {
           "text": {
-            "chars": 3690,
-            "digest": "ae9a319f0c2b4661"
+            "chars": 3859,
+            "digest": "dc7d9d66708e7330"
           },
           "type": "system"
         },

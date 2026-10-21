@@ -124,6 +124,39 @@ def test_the_transcription_header_shows_the_document_time(stored: ItemPaths) -> 
     assert text.endswith("Text of page 2.\n")
 
 
+def test_a_transcription_only_document_opens_every_page_with_a_break(
+    tmp_path: Path,
+    make_pdf: MakePdf,
+    monkeypatch: pytest.MonkeyPatch,
+    mock_image_processing: dict[str, Any],
+) -> None:
+    """Without summaries each page still opens with its break; tags stay inline."""
+
+    def transcribe(payload: Any) -> dict[str, Any]:
+        page = _transcribe(payload)
+        page["transcription"] += f"\n<page_number>{payload.number + 40}</page_number>"
+        return page
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    transcriber = MagicMock()
+    transcriber.transcribe_payload = AsyncMock(side_effect=transcribe)
+    monkeypatch.setattr(
+        managers_module, "TranscriptionManager", MagicMock(return_value=transcriber)
+    )
+    out = tmp_path / "out"
+    spec = make_spec(
+        make_pdf("doc.pdf", num_pages=2), output=out, openalex=False, summarize=False
+    )
+    assert asyncio.run(core.run(core.plan(spec, make_settings()))).complete == 1
+
+    text = ItemPaths.for_item("doc", out).transcription.read_text(encoding="utf-8")
+
+    assert text.split("\n\n", 1)[1] == (
+        '<page_break pdf="1"/>\nText of page 1.\n<page_number>41</page_number>\n\n'
+        '<page_break pdf="2"/>\nText of page 2.\n<page_number>42</page_number>\n'
+    )
+
+
 def test_the_header_time_is_the_document_time_in_utc(stored: ItemPaths) -> None:
     connection = sqlite3.connect(stored.output_dir / DATABASE_NAME)
     with connection:

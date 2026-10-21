@@ -1479,3 +1479,136 @@ class TestPageTypesDebris:
         )
 
         assert page_types == ["appendix", "content"]
+
+
+_Scan = tuple[int | None, str, int | None, str]
+
+
+class TestSpreadChecksAndMisreadRuns:
+    """Spread flags checked against the neighbors; misread runs anchor nothing.
+
+    A scan is (number, type, model end or None, section); a model end marks
+    the scan as a spread.
+    """
+
+    @staticmethod
+    def _numbers(scans: list[_Scan]) -> list[tuple[int | None, int | None]]:
+        results = [
+            {
+                "original_input_order_index": idx,
+                "page_information": {
+                    "page_number_integer": number,
+                    "page_number_type": ptype if number is not None else "none",
+                    "is_two_page_spread": end is not None,
+                    "page_number_integer_end": end,
+                    "page_types": [section],
+                },
+            }
+            for idx, (number, ptype, end, section) in enumerate(scans)
+        ]
+        adjusted = PageNumberProcessor().adjust_and_sort_page_numbers(results)
+        return [
+            (
+                r["page_information"]["page_number_integer"],
+                r["page_information"]["page_number_integer_end"],
+            )
+            for r in adjusted
+        ]
+
+    @staticmethod
+    def _pages(*numbers: int | None) -> list[_Scan]:
+        return [(n, "arabic", None, "content") for n in numbers]
+
+    def test_a_long_repeat_keeps_its_numbers_when_the_offset_returns(self) -> None:
+        """Pages 12-16 repeat, then two pages are missing: 10-13, 12-16, 19-20."""
+        numbers = [10, 11, 12, 13, 12, 13, 14, 15, 16, 19, 20]
+        assert self._numbers(self._pages(*numbers)) == [(n, None) for n in numbers]
+
+    def test_repeated_and_unprinted_pages_keep_their_numbers(self) -> None:
+        """A PDF repeats pp. 274-275; pp. 279-281 print no number."""
+        numbers: list[int | None] = [270, 271, 272, 273, 274, 275, 274, 275]
+        numbers += [276, 277, 278, None, None, None, 282, 283]
+        assert self._numbers(self._pages(*numbers)) == [(n, None) for n in numbers]
+
+    def test_an_unnumbered_table_leaf_keeps_both_runs(self) -> None:
+        numbers = [141, 142, 143, None, 143, 144, 145]
+        assert self._numbers(self._pages(*numbers)) == [(n, None) for n in numbers]
+
+    def test_genuine_spreads_stay_spreads(self) -> None:
+        """Spreads of a book scanned open, one read as page 28 alone."""
+        scans: list[_Scan] = [
+            (22, "arabic", 23, "content"),
+            (24, "arabic", 25, "content"),
+            (26, "arabic", 27, "content"),
+            (28, "arabic", None, "content"),
+            (30, "arabic", 31, "content"),
+            (32, "arabic", 33, "content"),
+        ]
+        assert self._numbers(scans) == [
+            (22, 23),
+            (24, 25),
+            (26, 27),
+            (28, None),
+            (30, 31),
+            (32, 33),
+        ]
+
+    def test_a_repeated_spread_stays_two_spreads(self) -> None:
+        """A PDF scans the spread 12-13 twice."""
+        scans: list[_Scan] = [
+            (10, "arabic", 11, "content"),
+            (12, "arabic", 13, "content"),
+            (12, "arabic", 13, "content"),
+            (14, "arabic", 15, "content"),
+        ]
+        assert self._numbers(scans) == [(10, 11), (12, 13), (12, 13), (14, 15)]
+
+    def test_a_second_pagination_is_not_a_spread(self) -> None:
+        """Each page carries the volume's folio and a reprinted source's page."""
+        scans: list[_Scan] = [
+            (16, "arabic", 133, "content"),
+            (17, "arabic", 134, "content"),
+            (18, "arabic", 135, "content"),
+            (19, "arabic", None, "content"),
+            (20, "arabic", 213, "content"),
+        ]
+        assert self._numbers(scans) == [(n, None) for n in range(16, 21)]
+
+    def test_a_signature_mark_before_the_folio_gives_way_to_it(self) -> None:
+        scans = self._pages(753, 754, 755, 756)
+        scans += [(15, "arabic", 757, "content")] + self._pages(758, 759)
+        assert self._numbers(scans) == [(n, None) for n in range(753, 760)]
+
+    def test_section_numbers_beside_roman_folios_take_the_folios(self) -> None:
+        """Section numbers 4 and 5 come back as spreads ending in the folio."""
+        scans: list[_Scan] = [
+            (15, "roman", None, "preface"),
+            (4, "arabic", 16, "content"),
+            (5, "arabic", 17, "content"),
+            (18, "roman", None, "content"),
+            (19, "roman", None, "preface"),
+            (7, "arabic", 20, "content"),
+        ]
+        assert self._numbers(scans) == [(n, None) for n in range(15, 21)]
+
+    def test_a_false_run_of_section_numbers_takes_the_surrounding_folios(
+        self,
+    ) -> None:
+        scans: list[_Scan] = [
+            (15, "roman", None, "preface"),
+            (4, "arabic", None, "content"),
+            (5, "arabic", None, "content"),
+            (18, "roman", None, "content"),
+            (19, "roman", None, "preface"),
+            (21, "roman", None, "content"),
+        ]
+        assert self._numbers(scans) == [(n, None) for n in (15, 16, 17, 18, 19, 21)]
+
+    def test_roman_then_arabic_short_runs_are_not_misreads(self) -> None:
+        scans: list[_Scan] = [
+            (8, "roman", None, "preface"),
+            (9, "roman", None, "preface"),
+            (1, "arabic", None, "content"),
+            (2, "arabic", None, "content"),
+        ]
+        assert self._numbers(scans) == [(8, None), (9, None), (1, None), (2, None)]

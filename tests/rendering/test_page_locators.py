@@ -1,7 +1,7 @@
 """Pages without a printed number stay locatable, and no number is invented.
 
-- The ``.txt`` carries ``<page_break pdf="N"/>`` (``image="N"``) before a page
-  without a ``<page_number>`` tag; numbered pages are written unchanged.
+- The ``.txt`` carries ``<page_break pdf="N"/>`` (``image="N"``) before every
+  page; the page text keeps its ``<page_number>`` tags unchanged.
 - A number inferred between two numbered neighbours is bracketed: ``Page [6]``
   in headings, ``p. [6]`` in citations.
 - Unnumbered pages are headed and cited by scan position (``PDF p. N``).
@@ -93,12 +93,13 @@ class TestTextPageBreaks:
             },
         ]
         assert _write_txt(tmp_path, results) == (
-            "<page_number>5</page_number>\nFirst page.\n"
+            '<page_break pdf="1"/>\n<page_number>5</page_number>\nFirst page.\n'
             '<page_break pdf="2"/>\nUntagged plate.\n'
-            "Third page.\n<page_number>7</page_number>"
+            '<page_break pdf="3"/>\nThird page.\n<page_number>7</page_number>'
         )
 
-    def test_numbered_pages_are_byte_identical(self, tmp_path: Path) -> None:
+    def test_numbered_pages_keep_their_tags_in_place(self, tmp_path: Path) -> None:
+        """A header tag and a footer tag both stay inside their page's block."""
         results = [
             {"original_input_order_index": i, "page_index": i, "transcription": t}
             for i, t in enumerate(
@@ -106,7 +107,8 @@ class TestTextPageBreaks:
             )
         ]
         assert _write_txt(tmp_path, results) == (
-            "<page_number>1</page_number>\nA\nB <page_number>2</page_number>"
+            '<page_break pdf="1"/>\n<page_number>1</page_number>\nA\n'
+            '<page_break pdf="2"/>\nB <page_number>2</page_number>'
         )
 
     def test_image_folder_uses_image_attribute(self, tmp_path: Path) -> None:
@@ -176,12 +178,14 @@ class TestInferredPage:
         ]  # fmt: skip
         assert '\n<page_break pdf="2"/>\nB\n' in _write_txt(tmp_path, results)
 
-    def test_unusable_tag_still_gets_marker(self, tmp_path: Path) -> None:
+    def test_unusable_tag_is_kept_after_its_marker(self, tmp_path: Path) -> None:
         results = [
             {"original_input_order_index": 0, "page_index": 0,
              "transcription": "A <page_number>?</page_number>"},
         ]  # fmt: skip
-        assert _write_txt(tmp_path, results).startswith('<page_break pdf="1"/>\n')
+        assert _write_txt(tmp_path, results) == (
+            '<page_break pdf="1"/>\nA <page_number>?</page_number>'
+        )
 
     def test_flag_cleared_when_page_ends_unnumbered(self) -> None:
         result = _summary(0, 0, "arabic")

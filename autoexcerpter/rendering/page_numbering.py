@@ -3,14 +3,25 @@
 This module handles page number extraction, inference, and adjustment for
 documents with mixed Roman numeral (preface) and Arabic (main text) numbering.
 
+A model-flagged two-page spread is first checked against the printed numbers
+of its physical neighbors and becomes a single page when they do not support
+it; such a page takes the model's second number instead of its first when only
+the second continues the previous page. The virtual positions, which count a
+spread as two pages, follow from the checked flags.
+
 The key algorithm is per-section anchor-based adjustment:
 1. Group pages by section type (content, preface, abstract, appendix, etc.)
 2. For each section, find the longest consecutive sequence of model-detected page
    numbers
 3. Use that sequence as the anchor and adjust all pages in that section accordingly;
    a section with several anchor runs (runs of at least two pages with one offset
-   and one number type, as in an excerpt that skips pages) resolves each page
-   against its own run, else the nearest preceding run
+   and one number type, as in an excerpt or a PDF that skips or repeats pages)
+   resolves each page against its own run, else the nearest preceding run. A
+   run that returns to an earlier run's offset drops the short runs between
+   as misreads. A short run whose offset occurs nowhere else in the block,
+   between two pages of another numbering (section numbers between folios),
+   is a misread too: it anchors nothing and its pages are numbered from the
+   surrounding numbering
 4. Conservatively infer page numbers for isolated unnumbered pages between numbered
    pages
 
@@ -31,9 +42,26 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 MIN_SEQUENCE_LENGTH_FOR_ANCHOR = 2
+# A run of this many pages is real numbering even inside another numbering
+# (a PDF that skips or repeats pages), not a stretch of misreads.
+MIN_ENCLOSED_RUN_TO_KEEP = 4
 
 _Anchor = tuple[int | None, int | None, str | None]
 _NO_ANCHOR: _Anchor = (None, None, None)
+_Key = tuple[int, str]
+
+
+def _key(page: dict[str, Any]) -> _Key:
+    """Return a numbered page's offset (number minus virtual position) and type."""
+    offset: int = page["model_page_number_int"] - page["virtual_pos"]
+    return offset, page["page_number_type"]
+
+
+def _is_numbered(page: dict[str, Any]) -> bool:
+    return (
+        page["model_page_number_int"] is not None
+        and not page["is_genuinely_unnumbered"]
+    )
 
 
 def _coerce_page_number(value: Any) -> int | None:
@@ -97,6 +125,164 @@ def _source_blocks(parsed: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
         else:
             blocks.append([p])
     return blocks
+
+
+def _adjacent_numbered(
+    pages: list[dict[str, Any]], i: int, step: int
+) -> dict[str, Any] | None:
+    """Return the physically adjacent scan of ``pages[i]`` when it is numbered."""
+    j = i + step
+    if not 0 <= j < len(pages):
+        return None
+    other = pages[j]
+    if (
+        other["original_input_order_index"]
+        != pages[i]["original_input_order_index"] + step
+        or other["is_genuinely_unnumbered"]
+    ):
+        return None
+    return other
+
+
+def _span_from_neighbors(pages: list[dict[str, Any]], i: int) -> int | None:
+    """Return the span of scan ``i`` that its immediate neighbors establish.
+
+    The next scan's number is compared with this scan's start and with the
+    previous scan's number plus that scan's span: an advance of one makes the
+    scan a single page, an advance of two a spread. None when the neighbors
+    are missing, of another number type or discontinuous.
+    """
+    page = pages[i]
+    nxt = _adjacent_numbered(pages, i, 1)
+    if nxt is None:
+        return None
+    prev = _adjacent_numbered(pages, i, -1)
+    steps: set[int] = set()
+    if (
+        not page["is_genuinely_unnumbered"]
+        and page["page_number_type"] == nxt["page_number_type"]
+    ):
+        steps.add(nxt["model_page_number_int"] - page["model_page_number_int"])
+    if prev is not None and prev["page_number_type"] == nxt["page_number_type"]:
+        steps.add(
+            nxt["model_page_number_int"] - prev["model_page_number_int"] - prev["span"]
+        )
+    if 1 in steps:
+        return 1
+    if 2 in steps:
+        return 2
+    return None
+
+
+def _end_and_next_agree(pages: list[dict[str, Any]], i: int) -> bool:
+    """Whether a spread's own end and its next numbered neighbor support it.
+
+    The model's end must be the start plus one, and the next numbered scan
+    of the block, if there is one, must not hold start + 1. A next number at
+    or before the start (a repeated or misread scan) says nothing against it.
+    """
+    page = pages[i]
+    start: int = page["model_page_number_int"]
+    if page["is_genuinely_unnumbered"] or page["raw_page_number_end"] != start + 1:
+        return False
+    index = page["original_input_order_index"]
+    for distance, later in enumerate(pages[i + 1 :], 1):
+        if later["original_input_order_index"] != index + distance:
+            break
+        if later["is_genuinely_unnumbered"]:
+            continue
+        if later["page_number_type"] != page["page_number_type"]:
+            break
+        number: int = later["model_page_number_int"]
+        return number != start + 1
+    return True
+
+
+def _take_continuing_end(pages: list[dict[str, Any]], i: int) -> None:
+    """Give a rejected spread the model's end number when only it continues.
+
+    A page that holds a section or signature number beside its folio comes
+    back as a spread from the one number to the other. When the end, and not
+    the start, follows the previous scan's number, the end is the folio.
+    """
+    page = pages[i]
+    end = page["raw_page_number_end"]
+    prev = _adjacent_numbered(pages, i, -1)
+    if page["is_genuinely_unnumbered"] or end is None or prev is None:
+        return
+    follows = prev["model_page_number_int"] + prev["span"]
+    if end == follows and page["model_page_number_int"] != follows:
+        page["model_page_number_int"] = end
+        page["page_number_type"] = prev["page_number_type"]
+
+
+def _validate_spreads(pages: list[dict[str, Any]]) -> None:
+    """Keep a model-flagged spread only where the page numbers support it.
+
+    *pages* are in scan order. The immediate neighbors decide when they
+    establish the scan's span (:func:`_span_from_neighbors`); otherwise the
+    flag stands only when the model's end and the next numbered neighbor
+    agree (:func:`_end_and_next_agree`). A rejected spread, such as a page
+    with a running header number beside its folio, becomes a single page
+    (numbered by :func:`_take_continuing_end`).
+    """
+    for i, page in enumerate(pages):
+        if not page["is_two_page_spread"]:
+            continue
+        span = _span_from_neighbors(pages, i)
+        keep = _end_and_next_agree(pages, i) if span is None else span == 2
+        if not keep:
+            logger.debug(
+                "Treating the spread flag of the page at index %s as a single page",
+                page["original_input_order_index"],
+            )
+            page["is_two_page_spread"] = False
+            page["page_number_integer_end"] = None
+            page["span"] = 1
+            _take_continuing_end(pages, i)
+
+
+def _mark_enclosed_runs(block: list[dict[str, Any]]) -> None:
+    """Mark short runs that lie inside another numbering of *block* as misreads.
+
+    A run (consecutive numbered pages of one offset and type) shorter than
+    MIN_ENCLOSED_RUN_TO_KEEP is enclosed when its offset and type occur
+    nowhere else in the block, while the numbered pages just before and just
+    after it share an offset and type that more pages hold: section numbers
+    or a second pagination between folios. Each of its pages gets
+    ``enclosed_by``, the anchor of that numbering, and no run of misreads
+    anchors a section. A real skip or repeat never returns to the offset
+    before it, so its runs stay.
+    """
+    numbered = [p for p in block if _is_numbered(p)]
+    support: dict[_Key, int] = {}
+    for p in numbered:
+        support[_key(p)] = support.get(_key(p), 0) + 1
+    runs: list[list[dict[str, Any]]] = []
+    for p in numbered:
+        if runs and _key(runs[-1][0]) == _key(p):
+            runs[-1].append(p)
+        else:
+            runs.append([p])
+    position = 0
+    for run in runs:
+        start, position = position, position + len(run)
+        if not MIN_SEQUENCE_LENGTH_FOR_ANCHOR <= len(run) < MIN_ENCLOSED_RUN_TO_KEEP:
+            continue
+        if start == 0 or position == len(numbered):
+            continue
+        before, after = numbered[start - 1], numbered[position]
+        key = _key(before)
+        own = support[_key(run[0])]
+        if key != _key(after) or own > len(run) or support[key] <= own:
+            continue
+        anchor: _Anchor = (
+            before["model_page_number_int"],
+            before["virtual_pos"],
+            before["page_number_type"],
+        )
+        for p in run:
+            p["enclosed_by"] = anchor
 
 
 class PageNumberProcessor:
@@ -444,10 +630,7 @@ class PageNumberProcessor:
             return _NO_ANCHOR
 
         numbered_pages = [
-            p
-            for p in section_pages
-            if p["model_page_number_int"] is not None
-            and not p["is_genuinely_unnumbered"]
+            p for p in section_pages if _is_numbered(p) and "enclosed_by" not in p
         ]
 
         if not numbered_pages:
@@ -472,48 +655,44 @@ class PageNumberProcessor:
 
         A run is a stretch of pages with one offset (model number minus
         virtual position) and one number type; runs shorter than
-        MIN_SEQUENCE_LENGTH_FOR_ANCHOR are dropped, and a run that returns to
-        an earlier run's offset and type merges with it, dropping the runs
-        between.
+        MIN_SEQUENCE_LENGTH_FOR_ANCHOR are dropped. A run that returns to the
+        latest earlier run's offset and type merges with it, dropping the
+        runs between as misreads, unless one of them holds at least
+        MIN_ENCLOSED_RUN_TO_KEEP pages: a PDF that skips or repeats pages can
+        return to an earlier offset after a long correct run, which keeps its
+        own anchor. Misread runs that the neighboring pages enclose are left
+        out by the caller (``enclosed_by``).
         """
         runs: list[list[dict[str, Any]]] = []
         for p in numbered_pages:
-            key = (p["model_page_number_int"] - p["virtual_pos"], p["page_number_type"])
-            last = runs[-1] if runs else None
-            if last is not None and key == (
-                last[0]["model_page_number_int"] - last[0]["virtual_pos"],
-                last[0]["page_number_type"],
-            ):
-                last.append(p)
+            if runs and _key(runs[-1][0]) == _key(p):
+                runs[-1].append(p)
             else:
                 runs.append([p])
-        # An excerpt never returns to an earlier offset: a run that does
-        # merges with that earlier run, and the runs between were misreads.
         anchor_runs: list[list[dict[str, Any]]] = []
+        # The longest unbroken stretch of each anchor run; merged misreads
+        # do not add up to a long run.
+        longest: list[int] = []
         for run in runs:
             if len(run) < MIN_SEQUENCE_LENGTH_FOR_ANCHOR:
                 continue
-            key = (
-                run[0]["model_page_number_int"] - run[0]["virtual_pos"],
-                run[0]["page_number_type"],
-            )
             earlier = next(
                 (
                     i
-                    for i, kept in enumerate(anchor_runs)
-                    if key
-                    == (
-                        kept[0]["model_page_number_int"] - kept[0]["virtual_pos"],
-                        kept[0]["page_number_type"],
-                    )
+                    for i in range(len(anchor_runs) - 1, -1, -1)
+                    if _key(anchor_runs[i][0]) == _key(run[0])
                 ),
                 None,
             )
-            if earlier is None:
+            if earlier is None or any(
+                length >= MIN_ENCLOSED_RUN_TO_KEEP for length in longest[earlier + 1 :]
+            ):
                 anchor_runs.append(run)
+                longest.append(len(run))
             else:
-                del anchor_runs[earlier + 1 :]
+                del anchor_runs[earlier + 1 :], longest[earlier + 1 :]
                 anchor_runs[earlier].extend(run)
+                longest[earlier] = max(longest[earlier], len(run))
         return anchor_runs
 
     def _page_anchors(self, section_pages: list[dict[str, Any]]) -> dict[int, _Anchor]:
@@ -525,10 +704,7 @@ class PageNumberProcessor:
         first), so a real discontinuity in an excerpt is kept.
         """
         numbered = [
-            p
-            for p in section_pages
-            if p["model_page_number_int"] is not None
-            and not p["is_genuinely_unnumbered"]
+            p for p in section_pages if _is_numbered(p) and "enclosed_by" not in p
         ]
         runs = self._anchor_runs(numbered)
         if len(runs) <= 1:
@@ -568,6 +744,12 @@ class PageNumberProcessor:
                 page_num_end,
             ) = self.parse_page_information(r)
             primary_section = self._get_primary_section_type(page_types)
+            # The model's own end, before the normalization above, is
+            # evidence when the spread flag is validated.
+            info = r.get("page_information")
+            raw_end = _coerce_page_number(
+                info.get("page_number_integer_end") if isinstance(info, dict) else None
+            )
             parsed_summaries.append(
                 {
                     "original_input_order_index": r["original_input_order_index"],
@@ -579,11 +761,13 @@ class PageNumberProcessor:
                     "is_genuinely_unnumbered": is_unnumbered,
                     "is_two_page_spread": is_spread,
                     "page_number_integer_end": page_num_end,
+                    "raw_page_number_end": raw_end,
                     "span": 2 if is_spread else 1,
                 }
             )
 
         parsed_summaries.sort(key=lambda x: x["original_input_order_index"])
+        _validate_spreads(parsed_summaries)
 
         # The virtual position is the summed span of all earlier images, so
         # anchor offsets stay aligned across spreads.
@@ -710,6 +894,7 @@ class PageNumberProcessor:
 
     def _number_block(self, parsed_summaries: list[dict[str, Any]]) -> None:
         """Anchor, infer and write the page numbers of one source block."""
+        _mark_enclosed_runs(parsed_summaries)
         section_anchors = self._find_section_anchors(parsed_summaries)
         page_anchors: dict[int, _Anchor] = {}
         for section in section_anchors:
@@ -729,8 +914,10 @@ class PageNumberProcessor:
             )
 
         for p in parsed_summaries:
-            anchor = page_anchors.get(id(p)) or section_anchors.get(
-                p["primary_section"], _NO_ANCHOR
+            anchor = (
+                p.get("enclosed_by")
+                or page_anchors.get(id(p))
+                or section_anchors.get(p["primary_section"], _NO_ANCHOR)
             )
             self._apply_page_numbering(p, anchor)
 

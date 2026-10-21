@@ -6,6 +6,7 @@
 # Successfully transcribed: 3
 # Failed items: 0
 
+<page_break image="1"/>
 # Preface
 
 This volume brings together **new research** on the *material
@@ -16,6 +17,7 @@ prices, wages and diets changed between 1500 and 1800.[^1]
 
 <page_number>xi</page_number>
 
+<page_break image="2"/>
 ## The Price of Bread
 
 Bread prices rose faster than wages after 1550, and the economic burden fell on urban households.[^2] The real wage index

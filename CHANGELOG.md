@@ -1,5 +1,16 @@
 # Changelog
 
+- **v1.1.0** (21 October 2026) -- Every page of the transcription file now opens with
+  `<page_break pdf="N"/>` (`image="N"` for image folders), so a page is the
+  block from its marker to the next; the model's `<page_number>` tags stay where
+  the page prints them. The transcription prompt tags only the page's own folio,
+  never a chapter, section, figure, table, note or signature number, nor a second
+  pagination. The page numbering checks each two-page spread flag against the
+  neighboring scans and reads an unsupported one as a single page, numbered from
+  the model's second number when only that number continues the previous page. A
+  short run of numbers inside another numbering of the block, such as section
+  numbers between folios, no longer anchors a section and takes the surrounding
+  numbering, while runs after a real skip or repeat keep their own anchors.
 - **v1.0.0** (19 October 2026) -- First release. The package `autoexcerpter`
   keeps its core free of terminal input and output: `run.py` holds the entry
   points `discover`, `plan` and `run`, which the command line (`cli/`) and the

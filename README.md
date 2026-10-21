@@ -1,4 +1,4 @@
-# AutoExcerpter v1.0.0
+# AutoExcerpter v1.1.0
 
 AutoExcerpter transcribes PDFs and folders of page images with vision-language
 models, summarizes each page and builds a consolidated bibliography whose entries
@@ -523,10 +523,12 @@ autoexcerpter.sqlite     the store; one database per output folder, always writt
 ```
 
 The transcription starts with a metadata header and holds the pages in scan
-order. A printed page number follows its page as `<page_number>12</page_number>`.
-A page without one is preceded by `<page_break pdf="N"/>` (`image="N"` for image
-folders), N being its 1-based position. A page-number tag glued to a word is a
-note marker and becomes a footnote reference (`things.[^10]`).
+order. Every page opens with `<page_break pdf="N"/>` (`image="N"` for image
+folders), N being its 1-based position, so a page is the block from its marker to
+the next. Its printed page number is the `<page_number>12</page_number>` tag
+inside that block, left where the page prints it, in the header or the footer. A
+page-number tag glued to a word is a note marker and becomes a footnote reference
+(`things.[^10]`).
 
 The summary files list the document structure, one section per content page
 headed by its printed page number (or `[No printed number; PDF p. N]`, with an
@@ -534,7 +536,10 @@ inferred number in brackets, `Page [6]`) and the consolidated references with
 their pages. Page numbers are checked per section (front matter, body,
 appendix) against runs of consecutive detected numbers
 (`rendering/page_numbering.py`): a misread number inside a run is corrected,
-while an excerpt that skips pages, say from 12 to 30, keeps both runs. The
+while an excerpt that skips pages, say from 12 to 30, keeps both runs. A short
+run inside another numbering, such as section numbers between folios, counts as
+misread, and a two-page spread that the neighboring numbers do not support is
+read as a single page. The
 Markdown file keeps LaTeX math as `$...$` and `$$...$$`; the Word file converts
 it to native Word equations (`rendering/equations.py`) and links references
 matched in OpenAlex.

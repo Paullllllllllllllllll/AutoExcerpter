@@ -23,12 +23,12 @@
   ],
   "prompts": {
     "batch-prompt-1": {
-      "chars": 3690,
-      "sha256": "ae9a319f0c2b4661"
+      "chars": 3859,
+      "sha256": "dc7d9d66708e7330"
     },
     "batch-prompt-2": {
-      "chars": 2582,
-      "sha256": "44add1472db1aa4b"
+      "chars": 2751,
+      "sha256": "c3a0e9b8ae41429e"
     },
     "batch-prompt-3": {
       "chars": 146,
@@ -89,7 +89,7 @@
                     }
                   ],
                   "description": {
-                    "chars": 2582,
+                    "chars": 2751,
                     "prompt": "batch-prompt-2"
                   }
                 },
@@ -118,7 +118,7 @@
               "type": "ephemeral"
             },
             "text": {
-              "chars": 3690,
+              "chars": 3859,
               "prompt": "batch-prompt-1"
             },
             "type": "text"
@@ -183,7 +183,7 @@
                     }
                   ],
                   "description": {
-                    "chars": 2582,
+                    "chars": 2751,
                     "prompt": "batch-prompt-2"
                   }
                 },
@@ -212,7 +212,7 @@
               "type": "ephemeral"
             },
             "text": {
-              "chars": 3690,
+              "chars": 3859,
               "prompt": "batch-prompt-1"
             },
             "type": "text"
@@ -277,7 +277,7 @@
                     }
                   ],
                   "description": {
-                    "chars": 2582,
+                    "chars": 2751,
                     "prompt": "batch-prompt-2"
                   }
                 },
@@ -306,7 +306,7 @@
               "type": "ephemeral"
             },
             "text": {
-              "chars": 3690,
+              "chars": 3859,
               "prompt": "batch-prompt-1"
             },
             "type": "text"

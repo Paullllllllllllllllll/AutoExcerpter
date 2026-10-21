@@ -6,13 +6,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from autoexcerpter.rendering.page_tags import printed_page_numbers
-
 
 def page_break_marker(
     result: dict[str, Any], item_type: str, fallback_index: int
 ) -> str:
-    """Return the ``<page_break .../>`` line for a page without a printed number.
+    """Return the ``<page_break .../>`` line that opens a page.
 
     The attribute is ``pdf`` only when the page has a real PDF page index;
     image-folder pages (and pages whose PDF index is unknown) use ``image``.
@@ -36,9 +34,12 @@ def transcription_text(
 ) -> str:
     """Return the transcription file: the header, then the pages in order.
 
-    *processed* is the time the header records; *metadata_notes* are extra
-    provenance lines of the header (a model change on resume, for example).
-    The text ends with exactly one newline.
+    Every page opens with its :func:`page_break_marker`, so a page is the
+    block from its marker to the next; the page text keeps the model's
+    ``<page_number>`` tags where they were printed. *processed* is the time
+    the header records; *metadata_notes* are extra provenance lines of the
+    header (a model change on resume, for example). The text ends with
+    exactly one newline.
     """
     successes = sum(1 for result in transcription_results if "error" not in result)
     failures = len(transcription_results) - successes
@@ -59,10 +60,7 @@ def transcription_text(
         )
         if not isinstance(transcription, str):
             transcription = str(transcription)
-        # A page without a printed number gets a positional marker so it
-        # stays locatable; numbered pages are written unchanged.
-        if not printed_page_numbers(transcription):
-            parts.append(page_break_marker(result, item_type, index))
+        parts.append(page_break_marker(result, item_type, index))
         parts.append(transcription)
         if index < len(transcription_results) - 1:
             parts.append("\n")

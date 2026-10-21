@@ -695,9 +695,8 @@ def retag_glued_page_numbers(text: str) -> str:
     """Rewrite page-number tags glued to a word as footnote references.
 
     ``things.<page_number>10</page_number>`` becomes ``things.[^10]``, the
-    transcription's footnote-reference format, so the marker neither passes
-    for a printed page number nor suppresses the page's ``<page_break>``
-    locator. Tags set apart by whitespace are left alone.
+    transcription's footnote-reference format, so the marker does not pass
+    for a printed page number. Tags set apart by whitespace are left alone.
     """
     return _GLUED_PAGE_TAG.sub(r"[^\1]", text)
 

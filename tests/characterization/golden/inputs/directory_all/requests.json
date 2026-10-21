@@ -11,7 +11,7 @@
         "service_tier": "default",
         "text": {
           "format": {
-            "digest": "70d0e417577650db",
+            "digest": "70c001ab084d2ded",
             "name": "markdown_transcription_schema",
             "properties": [
               "no_transcribable_text",
@@ -27,8 +27,8 @@
       "messages": [
         {
           "text": {
-            "chars": 3690,
-            "digest": "ae9a319f0c2b4661"
+            "chars": 3859,
+            "digest": "dc7d9d66708e7330"
           },
           "type": "system"
         },
@@ -62,7 +62,7 @@
         "service_tier": "default",
         "text": {
           "format": {
-            "digest": "70d0e417577650db",
+            "digest": "70c001ab084d2ded",
             "name": "markdown_transcription_schema",
             "properties": [
               "no_transcribable_text",
@@ -78,8 +78,8 @@
       "messages": [
         {
           "text": {
-            "chars": 3690,
-            "digest": "ae9a319f0c2b4661"
+            "chars": 3859,
+            "digest": "dc7d9d66708e7330"
           },
           "type": "system"
         },
@@ -113,7 +113,7 @@
         "service_tier": "default",
         "text": {
           "format": {
-            "digest": "70d0e417577650db",
+            "digest": "70c001ab084d2ded",
             "name": "markdown_transcription_schema",
             "properties": [
               "no_transcribable_text",
@@ -129,8 +129,8 @@
       "messages": [
         {
           "text": {
-            "chars": 3690,
-            "digest": "ae9a319f0c2b4661"
+            "chars": 3859,
+            "digest": "dc7d9d66708e7330"
           },
           "type": "system"
         },
@@ -311,7 +311,7 @@
         "service_tier": "default",
         "text": {
           "format": {
-            "digest": "70d0e417577650db",
+            "digest": "70c001ab084d2ded",
             "name": "markdown_transcription_schema",
             "properties": [
               "no_transcribable_text",
@@ -327,8 +327,8 @@
       "messages": [
         {
           "text": {
-            "chars": 3690,
-            "digest": "ae9a319f0c2b4661"
+            "chars": 3859,
+            "digest": "dc7d9d66708e7330"
           },
           "type": "system"
         },
@@ -362,7 +362,7 @@
         "service_tier": "default",
         "text": {
           "format": {
-            "digest": "70d0e417577650db",
+            "digest": "70c001ab084d2ded",
             "name": "markdown_transcription_schema",
             "properties": [
               "no_transcribable_text",
@@ -378,8 +378,8 @@
       "messages": [
         {
           "text": {
-            "chars": 3690,
-            "digest": "ae9a319f0c2b4661"
+            "chars": 3859,
+            "digest": "dc7d9d66708e7330"
           },
           "type": "system"
         },
@@ -413,7 +413,7 @@
         "service_tier": "default",
         "text": {
           "format": {
-            "digest": "70d0e417577650db",
+            "digest": "70c001ab084d2ded",
             "name": "markdown_transcription_schema",
             "properties": [
               "no_transcribable_text",
@@ -429,8 +429,8 @@
       "messages": [
         {
           "text": {
-            "chars": 3690,
-            "digest": "ae9a319f0c2b4661"
+            "chars": 3859,
+            "digest": "dc7d9d66708e7330"
           },
           "type": "system"
         },

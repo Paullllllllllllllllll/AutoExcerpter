@@ -6,6 +6,7 @@
 # Successfully transcribed: 11
 # Failed items: 0
 
+<page_break image="1"/>
 # Preface
 
 This volume brings together **new research** on the *material
@@ -16,6 +17,7 @@ prices, wages and diets changed between 1500 and 1800.[^1]
 
 <page_number>xi</page_number>
 
+<page_break image="2"/>
 ## The Price of Bread
 
 Bread prices rose faster than wages after 1550, and the economic burden fell on urban households.[^2] The real wage index
@@ -34,6 +36,7 @@ Allen, R. C. (2001). The great divergence in European wages and prices from the 
 
 Montanari, M. (1994). *The Culture of Food*. Oxford: Blackwell.
 
+<page_break image="4"/>
 ## Market Records, Part 03
 
 Grain deliveries to the city market fell in year 1603,
@@ -41,6 +44,7 @@ and the magistrates fixed the bread assize twice.
 
 <page_number>2</page_number>
 
+<page_break image="5"/>
 ## Market Records, Part 04
 
 Grain deliveries to the city market fell in year 1604,
@@ -48,6 +52,7 @@ and the magistrates fixed the bread assize twice.
 
 <page_number>3</page_number>
 
+<page_break image="6"/>
 ## Market Records, Part 05
 
 Grain deliveries to the city market fell in year 1605,
@@ -55,6 +60,7 @@ and the magistrates fixed the bread assize twice.
 
 <page_number>4</page_number>
 
+<page_break image="7"/>
 ## Market Records, Part 06
 
 Grain deliveries to the city market fell in year 1606,
@@ -62,6 +68,7 @@ and the magistrates fixed the bread assize twice.
 
 <page_number>5</page_number>
 
+<page_break image="8"/>
 ## Market Records, Part 07
 
 Grain deliveries to the city market fell in year 1607,
@@ -69,6 +76,7 @@ and the magistrates fixed the bread assize twice.
 
 <page_number>6</page_number>
 
+<page_break image="9"/>
 ## Market Records, Part 08
 
 Grain deliveries to the city market fell in year 1608,
@@ -76,6 +84,7 @@ and the magistrates fixed the bread assize twice.
 
 <page_number>7</page_number>
 
+<page_break image="10"/>
 ## Market Records, Part 09
 
 Grain deliveries to the city market fell in year 1609,
@@ -83,6 +92,7 @@ and the magistrates fixed the bread assize twice.
 
 <page_number>8</page_number>
 
+<page_break image="11"/>
 ## Market Records, Part 10
 
 Grain deliveries to the city market fell in year 1610,
