@@ -1,5 +1,10 @@
 # Changelog
 
+- **v1.1.2** (24 October 2026) -- Security patch: the lockfile moves certifi to
+  2026.10.23, which closes GHSA-6q48-6c7w-9gw2, and urllib3 to 2.8.0, which closes
+  GHSA-8988-9cw3-xx77, GHSA-vxq7-64xx-v4gw and GHSA-gh4c-6fx4-qh6g. Dependency versions
+  only; no code changes.
+
 - **v1.1.1** (21 October 2026) -- The longest run of consecutive page numbers
   that anchors a section now holds numbers of one type only. A chapter opening
   read as roman i before arabic 2, 3 and onward no longer joins the arabic run
