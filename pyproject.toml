@@ -104,8 +104,6 @@ max-args = 8
 "tests/**" = ["PLR0913", "D"]
 "notebooks/**" = ["D"]
 "scratch/**" = ["D"]
-# Vendored byte-identically from ChronoTranscriber; documented in a synced pass.
-"autoexcerpter/common/**" = ["D"]
 # Child processes of the store tests report to their parent on stdout.
 "tests/common/*_child.py" = ["T201"]
 "autoexcerpter/cli/**" = ["T201"]
