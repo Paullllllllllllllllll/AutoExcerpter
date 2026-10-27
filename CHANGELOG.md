@@ -1,5 +1,14 @@
 # Changelog
 
+- **v1.1.5** (27 October 2026) -- The capability table knows `gpt-6.1-terra`:
+  it takes text and image input and structured outputs like `gpt-6.1-sol`,
+  accepts the reasoning efforts none to max, and shares the GPT-6 handling of
+  verbosity, Flex and prompt caching. Before, the model resolved as text-only
+  and transcription refused it. The vendored `common/` modules now meet the
+  Google docstring rules as well, so ruff no longer exempts them. Two timing
+  tests, the OpenAlex polite-delay spacing and the page start gate, allow
+  wider scheduling delays, since a start recorded late under a parallel test
+  run shortens the next measured gap.
 - **v1.1.4** (27 October 2026) -- Ruff now checks docstrings with its
   pydocstyle rules under the Google convention, outside the tests and the
   vendored `common/` package. Multi-line summaries become one-line summaries

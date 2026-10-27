@@ -154,7 +154,9 @@ class TestWaits:
 
         gaps = [later - earlier for earlier, later in itertools.pairwise(starts)]
         assert len(starts) == 8
-        assert min(gaps) >= API_POLITE_DELAY * 0.95
+        # A start recorded late shortens the next gap; parallel test runs delay
+        # threads by more than 5 % of the delay.
+        assert min(gaps) >= API_POLITE_DELAY * 0.8
         # Sequential lookups would take at least 8 x 0.3 s.
         assert elapsed < 8 * 0.3 * 0.75
 

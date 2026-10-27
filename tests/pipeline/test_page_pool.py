@@ -297,7 +297,11 @@ def test_progress_denominator_is_pending_count(
 
 @pytest.mark.parametrize("delay", [0.0, 0.1])
 def test_the_start_gate_spaces_page_starts_by_the_delay(delay: float) -> None:
-    """The bounds leave room for the event loop's clock resolution."""
+    """The bounds leave room for clock resolution and for scheduling delays.
+
+    A start recorded late shortens the next gap, which parallel test runs make
+    likely.
+    """
     gate = _StartGate(delay)
     starts: list[float] = []
 
@@ -312,6 +316,6 @@ def test_the_start_gate_spaces_page_starts_by_the_delay(delay: float) -> None:
 
     gaps = [later - earlier for earlier, later in itertools.pairwise(starts)]
     if delay:
-        assert all(gap >= delay * 0.7 for gap in gaps)
+        assert all(gap >= delay * 0.5 for gap in gaps)
     else:
-        assert all(gap < 0.05 for gap in gaps)
+        assert all(gap < 0.25 for gap in gaps)

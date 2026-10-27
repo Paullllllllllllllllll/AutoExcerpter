@@ -1,4 +1,4 @@
-# AutoExcerpter v1.1.4
+# AutoExcerpter v1.1.5
 
 AutoExcerpter transcribes PDFs and folders of page images with vision-language
 models, summarizes each page and builds a consolidated bibliography whose entries
