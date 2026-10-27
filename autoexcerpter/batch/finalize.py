@@ -376,8 +376,7 @@ class _Writer:
     async def summary(
         self, key: UnitKey, item: BatchResultItem, response_id: int | None
     ) -> bool:
-        """Write a summary unit and its ``summaries`` row; return whether it
-        failed."""
+        """Write a summary unit and its ``summaries`` row; return whether it failed."""
         row = self.rows.get(key)
         label = (row.label if row is not None else None) or f"page index {key.idx}"
         page = key.idx + 1

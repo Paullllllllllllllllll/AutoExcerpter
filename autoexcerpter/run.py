@@ -148,8 +148,10 @@ class ConfigurationError(PlanError):
 
 
 class StoreRefusedError(ConfigurationError):
-    """An output folder's database is not a current store, newer or unreadable
-    (exit 2); it is left as it is."""
+    """An output folder's database is not a current store (exit 2).
+
+    The database is newer or unreadable; it is left as it is.
+    """
 
 
 class NoItemsError(PlanError):
@@ -161,8 +163,10 @@ class SelectionError(PlanError):
 
 
 class AmbiguousSelectionError(PlanError):
-    """Several items were found without ``--all``, ``--select`` or ``--files``
-    (exit 2)."""
+    """Several items were found without a selection option (exit 2).
+
+    The selection options are ``--all``, ``--select`` and ``--files``.
+    """
 
 
 class DuplicateOutputError(PlanError):
@@ -203,8 +207,11 @@ class PlannedItem:
 
     @property
     def state(self) -> str:
-        """The resume state: none, partial, transcription_only, complete,
-        unstored, blocked or refused."""
+        """The resume state.
+
+        One of none, partial, transcription_only, complete, unstored, blocked
+        or refused.
+        """
         return self.resume.state.value
 
     @property
@@ -281,9 +288,11 @@ class RunPlan:
         return bool(self.to_process or self.refused or self.render_only)
 
     def effective_spec(self) -> dict[str, dict[str, Any]]:
-        """Return ``{field: {"value": ..., "source": ...}}`` for every field,
-        as the store records it with the run; a batch check rebuilds the
-        run's spec from it."""
+        """Return ``{field: {"value": ..., "source": ...}}`` for every field.
+
+        The store records it with the run, and a batch check rebuilds the
+        run's spec from it.
+        """
         return effective_spec(self.spec, self.sources)
 
     def resolved_spec(self) -> dict[str, dict[str, Any]]:
@@ -650,11 +659,12 @@ class _Classifier:
         state: Classification,
         images: ImageSpec | None,
     ) -> Classification:
-        """Refuse a ``--retranscribe --pages`` item whose stored image settings
-        the run's pinned *images* cannot keep, in any state it resumes from.
+        """Refuse a ``--retranscribe --pages`` item whose image settings conflict.
 
-        The comparison is the one that refuses an item with transcription
-        work, applied here to items without it as well. An item that keeps
+        The item is refused, in any state it resumes from, when the run's
+        pinned *images* cannot keep its stored image settings. The comparison
+        is the one that refuses an item with transcription work, applied here
+        to items without it as well. An item that keeps
         stored transcriptions without an image-settings record is refused
         too: its settings are unknown.
         """
@@ -702,8 +712,7 @@ class _Classifier:
         request: ResumeRequest,
         refused: Classification,
     ) -> tuple[Classification, ImageSpec | None]:
-        """Resume a ``--retranscribe --pages`` item with the image values
-        stored with it.
+        """Resume a ``--retranscribe --pages`` item with its stored image values.
 
         Each pinnable image option takes the value of the document's stored
         record, with a note naming the options the run set otherwise. The
@@ -986,8 +995,11 @@ class RunResult:
 
     @property
     def outputs(self) -> list[str]:
-        """The absolute paths written by the run: the files rendered again,
-        then those of the processed items, item by item, then databases."""
+        """The absolute paths written by the run.
+
+        The files rendered again come first, then those of the processed
+        items, item by item, then the databases.
+        """
         processed = [path for item in self.items for path in item.outputs]
         return [*self.rendered, *processed, *self.databases]
 
@@ -1089,8 +1101,11 @@ async def _note(
 
 @dataclass(frozen=True)
 class _Blocked:
-    """An item not processed: another run leased its document after planning,
-    or (*leased* False) a batch submitted since the plan holds its pages."""
+    """An item not processed.
+
+    Another run leased its document after planning, or (*leased* False) a
+    batch submitted since the plan holds its pages.
+    """
 
     reason: str
     leased: bool = True
@@ -1161,16 +1176,16 @@ class _ItemRun:
         )
 
     async def reset(self, handle: DocumentHandle) -> None:
-        """Reset the units this run works again: all of them under ``--force``
-        or after an input change, the transcriptions under ``--retranscribe``
-        (those of the pages ``--pages`` selects, when given).
+        """Reset the units this run works again.
 
-        A reset transcription marks its page's summary stale. The input hash
-        is recorded after the reset, so that an interruption between the two
-        leaves the change detected, and the document's files are marked
-        stale: they are rendered again once its units are stored. The
-        document's batch job of an earlier ``run --batch`` ends, so ``batch
-        check`` leaves the document to this run.
+        These are all units under ``--force`` or after an input change, and
+        the transcriptions under ``--retranscribe`` (those of the pages
+        ``--pages`` selects, when given). A reset transcription marks its
+        page's summary stale. The input hash is recorded after the reset, so
+        that an interruption between the two leaves the change detected, and
+        the document's files are marked stale: they are rendered again once
+        its units are stored. The document's batch job of an earlier ``run
+        --batch`` ends, so ``batch check`` leaves the document to this run.
         """
         planned, spec = self.planned, self.run_plan.spec
         if spec.run.force or planned.resume.reset:

@@ -160,10 +160,12 @@ def transcription_prompt(plain: bool) -> tuple[dict[str, Any] | None, str]:
 def page_detail(
     provider: str, model_name: str, options: Mapping[str, Any]
 ) -> str | None:
-    """Return the detail of a page image, which synchronous and batch
-    requests send: the OpenAI ``image_size`` option, or for the other
-    providers the page detail its image settings resolved (a Gemini page's
-    media resolution)."""
+    """Return the page-image detail that synchronous and batch requests send.
+
+    For OpenAI it is the ``image_size`` option; for the other providers, the
+    page detail its image settings resolved (a Gemini page's media
+    resolution).
+    """
     if provider == "openai":
         return resolve_request_detail(dict(options), provider, model_name, logger)
     value = options.get("page_detail")

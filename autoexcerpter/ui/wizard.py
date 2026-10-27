@@ -320,8 +320,10 @@ def _folder(text: str) -> str | None:
 
 
 def _current_formats(state: State, session: Session) -> tuple[str, ...]:
-    """Return the formats the answers resolve to, one transcription format
-    included (the deprecated settings key applied)."""
+    """Return the formats the answers resolve to, one transcription format included.
+
+    The deprecated settings key is applied.
+    """
     try:
         return resolution(state, session).spec.output.formats
     except ValueError:

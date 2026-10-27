@@ -295,8 +295,7 @@ class PageNumberProcessor:
     def parse_page_information(
         self, summary_result: dict[str, Any]
     ) -> tuple[int | None, str, list[str], bool, bool, int | None]:
-        """
-        Extract page information from a summary result.
+        """Extract page information from a summary result.
 
         Args:
             summary_result: Summary result dictionary.
@@ -370,8 +369,7 @@ class PageNumberProcessor:
     def find_longest_consecutive_sequence(
         self, summaries_with_pages: list[dict[str, Any]]
     ) -> list[dict[str, Any]]:
-        """
-        Find the longest consecutive sequence of page numbers in document order.
+        """Find the longest consecutive sequence of page numbers in document order.
 
         A sequence holds one number type, so the anchor it yields carries the
         type of the numbering it spans.
@@ -419,8 +417,7 @@ class PageNumberProcessor:
     def calculate_adjusted_page_number(
         self, virtual_pos: int, anchor_model_page: int, anchor_virtual_pos: int
     ) -> int:
-        """
-        Calculate adjusted page number based on anchor point.
+        """Calculate adjusted page number based on anchor point.
 
         Uses document-wide virtual page positions (which account for two-page
         spreads occupying two page slots) rather than raw input indices.
@@ -443,8 +440,7 @@ class PageNumberProcessor:
         page_type: str,
         claimed_pages: set[int],
     ) -> int:
-        """
-        Infer page numbers for gaps between numbered pages.
+        """Infer page numbers for gaps between numbered pages.
 
         Only infers if:
         - Current page is unnumbered
@@ -519,8 +515,7 @@ class PageNumberProcessor:
     def infer_unnumbered_page_numbers(
         self, parsed_summaries: list[dict[str, Any]]
     ) -> int:
-        """
-        Infer page numbers for unnumbered pages based on surrounding context.
+        """Infer page numbers for unnumbered pages based on surrounding context.
 
         Runs one pass per numbering type. In each pass an unnumbered page is
         filled only when both immediate neighbors are numbered with that same
@@ -575,8 +570,7 @@ class PageNumberProcessor:
         return inferred_count
 
     def _get_primary_section_type(self, page_types: list[str]) -> str:
-        """
-        Get the primary section type for a page.
+        """Get the primary section type for a page.
 
         Any page containing "content" in its page_types is treated as a content
         page, so content pages share one anchor even with several type labels.
@@ -615,8 +609,7 @@ class PageNumberProcessor:
         return page_types[0] if page_types else "content"
 
     def _find_section_anchor(self, section_pages: list[dict[str, Any]]) -> _Anchor:
-        """
-        Find the anchor point for a section based on longest consecutive sequence.
+        """Find the anchor point for a section based on longest consecutive sequence.
 
         A section whose longest run of consecutive numbers is shorter than
         MIN_SEQUENCE_LENGTH_FOR_ANCHOR (a foliated volume numbered on rectos
@@ -929,8 +922,7 @@ class PageNumberProcessor:
     def adjust_and_sort_page_numbers(
         self, summary_results: list[dict[str, Any]]
     ) -> list[dict[str, Any]]:
-        """
-        Adjust page numbers based on per-section anchor logic.
+        """Adjust page numbers based on per-section anchor logic.
 
         For each section type (content, preface, abstract, appendix,
         figures_tables_sources), finds the longest consecutive sequence of

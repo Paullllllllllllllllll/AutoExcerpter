@@ -459,12 +459,12 @@ class ItemProcessor:
     async def _summarize_stored(
         self, transcriptions: dict[int, UnitRow], pending: Sequence[int]
     ) -> None:
-        """Summarize the selected stored pages whose summary is missing, failed
-        or stale.
+        """Summarize the selected stored pages whose summary needs work.
 
-        The pages run like the page pool's: at most the job's concurrency at
-        a time, starts spaced by its ``start_delay``, and on Anthropic the
-        first page alone. An error that escapes the page runner propagates
+        A summary needs work when it is missing, failed or stale. The pages
+        run like the page pool's: at most the job's concurrency at a time,
+        starts spaced by its ``start_delay``, and on Anthropic the first page
+        alone. An error that escapes the page runner propagates
         after the other pages are cancelled.
         """
         if self.runner.summary_manager is None:

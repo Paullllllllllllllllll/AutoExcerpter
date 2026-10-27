@@ -212,7 +212,6 @@ class ModelCaller:
 
         Transient errors are retried by the ladder; the last one propagates.
         """
-
         numbers = itertools.count(1)
 
         async def invoke(prepared: PreparedRequest, sent: Sequence[Any]) -> Any:
@@ -282,8 +281,10 @@ class ModelCaller:
         )
 
     async def aclose(self) -> None:
-        """Close the SDK clients, and so the hooked httpx clients, of every
-        chat model built; never raises."""
+        """Close the SDK clients of every chat model built; never raise.
+
+        Closing them closes the hooked httpx clients too.
+        """
         models, self._clients = list(self._clients.values()), {}
         for model in models:
             for attr in _CLIENT_ATTRIBUTES:

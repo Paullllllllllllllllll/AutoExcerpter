@@ -124,8 +124,11 @@ def request_plan(
     service_tier: str | None = None,
     caching: PromptCaching | None = None,
 ) -> RequestPlan:
-    """Return the request plan of one phase; *caching* None sends no
-    prompt-cache parameter or breakpoint."""
+    """Return the request plan of one phase.
+
+    With *caching* None the plan sends no prompt-cache parameter or
+    breakpoint.
+    """
     return RequestPlan.resolve(
         provider,
         model_name,
@@ -148,9 +151,12 @@ def build_invoke_kwargs(
     service_tier: str | None = None,
     caching: PromptCaching | None = None,
 ) -> dict[str, Any]:
-    """Return the invoke kwargs of one request: the parameters of the shared
-    request builder (:func:`~autoexcerpter.common.provider_requests.
-    request_params`) for the phase's plan."""
+    """Return the invoke kwargs of one request.
+
+    They are the parameters of the shared request builder
+    (:func:`~autoexcerpter.common.provider_requests.request_params`) for the
+    phase's plan.
+    """
     return request_params(
         request_plan(provider, model_name, options, service_tier, caching)
     )

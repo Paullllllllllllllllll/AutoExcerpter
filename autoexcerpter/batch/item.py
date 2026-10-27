@@ -324,8 +324,7 @@ class BatchItem:
         )
 
     async def _finish(self, outcome: BatchItemOutcome) -> BatchItemOutcome:
-        """Store the citations and render the files when no selected unit is
-        pending."""
+        """Store the citations and render the files once no selected unit is pending."""
         units = self.document.units()
         relevant = [
             unit

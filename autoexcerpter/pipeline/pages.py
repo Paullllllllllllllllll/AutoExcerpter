@@ -40,15 +40,18 @@ logger = logging.getLogger(__name__)
 class PageSource(Protocol):
     """The part of a payload source that the page runner uses."""
 
-    def image_name(self, index: int) -> str: ...
+    def image_name(self, index: int) -> str:
+        """Return the stable name of the 0-based page *index*."""
 
-    def build_payload(self, index: int) -> PagePayload: ...
+    def build_payload(self, index: int) -> PagePayload:
+        """Render or load, preprocess and encode the 0-based page *index*."""
 
 
 class Transcriber(Protocol):
     """The transcription manager interface used per page."""
 
-    async def transcribe_payload(self, payload: PagePayload) -> dict[str, Any]: ...
+    async def transcribe_payload(self, payload: PagePayload) -> dict[str, Any]:
+        """Transcribe one page; a failure returns an entry with ``error``."""
 
 
 class Summarizer(Protocol):
@@ -56,7 +59,8 @@ class Summarizer(Protocol):
 
     async def generate_summary(
         self, transcription: str, page_num: int
-    ) -> dict[str, Any]: ...
+    ) -> dict[str, Any]:
+        """Summarize one page; a failure returns a placeholder with ``error``."""
 
 
 def warn_on_page_number_mismatch(

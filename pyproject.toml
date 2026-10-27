@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "autoexcerpter"
-version = "1.1.3"
+version = "1.1.4"
 description = "Document processing pipeline that transcribes and summarizes PDFs and image collections using vision-enabled LLMs"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -87,9 +87,12 @@ extend-exclude = ["scratch", ".claude", "backup"]
 [tool.ruff.lint]
 select = [
     "E", "F", "I", "B", "UP", "SIM",
-    "C901", "PLR0912", "PLR0913", "PLR0915", "BLE001", "T201", "ERA001",
+    "C901", "PLR0912", "PLR0913", "PLR0915", "BLE001", "T201", "ERA001", "D",
 ]
-ignore = ["UP047"]
+ignore = ["UP047", "D105", "D107"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
 
 [tool.ruff.lint.mccabe]
 max-complexity = 15
@@ -98,7 +101,11 @@ max-complexity = 15
 max-args = 8
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["PLR0913"]
+"tests/**" = ["PLR0913", "D"]
+"notebooks/**" = ["D"]
+"scratch/**" = ["D"]
+# Vendored byte-identically from ChronoTranscriber; documented in a synced pass.
+"autoexcerpter/common/**" = ["D"]
 # Child processes of the store tests report to their parent on stdout.
 "tests/common/*_child.py" = ["T201"]
 "autoexcerpter/cli/**" = ["T201"]

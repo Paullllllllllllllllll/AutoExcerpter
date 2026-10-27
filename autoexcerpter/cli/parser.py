@@ -111,6 +111,7 @@ class Parser(argparse.ArgumentParser):
     """
 
     def error(self, message: str) -> NoReturn:
+        """Raise :class:`UsageError` with *message* and this parser's usage."""
         raise UsageError(message, prog=self.prog, usage=self.format_usage())
 
 

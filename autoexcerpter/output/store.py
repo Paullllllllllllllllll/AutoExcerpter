@@ -321,8 +321,11 @@ _COMPONENTS: Final = (COMPONENT,)
 
 
 class NotAStoreError(StoreError):
-    """A database without the tool's schema version: versionless, or one that
-    carries no ``autoexcerpter`` component of :data:`COMPONENT`'s version."""
+    """Signal a database without the tool's schema version.
+
+    The database is versionless, or carries no ``autoexcerpter`` component of
+    :data:`COMPONENT`'s version.
+    """
 
 
 # Spec fields that do not shape the outputs' content.

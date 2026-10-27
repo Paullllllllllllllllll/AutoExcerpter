@@ -28,11 +28,11 @@ _MATH_INDICATORS = frozenset("\\^_={}")
 
 
 def _is_currency_span(content: str) -> bool:
-    """Return True when a ``$...$`` capture is prose currency, not inline math.
+    r"""Return True when a ``$...$`` capture is prose currency, not inline math.
 
     "Wages rose from $3 to $5" would otherwise be parsed as inline math over
     "3 to ", destroying the sentence. A capture opening on a digit and holding
-    no math indicator (``\\``, ``^``, ``_``, ``=``, ``{``, ``}``) is treated as
+    no math indicator (``\``, ``^``, ``_``, ``=``, ``{``, ``}``) is treated as
     a price range and left as literal text.
     """
     if not content or not content[0].isdigit():
@@ -41,12 +41,12 @@ def _is_currency_span(content: str) -> bool:
 
 
 def parse_latex_in_text(text: str) -> list[tuple[str, str]]:
-    """Parse text and split it into segments of regular text and LaTeX formulas.
+    r"""Parse text and split it into segments of regular text and LaTeX formulas.
 
     Handles:
     - Display math: $$...$$ (processed first to avoid conflicts)
     - Inline math: $...$ (single dollar, non-greedy)
-    - Escaped dollar signs: \\$ are preserved as literal $
+    - Escaped dollar signs: \$ are preserved as literal $
     - Multi-line formulas (DOTALL mode)
     - Nested braces within formulas
 
@@ -204,7 +204,7 @@ _SIZED_DELIMITERS = ["(", ")", "[", "]", "|", "\\{", "\\}", "\\|", "."]
 
 
 def _has_delimiter_sizing(text: str) -> bool:
-    """Return True when *text* holds a sized delimiter such as ``\\big(``."""
+    r"""Return True when *text* holds a sized delimiter such as ``\big(``."""
     return any(
         f"{size}{delim}" in text
         for size in _DELIMITER_SIZES
@@ -231,7 +231,7 @@ def _simplify_delimiter_sizing(text: str) -> str:
 
 
 def _simplify_auto_sizing(text: str) -> str:
-    """Replace \\left/\\right auto-sizing delimiters."""
+    r"""Replace \left/\right auto-sizing delimiters."""
     text = text.replace("\\left.", "")
     text = text.replace("\\right.", "")
     text = re.sub(r"\\left\s*([(\[|])", r"\1", text)
@@ -508,6 +508,8 @@ def add_math_to_paragraph(
     that, written as italic text.
 
     Args:
+        paragraph: A python-docx paragraph; it is modified in place.
+        latex_code: The formula without its dollar delimiters.
         display: True for ``$$...$$`` display math (block-level, own line);
             False for ``$...$`` inline math flowing with the text.
     """

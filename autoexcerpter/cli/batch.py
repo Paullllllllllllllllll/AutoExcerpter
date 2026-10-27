@@ -263,8 +263,7 @@ def _wait_fields(
 def _finish_wait(
     spec: BatchCheckSpec, progress: WaitProgress, emitter: SummaryEmitter
 ) -> WaitTotals:
-    """Read the totals from the stores, write the closing lines and the
-    summary line, and return the totals."""
+    """Read the totals from the stores and write the closing and summary lines."""
     totals = wait_totals(progress.ledger)
     if progress.stop == Stop.TIMEOUT and progress.last is not None:
         for line in pending_lines(progress.last):

@@ -419,8 +419,7 @@ async def end_batch_jobs(store: Store, submission_id: str) -> None:
 
 
 async def _give_up(store: Store, submission: Submission, clients: BatchClients) -> str:
-    """Abandon an unresolved or submitted *submission*, so its pages are
-    pending again.
+    """Abandon an unresolved or submitted *submission*, so its pages are pending.
 
     A submitted batch is not cancelled at the provider; its results are no
     longer collected. The batch jobs end before the upload is deleted, so
@@ -557,8 +556,11 @@ class _DatabaseCheck:
         return current.status == "submitted"
 
     async def advance(self, job: DocumentJob) -> DocumentAdvance | None:
-        """Submit a document's summaries or render it; None when it waits
-        silently on its own open submissions."""
+        """Submit a document's summaries or render it.
+
+        Returns None when the document waits silently on its own open
+        submissions.
+        """
         store = self.store
         row = store.document(job.doc_id)
         if row is None:
@@ -637,8 +639,11 @@ class _Advance:
         )
 
     async def run(self) -> DocumentAdvance:
-        """Advance the pages the submitting run's ``--pages`` selected (every
-        page without it); the others stay pending and the document partial."""
+        """Advance the pages the submitting run's ``--pages`` selected.
+
+        Without ``--pages`` every page advances; otherwise the others stay
+        pending and the document partial.
+        """
         store, item_job = self.database.store, self.job.job
         pages = sum(
             1
@@ -789,8 +794,10 @@ async def _check_database(
     result: CheckResult,
     formats: Sequence[str] | None = None,
 ) -> None:
-    """Mark, reconcile and finalize the submissions of one database; then
-    advance its batch jobs, rendered in *formats* when given."""
+    """Mark, reconcile and finalize the submissions of one database.
+
+    Then advance its batch jobs, rendered in *formats* when given.
+    """
     async with open_store(database.root) as store:
         await store.begin_run(
             "batch check",
@@ -1212,11 +1219,11 @@ async def check_until_settled(  # noqa: PLR0913 - the check options plus hooks
     on_retry: Callable[[int, Exception], None] = _ignore,
     formats: Sequence[str] | None = None,
 ) -> WaitProgress:
-    """Check every *limits* interval until no batch work a check can advance
-    is pending; start no check after the timeout.
+    """Check every *limits* interval until no advanceable batch work is pending.
 
-    The options are those of :func:`check_batches`; *adopt* and *abandon*
-    act in the first check that reaches their submission. *progress* is
+    No check starts after the timeout. The options are those of
+    :func:`check_batches`; *adopt* and *abandon* act in the first check that
+    reaches their submission. *progress* is
     updated after every check, so a caller that is interrupted still reads
     what the wait saw. *on_pass* receives each check's result, *on_wait*
     each sleep and *on_retry* each check that raised a retryable error.

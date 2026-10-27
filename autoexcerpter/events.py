@@ -79,15 +79,20 @@ class ItemFinished:
 class RunEvents(Protocol):
     """The events a run reports."""
 
-    def item_started(self, event: ItemStarted) -> None: ...
+    def item_started(self, event: ItemStarted) -> None:
+        """Report that an item started."""
 
-    def page_done(self, event: PageDone) -> None: ...
+    def page_done(self, event: PageDone) -> None:
+        """Report that a page finished."""
 
-    def waiting(self, event: Waiting) -> None: ...
+    def waiting(self, event: Waiting) -> None:
+        """Report that the run waits."""
 
-    def warning(self, message: str) -> None: ...
+    def warning(self, message: str) -> None:
+        """Report a warning."""
 
-    def item_finished(self, event: ItemFinished) -> None: ...
+    def item_finished(self, event: ItemFinished) -> None:
+        """Report that an item finished."""
 
 
 class NullEvents:

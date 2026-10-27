@@ -403,7 +403,7 @@ def _looks_like_math(content: str) -> bool:
 
 
 def _display_math_or_literal(match: re.Match[str]) -> str:
-    """Convert a ``\\[...\\]`` pair to ``$$...$$`` only when it is math."""
+    r"""Convert a ``\[...\]`` pair to ``$$...$$`` only when it is math."""
     content = match.group(1)
     if _looks_like_math(content):
         return f"$${content}$$"
@@ -411,16 +411,16 @@ def _display_math_or_literal(match: re.Match[str]) -> str:
 
 
 def normalize_math_delimiters(text: str) -> str:
-    """Normalize alternate LaTeX math delimiters to dollar-sign form.
+    r"""Normalize alternate LaTeX math delimiters to dollar-sign form.
 
-    Maps ``\\(...\\)`` to inline ``$...$``. Bracket pairs are converted to
+    Maps ``\(...\)`` to inline ``$...$``. Bracket pairs are converted to
     display ``$$...$$`` only when the enclosed content looks like math:
-    ``\\[`` also occurs as a Markdown-escaped square bracket, so editorial
-    interpolations such as ``\\[sic\\]`` or ``\\[illegible\\]`` must survive.
+    ``\[`` also occurs as a Markdown-escaped square bracket, so editorial
+    interpolations such as ``\[sic\]`` or ``\[illegible\]`` must survive.
     Unpaired brackets are left alone.
 
     Args:
-        text: Text potentially using ``\\(...\\)`` / ``\\[...\\]`` delimiters.
+        text: Text potentially using ``\(...\)`` / ``\[...\]`` delimiters.
 
     Returns:
         Text with math delimiters normalized to dollar-sign form.
@@ -483,20 +483,20 @@ def convert_html_subsup(text: str) -> str:
 
 
 def balance_left_right(text: str) -> str:
-    """Balance ``\\left``/``\\right`` pairs within each display math block.
+    r"""Balance ``\left``/``\right`` pairs within each display math block.
 
     Operates conservatively and only inside a single ``$$...$$`` block: if the
-    block has more ``\\right`` than ``\\left``, the missing openers are added as
-    ``\\left.`` at the block (or enclosing environment) start; the mirror case
-    appends ``\\right.`` at the block end. Blocks whose counts already match --
+    block has more ``\right`` than ``\left``, the missing openers are added as
+    ``\left.`` at the block (or enclosing environment) start; the mirror case
+    appends ``\right.`` at the block end. Blocks whose counts already match --
     including misordered-but-balanced or nested cases -- are left unchanged, and
     inline ``$...$`` math is never touched.
 
     Args:
-        text: Text potentially containing unbalanced ``\\left``/``\\right``.
+        text: Text potentially containing unbalanced ``\left``/``\right``.
 
     Returns:
-        Text with per-block ``\\left``/``\\right`` counts balanced.
+        Text with per-block ``\left``/``\right`` counts balanced.
     """
     if "\\left" not in text and "\\right" not in text:
         return text
@@ -601,17 +601,17 @@ def should_keep_hyphen(left: str, right: str) -> bool:
 
 
 def merge_hyphenation(text: str) -> str:
-    """Merge words split across lines with a hyphen.
+    r"""Merge words split across lines with a hyphen.
 
-    Example: "politi-\\nche" -> "politiche"
+    Example: "politi-\nche" -> "politiche"
 
     Uses the conservative ``should_keep_hyphen`` guard to avoid damaging
     genuine hyphenated compounds like "Jean-Baptiste" or "co-ordinating",
-    while still merging ordinary line-break hyphenation like "Manage-\\nment".
+    while still merging ordinary line-break hyphenation like "Manage-\nment".
 
     Substitution is repeated to a fixpoint: a single pass cannot see the
     second break of a word split across three or more lines
-    ("encyclo-\\npae-\\ndia"), because the first match consumes the fragment
+    ("encyclo-\npae-\ndia"), because the first match consumes the fragment
     that opens the next one.
 
     Args:

@@ -1,9 +1,9 @@
-"""Request bodies of batch transcriptions and summaries, built by the shared
-request builder.
+"""Build the request bodies of batch transcriptions and summaries.
 
-:func:`build_plan` reads the parts of a phase that every request shares: the
-system prompt with the schema and, for a summary, the item's context; the
-schema the provider enforces, if any; the request plan of
+The shared request builder does the work. :func:`build_plan` reads the
+parts of a phase that every request shares: the system prompt with the
+schema and, for a summary, the item's context; the schema the provider
+enforces, if any; the request plan of
 :func:`~autoexcerpter.llm.options.request_plan`; and the page detail.
 :meth:`BodyPlan.body` turns each
 :class:`~autoexcerpter.common.batch.BatchRequest` into the provider-native

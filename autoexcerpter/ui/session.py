@@ -120,8 +120,10 @@ def new_state(session: Session, table: OptionTable = OPTIONS) -> State:
 
 
 def unquote(text: str) -> str:
-    """Strip whitespace and one pair of surrounding quotes, as Explorer's
-    "Copy as path" adds them."""
+    """Strip whitespace and one pair of surrounding quotes.
+
+    Explorer's "Copy as path" adds such quotes.
+    """
     text = text.strip()
     if len(text) >= 2 and text[0] == text[-1] and text[0] in "\"'":
         return text[1:-1].strip()

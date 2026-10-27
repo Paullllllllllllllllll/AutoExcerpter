@@ -55,8 +55,10 @@ class ItemJob:
     pages: PageRange | None = None
 
     def selected_pages(self, count: int) -> list[int]:
-        """Return the 0-based pages of an item of *count* pages that the run
-        works: every page, or those *pages* selects, in source order."""
+        """Return the 0-based pages the run works in an item of *count* pages.
+
+        These are every page, or those *pages* selects, in source order.
+        """
         if self.pages is None:
             return list(range(count))
         return self.pages.resolve(count)
@@ -88,9 +90,11 @@ def _model_options(
 
 
 def _page_detail(model: ModelSpec, images: ImageSpec | None) -> str | None:
-    """Return the detail a page's image settings resolve: a Gemini page's
-    media resolution follows it, an OpenRouter page sends it where the model
-    takes a detail; None when the settings do not resolve."""
+    """Return the detail a page's image settings resolve, or None if they do not.
+
+    A Gemini page's media resolution follows it; an OpenRouter page sends it
+    where the model takes a detail.
+    """
     try:
         cfg, _model_type, _section = resolve_image_settings(
             model.provider, model.model, images

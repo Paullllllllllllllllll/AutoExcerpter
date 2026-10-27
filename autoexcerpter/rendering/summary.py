@@ -33,44 +33,55 @@ class RenderedCitation(Protocol):
     """What a summary writer reads of one citation."""
 
     @property
-    def raw_text(self) -> str: ...
+    def raw_text(self) -> str:
+        """The citation text as the summary gave it."""
 
     @property
-    def doi(self) -> str | None: ...
+    def doi(self) -> str | None:
+        """The DOI OpenAlex returned, if any."""
 
     @property
-    def url(self) -> str | None: ...
+    def url(self) -> str | None:
+        """The work's link OpenAlex returned, if any."""
 
     @property
-    def metadata(self) -> Mapping[str, Any] | None: ...
+    def metadata(self) -> Mapping[str, Any] | None:
+        """The OpenAlex metadata, if the citation was enriched."""
 
 
 class CitationSource(Protocol):
     """The consolidated citations a summary writer renders, in order."""
 
-    def get_citations_with_pages(self) -> Sequence[tuple[RenderedCitation, str]]: ...
+    def get_citations_with_pages(self) -> Sequence[tuple[RenderedCitation, str]]:
+        """Return ``(citation, page range)`` pairs in rendered order."""
 
 
 class CitationRecord(Protocol):
     """One stored citation: its text, pages and OpenAlex metadata."""
 
     @property
-    def text(self) -> str: ...
+    def text(self) -> str:
+        """The citation text."""
 
     @property
-    def pages(self) -> str | None: ...
+    def pages(self) -> str | None:
+        """The formatted page range on which the citation appears."""
 
     @property
-    def partial(self) -> bool: ...
+    def partial(self) -> bool:
+        """Whether the summary marked the reference as incomplete."""
 
     @property
-    def doi(self) -> str | None: ...
+    def doi(self) -> str | None:
+        """The DOI OpenAlex returned, if any."""
 
     @property
-    def url(self) -> str | None: ...
+    def url(self) -> str | None:
+        """The work's link OpenAlex returned, if any."""
 
     @property
-    def metadata(self) -> Mapping[str, Any] | None: ...
+    def metadata(self) -> Mapping[str, Any] | None:
+        """The OpenAlex metadata, if the citation was enriched."""
 
 
 @dataclass(frozen=True)

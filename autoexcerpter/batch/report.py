@@ -122,8 +122,7 @@ def _document_lines(advance: DocumentAdvance) -> list[str]:
 def check_lines(
     result: CheckResult, *, pending: bool = True, totals: bool = True
 ) -> list[str]:
-    """Return one line per refused database, submission and document, then
-    the totals.
+    """Return one line per refused database, submission and document, then totals.
 
     Without *pending* the submissions that are not finished yet are left
     out; without *totals* the totals line.
@@ -187,8 +186,11 @@ def retry_line(number: int, exc: Exception) -> str:
 def wait_end_lines(
     totals: WaitTotals, *, passes: int, waited: float, stop: str
 ) -> list[str]:
-    """Return the closing lines of a wait: totals, documents that need a run,
-    and how the wait ended."""
+    """Return the closing lines of a wait.
+
+    The lines give the totals, the documents that need a run, and how the
+    wait ended.
+    """
     stats = totals.stats
     lines = [f"[ERROR] {path}: {reason}" for path, reason in totals.refused.items()]
     lines.append(

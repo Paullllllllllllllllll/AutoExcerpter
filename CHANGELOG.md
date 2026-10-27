@@ -1,5 +1,11 @@
 # Changelog
 
+- **v1.1.4** (27 October 2026) -- Ruff now checks docstrings with its
+  pydocstyle rules under the Google convention, outside the tests and the
+  vendored `common/` package. Multi-line summaries become one-line summaries
+  followed by a description, the protocol members and `Parser.error` gain
+  docstrings, and docstrings that show LaTeX backslashes are raw strings.
+  Behavior is unchanged.
 - **v1.1.3** (26 October 2026) -- Security patch: the lockfile moves Pillow to
   13.0.0, which closes the Pillow 12.3.0 advisories, among them the TIFF decoder
   reads GHSA-c6hw-5grf-ff96 and GHSA-q45j-58j2-45rg and the MIC frame-count loop
