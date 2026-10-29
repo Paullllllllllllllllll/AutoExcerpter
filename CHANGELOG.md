@@ -1,5 +1,11 @@
 # Changelog
 
+- **v1.1.6** (29 October 2026) -- The vendored common package matches
+  ChronoTranscriber v1.1.1: it gains `decisions.py` (request bodies and typed
+  answers for OpenAI's `/v1/decisions` and OpenRouter's decision API),
+  `decision_client.py`, `page_types.py`, the shared decision-model options and
+  the `decisions` settings schema. No command uses them yet, so behavior is
+  unchanged.
 - **v1.1.5** (27 October 2026) -- The capability table knows `gpt-6.1-terra`:
   it takes text and image input and structured outputs like `gpt-6.1-sol`,
   accepts the reasoning efforts none to max, and shares the GPT-6 handling of
