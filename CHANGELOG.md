@@ -1,5 +1,9 @@
 # Changelog
 
+- **v1.1.7** (29 October 2026) -- The Pillow requirement is raised to
+  13.0, the first release that fixes the FlashPix, TIFF-writer and
+  multi-frame loader advisories, so that no install resolves a vulnerable
+  Pillow. The lock already held 13.0.0.
 - **v1.1.6** (29 October 2026) -- The vendored common package matches
   ChronoTranscriber v1.1.1: it gains `decisions.py` (request bodies and typed
   answers for OpenAI's `/v1/decisions` and OpenRouter's decision API),
