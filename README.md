@@ -1,5 +1,7 @@
 # AutoExcerpter v1.1.10
 
+<img src="assets/logo.svg" alt="AutoExcerpter logo" width="64" align="right">
+
 AutoExcerpter transcribes PDFs and folders of page images with vision-language
 models, summarizes each page and builds a consolidated bibliography whose entries
 are enriched from OpenAlex. It runs on OpenAI, Anthropic, Google and OpenRouter
