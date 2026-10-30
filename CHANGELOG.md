@@ -1,5 +1,11 @@
 # Changelog
 
+- **v1.1.9** (30 October 2026) -- The vendored common package matches
+  ChronoTranscriber v1.2.2: a write that creates, writes, resets or deletes a
+  document's units marks every rendered file of the document stale, and
+  rendering clears the flag of each file it records. AutoExcerpter behaves as
+  before, since a run already marked an item's files stale when it started to
+  work the item.
 - **v1.1.8** (30 October 2026) -- The vendored common package matches
   ChronoTranscriber v1.2.0: it gains the classifier file format
   (`classifiers.py`), the shared decision-model call loop
