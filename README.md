@@ -1,4 +1,4 @@
-# AutoExcerpter v1.1.9
+# AutoExcerpter v1.1.10
 
 AutoExcerpter transcribes PDFs and folders of page images with vision-language
 models, summarizes each page and builds a consolidated bibliography whose entries
@@ -805,7 +805,7 @@ Resume is the default. Each item is classified from the store alone
 | `none` | no stored units | process from scratch |
 | `partial` | pages are pending or failed | transcribe them, then summarize them |
 | `transcription_only` | every page is transcribed, some summaries are missing, failed or stale | summarize those pages from the stored text |
-| `complete` | every unit is stored | skip (`items_skipped`); missing files and files rendered before a later run worked the item are rendered again without model calls or OpenAlex requests (a document without stored citations gets them from the OpenAlex cache); a file that cannot be written counts the item failed |
+| `complete` | every unit is stored | skip (`items_skipped`); missing files, files rendered before a later run worked the item and files the store holds no record of are rendered again without model calls or OpenAlex requests (a document without stored citations gets them from the OpenAlex cache); a file that cannot be written counts the item failed |
 | `unstored` | output files exist without stored units, as after a `drop` that kept a file | skip and list; `--force` processes the item again |
 | `blocked` | another live run holds the document's lease, or an open or unresolved batch holds its units | skip and list; a held lease makes the run exit 1 |
 | `refused` | pages remain to transcribe, but the stored pages used other image settings | count failed; name the changed keys |
