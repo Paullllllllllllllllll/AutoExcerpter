@@ -1,5 +1,16 @@
 # Changelog
 
+- **v1.1.8** (30 October 2026) -- The vendored common package matches
+  ChronoTranscriber v1.2.0: it gains the classifier file format
+  (`classifiers.py`), the shared decision-model call loop
+  (`decision_runner.py`), the classification store component
+  (`classify_store.py`), a decision-image helper and the classifier options,
+  and the decision parser now rejects scores outside their levels and keeps
+  the usage of malformed answers. A store migration is refused while another
+  run holds a live lease. AutoExcerpter registers no classification component
+  and none of its commands uses the new modules, so its behavior is unchanged;
+  the tests of the vendored modules come along, with `pytest-asyncio` as a
+  development dependency.
 - **v1.1.7** (29 October 2026) -- The Pillow requirement is raised to
   13.0, the first release that fixes the FlashPix, TIFF-writer and
   multi-frame loader advisories, so that no install resolves a vulnerable
