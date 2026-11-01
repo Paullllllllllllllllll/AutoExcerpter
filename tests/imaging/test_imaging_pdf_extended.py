@@ -18,7 +18,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-import fitz  # PyMuPDF
+import pymupdf
 import pytest
 from PIL import Image
 
@@ -218,7 +218,7 @@ class TestFileProvenance:
 
 def _sized_pdf(path: Path, w_pt: float, h_pt: float) -> Path:
     """Write a single-page PDF with the given point dimensions."""
-    doc = fitz.open()
+    doc = pymupdf.open()
     doc.new_page(width=w_pt, height=h_pt)
     doc.save(path)
     doc.close()

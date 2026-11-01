@@ -19,6 +19,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any, Protocol
 
+from autoexcerpter.common.capture import error_type_of
 from autoexcerpter.common.images import PagePayload
 from autoexcerpter.common.store import LeaseLostError
 from autoexcerpter.constants import is_blank_transcription
@@ -331,7 +332,7 @@ class PageRunner:
                 entry = build_summary_result(
                     index, image_name, failed_summary(page, str(exc)), page, str(exc)
                 )
-                entry["error_type"] = type(exc).__name__
+                entry["error_type"] = error_type_of(exc)
         if entry is None:
             return False
         failed = "error" in entry and error is None
@@ -368,7 +369,7 @@ class PageRunner:
                 result = {
                     "transcription": f"[CRITICAL ERROR] Unhandled in task: {exc}",
                     "error": str(exc),
-                    "error_type": type(exc).__name__,
+                    "error_type": error_type_of(exc),
                 }
         text = result.get("transcription", "")
         if not isinstance(text, str):

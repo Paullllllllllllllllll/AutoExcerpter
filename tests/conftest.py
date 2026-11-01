@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
-import fitz  # PyMuPDF
+import pymupdf
 import pytest
 
 from autoexcerpter.common import testing
@@ -265,7 +265,7 @@ def make_pdf(tmp_path: Path) -> Callable[..., Path]:
 
     def _make(name: str = "doc.pdf", num_pages: int = 1) -> Path:
         pdf_path = tmp_path / name
-        doc = fitz.open()
+        doc = pymupdf.open()
         for i in range(num_pages):
             page = doc.new_page(width=200, height=300)
             page.insert_text((50, 100), f"Page {i + 1}")

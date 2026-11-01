@@ -12,7 +12,7 @@ import io
 from collections.abc import Sequence
 from pathlib import Path
 
-import fitz  # PyMuPDF
+import pymupdf
 from PIL import Image
 
 PALETTE: tuple[int, ...] = tuple(24 + 18 * step for step in range(12))
@@ -78,7 +78,7 @@ def make_pdf(
     from the scan.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
-    doc = fitz.open()
+    doc = pymupdf.open()
     try:
         width, height = page_size
         for index in range(pages):

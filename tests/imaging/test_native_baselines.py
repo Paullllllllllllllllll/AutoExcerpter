@@ -6,7 +6,7 @@ import io
 from pathlib import Path
 from typing import Any
 
-import fitz
+import pymupdf
 import pytest
 from PIL import Image
 
@@ -62,7 +62,7 @@ def fixture_files(folder: Path) -> tuple[Path, Path]:
     image_path = images / "fixture.png"
     image_path.write_bytes(raw.getvalue())
     pdf_path = folder / "fixture.pdf"
-    with fitz.open() as doc:
+    with pymupdf.open() as doc:
         page = doc.new_page(width=144, height=216)
         page.insert_image(page.rect, stream=raw.getvalue())
         page.insert_text((10, 20), "Synthetic fixture")

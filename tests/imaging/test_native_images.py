@@ -10,7 +10,7 @@ from contextlib import AbstractContextManager
 from pathlib import Path
 from typing import Any
 
-import fitz
+import pymupdf
 import pytest
 from PIL import Image
 
@@ -110,7 +110,7 @@ def scan_page(doc: Any, dpi: int = 300, width: int = 144, height: int = 216) -> 
 @pytest.mark.parametrize("strategy", ["direct", "supersample"])
 def test_native_full_page(tmp_path: Path, dpi: int, strategy: str) -> None:
     pdf = tmp_path / "scan.pdf"
-    with fitz.open() as doc:
+    with pymupdf.open() as doc:
         page = scan_page(doc, dpi)
         density = native_page_dpi(page, 300)
         assert density.dpi_x == pytest.approx(dpi, abs=0.5)
@@ -197,7 +197,7 @@ def test_large_original_and_tighter_config() -> None:
 @pytest.mark.parametrize("strategy", ["direct", "supersample"])
 def test_numeric_model_caps_and_native_memory(tmp_path: Path, strategy: str) -> None:
     pdf = tmp_path / "large.pdf"
-    with fitz.open() as doc:
+    with pymupdf.open() as doc:
         scan_page(doc, 300, 720, 960)
         doc.save(pdf)
     for model in ("gpt-6-astra", "gpt-5.4"):
@@ -293,7 +293,7 @@ def test_native_anthropic_render_cap(
     tmp_path: Path, model: str, side: int, patches: int
 ) -> None:
     pdf = tmp_path / "scan.pdf"
-    with fitz.open() as doc:
+    with pymupdf.open() as doc:
         scan_page(doc, 600, 288, 432)
         doc.save(pdf)
     payload = render_single_pdf_page_payload(
@@ -316,7 +316,7 @@ def test_native_anthropic_render_cap(
 
 def test_large_native_ignores_numeric_memory_guard(tmp_path: Path) -> None:
     pdf = tmp_path / "large.pdf"
-    with fitz.open() as doc:
+    with pymupdf.open() as doc:
         scan_page(doc, 300, 1440, 1200)
         doc.save(pdf)
     native = render_single_pdf_page_payload(

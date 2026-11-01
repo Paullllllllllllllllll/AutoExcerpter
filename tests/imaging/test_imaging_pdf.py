@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
-import fitz
+import pymupdf
 import pytest
 
 from autoexcerpter.imaging.payload import (
@@ -229,11 +229,11 @@ class TestPdfPayloadSourceRejects:
     def test_password_protected_pdf_rejected(self, tmp_path: Path) -> None:
         """An encrypted PDF that needs a password aborts construction."""
         pdf_path = tmp_path / "locked.pdf"
-        doc = fitz.open()
+        doc = pymupdf.open()
         doc.new_page(width=200, height=300)
         doc.save(
             pdf_path,
-            encryption=fitz.PDF_ENCRYPT_AES_256,
+            encryption=pymupdf.PDF_ENCRYPT_AES_256,
             owner_pw="owner",
             user_pw="user",
         )

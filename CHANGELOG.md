@@ -1,5 +1,15 @@
 # Changelog
 
+- **v1.2.0** (1 November 2026) -- Refresh the dependencies within their current majors
+  (among them `langchain-core`, `langchain-openai` and `langchain-anthropic` to 1.7,
+  `langchain-google-genai` to 4.4, `openai` to 2.54, `anthropic` to 0.125,
+  `google-genai` to 2.34 and PyMuPDF to 1.28.2) and cap `anthropic`, `openai` and
+  PyMuPDF below their next majors. PDF code imports `pymupdf` instead of the deprecated
+  `fitz`, whose warning broke the interrupt handshake. A new `error_type_of` in
+  `common/capture.py` keeps stored error types at their provider names under the
+  LangChain 1.7 error wrappers, so a server error is still recorded as
+  `InternalServerError`. The shared capability table adds `gemini-4-argon` and corrects
+  the context limit of `gemini-3.8-flash` and `gemini-3.7-flash` to 1,048,576 tokens.
 - **v1.1.10** (30 October 2026) -- A complete item no longer takes a requested
   file the store holds no record of as current: such a file is rendered, so the
   overwrite guard records it when it matches the rendering and otherwise keeps
