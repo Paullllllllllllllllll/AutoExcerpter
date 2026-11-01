@@ -30,3 +30,7 @@ docs/
 
 # Local environment files (never versioned)
 .env*
+
+# Agent and T3 Code files (local only)
+t3.json
+.t3-icon.svg
