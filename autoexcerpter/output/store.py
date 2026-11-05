@@ -820,8 +820,9 @@ class Classification:
     re-render its files without model calls; *missing* lists those files
     absent on disk. *reset* asks to reset every unit first, since the input
     changed since they were stored. *note* records a model change, which
-    resumes. *leased_by* names the run whose lease blocks the item; it is
-    None for an item blocked by a batch submission.
+    resumes. *leased_by* names the run whose lease blocks the item and
+    *lease_until* its expiry in seconds since the epoch; both are None for
+    an item blocked by a batch submission.
     """
 
     state: ItemState
@@ -834,6 +835,7 @@ class Classification:
     reason: str = ""
     note: str | None = None
     leased_by: str | None = None
+    lease_until: float | None = None
 
     def indices(self, kind: str) -> tuple[int, ...]:
         """Return the indices of the units of *kind* to process."""
@@ -1110,6 +1112,15 @@ def classify(
     resume = store.resume_state(name) if store is not None else None
     doc_id = resume.doc_id if resume is not None else None
     if resume is None or not resume.counts:
+        if resume is not None and _leased_elsewhere(resume, holder, now):
+            return Classification(
+                ItemState.BLOCKED,
+                name,
+                doc_id,
+                reason=lease_reason(resume.lease_run_id, resume.lease_until),
+                leased_by=resume.lease_run_id,
+                lease_until=resume.lease_until,
+            )
         present = [file for file in request.outputs if _nonempty(file)]
         if present:
             return Classification(
@@ -1129,9 +1140,13 @@ def classify(
     leased = _leased_elsewhere(resume, holder, now)
     blocked = _blocked(resume, leased)
     if blocked is not None:
-        leased_by = resume.lease_run_id if leased else None
         return Classification(
-            ItemState.BLOCKED, name, doc_id, reason=blocked, leased_by=leased_by
+            ItemState.BLOCKED,
+            name,
+            doc_id,
+            reason=blocked,
+            leased_by=resume.lease_run_id if leased else None,
+            lease_until=resume.lease_until if leased else None,
         )
     if (
         request.input_sha256 is not None

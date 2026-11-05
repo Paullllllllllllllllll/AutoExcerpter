@@ -208,8 +208,10 @@ option, for example as `model` or `summary_verbosity`.
 
 An interrupted `run` releases its leases, so a rerun right away resumes with the
 pages still to do. A run that is killed instead keeps its leases until they
-expire ([Store](#store)); until then a rerun reports its items as blocked and
-exits 1. A lease taken while a run plans or processes its items also counts,
+expire ([Store](#store)). A live run renews its leases every minute, so a rerun
+reads the leases on its items again every 90 seconds: it waits until an
+unrenewed lease expires and then processes the item, and it reports an item
+whose lease was renewed as blocked and exits 1. A lease taken while a run plans or processes its items also counts,
 including for a complete item whose files would be rendered again.
 
 Progress, warnings and errors go to stderr. With `--json`, stdout carries exactly

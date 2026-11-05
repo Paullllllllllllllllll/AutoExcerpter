@@ -272,6 +272,10 @@ CASES = {
         seeded(PENDING, sql=_lease("other-run", 600)), ItemState.BLOCKED,
         reason="other-run",
     ),
+    "leased_without_units": Case(
+        seeded([], sql=_lease("other-run", 600)), ItemState.BLOCKED,
+        reason="other-run",
+    ),
     "expired_foreign_lease": Case(
         seeded(PENDING, summarize=False, sql=_lease("other-run", -1)),
         ItemState.PARTIAL, keys(T, 0, 3), request={"summarize": False},

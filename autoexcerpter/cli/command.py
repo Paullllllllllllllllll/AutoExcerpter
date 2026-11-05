@@ -13,7 +13,7 @@ import argparse
 import asyncio
 import logging
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 from autoexcerpter import ext
@@ -29,6 +29,7 @@ from autoexcerpter.common.contract import (
 )
 from autoexcerpter.common.log_setup import configure_logging
 from autoexcerpter.common.options import Condition, Option
+from autoexcerpter.common.stale_leases import HeldLease, wait_for_stale_leases
 from autoexcerpter.common.usage import Usage, UsageTotals
 from autoexcerpter.llm import collect_usage
 from autoexcerpter.settings import SettingsError, SpecError, load, resolve
@@ -180,6 +181,33 @@ def report_usage_error(error: UsageError, argv: Sequence[str]) -> int:
     return ExitCode.USAGE
 
 
+def _held(run_plan: core.RunPlan) -> list[HeldLease]:
+    return [
+        HeldLease(
+            str(item.output_dir / item.name),
+            item.resume.leased_by,
+            item.resume.lease_until,
+        )
+        for item in run_plan.leased
+        if item.resume.lease_until is not None
+    ]
+
+
+def _after_stale_leases(
+    run_plan: core.RunPlan, replan: Callable[[], core.RunPlan]
+) -> core.RunPlan:
+    """Wait out the leases a killed run left on the plan's items; plan again."""
+    latest = run_plan
+
+    def read() -> list[HeldLease]:
+        nonlocal latest
+        latest = replan()
+        return _held(latest)
+
+    wait_for_stale_leases(_held(run_plan), read)
+    return latest
+
+
 def _execute(
     args: argparse.Namespace,
     flags: Mapping[str, Any],
@@ -199,6 +227,13 @@ def _execute(
         reporter.warning(message)
     try:
         run_plan = core.plan(spec, settings, sources=resolution.sources, args=args)
+        if not spec.run.dry_run:
+            run_plan = _after_stale_leases(
+                run_plan,
+                lambda: core.plan(
+                    spec, settings, sources=resolution.sources, args=args
+                ),
+            )
     except core.PlanError as exc:
         reporter.error(str(exc))
         emitter.emit(summary_fields(total=exc.items_total))

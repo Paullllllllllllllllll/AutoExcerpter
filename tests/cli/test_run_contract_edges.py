@@ -465,9 +465,16 @@ class TestResumeJsonEmission:
         make_pdf: Callable[..., Path],
         tmp_path: Path,
         pipeline_env: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """A leased item is named with its lease's expiry and exits 1."""
+        """A leased item is named with its lease's expiry and exits 1.
+
+        The other run renews its lease, so the wait finds it live at once.
+        """
+        monkeypatch.setattr(
+            "autoexcerpter.cli.command.wait_for_stale_leases", lambda *_a: None
+        )
         in_dir = tmp_path / "in"
         out_dir = tmp_path / "out"
         in_dir.mkdir()
@@ -495,6 +502,37 @@ class TestResumeJsonEmission:
         assert "Run incomplete: 1 item(s) leased by another run" in captured.err
         assert "Run complete" not in captured.err
         assert pipeline_env.transcribe_payload.call_count == 0
+
+    def test_a_lease_its_run_stopped_renewing_is_waited_out(
+        self,
+        make_pdf: Callable[..., Path],
+        tmp_path: Path,
+        summary_env: MagicMock,
+        pipeline_env: MagicMock,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """A killed run's lease is waited out, then the item is processed."""
+        in_dir = tmp_path / "in"
+        out_dir = tmp_path / "out"
+        in_dir.mkdir()
+        out_dir.mkdir()
+        pdf_path = make_pdf("in/Item.pdf", 1)
+        _seed_transcribed(out_dir, "Item", pdf_path, "gpt-5-mini")
+        connection = sqlite3.connect(out_dir / DATABASE_NAME)
+        with contextlib.closing(connection), connection:
+            connection.execute(
+                "UPDATE documents SET lease_run_id = 'killed-run', lease_until = ?",
+                (time.time() + 0.5,),
+            )
+
+        exit_code = _run_main(in_dir, out_dir, summarize=True)
+
+        captured = capsys.readouterr()
+        payload = _summary(captured.out)
+        assert exit_code == 0
+        assert (payload["items_complete"], payload["items_blocked"]) == (1, 0)
+        assert "waiting until" in captured.err.lower()
+        assert summary_env.generate_summary.call_count == 1
 
 
 class TestDeferralWithholding:
