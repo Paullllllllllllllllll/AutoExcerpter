@@ -1,5 +1,11 @@
 # Changelog
 
+- **v1.2.1** (5 November 2026) -- A rerun of `run` after a killed run no longer skips
+  the killed run's items for the 10 minutes its leases stay valid. Before the run it
+  reads the leases on its items again every 90 seconds; a lease whose expiry does not
+  move belongs to a run that has stopped, and the rerun waits until it expires and
+  then processes the item, while an item whose lease is renewed stays blocked and
+  exits 1. A leased document without stored units is now blocked at planning.
 - **v1.2.0** (1 November 2026) -- Refresh the dependencies within their current majors
   (among them `langchain-core`, `langchain-openai` and `langchain-anthropic` to 1.7,
   `langchain-google-genai` to 4.4, `openai` to 2.54, `anthropic` to 0.125,
