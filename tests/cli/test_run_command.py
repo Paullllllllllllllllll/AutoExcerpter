@@ -83,6 +83,16 @@ class TestJobFromSpec:
         assert job.transcription.options["openrouter_provider"] == "deepinfra"
         assert "openrouter_provider" not in job.summary.options
 
+    def test_the_samplers_are_sent_only_when_given(self) -> None:
+        spec = make_spec(top_k=20, summary_presence_penalty=1.5)
+        job = job_from_spec(spec, make_settings())
+
+        assert job.transcription.options["top_k"] == 20
+        assert job.summary.options["top_k"] == 20
+        assert job.summary.options["presence_penalty"] == 1.5
+        assert "presence_penalty" not in job.transcription.options
+        assert "min_p" not in job.summary.options
+
     def test_service_tier_per_phase(self) -> None:
         spec = make_spec(service_tier="priority", summary_service_tier="flex")
         job = job_from_spec(spec, make_settings())

@@ -72,6 +72,11 @@ def _model(rng: random.Random) -> ModelSpec:
         service_tier=rng.choice(SERVICE_TIERS),
         response_format=rng.choice([None, *RESPONSE_FORMATS]),
         openrouter_provider=rng.choice([None, "deepinfra", "-p"]),
+        presence_penalty=rng.choice([None, -1.5, 0.0, 2.0]),
+        frequency_penalty=rng.choice([None, 0.5]),
+        top_k=rng.choice([None, 1, 40]),
+        min_p=rng.choice([None, 0.0, 0.05]),
+        repetition_penalty=rng.choice([None, 1.1]),
     )
 
 
@@ -400,6 +405,20 @@ def test_a_phase_openrouter_provider_wins_over_the_unprefixed_flag() -> None:
     words = to_argv(parse(argv))
     assert words[words.index("--openrouter-provider") + 1] == "deepinfra"
     assert "--summary-openrouter-provider" not in words
+
+
+def test_a_phase_sampler_wins_over_the_unprefixed_flag() -> None:
+    argv = ["--input", "x", "--presence-penalty", "1.5", "--top-k", "20"]
+    spec = parse([*argv, "--summary-presence-penalty", "0.5"])
+
+    assert spec.transcription_model.presence_penalty == 1.5
+    assert spec.summary_model.presence_penalty == 0.5
+    assert spec.transcription_model.top_k == spec.summary_model.top_k == 20
+    assert spec.summary_model.min_p is None
+    words = to_argv(spec)
+    assert words[words.index("--top-k") + 1] == "20"
+    assert words[words.index("--summary-presence-penalty") + 1] == "0.5"
+    assert "--summary-top-k" not in words
 
 
 def test_recommended_images_fill_unset_fields() -> None:

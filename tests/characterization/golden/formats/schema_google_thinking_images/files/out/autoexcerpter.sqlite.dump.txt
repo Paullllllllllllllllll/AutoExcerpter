@@ -617,7 +617,15 @@
       "source": "default",
       "value": null
     },
+    "summary_model.frequency_penalty": {
+      "source": "default",
+      "value": null
+    },
     "summary_model.max_output_tokens": {
+      "source": "default",
+      "value": null
+    },
+    "summary_model.min_p": {
       "source": "default",
       "value": null
     },
@@ -629,6 +637,10 @@
       "source": "default",
       "value": null
     },
+    "summary_model.presence_penalty": {
+      "source": "default",
+      "value": null
+    },
     "summary_model.provider": {
       "source": "flag",
       "value": "google"
@@ -636,6 +648,10 @@
     "summary_model.reasoning_effort": {
       "source": "default",
       "value": "xhigh"
+    },
+    "summary_model.repetition_penalty": {
+      "source": "default",
+      "value": null
     },
     "summary_model.response_format": {
       "source": "default",
@@ -649,6 +665,10 @@
       "source": "default",
       "value": 1.0
     },
+    "summary_model.top_k": {
+      "source": "default",
+      "value": null
+    },
     "summary_model.top_p": {
       "source": "default",
       "value": null
@@ -661,7 +681,15 @@
       "source": "default",
       "value": null
     },
+    "transcription_model.frequency_penalty": {
+      "source": "default",
+      "value": null
+    },
     "transcription_model.max_output_tokens": {
+      "source": "default",
+      "value": null
+    },
+    "transcription_model.min_p": {
       "source": "default",
       "value": null
     },
@@ -673,6 +701,10 @@
       "source": "default",
       "value": null
     },
+    "transcription_model.presence_penalty": {
+      "source": "default",
+      "value": null
+    },
     "transcription_model.provider": {
       "source": "flag",
       "value": "google"
@@ -680,6 +712,10 @@
     "transcription_model.reasoning_effort": {
       "source": "default",
       "value": "xhigh"
+    },
+    "transcription_model.repetition_penalty": {
+      "source": "default",
+      "value": null
     },
     "transcription_model.response_format": {
       "source": "default",
@@ -692,6 +728,10 @@
     "transcription_model.temperature": {
       "source": "default",
       "value": 1.0
+    },
+    "transcription_model.top_k": {
+      "source": "default",
+      "value": null
     },
     "transcription_model.top_p": {
       "source": "default",

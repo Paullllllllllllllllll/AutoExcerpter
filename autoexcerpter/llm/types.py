@@ -17,7 +17,8 @@ class PhaseModel:
     None takes schema when the model supports it, else json. *options* holds the
     request options (``max_output_tokens`` when set,
     ``reasoning.effort``, ``text.verbosity``, ``temperature``, ``top_p``,
-    ``image_size``, ``openrouter_provider`` when set). *api_key_env* None
+    ``image_size``, and ``openrouter_provider``, the penalties, ``top_k``,
+    ``min_p`` and ``repetition_penalty`` when set). *api_key_env* None
     takes the provider's default key variable. *endpoint* names the custom
     endpoint behind *base_url*; *supports_vision* is that endpoint's declared
     image support.

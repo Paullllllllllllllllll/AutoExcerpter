@@ -1,5 +1,16 @@
 # Changelog
 
+- **v1.4.0** (6 November 2026) -- `run` takes `--presence-penalty`,
+  `--frequency-penalty`, `--top-k`, `--min-p` and `--repetition-penalty`, each also
+  per phase (`--transcription-...`, `--summary-...`) with a fallback to the
+  unprefixed flag, settable from `defaults:` like `--temperature`. Unset, a request
+  is unchanged. A set value goes to the providers that take it: OpenRouter and
+  custom endpoints get all five, Google models that take samplers the penalties and
+  `top_k`, Anthropic `top_k` when no thinking is sent; the OpenAI Responses API
+  takes none of them. Elsewhere the run warns that the value has no effect, and the
+  dry-run view drops it. The shared `common/` modules `provider_requests.py`,
+  `spec_view.py` and `standard_options.py` are synced with ChronoMiner and
+  ChronoTranscriber.
 - **v1.3.0** (6 November 2026) -- `run` takes `--openrouter-provider NAME`, and per
   phase `--transcription-openrouter-provider` and `--summary-openrouter-provider`,
   which fall back to it; the flag pins the provider that serves the phase's

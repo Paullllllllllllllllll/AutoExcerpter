@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from autoexcerpter.common.selection import PageRange, parse_page_range
+from autoexcerpter.common.standard_options import UNSET_SAMPLERS
 from autoexcerpter.imaging.settings import (
     request_detail_option,
     resolve_image_settings,
@@ -82,6 +83,9 @@ def _model_options(
         options["top_p"] = model.top_p
     if model.openrouter_provider is not None:
         options["openrouter_provider"] = model.openrouter_provider
+    for name in UNSET_SAMPLERS:
+        if getattr(model, name) is not None:
+            options[name] = getattr(model, name)
     if phase == "transcription":
         detail = request_detail_option(model.provider, images)
         if detail is not None:

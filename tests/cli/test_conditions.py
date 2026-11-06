@@ -79,6 +79,36 @@ def test_openrouter_provider_warns_for_the_phase_on_another_provider(
     assert "summary_model.openrouter_provider" not in spec
 
 
+def test_samplers_warn_for_the_phase_whose_provider_does_not_take_them(
+    make_pdf: MakePdf,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    argv = _dry_run(
+        make_pdf("doc.pdf"),
+        "--transcription-model",
+        "qwen/qwen3.5-27b",
+        "--summary-model",
+        "claude-sonnet-4-5",
+        "--min-p",
+        "0.05",
+        "--top-k",
+        "20",
+    )
+
+    assert entry.main(argv) == 0
+
+    captured = capsys.readouterr()
+    (warning,) = _warnings(captured.err)
+    assert "--min-p applies only for provider custom, openrouter" in warning
+    assert "the summary provider is anthropic" in warning
+    spec = json.loads(captured.out.splitlines()[-1])["spec"]
+    assert spec["transcription_model.min_p"] == {"value": 0.05, "source": "flag"}
+    assert "summary_model.min_p" not in spec
+    assert spec["summary_model.top_k"] == {"value": 20, "source": "flag"}
+
+
 def test_without_the_conditional_flag_nothing_warns(
     make_pdf: MakePdf, capsys: pytest.CaptureFixture[str]
 ) -> None:

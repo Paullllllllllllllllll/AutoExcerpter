@@ -12,6 +12,7 @@ settings default applies, since the equivalent command could not express it.
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from functools import partial
 from pathlib import Path
 from typing import Any, Final
 
@@ -19,6 +20,7 @@ from autoexcerpter import ext
 from autoexcerpter.common.batch import supports_batch
 from autoexcerpter.common.options import OptionError, Source
 from autoexcerpter.common.selection import is_numeric_selection, parse_page_range
+from autoexcerpter.common.standard_options import UNSET_SAMPLERS
 from autoexcerpter.common.wizard import (
     BACK,
     DONE,
@@ -60,6 +62,8 @@ from autoexcerpter.ui.review import (
 )
 from autoexcerpter.ui.session import (
     INVENTORY,
+    SAMPLER_LABELS,
+    UNSET_TEXT,
     Inventory,
     Session,
     absolute,
@@ -103,6 +107,7 @@ MODEL_FIELDS: Final = (
     "max_output_tokens",
     "temperature",
     "top_p",
+    *UNSET_SAMPLERS,
     "service_tier",
     "response_format",
 )
@@ -111,6 +116,7 @@ TUNING_FIELDS: Final = (
     "max_output_tokens",
     "temperature",
     "top_p",
+    *UNSET_SAMPLERS,
     "service_tier",
 )
 SAME_MODEL_FIELDS: Final = ("reasoning_effort", "service_tier", "response_format")
@@ -661,6 +667,9 @@ def _tuning_note(state: State, session: Session, phase: str) -> str:
         parts.append(shown("temperature", f"temperature {value('temperature')}"))
     if support.top_p and value("top_p") is not None:
         parts.append(shown("top_p", f"top p {value('top_p')}"))
+    for field, (label, _question) in SAMPLER_LABELS.items():
+        if field in support.samplers and value(field) is not None:
+            parts.append(shown(field, f"{label} {value(field)}"))
     if support.service_tier:
         parts.append(shown("service_tier", f"tier {value('service_tier')}"))
     return ", ".join(parts)
@@ -696,6 +705,7 @@ class _ModelQuestions:
             self.max_tokens,
             self.temperature,
             self.top_p,
+            *(partial(self.sampler, field) for field in UNSET_SAMPLERS),
             self.service_tier,
         ]
 
@@ -882,6 +892,22 @@ class _ModelQuestions:
                 name, "Top p (0.0 to 1.0, empty = not sent):", empty=None
             )
         return self.ctx.text_option(name, "Top p (0.0 to 1.0):")
+
+    def sampler(self, field: str) -> Nav | None:
+        """Ask a sampler without a code default, where the core sends it."""
+        current = self._customizing()
+        if current is None:
+            return None
+        if field not in support_of(current, self.session.settings).samplers:
+            return None
+        name = self._option(field)
+        question = SAMPLER_LABELS[field][1]
+        if can_reset(self.state, name):
+            unset = UNSET_TEXT.get(field, "not sent")
+            return self.ctx.text_option(
+                name, f"{question}, empty = {unset}):", empty=None
+            )
+        return self.ctx.text_option(name, f"{question}):")
 
     def service_tier(self) -> Nav | None:
         current = self._customizing()

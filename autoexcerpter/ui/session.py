@@ -26,6 +26,7 @@ from autoexcerpter import ext
 from autoexcerpter import run as core
 from autoexcerpter.common.options import OptionTable, Source
 from autoexcerpter.common.selection import ItemSelection, select_items
+from autoexcerpter.common.standard_options import UNSET_PENALTY_HELP
 from autoexcerpter.common.wizard import (
     BACK,
     DONE,
@@ -49,9 +50,11 @@ if TYPE_CHECKING:
 
 __all__ = [
     "INVENTORY",
+    "SAMPLER_LABELS",
     "TASKS",
     "TASK_STEP",
     "TITLE",
+    "UNSET_TEXT",
     "Inventory",
     "RunRequest",
     "Session",
@@ -305,6 +308,32 @@ def source_of(state: State, session: Session, target: str) -> Source | None:
 
 
 _REASONING_KEYS = ("reasoning", "thinking", "thinking_config", "output_config")
+SAMPLER_LABELS: Final[Mapping[str, tuple[str, str]]] = MappingProxyType(
+    {
+        "presence_penalty": ("presence penalty", "Presence penalty (-2.0 to 2.0"),
+        "frequency_penalty": ("frequency penalty", "Frequency penalty (-2.0 to 2.0"),
+        "top_k": ("top k", "Top k (a positive integer"),
+        "min_p": ("min p", "Min p (0.0 to 1.0"),
+        "repetition_penalty": (
+            "repetition penalty",
+            "Repetition penalty (above 0.0 to 2.0",
+        ),
+    }
+)
+"""Each sampler without a code default: its review label and question start."""
+UNSET_TEXT: Final[Mapping[str, str]] = MappingProxyType(
+    dict.fromkeys(("presence_penalty", "frequency_penalty"), UNSET_PENALTY_HELP)
+)
+"""What an unset sampler sends, where that is more than nothing."""
+_SAMPLER_PROBE: Final[Mapping[str, Any]] = MappingProxyType(
+    {
+        "presence_penalty": 0.5,
+        "frequency_penalty": 0.5,
+        "top_k": 40,
+        "min_p": 0.05,
+        "repetition_penalty": 1.1,
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -313,7 +342,8 @@ class Support:
 
     ``schema`` is whether API-enforced schemas are available: the
     endpoint's declaration for a custom endpoint, else the capability
-    table.
+    table. ``samplers`` holds the samplers without a code default whose set
+    value the core sends for the model.
     """
 
     reasoning: bool
@@ -322,6 +352,7 @@ class Support:
     top_p: bool
     service_tier: bool
     schema: bool
+    samplers: frozenset[str] = frozenset()
 
     @property
     def automatic_format(self) -> str:
@@ -357,6 +388,13 @@ def support_of(model: ModelSpec, settings: Settings) -> Support:
         schema = detect_capabilities(model.model).supports_structured_output
     extra = probe.get("extra_body")
     in_body = isinstance(extra, Mapping) and "reasoning" in extra
+    samplers = build_invoke_kwargs(
+        model.provider,
+        model.model,
+        {"reasoning": {"effort": model.reasoning_effort}, **_SAMPLER_PROBE},
+    )
+    body = samplers.get("extra_body")
+    sampler_body = body if isinstance(body, Mapping) else {}
     return Support(
         reasoning=in_body or any(key in probe for key in _REASONING_KEYS),
         verbosity="text" in sent,
@@ -364,6 +402,11 @@ def support_of(model: ModelSpec, settings: Settings) -> Support:
         top_p="top_p" in sent,
         service_tier=model.provider == "openai",
         schema=schema,
+        samplers=frozenset(
+            name
+            for name, value in _SAMPLER_PROBE.items()
+            if samplers.get(name, sampler_body.get(name)) == value
+        ),
     )
 
 

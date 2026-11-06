@@ -1,8 +1,8 @@
 """Request plan of a phase and its response format.
 
 :func:`request_plan` turns a phase's options (output limit, reasoning
-effort, verbosity, temperature, top_p, pinned OpenRouter provider) and
-service tier into the shared
+effort, verbosity, temperature, top_p, the samplers without a code default,
+pinned OpenRouter provider) and service tier into the shared
 :class:`~autoexcerpter.common.provider_requests.RequestPlan`, whose
 parameters (:func:`build_invoke_kwargs`) every synchronous call sends as
 invoke kwargs and every batch body carries. The shared builder decides,
@@ -143,6 +143,11 @@ def request_plan(
         service_tier=request_service_tier(provider, service_tier),
         caching=caching,
         openrouter_provider=options.get("openrouter_provider"),
+        presence_penalty=_number(options.get("presence_penalty")),
+        frequency_penalty=_number(options.get("frequency_penalty")),
+        top_k=options.get("top_k"),
+        min_p=_number(options.get("min_p")),
+        repetition_penalty=_number(options.get("repetition_penalty")),
     )
 
 

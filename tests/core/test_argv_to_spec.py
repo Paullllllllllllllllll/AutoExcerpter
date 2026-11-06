@@ -104,6 +104,25 @@ def _row(
     return Row(option, ("--input", "in.pdf", *words), sets, defaults or {})
 
 
+_SAMPLER_VALUES = {
+    "presence_penalty": ("1.5", 1.5),
+    "frequency_penalty": ("-0.5", -0.5),
+    "top_k": ("20", 20),
+    "min_p": ("0.05", 0.05),
+    "repetition_penalty": ("1.1", 1.1),
+}
+
+
+def _sampler_rows(phase: str | None) -> list[Row]:
+    """Return a row per sampler without a code default, unprefixed or of *phase*."""
+    rows = []
+    for name, (text, value) in _SAMPLER_VALUES.items():
+        option = name if phase is None else f"{phase}_{name}"
+        sets = _both(name, value) if phase is None else {f"{phase}_model.{name}": value}
+        rows.append(_row(option, "--" + option.replace("_", "-"), text, sets=sets))
+    return rows
+
+
 ROWS = [
     Row("input", ("--input", "a b/c.pdf"), {"input.path": Path("a b/c.pdf")}),
     _row(
@@ -220,6 +239,7 @@ ROWS = [
     ),
     _row("temperature", "--temperature", "0.4", sets=_both("temperature", 0.4)),
     _row("top_p", "--top-p", "0.9", sets=_both("top_p", 0.9)),
+    *_sampler_rows(None),
     _row(
         "service_tier",
         "--service-tier",
@@ -292,6 +312,7 @@ ROWS = [
         "0.5",
         sets={"transcription_model.top_p": 0.5},
     ),
+    *_sampler_rows("transcription"),
     _row(
         "transcription_service_tier",
         "--transcription-service-tier",
@@ -358,6 +379,7 @@ ROWS = [
         "1.0",
         sets={"summary_model.top_p": 1.0},
     ),
+    *_sampler_rows("summary"),
     _row(
         "summary_service_tier",
         "--summary-service-tier",

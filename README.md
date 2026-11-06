@@ -1,4 +1,4 @@
-# AutoExcerpter v1.3.0
+# AutoExcerpter v1.4.0
 
 <img src="assets/logo.svg" alt="AutoExcerpter logo" width="64" align="right">
 
@@ -173,6 +173,11 @@ option but the OpenRouter provider, for example as `model` or
 | maximum output tokens | `N` | `--max-output-tokens`: the model's output limit | `--transcription-max-output-tokens`: the model's output limit | `--summary-max-output-tokens`: the model's output limit |
 | sampling temperature, 0.0 to 2.0 | `T` | `--temperature`: per phase | `--transcription-temperature`: 1.0 | `--summary-temperature`: 1.0 |
 | nucleus sampling, 0.0 to 1.0; sent only when given and supported | `P` | `--top-p`: not sent | `--transcription-top-p`: not sent | `--summary-top-p`: not sent |
+| presence penalty, -2.0 to 2.0; a given value replaces the default; only for provider custom, google, openrouter | `X` | `--presence-penalty`: 0 for the models that take penalties, else not sent | `--transcription-presence-penalty`: 0 for the models that take penalties, else not sent | `--summary-presence-penalty`: 0 for the models that take penalties, else not sent |
+| frequency penalty, -2.0 to 2.0; a given value replaces the default; only for provider custom, google, openrouter | `X` | `--frequency-penalty`: 0 for the models that take penalties, else not sent | `--transcription-frequency-penalty`: 0 for the models that take penalties, else not sent | `--summary-frequency-penalty`: 0 for the models that take penalties, else not sent |
+| top-k sampling, a positive integer; sent only when given, to Anthropic only without thinking; only for provider anthropic, custom, google, openrouter | `N` | `--top-k`: not sent | `--transcription-top-k`: not sent | `--summary-top-k`: not sent |
+| min-p sampling, 0.0 to 1.0; sent only when given; only for provider custom, openrouter | `X` | `--min-p`: not sent | `--transcription-min-p`: not sent | `--summary-min-p`: not sent |
+| repetition penalty, above 0.0 to 2.0; sent only when given; only for provider custom, openrouter | `X` | `--repetition-penalty`: not sent | `--transcription-repetition-penalty`: not sent | `--summary-repetition-penalty`: not sent |
 | OpenAI service tier; only for provider openai | `{auto,default,flex,priority}` | `--service-tier`: per phase | `--transcription-service-tier`: default | `--summary-service-tier`: default |
 | schema (API-enforced), json (prompted, validated) or text (plain) | `{schema,json,text}` | `--response-format`: schema when the model supports it, else json | `--transcription-response-format`: schema when the model supports it, else json | `--summary-response-format`: schema when the model supports it, else json |
 | provider slug that serves every OpenRouter model request, with no fallback to another provider; decision-model requests keep OpenRouter's routing; only for provider openrouter | `NAME` | `--openrouter-provider`: OpenRouter's routing | `--transcription-openrouter-provider`: OpenRouter's routing | `--summary-openrouter-provider`: OpenRouter's routing |
@@ -433,7 +438,13 @@ keeps a plain answer that fails validation as one bullet point.
 `{"order": [NAME], "allow_fallbacks": false, "require_parameters": true}` as
 `provider` to every OpenRouter model request of the phase, so one provider serves it
 and a request that provider cannot serve fails instead of going to another
-provider.
+provider. A given `--presence-penalty`, `--frequency-penalty`, `--top-k`, `--min-p`
+or `--repetition-penalty` (or its phase flag) goes only where the phase's model
+takes it: all five to OpenRouter and custom endpoints, the two penalties and `top_k`
+to Google models that take a temperature, `top_k` to Anthropic requests without
+thinking for such models, and none to OpenAI, whose Responses API has no such
+parameters. Left unset, none of them is sent, apart from the 0 penalties that the
+models with penalty support (some OpenRouter models) receive already.
 
 Each phase sends one system prompt to every provider
 (`autoexcerpter/resources/prompts/`). The prompt is a short frame: it points to

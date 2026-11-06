@@ -144,6 +144,34 @@ def _options(**changes: Any) -> dict[str, Any]:
             id="openrouter-pinned-provider",
         ),
         pytest.param(
+            "openrouter",
+            "anthropic/claude-sonnet-4.5",
+            _options(presence_penalty=1.5, top_k=20, repetition_penalty=1.1),
+            {
+                "max_tokens": 128000,
+                "temperature": 1.0,
+                "presence_penalty": 1.5,
+                "extra_body": {
+                    "reasoning": {"max_tokens": 32000},
+                    "top_k": 20,
+                    "repetition_penalty": 1.1,
+                },
+            },
+            id="openrouter-samplers",
+        ),
+        pytest.param(
+            "google",
+            "gemini-2.0-flash",
+            _options(frequency_penalty=-0.5, top_k=20, min_p=0.05),
+            {
+                "max_output_tokens": 128000,
+                "temperature": 1.0,
+                "frequency_penalty": -0.5,
+                "top_k": 20,
+            },
+            id="google-samplers",
+        ),
+        pytest.param(
             "custom",
             "org/fake-model",
             FULL,

@@ -283,6 +283,8 @@ class ModelSpec:
     ``top_p`` None is not sent. ``response_format`` None means schema when the
     model supports it, else json. ``openrouter_provider`` names the one
     provider that serves the OpenRouter requests (None: OpenRouter's routing).
+    The penalties, ``top_k``, ``min_p`` and ``repetition_penalty`` None are
+    not sent.
     """
 
     provider: str
@@ -296,6 +298,11 @@ class ModelSpec:
     service_tier: str
     response_format: str | None
     openrouter_provider: str | None = None
+    presence_penalty: float | None = None
+    frequency_penalty: float | None = None
+    top_k: int | None = None
+    min_p: float | None = None
+    repetition_penalty: float | None = None
 
 
 @dataclass(frozen=True)

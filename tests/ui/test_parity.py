@@ -282,6 +282,58 @@ def named_endpoints(ws: Workspace) -> Script:
     return Script(session, answers)
 
 
+def endpoint_samplers(ws: Workspace) -> Script:
+    """Every sampler without a code default, per phase, at named endpoints."""
+    pdf = ws.pdf()
+    session = ws.session(
+        "endpoints:\n"
+        "  local:\n"
+        "    base_url: http://127.0.0.1:8000/v1\n"
+        "    api_key_env: LOCAL_KEY\n"
+        "    supports_schema: true\n"
+    )
+    answers = [
+        str(pdf),
+        "beside",
+        "md",
+        True,
+        KEEP,
+        "endpoint:local",
+        "qwen-vl",
+        "schema",
+        "customize",
+        KEEP,  # max output tokens
+        KEEP,  # temperature
+        KEEP,  # top p
+        "1.5",
+        "-0.5",
+        "20",
+        "0.05",
+        "1.1",
+        "own",
+        "endpoint:local",
+        "llava-next",
+        "text",
+        "customize",
+        KEEP,
+        KEEP,
+        KEEP,
+        "0.5",
+        "0.5",
+        "40",
+        "0.1",
+        "1.05",
+        "auto",
+        "none",
+        "recommended",
+        KEEP,
+        KEEP,
+        KEEP,
+        "copy",
+    ]
+    return Script(session, answers)
+
+
 def settings_endpoint_overridden(ws: Workspace) -> Script:
     """A settings endpoint and summary model replaced by a provider model."""
     pdf = ws.pdf()
@@ -517,6 +569,7 @@ SESSIONS: Final[Mapping[str, Callable[[Workspace], Script]]] = MappingProxyType(
             settings_defaults,
             back_to_code_defaults,
             named_endpoints,
+            endpoint_samplers,
             settings_endpoint_overridden,
             own_summary_model,
             custom_images_and_parameters,

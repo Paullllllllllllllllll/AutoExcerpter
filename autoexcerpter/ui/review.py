@@ -37,6 +37,7 @@ from autoexcerpter.spec import (
     to_argv,
 )
 from autoexcerpter.ui.session import (
+    SAMPLER_LABELS,
     Session,
     absolute,
     command_words,
@@ -217,6 +218,10 @@ def _model_line(
         parts.append(mark("temperature", f"temperature {model.temperature}"))
     if support.top_p and model.top_p is not None:
         parts.append(mark("top_p", f"top p {model.top_p}"))
+    for name, (label, _question) in SAMPLER_LABELS.items():
+        value = getattr(model, name)
+        if name in support.samplers and value is not None:
+            parts.append(mark(name, f"{label} {value}"))
     return Line(f"{phase} model", parts)
 
 
