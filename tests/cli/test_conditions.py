@@ -49,6 +49,36 @@ def test_service_tier_with_another_provider_warns_and_runs(
     assert "anthropic" in warning
 
 
+def test_openrouter_provider_warns_for_the_phase_on_another_provider(
+    make_pdf: MakePdf,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    argv = _dry_run(
+        make_pdf("doc.pdf"),
+        "--transcription-model",
+        "qwen/qwen3.5-flash-02-23",
+        "--summary-model",
+        "claude-sonnet-5",
+        "--openrouter-provider",
+        "deepinfra",
+    )
+
+    assert entry.main(argv) == 0
+
+    captured = capsys.readouterr()
+    (warning,) = _warnings(captured.err)
+    assert "--openrouter-provider applies only for provider openrouter" in warning
+    assert "the summary provider is anthropic" in warning
+    spec = json.loads(captured.out.splitlines()[-1])["spec"]
+    assert spec["transcription_model.openrouter_provider"] == {
+        "value": "deepinfra",
+        "source": "flag",
+    }
+    assert "summary_model.openrouter_provider" not in spec
+
+
 def test_without_the_conditional_flag_nothing_warns(
     make_pdf: MakePdf, capsys: pytest.CaptureFixture[str]
 ) -> None:

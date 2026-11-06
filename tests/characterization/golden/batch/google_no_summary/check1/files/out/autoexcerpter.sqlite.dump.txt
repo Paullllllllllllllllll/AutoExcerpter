@@ -504,6 +504,10 @@
       "source": "flag",
       "value": "gemini-2.5-flash-lite"
     },
+    "summary_model.openrouter_provider": {
+      "source": "default",
+      "value": null
+    },
     "summary_model.provider": {
       "source": "flag",
       "value": "google"
@@ -543,6 +547,10 @@
     "transcription_model.model": {
       "source": "flag",
       "value": "gemini-2.5-flash-lite"
+    },
+    "transcription_model.openrouter_provider": {
+      "source": "default",
+      "value": null
     },
     "transcription_model.provider": {
       "source": "flag",

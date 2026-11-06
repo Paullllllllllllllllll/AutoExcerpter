@@ -126,6 +126,24 @@ def _options(**changes: Any) -> dict[str, Any]:
             id="openrouter",
         ),
         pytest.param(
+            "openrouter",
+            "anthropic/claude-sonnet-4.5",
+            _options(openrouter_provider="anthropic"),
+            {
+                "max_tokens": 128000,
+                "temperature": 1.0,
+                "extra_body": {
+                    "reasoning": {"max_tokens": 32000},
+                    "provider": {
+                        "order": ["anthropic"],
+                        "allow_fallbacks": False,
+                        "require_parameters": True,
+                    },
+                },
+            },
+            id="openrouter-pinned-provider",
+        ),
+        pytest.param(
             "custom",
             "org/fake-model",
             FULL,

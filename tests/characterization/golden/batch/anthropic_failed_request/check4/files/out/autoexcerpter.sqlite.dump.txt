@@ -1415,6 +1415,10 @@
       "source": "flag",
       "value": "claude-sonnet-4-5"
     },
+    "summary_model.openrouter_provider": {
+      "source": "default",
+      "value": null
+    },
     "summary_model.provider": {
       "source": "flag",
       "value": "anthropic"
@@ -1454,6 +1458,10 @@
     "transcription_model.model": {
       "source": "flag",
       "value": "claude-sonnet-4-5"
+    },
+    "transcription_model.openrouter_provider": {
+      "source": "default",
+      "value": null
     },
     "transcription_model.provider": {
       "source": "flag",
@@ -1627,6 +1635,10 @@
       "source": "flag",
       "value": "claude-sonnet-4-5"
     },
+    "summary_model.openrouter_provider": {
+      "source": "default",
+      "value": null
+    },
     "summary_model.provider": {
       "source": "flag",
       "value": "anthropic"
@@ -1666,6 +1678,10 @@
     "transcription_model.model": {
       "source": "flag",
       "value": "claude-sonnet-4-5"
+    },
+    "transcription_model.openrouter_provider": {
+      "source": "default",
+      "value": null
     },
     "transcription_model.provider": {
       "source": "flag",

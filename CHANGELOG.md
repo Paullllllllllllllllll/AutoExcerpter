@@ -1,5 +1,17 @@
 # Changelog
 
+- **v1.3.0** (6 November 2026) -- `run` takes `--openrouter-provider NAME`, and per
+  phase `--transcription-openrouter-provider` and `--summary-openrouter-provider`,
+  which fall back to it; the flag pins the provider that serves the phase's
+  OpenRouter model requests: each request then carries OpenRouter's routing object
+  `{"order": [NAME], "allow_fallbacks": false, "require_parameters": true}` as
+  `provider`, so one provider serves the run and a request it cannot serve fails
+  instead of going to another provider. The flag is set on the command line only;
+  for other providers it has no effect and says so, and the dry-run spec shows it
+  for OpenRouter models. Decision-model requests keep OpenRouter's routing. The
+  shared `common/` modules `provider_requests.py`, `spec_view.py` and
+  `standard_options.py` are synced with ChronoMiner and
+  ChronoTranscriber.
 - **v1.2.1** (5 November 2026) -- A rerun of `run` after a killed run no longer skips
   the killed run's items for the 10 minutes its leases stay valid. Before the run it
   reads the leases on its items again every 90 seconds; a lease whose expiry does not

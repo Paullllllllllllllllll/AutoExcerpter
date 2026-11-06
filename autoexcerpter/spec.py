@@ -58,6 +58,7 @@ from autoexcerpter.common.standard_options import (
     json_option,
     model_options,
     nonempty_text,
+    openrouter_provider_options,
     output_options,
     render_options,
     settings_option,
@@ -280,7 +281,8 @@ class ModelSpec:
     ``provider:`` prefix. ``endpoint`` names a custom endpoint from the
     settings. ``max_output_tokens`` None takes the model's output limit;
     ``top_p`` None is not sent. ``response_format`` None means schema when the
-    model supports it, else json.
+    model supports it, else json. ``openrouter_provider`` names the one
+    provider that serves the OpenRouter requests (None: OpenRouter's routing).
     """
 
     provider: str
@@ -293,6 +295,7 @@ class ModelSpec:
     top_p: float | None
     service_tier: str
     response_format: str | None
+    openrouter_provider: str | None = None
 
 
 @dataclass(frozen=True)
@@ -443,21 +446,24 @@ def _fallback_context(value: str) -> str | None:
 
 def _model_options() -> list[Option]:
     """Return the unprefixed model options and the per-phase copies."""
-    return model_options(
-        providers=PROVIDERS,
-        suggestions=model_suggestions,
-        defaults={
-            "model": DEFAULT_MODEL,
-            "reasoning_effort": DEFAULT_REASONING_EFFORT,
-            "temperature": DEFAULT_TEMPERATURE,
-            "service_tier": DEFAULT_SERVICE_TIER,
-        },
-        response_formats=RESPONSE_FORMATS,
-        phases=PHASES,
-        phase_defaults={
-            phase: {"verbosity": DEFAULT_VERBOSITY[phase]} for phase in PHASES
-        },
-    )
+    return [
+        *model_options(
+            providers=PROVIDERS,
+            suggestions=model_suggestions,
+            defaults={
+                "model": DEFAULT_MODEL,
+                "reasoning_effort": DEFAULT_REASONING_EFFORT,
+                "temperature": DEFAULT_TEMPERATURE,
+                "service_tier": DEFAULT_SERVICE_TIER,
+            },
+            response_formats=RESPONSE_FORMATS,
+            phases=PHASES,
+            phase_defaults={
+                phase: {"verbosity": DEFAULT_VERBOSITY[phase]} for phase in PHASES
+            },
+        ),
+        *openrouter_provider_options(phases=PHASES),
+    ]
 
 
 def _build_table() -> OptionTable:
@@ -1221,7 +1227,7 @@ def _spell_providers(
 
 def _merge_phases(given: dict[str, Any], flat: Mapping[str, Any]) -> None:
     """Replace per-phase model values that agree with the unprefixed option."""
-    for name in MODEL_FIELDS:
+    for name in (*MODEL_FIELDS, "openrouter_provider"):
         per_phase = [f"{phase}_{name}" for phase in PHASES]
         if not any(key in given for key in per_phase):
             continue

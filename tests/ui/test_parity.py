@@ -48,6 +48,11 @@ EXEMPT: Final[Mapping[str, str]] = MappingProxyType(
         "json": "agent-contract output (one JSON line on stdout); no use in the UI",
         "settings": "the ui subcommand's own flag, checked against the ui parser",
         "files": "exact item names for scripts; the UI selects by number or name",
+        **dict.fromkeys(
+            ("openrouter_provider", *(f"{p}_openrouter_provider" for p in PHASES)),
+            "pins one OpenRouter provider for scripted runs; the UI leaves the "
+            "routing to OpenRouter",
+        ),
     }
 )
 WIDTH: Final = 100
@@ -652,7 +657,8 @@ def test_the_ui_parser_accepts_the_settings_option(tmp_path: Path) -> None:
 
 
 def test_the_exemptions_are_options_with_reasons() -> None:
-    assert set(EXEMPT) == {"json", "settings", "files"}
+    pinned = {"openrouter_provider", *(f"{p}_openrouter_provider" for p in PHASES)}
+    assert set(EXEMPT) == {"json", "settings", "files", *pinned}
     assert set(EXEMPT) <= set(OPTIONS.names)
     assert all(reason.strip() for reason in EXEMPT.values())
     declared = {name for step in build_steps(Session(Settings())) for name in step.sets}

@@ -164,7 +164,14 @@ def test_every_option_but_json_and_settings_belongs_to_a_step() -> None:
         for name in OPTIONS.names
         if any(f"{phase}_{name}" in OPTIONS for phase in ("transcription", "summary"))
     }
-    assert set(OPTIONS.names) - declared == {"json", "settings", "files", *unprefixed}
+    pinned = {f"{phase}_openrouter_provider" for phase in ("transcription", "summary")}
+    assert set(OPTIONS.names) - declared == {
+        "json",
+        "settings",
+        "files",
+        *unprefixed,
+        *pinned,
+    }
     assert [step.name for step in build_steps(_session())] == list(STEP_NAMES)
 
 

@@ -71,6 +71,7 @@ def _model(rng: random.Random) -> ModelSpec:
         top_p=rng.choice([None, 0.0, 0.5, 1.0]),
         service_tier=rng.choice(SERVICE_TIERS),
         response_format=rng.choice([None, *RESPONSE_FORMATS]),
+        openrouter_provider=rng.choice([None, "deepinfra", "-p"]),
     )
 
 
@@ -388,6 +389,17 @@ def test_invalid_arguments_exit_with_status_2(argv: list[str]) -> None:
 def test_service_tier_applies_only_to_openai() -> None:
     values = {"transcription_provider": "anthropic", "transcription_service_tier": "x"}
     assert OPTIONS.inapplicable(values) == ["transcription_service_tier"]
+
+
+def test_a_phase_openrouter_provider_wins_over_the_unprefixed_flag() -> None:
+    argv = ["--input", "x", "--openrouter-provider", "deepinfra"]
+    spec = parse([*argv, "--summary-openrouter-provider", "novita"])
+
+    assert spec.transcription_model.openrouter_provider == "deepinfra"
+    assert spec.summary_model.openrouter_provider == "novita"
+    words = to_argv(parse(argv))
+    assert words[words.index("--openrouter-provider") + 1] == "deepinfra"
+    assert "--summary-openrouter-provider" not in words
 
 
 def test_recommended_images_fill_unset_fields() -> None:

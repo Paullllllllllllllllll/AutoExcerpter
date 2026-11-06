@@ -533,6 +533,10 @@
       "source": "flag",
       "value": "gpt-5.6-terra"
     },
+    "summary_model.openrouter_provider": {
+      "source": "default",
+      "value": null
+    },
     "summary_model.provider": {
       "source": "flag",
       "value": "openai"
@@ -572,6 +576,10 @@
     "transcription_model.model": {
       "source": "flag",
       "value": "gpt-5.6-terra"
+    },
+    "transcription_model.openrouter_provider": {
+      "source": "default",
+      "value": null
     },
     "transcription_model.provider": {
       "source": "flag",
@@ -717,6 +725,10 @@
       "source": "flag",
       "value": "gpt-5.6-terra"
     },
+    "summary_model.openrouter_provider": {
+      "source": "default",
+      "value": null
+    },
     "summary_model.provider": {
       "source": "flag",
       "value": "openai"
@@ -756,6 +768,10 @@
     "transcription_model.model": {
       "source": "flag",
       "value": "gpt-5.6-terra"
+    },
+    "transcription_model.openrouter_provider": {
+      "source": "default",
+      "value": null
     },
     "transcription_model.provider": {
       "source": "flag",

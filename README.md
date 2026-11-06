@@ -1,4 +1,4 @@
-# AutoExcerpter v1.2.1
+# AutoExcerpter v1.3.0
 
 <img src="assets/logo.svg" alt="AutoExcerpter logo" width="64" align="right">
 
@@ -160,7 +160,8 @@ context text.
 
 The unprefixed flag sets both phases; the `--transcription-*` and `--summary-*`
 flags set one phase and win over it. The `defaults:` block can set every model
-option, for example as `model` or `summary_verbosity`.
+option but the OpenRouter provider, for example as `model` or
+`summary_verbosity`.
 
 | Setting | Values | Both phases | Transcription | Summary |
 | --- | --- | --- | --- | --- |
@@ -174,6 +175,7 @@ option, for example as `model` or `summary_verbosity`.
 | nucleus sampling, 0.0 to 1.0; sent only when given and supported | `P` | `--top-p`: not sent | `--transcription-top-p`: not sent | `--summary-top-p`: not sent |
 | OpenAI service tier; only for provider openai | `{auto,default,flex,priority}` | `--service-tier`: per phase | `--transcription-service-tier`: default | `--summary-service-tier`: default |
 | schema (API-enforced), json (prompted, validated) or text (plain) | `{schema,json,text}` | `--response-format`: schema when the model supports it, else json | `--transcription-response-format`: schema when the model supports it, else json | `--summary-response-format`: schema when the model supports it, else json |
+| provider slug that serves every OpenRouter model request, with no fallback to another provider; decision-model requests keep OpenRouter's routing; only for provider openrouter | `NAME` | `--openrouter-provider`: OpenRouter's routing | `--transcription-openrouter-provider`: OpenRouter's routing | `--summary-openrouter-provider`: OpenRouter's routing |
 
 ### Images
 
@@ -426,6 +428,12 @@ otherwise; a custom endpoint uses `schema` when it declares `supports_schema`. A
 requested `schema` on a model without structured output falls back to `json`
 with a warning. The summary always asks for the summary schema; with `text` it
 keeps a plain answer that fails validation as one bullet point.
+
+`--openrouter-provider NAME` (or a phase flag) adds OpenRouter's routing object
+`{"order": [NAME], "allow_fallbacks": false, "require_parameters": true}` as
+`provider` to every OpenRouter model request of the phase, so one provider serves it
+and a request that provider cannot serve fails instead of going to another
+provider.
 
 Each phase sends one system prompt to every provider
 (`autoexcerpter/resources/prompts/`). The prompt is a short frame: it points to

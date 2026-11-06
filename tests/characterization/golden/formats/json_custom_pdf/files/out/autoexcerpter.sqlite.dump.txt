@@ -625,6 +625,10 @@
       "source": "flag",
       "value": "org/fake-model"
     },
+    "summary_model.openrouter_provider": {
+      "source": "default",
+      "value": null
+    },
     "summary_model.provider": {
       "source": "flag",
       "value": "custom"
@@ -664,6 +668,10 @@
     "transcription_model.model": {
       "source": "flag",
       "value": "org/fake-model"
+    },
+    "transcription_model.openrouter_provider": {
+      "source": "default",
+      "value": null
     },
     "transcription_model.provider": {
       "source": "flag",

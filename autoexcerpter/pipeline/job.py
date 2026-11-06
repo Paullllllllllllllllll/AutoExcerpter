@@ -80,6 +80,8 @@ def _model_options(
     options["temperature"] = model.temperature
     if model.top_p is not None:
         options["top_p"] = model.top_p
+    if model.openrouter_provider is not None:
+        options["openrouter_provider"] = model.openrouter_provider
     if phase == "transcription":
         detail = request_detail_option(model.provider, images)
         if detail is not None:

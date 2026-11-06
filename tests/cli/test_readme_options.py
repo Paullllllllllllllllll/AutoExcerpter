@@ -22,6 +22,8 @@ SECTION = "## Command Reference"
 FLAG_HEADER = ["Flag", "Description", "Default", "In `defaults:`"]
 MATRIX_HEADER = ["Setting", "Values", "Both phases", "Transcription", "Summary"]
 SETTABLE_TEXT = {True: "yes", False: "no"}
+UNSETTABLE_MODEL_OPTIONS = frozenset({"openrouter_provider"})
+"""The model options the README names as outside the ``defaults:`` block."""
 
 
 def _section(text: str, heading: str = SECTION) -> list[str]:
@@ -132,8 +134,8 @@ def _check_matrix_row(
         option = by_flag[flag]
         if match.group(2) != default_text(option):
             problems.append(f"{flag}: default {match.group(2)!r}")
-        if not option.settable:
-            problems.append(f"{flag}: the README says every model option is settable")
+        if option.settable == (base.name in UNSETTABLE_MODEL_OPTIONS):
+            problems.append(f"{flag}: the README states the wrong defaults rule")
 
 
 def table_drift(text: str, table: OptionTable = OPTIONS) -> list[str]:

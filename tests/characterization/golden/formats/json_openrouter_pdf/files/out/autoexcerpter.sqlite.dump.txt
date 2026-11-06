@@ -624,6 +624,10 @@
       "source": "flag",
       "value": "anthropic/claude-sonnet-4.5"
     },
+    "summary_model.openrouter_provider": {
+      "source": "default",
+      "value": null
+    },
     "summary_model.provider": {
       "source": "flag",
       "value": "openrouter"
@@ -663,6 +667,10 @@
     "transcription_model.model": {
       "source": "flag",
       "value": "anthropic/claude-sonnet-4.5"
+    },
+    "transcription_model.openrouter_provider": {
+      "source": "default",
+      "value": null
     },
     "transcription_model.provider": {
       "source": "flag",

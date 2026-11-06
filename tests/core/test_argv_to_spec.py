@@ -227,6 +227,12 @@ ROWS = [
         sets=_both("service_tier", "priority"),
     ),
     _row(
+        "openrouter_provider",
+        "--openrouter-provider",
+        "deepinfra",
+        sets=_both("openrouter_provider", "deepinfra"),
+    ),
+    _row(
         "response_format",
         "--response-format",
         "json",
@@ -293,6 +299,12 @@ ROWS = [
         sets={"transcription_model.service_tier": "flex"},
     ),
     _row(
+        "transcription_openrouter_provider",
+        "--transcription-openrouter-provider",
+        "deepinfra",
+        sets={"transcription_model.openrouter_provider": "deepinfra"},
+    ),
+    _row(
         "transcription_response_format",
         "--transcription-response-format",
         "text",
@@ -351,6 +363,12 @@ ROWS = [
         "--summary-service-tier",
         "auto",
         sets={"summary_model.service_tier": "auto"},
+    ),
+    _row(
+        "summary_openrouter_provider",
+        "--summary-openrouter-provider",
+        "novita",
+        sets={"summary_model.openrouter_provider": "novita"},
     ),
     _row(
         "summary_response_format",
