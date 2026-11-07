@@ -1,5 +1,12 @@
 # Changelog
 
+- **v1.5.0** (7 November 2026) -- Refreshed dependencies within their current majors:
+  `langchain-core` 1.7.6, `langchain-openai` 1.7.4, `langchain-anthropic` 1.7.10,
+  `langchain-google-genai` 4.4.3, and the dev tools `ruff` 0.17.4, `pytest-asyncio`
+  1.4.1.post1, and `types-PyYAML` 6.0.12.20261103, with their floors raised to match.
+  No dependencies were removed. Major releases of `anthropic` (2.6.0), `openai`
+  (3.46.0), `google-genai` (3.0.0), and `PyMuPDF` (2.1) are held for a separate
+  migration.
 - **v1.4.0** (6 November 2026) -- `run` takes `--presence-penalty`,
   `--frequency-penalty`, `--top-k`, `--min-p` and `--repetition-penalty`, each also
   per phase (`--transcription-...`, `--summary-...`) with a fallback to the
