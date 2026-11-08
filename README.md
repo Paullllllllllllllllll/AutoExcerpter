@@ -1,4 +1,4 @@
-# AutoExcerpter v1.6.0
+# AutoExcerpter v1.7.0
 
 <img src="assets/logo.svg" alt="AutoExcerpter logo" width="64" align="right">
 
@@ -535,7 +535,10 @@ pages at `high` detail are fitted into 768x1536 px with white padding; at
 `ultra_high` (2,240 image tokens from Gemini 3 on; Gemini 2 takes no media
 resolution). An
 oversized PNG falls back to JPEG with a warning; a JPEG over the cap fails the
-page.
+page. A `native` render, like a numeric one, holds at most 24 megapixels, and a
+page rendered smaller for that reason records the downscale reason
+`memory_guard`. A Gemini page whose image and prompt text together exceed 20 MB
+fails without a request.
 
 ## Output Contract
 

@@ -41,6 +41,7 @@ from autoexcerpter.batch.submit import (
 from autoexcerpter.batch.work import needs_summary, summary_work, write_placeholders
 from autoexcerpter.common.batch import BatchRequest
 from autoexcerpter.common.images import PagePayload
+from autoexcerpter.common.provider_requests import RequestTooLargeError
 from autoexcerpter.common.store import UnitResult, UnitRow
 from autoexcerpter.events import NullEvents, RunEvents
 from autoexcerpter.llm.options import response_format_for
@@ -205,7 +206,7 @@ class BatchItem:
         ]
         if pending:
             await document.set_image_settings(image_settings_record(source.img_cfg))
-        transcriptions = await self._render(source, pending)
+        transcriptions = await self._render(source, pending, plans[0])
         outcome = BatchItemOutcome("incomplete")
         if transcriptions:
             await self._submit(transcriptions, plans[0], outcome)
@@ -237,10 +238,42 @@ class BatchItem:
             return outcome
         return await self._finish(outcome)
 
+    async def _fail(
+        self,
+        idx: int,
+        label: str,
+        source_index: int | str,
+        text: str,
+        *,
+        error: str,
+        error_type: str,
+    ) -> None:
+        """Store page *idx* as failed with *text*, *error* and *error_type*."""
+        stamp = self.document.transcription
+        await self.document.write_transcription(
+            UnitResult(
+                kind=KIND_TRANSCRIPTION,
+                idx=idx,
+                status="failed",
+                model=stamp.model,
+                provider=stamp.provider,
+                content=text,
+                outcome=transcription_outcome(text, error),
+                label=label,
+                source_index=source_index,
+                error=error,
+                error_type=error_type,
+            )
+        )
+
     async def _render(
-        self, source: PayloadSource, pending: Sequence[int]
+        self, source: PayloadSource, pending: Sequence[int], plan: BodyPlan
     ) -> list[UnitRequest]:
-        """Render the pages to transcribe; store the ones that fail at once."""
+        """Render the pages to transcribe; store the ones that fail at once.
+
+        A page whose request exceeds a size limit of the provider fails as
+        its synchronous request does.
+        """
         document = self.document
         stamp = document.transcription
         requests: list[UnitRequest] = []
@@ -251,21 +284,27 @@ class BatchItem:
                 payload = await asyncio.to_thread(source.build_payload, idx)
             except Exception as exc:  # noqa: BLE001 - a render failure fails one page
                 logger.error("Error preparing page %s: %s", label, exc)
-                text = f"[preprocessing error: {exc}]"
-                await document.write_transcription(
-                    UnitResult(
-                        kind=KIND_TRANSCRIPTION,
-                        idx=idx,
-                        status="failed",
-                        model=stamp.model,
-                        provider=stamp.provider,
-                        content=text,
-                        outcome=transcription_outcome(text, str(exc)),
-                        label=label,
-                        source_index=source_index,
-                        error=str(exc),
-                        error_type="preprocessing_failure",
-                    )
+                await self._fail(
+                    idx,
+                    label,
+                    source_index,
+                    f"[preprocessing error: {exc}]",
+                    error=str(exc),
+                    error_type="preprocessing_failure",
+                )
+                continue
+            request = _request(payload)
+            try:
+                plan.body(request)
+            except RequestTooLargeError as exc:
+                logger.error("Transcription failed for %s: %s", label, exc)
+                await self._fail(
+                    idx,
+                    label,
+                    source_index,
+                    f"[transcription error: {exc}]",
+                    error=str(exc),
+                    error_type="api_failure",
                 )
                 continue
             await document.write_transcription(
@@ -281,9 +320,7 @@ class BatchItem:
                     attempts=0,
                 )
             )
-            requests.append(
-                UnitRequest(document.key(KIND_TRANSCRIPTION, idx), _request(payload))
-            )
+            requests.append(UnitRequest(document.key(KIND_TRANSCRIPTION, idx), request))
         return requests
 
     async def _submit(

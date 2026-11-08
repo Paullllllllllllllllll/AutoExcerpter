@@ -26,6 +26,9 @@ from typing import Any
 import pytest
 
 import autoexcerpter.pipeline.item as pipeline_item
+from autoexcerpter.common.image_presets import MAX_IMAGE_BYTES
+from autoexcerpter.common.images import PagePayload
+from autoexcerpter.imaging.payload import PdfPayloadSource
 from autoexcerpter.output.store import DATABASE_NAME
 from tests.characterization.adapter import (
     ResponseFormat,
@@ -506,6 +509,33 @@ def test_missing_result_fails_the_page(
     assert errors == [("[transcription error: no result returned]",)]
     run.check("check2")
     run.golden("openai_missing_result", write_guard)
+
+
+def test_an_oversized_page_fails_and_the_others_are_submitted(
+    case: Callable[[Provider], Case], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run = case("anthropic")
+    build = PdfPayloadSource.build_payload
+
+    def oversized(self: PdfPayloadSource, index: int) -> PagePayload:
+        payload = build(self, index)
+        if index != FAILED_PAGE:
+            return payload
+        return dataclasses.replace(
+            payload, base64="A" * (MAX_IMAGE_BYTES["anthropic"] + 4)
+        )
+
+    monkeypatch.setattr(PdfPayloadSource, "build_payload", oversized)
+
+    submitted = run.submit()
+
+    assert submitted.result.exit_code == 0, submitted.result.stderr
+    assert len(submitted.requests(TRANSCRIPTION)) == PAGES - 1
+    assert run.statuses(TRANSCRIPTION) == {0: "pending", 1: "failed", 2: "pending"}
+    (error,) = run.rows(
+        f"SELECT error FROM units WHERE kind = 'transcription' AND idx = {FAILED_PAGE}"
+    )
+    assert "over the anthropic limit" in error[0]
 
 
 def test_refused_submission_fails_the_item_and_leaves_no_batch_job(

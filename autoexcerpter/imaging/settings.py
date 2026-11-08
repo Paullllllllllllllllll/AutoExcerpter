@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 # Recommended image settings per model family. Numeric runs render directly to
 # the profile unless a section sets the supersample strategy; native runs
 # render to the resolved model cap or profile. ``max_pixels_per_page`` guards
-# numeric rendering only (0 disables it); ``resampling_algorithm`` is the
+# numeric and native rendering (0 disables it); ``resampling_algorithm`` is the
 # downscaling filter, bilinear (fast) or lanczos (quality).
 IMAGE_PROCESSING: Mapping[str, Any] = {
     "render_strategy": IMAGE_PRESETS.render_strategy,

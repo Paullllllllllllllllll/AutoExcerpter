@@ -9,6 +9,7 @@ import random
 from contextlib import AbstractContextManager
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import pymupdf
 import pytest
@@ -122,7 +123,6 @@ def test_native_full_page(tmp_path: Path, dpi: int, strategy: str) -> None:
         target_dpi="native",
         img_cfg=settings(),
         model_type="openai",
-        max_pixels=100,
         render_strategy=strategy,
     )
     assert abs(payload.provenance["width"] - dpi * 2) <= 1
@@ -302,7 +302,6 @@ def test_native_anthropic_render_cap(
         target_dpi="native",
         img_cfg=settings(model, "anthropic"),
         model_type="anthropic",
-        max_pixels=100,
     )
     assert max(payload.provenance["width"], payload.provenance["height"]) <= side
     assert (
@@ -314,21 +313,30 @@ def test_native_anthropic_render_cap(
     assert payload.provenance["source_dpi_x"] == pytest.approx(600)
 
 
-def test_large_native_ignores_numeric_memory_guard(tmp_path: Path) -> None:
+def test_a_large_native_page_stays_within_the_memory_guard(tmp_path: Path) -> None:
     pdf = tmp_path / "large.pdf"
     with pymupdf.open() as doc:
         scan_page(doc, 300, 1440, 1200)
         doc.save(pdf)
-    native = render_single_pdf_page_payload(
-        pdf,
-        0,
-        target_dpi="native",
-        img_cfg=settings(),
-        model_type="openai",
-        max_pixels=24000000,
-    )
-    assert (native.provenance["width"], native.provenance["height"]) == (6000, 5000)
-    assert native.provenance["downscale_reason"] == "none"
+    with patch.object(
+        pymupdf.Page, "get_pixmap", autospec=True, side_effect=pymupdf.Page.get_pixmap
+    ) as get_pixmap:
+        native = render_single_pdf_page_payload(
+            pdf,
+            0,
+            target_dpi="native",
+            img_cfg=settings(),
+            model_type="openai",
+            max_pixels=24000000,
+        )
+    matrix = get_pixmap.call_args.kwargs["matrix"]
+    pixmap = (pymupdf.Rect(0, 0, 1440, 1200) * matrix).irect
+    assert pixmap.width * pixmap.height <= 24000000
+    size = (native.provenance["width"], native.provenance["height"])
+    assert size == (pixmap.width, pixmap.height)
+    assert size[0] * size[1] == pytest.approx(24000000, rel=0.001)
+    assert native.provenance["render_dpi"] < 300
+    assert native.provenance["downscale_reason"] == "memory_guard"
     numeric = render_single_pdf_page_payload(
         pdf,
         0,

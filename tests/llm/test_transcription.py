@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -403,6 +404,23 @@ def test_an_api_error_after_the_ladder_fails_the_page(
     assert result["error_type"] == "api_failure"
     assert result["error"] == "status 401"
     assert result["transcription"] == "[transcription error: status 401]"
+
+
+def test_a_gemini_page_over_the_request_limit_fails_without_a_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager, script = _manager(
+        monkeypatch, [_answer()], name="gemini-2.5-flash-lite", provider="google"
+    )
+    # The page fits the 20 MB image limit; with the prompt it exceeds the
+    # request's.
+    payload = replace(_payload(), base64="A" * (20_000_000 - 100))
+
+    result = asyncio.run(manager.transcribe_payload(payload))
+
+    assert script.requests == []
+    assert result["error_type"] == "api_failure"
+    assert "Gemini API limit" in result["error"]
 
 
 def test_openrouter_tool_call_answers_are_parsed(

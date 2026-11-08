@@ -24,6 +24,7 @@ from typing import Any
 from autoexcerpter.common.images import PagePayload
 from autoexcerpter.common.provider_requests import (
     Part,
+    check_request_size,
     message_content,
     request_params,
     system_content,
@@ -236,10 +237,17 @@ class TranscriptionManager:
         return self.response_format == "text"
 
     def messages(self, payload: PagePayload) -> list[Any]:
-        """Return the system and user messages for one page image."""
+        """Return the system and user messages for one page image.
+
+        Raises:
+            RequestTooLargeError: The request exceeds a size limit of the
+                provider (:func:`~autoexcerpter.common.provider_requests.
+                check_request_size`).
+        """
         from langchain_core.messages import HumanMessage, SystemMessage
 
         part = Part(data=payload.base64, mime=payload.mime_type, detail=self.detail)
+        check_request_size(self.plan, self.system_prompt, [part])
         return [
             SystemMessage(content=system_content(self.plan, self.system_prompt)),
             HumanMessage(content=message_content(self.plan, [part])),
