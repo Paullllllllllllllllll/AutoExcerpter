@@ -1,4 +1,4 @@
-# AutoExcerpter v1.5.0
+# AutoExcerpter v1.6.0
 
 <img src="assets/logo.svg" alt="AutoExcerpter logo" width="64" align="right">
 
@@ -276,7 +276,7 @@ The new run asks one step at a time: input (with the PDFs, image folders and
 pages found, and the item selection), output location and transcription format,
 summary on or off with the summary formats, transcription model, summary model,
 summary context, page images ("Recommended" or "Customize"; Anthropic and Google
-models are not offered the OpenAI-only `original` detail), run options and pages
+models are not offered the `original` detail), run options and pages
 (all, or a range in the `--pages` syntax). The run options start with a
 `Submission:` question, synchronous or Batch API, asked when every phase's
 provider has a batch API and the extension allows batch submission; the parallel
@@ -529,7 +529,11 @@ documented limits. At `original` detail, gpt-6-luna pages are limited to 3,000 p
 on the long side, since larger scans led it to invent text;
 `images.original_max_side_px` in the settings sets this limit for every OpenAI
 model. `--image-detail` is the request detail for OpenAI models and selects the
-local resize profile for the others (the media resolution for Google). An
+local resize profile for the others (the media resolution for Google). Gemini
+pages at `high` detail are fitted into 768x1536 px with white padding; at
+`original` detail they keep their rendered size and go out at media resolution
+`ultra_high` (2,240 image tokens from Gemini 3 on; Gemini 2 takes no media
+resolution). An
 oversized PNG falls back to JPEG with a warning; a JPEG over the cap fails the
 page.
 
