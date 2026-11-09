@@ -1,4 +1,4 @@
-# AutoExcerpter v1.7.1
+# AutoExcerpter v1.7.2
 
 <img src="assets/logo.svg" alt="AutoExcerpter logo" width="64" align="right">
 

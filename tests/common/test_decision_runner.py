@@ -450,7 +450,9 @@ def _encoded(image: PILImage.Image, fmt: str, **options: Any) -> bytes:
 )
 def test_decision_images_flatten_transparency_onto_white(data: bytes) -> None:
     with PILImage.open(io.BytesIO(decision_jpeg(data, 300))) as image:
-        assert min(image.getpixel((20, 20))) >= 250
+        pixel = image.getpixel((20, 20))
+    assert isinstance(pixel, tuple)
+    assert min(pixel) >= 250
 
 
 def test_decision_images_follow_the_exif_orientation() -> None:
@@ -466,7 +468,9 @@ def test_decision_images_scale_sixteen_bit_depth() -> None:
     data = _encoded(PILImage.new("I;16", (10, 10), 32768), "PNG")
 
     with PILImage.open(io.BytesIO(decision_jpeg(data, 300))) as image:
-        assert 120 <= min(image.getpixel((5, 5))) <= 136
+        pixel = image.getpixel((5, 5))
+    assert isinstance(pixel, tuple)
+    assert 120 <= min(pixel) <= 136
 
 
 def test_decision_images_are_rgb_jpegs_within_the_size() -> None:

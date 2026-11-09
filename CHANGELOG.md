@@ -1,5 +1,8 @@
 # Changelog
 
+- **v1.7.2** (9 November 2026) -- The tests of the decision parser, the page
+  types, the decision images and the stale-unit triggers carry type annotations, so
+  `mypy autoexcerpter tests` passes again; no behavior changes.
 - **v1.7.1** (8 November 2026) -- pyasn1 moves from 0.6.4 to 0.6.5 in
   `uv.lock` for GHSA-2qm8-x737-gmw5, GHSA-9m75-vc3g-4x39, GHSA-fm9c-5rcf-2q5p
   and GHSA-mm57-4v3p-rchx. No source change.

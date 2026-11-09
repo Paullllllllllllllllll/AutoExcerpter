@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from typing import Any
 
 import httpx
 import pytest
@@ -18,6 +19,7 @@ from autoexcerpter.common.decisions import (
     Choice,
     ChoiceAnswer,
     DecisionUsage,
+    Dialect,
     Image,
     Json,
     Level,
@@ -137,7 +139,9 @@ def test_openrouter_body_maps_names_to_noul_choice_and_score() -> None:
     ("dialect", "response"),
     [("openai", OPENAI_RESPONSE), ("openrouter", OPENROUTER_RESPONSE)],
 )
-def test_both_dialects_parse_into_the_same_answer_types(dialect, response) -> None:
+def test_both_dialects_parse_into_the_same_answer_types(
+    dialect: Dialect, response: dict[str, Any]
+) -> None:
     result = parse_response(dialect, response, QUESTIONS)
     assert isinstance(result.answers["title"], PredicateAnswer)
     kind = result.answers["kind"]
@@ -173,7 +177,7 @@ def test_a_refusal_is_an_answer() -> None:
         {"title": {"type": "choice", "choice": "x"}},
     ],
 )
-def test_answers_that_do_not_fit_raise(answers) -> None:
+def test_answers_that_do_not_fit_raise(answers: dict[str, Any]) -> None:
     with pytest.raises(MalformedAnswer):
         parse_response("openrouter", {"answers": answers}, QUESTIONS[:1])
 
@@ -185,7 +189,9 @@ def test_an_unknown_choice_raises() -> None:
 
 
 @pytest.mark.parametrize("probabilities", [None, {}, {"title_page": 0.8, "other": 0.8}])
-def test_a_choice_needs_a_probability_distribution(probabilities) -> None:
+def test_a_choice_needs_a_probability_distribution(
+    probabilities: dict[str, float] | None,
+) -> None:
     entry = {"type": "choice", "choice": "other", "probabilities": probabilities}
     with pytest.raises(MalformedAnswer):
         parse_response("openrouter", {"answers": {"kind": entry}}, QUESTIONS[1:2])

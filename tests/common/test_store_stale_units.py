@@ -9,6 +9,7 @@ Run on Windows with:
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 import pytest
@@ -92,7 +93,7 @@ def test_unit_changes_mark_the_rendered_files_stale(tmp_path: Path) -> None:
                     lease, "page", units, model="model-a", provider="openai"
                 )
 
-            changes = {
+            changes: dict[str, Callable[[], Awaitable[object]]] = {
                 "plan": plan,
                 "plan nothing new": plan,
                 "flag a unit": lambda: store.set_units_stale(lease, "page", [0]),

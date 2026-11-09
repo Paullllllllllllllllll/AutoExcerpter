@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 from autoexcerpter.common.options import Condition
@@ -9,6 +11,7 @@ from autoexcerpter.common.page_types import (
     DEFAULT_PROFILE,
     NO_TEXT,
     PROFILES,
+    Profile,
     no_text_probability,
     page_type_question,
     page_types,
@@ -31,7 +34,9 @@ def test_general_is_the_default_and_culinary_adds_three_types() -> None:
 
 
 @pytest.mark.parametrize("profile", PROFILES)
-def test_every_profile_holds_the_no_text_types_and_a_catch_all(profile) -> None:
+def test_every_profile_holds_the_no_text_types_and_a_catch_all(
+    profile: Profile,
+) -> None:
     values = {t.value for t in page_types(profile)}
     assert values >= NO_TEXT
     assert {"other", "title_page", "library_mark"} <= values
@@ -96,6 +101,6 @@ def test_the_decisions_block_reads_thresholds_by_fingerprint() -> None:
         {"unknown": 1},
     ],
 )
-def test_the_decisions_block_rejects_bad_values(raw) -> None:
+def test_the_decisions_block_rejects_bad_values(raw: dict[str, Any]) -> None:
     with pytest.raises(SettingsError):
         read_decisions(Reader("settings"), raw, Decisions())
