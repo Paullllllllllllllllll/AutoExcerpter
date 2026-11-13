@@ -38,7 +38,12 @@ from autoexcerpter.common.decisions import (
     Text,
 )
 from autoexcerpter.common.images import decision_jpeg
-from autoexcerpter.common.retry import Decision, default_decision
+from autoexcerpter.common.retry import (
+    Decision,
+    RunStopped,
+    StopSignal,
+    default_decision,
+)
 from autoexcerpter.common.settings_schema import RetrySettings
 from autoexcerpter.common.usage import Usage
 
@@ -351,6 +356,33 @@ async def test_a_malformed_answer_is_retried_on_the_validation_budget() -> None:
     with pytest.raises(MalformedAnswer, match="second"):
         await exhausted.runner.ask(Request(_classifier(), "book", (_unit(1),)))
     assert len(exhausted.recorded) == 2
+
+
+async def test_a_stop_decided_for_a_malformed_answer_ends_the_request() -> None:
+    client = FakeClient([MalformedAnswer("q0: no answer"), _answers])
+    stop = StopSignal()
+
+    class Stopping(FakeAttempt):
+        def on_error(self, exc: BaseException) -> Decision:
+            return Decision.STOP
+
+    async def no_sleep(_: float) -> None:
+        return None
+
+    seam = Seam(
+        attempt=lambda: Stopping(client, None),
+        record=lambda usage: None,
+        retry=RetrySettings(max_attempts=4, validation_attempts=2),
+        sleep=no_sleep,
+        stop=stop,
+    )
+    runner = DecisionRunner(seam, model="typesafe/jev", dialect="openrouter")
+
+    with pytest.raises(RunStopped, match="no answer"):
+        await runner.ask(Request(_classifier(), "book", (_unit(1),)))
+
+    assert stop.reason == "MalformedAnswer: q0: no answer"
+    assert len(client.calls) == 1
 
 
 async def test_a_refusal_is_returned_as_a_refusal() -> None:

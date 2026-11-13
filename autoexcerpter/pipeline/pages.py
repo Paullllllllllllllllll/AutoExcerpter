@@ -6,7 +6,9 @@ summary unit (see :mod:`autoexcerpter.output.store`). The transcription unit
 is committed before the summary call, so a crash during that call leaves the
 page transcribed and its summary pending. A unit that cannot be written is
 counted and the page stays pending; a lost lease stops every page that has
-not started its unit yet.
+not started its unit yet. A stopped run (:class:`~autoexcerpter.common.
+retry.RunStopped`) writes nothing for the unit whose call it stopped, and a
+page whose transcription is stored after the stop gets no summary call.
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ from typing import Any, Protocol
 
 from autoexcerpter.common.capture import error_type_of
 from autoexcerpter.common.images import PagePayload
+from autoexcerpter.common.retry import RunStopped, StopSignal
 from autoexcerpter.common.store import LeaseLostError
 from autoexcerpter.constants import is_blank_transcription
 from autoexcerpter.llm.summary import placeholder_summary as failed_summary
@@ -204,8 +207,10 @@ class PageRunner:
     *summary_manager* is None when the run does not summarize. *executor*
     renders the page images; None uses the loop's default executor. *pdf*
     says whether a page's source index is its PDF page (else its image
-    name). After the pages, ``write_errors`` holds the unit writes that
-    failed and ``lost`` the lost lease, if any.
+    name). *stop* is the run's stop signal (default: one of the runner's
+    own). After the pages, ``write_errors`` holds the unit writes that
+    failed, ``lost`` the lost lease, if any, and ``stored`` the
+    ``(kind, idx)`` of every unit stored.
     """
 
     def __init__(
@@ -218,6 +223,7 @@ class PageRunner:
         transcription_provider: str | None,
         pdf: bool = True,
         executor: concurrent.futures.Executor | None = None,
+        stop: StopSignal | None = None,
     ) -> None:
         self.item_name = item_name
         self.document = document
@@ -226,8 +232,10 @@ class PageRunner:
         self.transcription_provider = transcription_provider
         self.pdf = pdf
         self.executor = executor
+        self.stop = stop if stop is not None else StopSignal()
         self.write_errors: list[BaseException] = []
         self.lost: LeaseLostError | None = None
+        self.stored: set[tuple[str, int]] = set()
 
     def source_index(self, index: int, image_name: str) -> int | str:
         """Return a page's source index: its PDF page, else its image name."""
@@ -287,6 +295,10 @@ class PageRunner:
         Advances *progress* and returns the page's event status: ``ok``,
         ``failed``, or ``deferred`` when the page was not stored (a lost
         lease or a failed write).
+
+        Raises:
+            RunStopped: The run stopped before the page's units were
+                stored; a transcription stored before the stop stays.
         """
         image_name = f"page index {index}"
         try:
@@ -299,6 +311,7 @@ class PageRunner:
             return "deferred"
         text, error = stored
         if self.summary_manager is not None:
+            self.admit()
             await self.summarize_page(index, image_name, text, error)
         processed = progress.advance()
         logger.debug(
@@ -316,6 +329,9 @@ class PageRunner:
         *error* is the transcription's error: a failed page gets a
         placeholder summary without a call. Returns whether the unit was
         stored.
+
+        Raises:
+            RunStopped: The run stopped; the summary unit is not written.
         """
         if self.lost is not None or self.summary_manager is None:
             return False
@@ -326,6 +342,8 @@ class PageRunner:
         async with unit_call(self.document, KIND_SUMMARY, index) as call:
             try:
                 entry = await self.summarize(transcription, index, image_name)
+            except RunStopped:
+                raise
             except Exception as exc:  # noqa: BLE001 - a crash fails one summary
                 logger.exception(f"Failed to summarize {image_name}: {exc}")
                 page = index + 1
@@ -355,6 +373,9 @@ class PageRunner:
         """Transcribe and store one page; return its text and error.
 
         None when the unit was not stored.
+
+        Raises:
+            RunStopped: The run stopped; the unit is not written.
         """
         if self.lost is not None:
             return None
@@ -364,6 +385,8 @@ class PageRunner:
                 if "error" not in result:
                     raw_text = result.get("transcription", "")
                     result["transcription"] = clean_transcription(raw_text)
+            except RunStopped:
+                raise
             except Exception as exc:  # noqa: BLE001 - a crash fails one page
                 logger.exception(f"Critical error during task for {image_name}: {exc}")
                 result = {
@@ -428,7 +451,17 @@ class PageRunner:
             )
             self.write_errors.append(exc)
             return False
+        self.stored.add((call.kind, call.idx))
         return True
+
+    def admit(self) -> None:
+        """Return when the run may start another unit.
+
+        Raises:
+            RunStopped: The run's stop signal is set.
+        """
+        if self.stop.reason is not None:
+            raise RunStopped(self.stop.reason)
 
     async def _render(self, source: PageSource, index: int) -> PagePayload:
         """Build the page payload in the executor."""

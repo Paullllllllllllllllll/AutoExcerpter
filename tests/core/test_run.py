@@ -13,6 +13,7 @@ import pytest
 import requests
 
 import autoexcerpter.llm.caller as caller_module
+import autoexcerpter.output.store as store_module
 import autoexcerpter.pipeline.managers as managers_module
 import autoexcerpter.run as core
 from autoexcerpter.common.contract import ExitCode
@@ -220,7 +221,7 @@ def test_duplicate_guard_runs_before_the_resume_check(
 ) -> None:
     input_path, flags = _same_stem(tmp_path, make_pdf)
     monkeypatch.setattr(
-        core, "classify", MagicMock(side_effect=AssertionError("resume first"))
+        core, "read_folder", MagicMock(side_effect=AssertionError("resume first"))
     )
     with pytest.raises(core.DuplicateOutputError):
         _plan(input_path, **flags)
@@ -347,6 +348,33 @@ def test_complete_items_are_skipped_unless_forced(
     assert skipping.to_process == ()
     assert not skipping.has_work
     assert [item.state for item in forcing.to_process] == ["none"]
+
+
+def test_a_plan_reads_each_output_folder_once(
+    tmp_path: Path,
+    make_pdf: MakePdf,
+    transcriber: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / "in").mkdir()
+    for name in ("alpha", "beta", "gamma"):
+        make_pdf(f"in/{name}.pdf")
+    flags = {"all": True, "output": tmp_path / "out", "summarize": False}
+    asyncio.run(core.run(_plan(tmp_path / "in", **flags)))
+    calls = {"check_schema": 0, "read": 0}
+    for name in calls:
+        original = getattr(store_module, name)
+
+        def counted(*args: Any, _name: str = name, _call: Any = original) -> Any:
+            calls[_name] += 1
+            return _call(*args)
+
+        monkeypatch.setattr(store_module, name, counted)
+
+    run_plan = _plan(tmp_path / "in", **flags)
+
+    assert sorted(item.name for item in run_plan.skipped) == ["alpha", "beta", "gamma"]
+    assert calls == {"check_schema": 1, "read": 1}
 
 
 def test_outputs_go_beside_the_input_without_an_output_folder(

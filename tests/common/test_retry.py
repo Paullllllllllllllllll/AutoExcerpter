@@ -18,9 +18,12 @@ from autoexcerpter.common.retry import (
     RetryEvent,
     RetryHooks,
     RetryPolicy,
+    RunStopped,
+    StopSignal,
     call_with_retry,
     classify_error,
     default_decision,
+    heed_stop,
     http_status,
     is_connection_error,
     is_rate_limit_message,
@@ -540,6 +543,105 @@ class TestCallWithRetry:
             )
         )
         assert slept == [30.0]
+
+    def test_stop_sets_the_signal_and_raises_with_the_cause(
+        self, slept: list[float]
+    ) -> None:
+        stop = StopSignal()
+        failure = _status_error(429, "no further calls")
+        calls = _Calls(failure)
+        hooks = RetryHooks(on_error=lambda exc: Decision.STOP, stop=stop)
+
+        with pytest.raises(RunStopped, match="no further calls") as raised:
+            _run(call_with_retry(calls, hooks=hooks))
+
+        assert raised.value.__cause__ is failure
+        assert stop.reason == "Exception: no further calls"
+        assert bool(stop)
+        assert calls.count == 1
+        assert slept == []
+
+    def test_heeding_a_stop_decision_sets_the_reason_of_the_ladder(self) -> None:
+        stop = StopSignal()
+
+        heed_stop(stop, Decision.RETRY, Exception("slow"))
+        assert stop.reason is None
+
+        heed_stop(stop, Decision.STOP, Exception("no further calls"))
+        assert stop.reason == "Exception: no further calls"
+        heed_stop(None, Decision.STOP, Exception("no signal to set"))
+
+    def test_stop_without_a_signal_still_raises(self, slept: list[float]) -> None:
+        calls = _Calls(_status_error(429))
+        with pytest.raises(RunStopped):
+            _run(
+                call_with_retry(
+                    calls, hooks=RetryHooks(on_error=lambda exc: Decision.STOP)
+                )
+            )
+        assert calls.count == 1
+
+    def test_a_set_signal_stops_a_call_before_its_attempt(
+        self, slept: list[float]
+    ) -> None:
+        stop = StopSignal()
+        stop.set("first reason")
+        stop.set("second reason")
+        calls = _Calls("ok")
+
+        with pytest.raises(RunStopped, match="first reason") as raised:
+            _run(call_with_retry(calls, hooks=RetryHooks(stop=stop)))
+
+        assert raised.value.__cause__ is None
+        assert calls.count == 0
+
+    def test_a_set_signal_takes_no_permit_of_the_gate(self, slept: list[float]) -> None:
+        stop = StopSignal()
+        stop.set("the limit")
+        gate = _Gate()
+        calls = _Calls("ok")
+
+        with pytest.raises(RunStopped):
+            _run(call_with_retry(calls, hooks=RetryHooks(gate=gate, stop=stop)))
+
+        assert gate.acquired == 0
+        assert calls.count == 0
+
+    def test_a_signal_set_during_the_wait_at_the_gate_sends_no_request(
+        self, slept: list[float]
+    ) -> None:
+        stop = StopSignal()
+        calls = _Calls("ok")
+
+        class _Stopping(_Gate):
+            async def acquire(self) -> float:
+                stop.set("another call met the limit")
+                return await super().acquire()
+
+        with pytest.raises(RunStopped, match="another call met the limit"):
+            _run(call_with_retry(calls, hooks=RetryHooks(gate=_Stopping(), stop=stop)))
+
+        assert calls.count == 0
+
+    def test_a_signal_set_during_the_backoff_ends_the_retries(
+        self, slept: list[float]
+    ) -> None:
+        stop = StopSignal()
+        calls = _Calls(_status_error(503))
+
+        def on_retry(event: RetryEvent) -> None:
+            stop.set("another call met the limit")
+
+        with pytest.raises(RunStopped, match="another call met the limit"):
+            _run(call_with_retry(calls, hooks=RetryHooks(on_retry=on_retry, stop=stop)))
+        assert calls.count == 1
+
+    def test_an_unset_signal_changes_nothing(self, slept: list[float]) -> None:
+        stop = StopSignal()
+        calls = _Calls(_status_error(503), "ok")
+        assert _run(call_with_retry(calls, hooks=RetryHooks(stop=stop))) == "ok"
+        assert stop.reason is None
+        assert not stop
 
     def test_async_on_error_hook(self, slept: list[float]) -> None:
         async def on_error(exc: BaseException) -> Decision:

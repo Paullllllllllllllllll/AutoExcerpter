@@ -36,6 +36,7 @@ from autoexcerpter.common.images import (
     list_folder_images,
     sha256_of_file,
 )
+from autoexcerpter.common.retry import RunStopped, StopSignal
 from autoexcerpter.common.sqlite import read
 from autoexcerpter.common.store import (
     BLOCKING_SUBMISSIONS,
@@ -314,7 +315,9 @@ class ItemProcessor:
     the files that hold their rendering and ``last_run_report`` the per-item
     statistics (None when the item stopped before them). Once ``stop`` is
     set, OpenAlex enrichment ends and no output file is rendered; the item
-    then counts failed and its units stay in the store.
+    then counts failed and its units stay in the store. ``stop_signal`` is
+    the run's stop signal, that of *env* when given; after a stopped run
+    ``units_left`` counts the units the item still needed.
     """
 
     def __init__(  # noqa: PLR0913 - the item, its document and the run's objects
@@ -343,6 +346,8 @@ class ItemProcessor:
             managers = build_managers(job, context, env)
         self.managers = managers
         self.context = context
+        self.stop_signal = env.stop if env is not None else StopSignal()
+        self.units_left = 0
         self.runner = PageRunner(
             item_name=self.name,
             document=document,
@@ -350,6 +355,7 @@ class ItemProcessor:
             summary_manager=managers.summary if job.summarize else None,
             transcription_provider=job.transcription.provider,
             pdf=item.kind == "pdf",
+            stop=self.stop_signal,
         )
 
         self.files = ItemFiles(
@@ -385,6 +391,8 @@ class ItemProcessor:
         Raises:
             LeaseLostError: The run's lease on the document was lost; the
                 units stored before stay.
+            RunStopped: The run stopped; the units stored before stay, and
+                the outputs were handled as for an item with pending pages.
         """
         logger.info(f"Processing {self.name} ({self.type_label})")
         self.started_at = time.time()
@@ -411,7 +419,9 @@ class ItemProcessor:
         """Plan the units, work the missing ones and write the outputs.
 
         Every page is planned, but only the pages ``--pages`` selects are
-        worked; the others stay pending and the document partial.
+        worked; the others stay pending and the document partial. A stopped
+        run starts no further unit; the item is then finished from what the
+        store holds and the stop re-raised.
         """
         self.page_count = len(source)
         suffix = " and summarization" if self.job.summarize else ""
@@ -424,11 +434,33 @@ class ItemProcessor:
             await self.document.set_image_settings(
                 image_settings_record(source.img_cfg)
             )
-        await self._summarize_stored(transcriptions, pending)
-        await self._transcribe_pending(source, pending)
+        stopped: RunStopped | None = None
+        try:
+            await self._summarize_stored(transcriptions, pending)
+            await self._transcribe_pending(source, pending)
+        except RunStopped as exc:
+            stopped = exc
         if self.runner.lost is not None:
             raise self.runner.lost
-        return await self._finish()
+        success = await self._finish(withhold=stopped is not None)
+        if stopped is not None:
+            self.units_left = self._units_left(transcriptions, pending)
+            raise stopped
+        return success
+
+    def _units_left(
+        self, transcriptions: dict[int, UnitRow], pending: Sequence[int]
+    ) -> int:
+        """Count the units this run was to work and did not store.
+
+        A summary stored by this run is no longer redone, and one not stored
+        still is, so reading the summaries again yields the same set.
+        """
+        work = {(KIND_TRANSCRIPTION, idx) for idx in pending}
+        if self.runner.summary_manager is not None:
+            redo = self._summaries_to_redo(transcriptions, pending)
+            work |= {(KIND_SUMMARY, idx) for idx in (*pending, *redo)}
+        return len(work - self.runner.stored)
 
     async def _store_artifacts(self) -> None:
         """Store the prompt, schema and context texts the item's calls use."""
@@ -456,46 +488,66 @@ class ItemProcessor:
         """Plan every page's units; drop the units of pages the input lost."""
         await plan_document(self.document, source, pdf=self.item.kind == "pdf")
 
-    async def _summarize_stored(
+    def _summaries_to_redo(
         self, transcriptions: dict[int, UnitRow], pending: Sequence[int]
-    ) -> None:
-        """Summarize the selected stored pages whose summary needs work.
+    ) -> list[int]:
+        """Return the selected stored pages whose summary needs work.
 
-        A summary needs work when it is missing, failed or stale. The pages
-        run like the page pool's: at most the job's concurrency at a time,
-        starts spaced by its ``start_delay``, and on Anthropic the first page
-        alone. An error that escapes the page runner propagates
-        after the other pages are cancelled.
+        A summary needs work when it is missing, failed or stale; pages
+        *pending* transcription are summarized after it instead.
         """
-        if self.runner.summary_manager is None:
-            return
         summaries = _by_index(self.document.units(KIND_SUMMARY))
         transcribing = set(pending)
-        redo = [
+        return [
             idx
             for idx in self.selected
             if idx not in transcribing
             and (summaries[idx].status, summaries[idx].stale) != ("done", 0)
         ]
+
+    async def _summarize_stored(
+        self, transcriptions: dict[int, UnitRow], pending: Sequence[int]
+    ) -> None:
+        """Summarize the selected stored pages whose summary needs work.
+
+        The pages (:meth:`_summaries_to_redo`) run like the page pool's: at
+        most the job's concurrency at a time, starts spaced by its
+        ``start_delay``, and on Anthropic the first page alone. An error
+        that escapes the page runner propagates after the other pages are
+        cancelled. Once the run stops, no further page starts, the pages in
+        flight end, and :class:`~autoexcerpter.common.retry.RunStopped` is
+        raised.
+        """
+        if self.runner.summary_manager is None:
+            return
+        redo = self._summaries_to_redo(transcriptions, pending)
         if not redo:
             return
         logger.info(f"Summarizing {len(redo)} page(s) transcribed by an earlier run")
         semaphore = asyncio.Semaphore(max(1, self.job.concurrency))
         gate = _StartGate(self.job.start_delay)
+        runner = self.runner
 
         async def summarize(idx: int) -> None:
             unit = transcriptions[idx]
             error = unit.error if unit.status == "failed" else None
             async with semaphore:
+                if runner.stop:
+                    return
                 await gate.wait()
-                await self.runner.summarize_page(
-                    idx,
-                    unit.label or f"page index {idx}",
-                    unit.content or "",
-                    error,
-                )
+                if runner.stop:
+                    return
+                try:
+                    await runner.summarize_page(
+                        idx,
+                        unit.label or f"page index {idx}",
+                        unit.content or "",
+                        error,
+                    )
+                except RunStopped as exc:
+                    runner.stop.set(str(exc))
 
-        warm = getattr(self.runner.summary_manager, "provider", None) == "anthropic"
+        warm = getattr(runner.summary_manager, "provider", None) == "anthropic"
         batches = [redo[:1], redo[1:]] if warm else [redo]
         tasks: list[asyncio.Future[None]] = []
         try:
@@ -503,6 +555,7 @@ class ItemProcessor:
                 started = [asyncio.ensure_future(summarize(idx)) for idx in batch]
                 tasks.extend(started)
                 await asyncio.gather(*started)
+                runner.admit()
         finally:
             for task in tasks:
                 task.cancel()
@@ -553,7 +606,10 @@ class ItemProcessor:
         pages are cancelled; cancellation of the item cancels every page.
         When a phase runs on Anthropic, the first page runs alone before the
         others start, so that they read its cached system prompt. Two pages
-        start at least the job's ``start_delay`` apart.
+        start at least the job's ``start_delay`` apart. Once the run stops,
+        no further page starts and the pages in flight end, finished or
+        stopped; only the finished ones are reported, and
+        :class:`~autoexcerpter.common.retry.RunStopped` is raised.
         """
         progress = PageProgress(
             len(pending),
@@ -564,23 +620,35 @@ class ItemProcessor:
         self._progress = progress
         semaphore = asyncio.Semaphore(workers)
         gate = _StartGate(self.job.start_delay)
+        runner = self.runner
 
-        async def run_page(index: int) -> tuple[int, str]:
+        async def run_page(index: int) -> tuple[int, str] | None:
             async with semaphore:
+                if runner.stop:
+                    return None
                 await gate.wait()
-                return index, await self.runner.run(index, source, progress)
+                if runner.stop:
+                    return None
+                try:
+                    return index, await runner.run(index, source, progress)
+                except RunStopped as exc:
+                    runner.stop.set(str(exc))
+                    return None
 
-        managers = (self.runner.transcribe_manager, self.runner.summary_manager)
+        managers = (runner.transcribe_manager, runner.summary_manager)
         warm = any(getattr(m, "provider", None) == "anthropic" for m in managers)
         batches = [pending[:1], pending[1:]] if warm else [pending]
-        tasks: list[asyncio.Future[tuple[int, str]]] = []
+        tasks: list[asyncio.Future[tuple[int, str] | None]] = []
         done = 0
         try:
             for batch in batches:
                 started = [asyncio.ensure_future(run_page(idx)) for idx in batch]
                 tasks.extend(started)
                 for finished in asyncio.as_completed(started):
-                    index, status = await finished
+                    outcome = await finished
+                    if outcome is None:
+                        continue
+                    index, status = outcome
                     done += 1
                     self.events.page_done(
                         PageDone(
@@ -592,6 +660,7 @@ class ItemProcessor:
                             already_complete=already_complete,
                         )
                     )
+                runner.admit()
         finally:
             for task in tasks:
                 task.cancel()
@@ -603,8 +672,12 @@ class ItemProcessor:
             return OutputStatus(transcription_ok=False, summaries_ok=False)
         return await self.files.write()
 
-    async def _finish(self) -> bool:
-        """Write the outputs, record the run report and return the verdict."""
+    async def _finish(self, *, withhold: bool = False) -> bool:
+        """Write the outputs, record the run report and return the verdict.
+
+        *withhold* writes no file: a stopped item still has work, which may
+        be a stored summary of a transcription that this run replaced.
+        """
         elapsed_s = time.time() - self.started_at
         # Pages --pages leaves out stay pending; they neither withhold the
         # files nor fail the item, which render the stored pages.
@@ -634,6 +707,10 @@ class ItemProcessor:
                 pages_deferred,
                 len(self.selected),
                 summaries_pending,
+            )
+        elif withhold:
+            logger.warning(
+                "Item %s stopped with work left: withholding its files.", self.name
             )
         else:
             status = await self._write_outputs()

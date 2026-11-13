@@ -40,6 +40,8 @@ from autoexcerpter.output.store import (
     classify,
     image_settings_record,
     open_store,
+    read_folder,
+    read_store,
     write_summary,
 )
 from autoexcerpter.spec import ImageSpec
@@ -417,6 +419,72 @@ def test_classify(tmp_path: Path, name: str) -> None:
     else:
         assert result.note is None
     assert _fingerprint(tmp_path) == before
+
+
+FOLDER = {
+    "complete": (DONE, ALL),
+    "failed_page": (WITH_FAILED, ALL),
+    "pending_summary": (DONE, (0, 2)),
+    "pending_pages": (PENDING, (1, 2)),
+    "batch_held": (PENDING, ()),
+    "leased": (PENDING, ()),
+    "no_units": ([], ()),
+}
+
+
+def _folder_of_documents(root: Path) -> None:
+    async def main() -> None:
+        async with open_store(root) as store:
+            await store.begin_run("run")
+            for name, (pages, summaries) in FOLDER.items():
+                lease = await seed_document(
+                    store,
+                    pages,
+                    name=name,
+                    summaries=summaries,
+                    image_settings=SETTINGS,
+                    input_path=str(root / f"{name}.pdf"),
+                    input_sha256=INPUT_SHA,
+                )
+                if name == "batch_held":
+                    await open_submission(store, lease)
+            await store.end_run(0)
+
+    asyncio.run(main())
+    _execute(root, f"{_lease('other-run', 600)} WHERE name = 'leased'")
+
+
+def test_a_folder_read_matches_the_reads_of_each_document(tmp_path: Path) -> None:
+    _folder_of_documents(tmp_path)
+    names = [*FOLDER, "unknown"]
+    reader = read_store(tmp_path)
+    assert reader is not None
+
+    folder = read_folder(tmp_path, names)
+
+    for name in names:
+        request = ResumeRequest(
+            outputs=(tmp_path / f"{name}_transcription.md",),
+            input_path=tmp_path / f"{name}.pdf",
+            image_settings=SETTINGS,
+            model=MODEL,
+            summary_model=SUMMARY_MODEL,
+        )
+        resume = reader.resume_state(name)
+        assert folder.resume_state(name) == resume
+        assert folder.classify(name, request, holder=HOLDER) == classify(
+            tmp_path, name, request, holder=HOLDER
+        )
+        done = {
+            unit.idx
+            for unit in (reader.units(resume.doc_id, kind=T) if resume else [])
+            if unit.status == "done"
+        }
+        assert folder.transcribed(name) == done
+    assert folder.classify("batch_held").state is ItemState.BLOCKED
+    assert folder.classify("leased", holder=HOLDER).state is ItemState.BLOCKED
+    with pytest.raises(KeyError):
+        folder.classify("not_read")
 
 
 def test_indices_split_the_units_by_kind(tmp_path: Path) -> None:

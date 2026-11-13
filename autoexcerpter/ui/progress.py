@@ -52,6 +52,8 @@ def _wait_line(event: Waiting) -> str:
 
 def _verdict(event: ItemFinished) -> tuple[str, str]:
     """Return the item's verdict and its style."""
+    if event.stopped:
+        return "stopped", "yellow"
     if not event.success:
         return "incomplete", "red"
     if event.submitted:
@@ -241,7 +243,9 @@ def summary_table(result: RunResult) -> RenderableType:
     for item in result.items:
         counts = [_count(item.report, key) for key in _PAGE_KEYS]
         totals = [a + b for a, b in zip(totals, counts, strict=True)]
-        if item.submitted:
+        if item.stopped is not None:
+            status = Text("stopped", style="yellow")
+        elif item.submitted:
             status = Text("submitted", style="cyan")
         elif item.partial:
             status = Text("partial", style="cyan")

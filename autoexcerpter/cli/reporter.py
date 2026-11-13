@@ -127,7 +127,8 @@ class StderrReporter:
         """Write the run overview: items, pages, run time and outputs.
 
         A run in which another run's lease held an item is headed as
-        incomplete rather than complete.
+        incomplete rather than complete, a run a provider stopped as
+        stopped.
         """
         ok, failed, deferred, summary_failures = _page_counts(
             [item.report for item in result.items]
@@ -141,10 +142,17 @@ class StderrReporter:
         if result.partial:
             submitted += f"{result.partial} left partial by --pages, "
         blocked = f" ({len(result.blocked)} blocked)" if result.blocked else ""
+        heading = "Run incomplete:" if result.leased else "Run complete:"
+        left = ""
+        if result.stopped is not None:
+            heading = "Run stopped:"
+            stopped = sum(1 for item in result.items if item.stopped is not None)
+            left = f", {stopped} stopped, {len(result.unstarted)} not started"
         lines = [
-            "Run incomplete:" if result.leased else "Run complete:",
+            heading,
             f"  items: {result.complete} processed, {submitted}{result.failed} "
-            f"failed, {len(result.skipped)} skipped{blocked} (of {result.total})",
+            f"failed, {len(result.skipped)} skipped{blocked}{left} "
+            f"(of {result.total})",
             pages,
             f"  run time: {result.seconds:.1f}s",
         ]
@@ -164,8 +172,13 @@ class StderrReporter:
             _write(line)
 
     def incomplete(self, result: RunResult) -> None:
-        """Name the items that finished incomplete, with their page counts."""
-        incomplete = [item for item in result.items if not item.success]
+        """Name the items that finished incomplete, with their page counts.
+
+        An item during which the run stopped is left to the stop message.
+        """
+        incomplete = [
+            item for item in result.items if not item.success and item.stopped is None
+        ]
         if not incomplete:
             return
         lines = [

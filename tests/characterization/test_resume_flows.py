@@ -159,6 +159,7 @@ def plan_summary(result: RunResult) -> dict[str, Any]:
     assert summary.pop("items_blocked") == len(summary["blocked"])
     for key in ("items_complete", "items_failed", "items_submitted"):
         assert summary.pop(key) == 0
+    assert summary.pop("stopped") is None
     assert summary.pop("outputs") == []
     summary.pop("usage")
     return summary

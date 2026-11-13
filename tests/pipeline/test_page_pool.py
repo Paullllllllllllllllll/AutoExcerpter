@@ -1,7 +1,8 @@
 """The item's page pool: one render executor, bounded pages, cancellation.
 
 The progress total counts only the pages pending in this run. The summaries
-of pages stored by an earlier run keep to the same bound.
+of pages stored by an earlier run keep to the same bound. A stopped run
+starts no further page and lets the pages in flight end.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from typing import Any
 
 import pytest
 
+from autoexcerpter.common.retry import RunStopped
 from autoexcerpter.output.store import KIND_SUMMARY, KIND_TRANSCRIPTION
 from autoexcerpter.pipeline.item import ItemProcessor, _StartGate
 from autoexcerpter.pipeline.progress import PageProgress
@@ -31,6 +33,7 @@ from tests.pipeline.helpers import (
     summarizer,
     transcriber,
 )
+from tests.recording_events import RecordingEvents
 
 
 class _FakeSource:
@@ -243,6 +246,69 @@ def test_a_fatal_page_error_cancels_the_rest(
         asyncio.run(_pool(processor, list(range(4))))
 
     assert (False, True) in spy_executor.shutdowns
+
+
+def test_a_stop_lets_the_page_in_flight_finish_and_starts_no_other(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    processor = _processor(tmp_path, 2, pages=4)
+    events = RecordingEvents()
+    processor.events = events
+    runner = processor.runner
+    started: list[int] = []
+    finished: list[int] = []
+
+    async def run(idx: int, _source: Any, progress: PageProgress) -> str:
+        started.append(idx)
+        if idx == 1:
+            runner.stop.set("provider gone")
+            raise RunStopped("provider gone")
+        while not runner.stop:
+            await asyncio.sleep(0)
+        finished.append(idx)
+        return await _fake_run(idx, _source, progress)
+
+    monkeypatch.setattr(runner, "run", run)
+
+    with pytest.raises(RunStopped, match="provider gone"):
+        asyncio.run(_pool(processor, list(range(4))))
+
+    assert started == [0, 1]
+    assert finished == [0]
+    assert [event.page for event in events.of("page_done")] == [0]
+
+
+def test_a_stop_ends_the_summaries_of_stored_pages(tmp_path: Path) -> None:
+    calls: list[int] = []
+
+    async def summary(_text: str, page: int) -> dict[str, Any]:
+        calls.append(page)
+        if len(calls) == 2:
+            raise RunStopped("provider gone")
+        return content_summary()
+
+    async def main() -> ItemProcessor:
+        async with stored_document(tmp_path, summarize=True) as document:
+            await store_pages(document, 4, {idx: f"Text {idx}." for idx in range(4)})
+            processor = make_processor(
+                tmp_path / "doc.pdf",
+                tmp_path,
+                document,
+                summary_manager=summarizer(summary),
+                summarize=True,
+                concurrency=1,
+            )
+            processor.page_count = 4
+            stored = document.units(KIND_TRANSCRIPTION)
+            with pytest.raises(RunStopped):
+                await processor._summarize_stored({u.idx: u for u in stored}, [])
+            return processor
+
+    processor = asyncio.run(main())
+
+    assert len(calls) == 2
+    assert processor.runner.stop.reason == "provider gone"
+    assert statuses(tmp_path, KIND_SUMMARY) == ["done", "pending", "pending", "pending"]
 
 
 def test_pages_render_off_the_loop_and_count_every_page(tmp_path: Path) -> None:

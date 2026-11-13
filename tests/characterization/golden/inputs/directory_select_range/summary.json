@@ -17,6 +17,7 @@
       "<tmp>/out/scans_summary.md",
       "<tmp>/out/autoexcerpter.sqlite"
     ],
+    "stopped": null,
     "usage": {
       "summary": {
         "cached_tokens": 0,

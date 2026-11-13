@@ -420,6 +420,7 @@ def test_interrupt_and_crash_write_one_json_line(
         "items_skipped": 0,
         "items_blocked": 0,
         "items_submitted": 0,
+        "stopped": None,
         "outputs": [],
         "usage": {"total": zero},
     }
@@ -507,6 +508,7 @@ class TestDryRun:
             "items_skipped": 1,
             "items_blocked": 0,
             "items_submitted": 0,
+            "stopped": None,
             "outputs": [],
             "to_process": [{"name": "Alpha", "state": "none", "completed_pages": 0}],
             "skipped": ["Beta"],

@@ -35,8 +35,10 @@ from autoexcerpter.common.retry import (
     Decision,
     RetryEvent,
     RetryHooks,
+    StopSignal,
     call_with_retry,
     default_decision,
+    heed_stop,
 )
 from autoexcerpter.common.structured import (
     PreparedRequest,
@@ -110,6 +112,8 @@ class CallEnv:
     per role, and *events* receives the retry waits. *prepared* holds callers
     built ahead of the items, one per role (see :meth:`prepare`); *callers*
     every caller built, which :meth:`aclose` closes at the end of the run.
+    *stop* is the run's stop signal: once a call stops the run, no call of
+    any caller sends another request.
     """
 
     settings: Settings = field(default_factory=Settings)
@@ -118,6 +122,7 @@ class CallEnv:
     events: RunEvents = field(default_factory=NullEvents)
     prepared: dict[str, ModelCaller] = field(default_factory=dict)
     callers: list[ModelCaller] = field(default_factory=list)
+    stop: StopSignal = field(default_factory=StopSignal)
 
     @classmethod
     def create(
@@ -211,6 +216,10 @@ class ModelCaller:
         """Request one answer in ``request.response_format``.
 
         Transient errors are retried by the ladder; the last one propagates.
+
+        Raises:
+            RunStopped: A failed attempt stopped the run, or the run had
+                stopped before this call; the second sends no request.
         """
         numbers = itertools.count(1)
 
@@ -236,13 +245,19 @@ class ModelCaller:
         decisions: list[Decision] = []
         counter = numbers if numbers is not None else itertools.count(1)
 
+        def failed(attempt: ext.Attempt[BaseChatModel], exc: Exception) -> None:
+            decision = attempt.on_error(exc)
+            # Before the attempt is recorded, so no other call starts meanwhile.
+            heed_stop(self.env.stop, decision, exc)
+            decisions.append(decision)
+
         async def one_attempt() -> Any:
             attempt = self._attempt()
             async with contextlib.AsyncExitStack() as stack:
                 try:
                     call = await stack.enter_async_context(attempt)
                 except Exception as exc:
-                    decisions.append(attempt.on_error(exc))
+                    failed(attempt, exc)
                     self._record(attempt.usage)
                     raise
                 http = HttpAttempt(
@@ -258,7 +273,7 @@ class ModelCaller:
                             prepared.for_model(call.client), messages
                         )
                 except Exception as exc:
-                    decisions.append(call.on_error(exc))
+                    failed(call, exc)
                     self._record(call.usage)
                     await http.store(usage=call.usage, error=exc)
                     raise
@@ -275,6 +290,7 @@ class ModelCaller:
             on_error=decide,
             on_retry=self._report_retry,
             gate=self.env.limiters.get(self.provider),
+            stop=self.env.stop,
         )
         return await call_with_retry(
             one_attempt, policy=self._policy, hooks=hooks, label=label

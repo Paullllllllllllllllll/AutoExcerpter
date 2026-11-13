@@ -391,6 +391,32 @@ def test_run_shows_progress_and_the_summary(
     assert ("1 complete, 0 incomplete" if success else "0 complete, 1") in output
 
 
+def test_a_stopped_run_shows_the_stop_message_and_exits_3(
+    pdf: Path, startup: _Calls, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    async def run(run_plan: core.RunPlan, events: RunEvents, **_: Any) -> Any:
+        planned = run_plan.to_process[0]
+        events.item_finished(
+            ItemFinished(planned.name, 1, 1, False, (), {"pages_ok": 1}, stopped=True)
+        )
+        item = core.ItemResult(
+            planned.name, False, planned.paths, stopped="gone", units_left=2
+        )
+        return core.RunResult(items=(item,), stopped="gone", unstarted=("next",))
+
+    monkeypatch.setattr(core, "run", run)
+    exit_code, console, _prompter = _launch(_answers(pdf, "run"))
+    assert exit_code == 3
+    output = " ".join(_text(console).split())
+    assert "[1/1] book: stopped" in output
+    assert (
+        "Error: Run stopped: gone. 2 unit(s) of 'book' and 1 item(s) not started "
+        "were left unprocessed; a rerun resumes them."
+    ) in output
+
+
 def test_nothing_to_do_when_every_item_is_complete(
     pdf: Path, startup: _Calls, monkeypatch: pytest.MonkeyPatch
 ) -> None:

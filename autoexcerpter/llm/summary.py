@@ -26,6 +26,7 @@ from autoexcerpter.common.provider_requests import (
     system_content,
 )
 from autoexcerpter.common.responses import get_response_metadata
+from autoexcerpter.common.retry import RunStopped
 from autoexcerpter.common.structured import (
     ResponseFormat,
     StructuredRequest,
@@ -305,11 +306,17 @@ class SummaryManager:
     async def generate_summary(
         self, transcription: str, page_num: int
     ) -> dict[str, Any]:
-        """Summarize one page; failures return a placeholder with ``error``."""
+        """Summarize one page; failures return a placeholder with ``error``.
+
+        Raises:
+            RunStopped: The run stopped; the page has no summary.
+        """
         started = time.time()
         counts = {"validation_failure": 0}
         try:
             result = await self._answer(transcription, page_num, counts)
+        except RunStopped:
+            raise
         except Exception as exc:  # noqa: BLE001 - one page must not fail the item
             logger.error(
                 "Summary API error for page %d after retries: %s - %s",

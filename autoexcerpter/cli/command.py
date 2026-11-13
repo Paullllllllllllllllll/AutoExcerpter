@@ -3,8 +3,9 @@
 Exit codes: 0 when every item completed or, under ``--batch``, was
 submitted, 1 when an item failed or another run leases one, 2 for usage and
 configuration errors (an input without items and a selection that matches
-nothing included), 130 on Ctrl+C or Ctrl+Break. With ``--json`` exactly one
-JSON summary line goes to stdout on every exit.
+nothing included), 3 when a provider stopped the run, 130 on Ctrl+C or
+Ctrl+Break. With ``--json`` exactly one JSON summary line goes to stdout on
+every exit.
 """
 
 from __future__ import annotations
@@ -47,7 +48,7 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 
-def summary_fields(
+def summary_fields(  # noqa: PLR0913 - one keyword per summary field
     *,
     total: int = 0,
     complete: int = 0,
@@ -57,6 +58,7 @@ def summary_fields(
     submitted: int = 0,
     outputs: Sequence[str] = (),
     usage: Mapping[str, Usage] | None = None,
+    stopped: str | None = None,
 ) -> dict[str, Any]:
     """Return the fields of the JSON run summary.
 
@@ -64,7 +66,8 @@ def summary_fields(
     are among the *skipped* items too, and a leased one exits 1.
     *submitted* counts the items whose units went to batches under
     ``--batch``; *usage* holds the run's tokens per role; the summary adds
-    their total.
+    their total. *stopped* is the reason a provider stopped the run, None
+    when it did not.
     """
     return {
         "items_total": total,
@@ -73,6 +76,7 @@ def summary_fields(
         "items_skipped": skipped,
         "items_blocked": blocked,
         "items_submitted": submitted,
+        "stopped": stopped,
         "outputs": list(outputs),
         USAGE_KEY: usage_field(usage),
     }
@@ -276,6 +280,9 @@ def _execute(
     reporter.completion(result)
     reporter.incomplete(result)
     reporter.held(result)
+    stop_message = result.stop_message()
+    if stop_message is not None:
+        reporter.error(stop_message)
     emitter.emit(
         summary_fields(
             total=len(result.items),
@@ -286,6 +293,7 @@ def _execute(
             submitted=result.submitted,
             outputs=result.outputs,
             usage=result.usage,
+            stopped=result.stopped,
         )
     )
     return result.exit_code

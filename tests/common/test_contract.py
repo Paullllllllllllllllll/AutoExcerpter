@@ -57,7 +57,8 @@ def test_usage_field_without_usage_is_a_zero_total() -> None:
 
 
 def test_exit_code_values() -> None:
-    assert [int(code) for code in ExitCode] == [0, 1, 2, 130]
+    assert [int(code) for code in ExitCode] == [0, 1, 2, 3, 130]
+    assert ExitCode.STOPPED.value == 3
 
 
 @pytest.mark.parametrize(("failed", "expected"), [(0, 0), (1, 1), (5, 1)])

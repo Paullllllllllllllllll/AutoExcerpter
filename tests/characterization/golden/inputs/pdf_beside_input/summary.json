@@ -14,6 +14,7 @@
       "<tmp>/in/doc_summary.md",
       "<tmp>/in/autoexcerpter.sqlite"
     ],
+    "stopped": null,
     "usage": {
       "summary": {
         "cached_tokens": 0,

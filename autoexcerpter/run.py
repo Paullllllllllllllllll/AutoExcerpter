@@ -40,6 +40,7 @@ from autoexcerpter.batch.item import BatchItem, BatchItemOutcome
 from autoexcerpter.common.batch import supports_batch
 from autoexcerpter.common.contract import ExitCode, exit_code_for
 from autoexcerpter.common.options import Source
+from autoexcerpter.common.retry import RunStopped
 from autoexcerpter.common.selection import PageRange, select_items
 from autoexcerpter.common.spec_view import resolved_view
 from autoexcerpter.common.sqlite import DEFAULT_BUSY_TIMEOUT, DEFAULT_WARN_INTERVAL
@@ -67,17 +68,18 @@ from autoexcerpter.output.paths import ItemPaths
 from autoexcerpter.output.store import (
     KIND_TRANSCRIPTION,
     Classification,
+    FolderState,
     InputMismatchError,
     ItemState,
     ResumeRequest,
     begin_run,
-    classify,
     document_kind,
     drop_batch_job,
     image_changes,
     image_settings_record,
     lease_reason,
     open_store,
+    read_folder,
     read_store,
 )
 from autoexcerpter.pipeline.context import ContextError, summary_context
@@ -572,25 +574,37 @@ def _expected_outputs(paths: ItemPaths, job: ItemJob) -> list[Path]:
     return expected
 
 
-def _completed_pages(root: Path, resume: Classification) -> int:
+def _completed_pages(folder: FolderState, resume: Classification) -> int:
     """Return the number of transcribed pages a resumable item keeps."""
     if resume.state not in _RESUMABLE or resume.doc_id is None:
         return 0
-    reader = read_store(root)
-    if reader is None:
-        return 0
-    units = reader.units(resume.doc_id, kind=KIND_TRANSCRIPTION)
     redo = set(resume.indices(KIND_TRANSCRIPTION))
-    return sum(1 for unit in units if unit.status == "done" and unit.idx not in redo)
+    return len(folder.transcribed(resume.name) - redo)
 
 
 @dataclass(frozen=True)
 class _Classifier:
-    """Classifies the items of one plan from the stores of their folders."""
+    """Classifies the items of one plan from the stores of their folders.
+
+    *names* maps each output folder to the names of its selected items. A
+    folder's store is read once, when its first item is classified.
+    """
 
     spec: RunSpec
     job: ItemJob
     image: Mapping[str, Any] | None
+    names: Mapping[Path, frozenset[str]]
+    folders: dict[Path, FolderState] = field(default_factory=dict)
+
+    def _folder(self, output_dir: Path) -> FolderState:
+        folder = self.folders.get(output_dir)
+        if folder is None:
+            try:
+                folder = read_folder(output_dir, self.names[output_dir])
+            except StoreError as exc:
+                raise StoreRefusedError(str(exc)) from exc
+            self.folders[output_dir] = folder
+        return folder
 
     def planned(
         self, item: ItemSpec, output_dir: Path, digest: str | None
@@ -604,6 +618,7 @@ class _Classifier:
             StoreRefusedError: The folder's database is refused.
             DuplicateOutputError: The stored document belongs to another input.
         """
+        folder = self._folder(output_dir)
         job = self.job
         paths = ItemPaths.for_item(
             item.output_stem, output_dir, job.transcription_format
@@ -618,7 +633,7 @@ class _Classifier:
             summarize=job.summarize,
             settings_for=functools.partial(_image_record, job),
         )
-        state = _classify(output_dir, item.output_stem, request)
+        state = _classify(folder, item.output_stem, request)
         run = self.spec.run
         # --retranscribe --pages works some pages only, so it keeps the
         # stored image values in every state it resets pages from: a
@@ -628,8 +643,8 @@ class _Classifier:
         )
         images: ImageSpec | None = None
         if keep_images and state.state in (ItemState.REFUSED, *_RESUMABLE):
-            state, images = self._stored_images(output_dir, item, request, state)
-            state = self._kept_images(output_dir, item, request, state, images)
+            state, images = self._stored_images(folder, item, request, state)
+            state = self._kept_images(folder, item, request, state, images)
         if run.force and state.state is not ItemState.BLOCKED:
             state = Classification(
                 ItemState.NONE, item.output_stem, state.doc_id, reason="overwrite mode"
@@ -647,13 +662,13 @@ class _Classifier:
             state,
             transcription_format=job.transcription_format,
             input_sha256=digest,
-            completed_pages=_completed_pages(output_dir, state),
+            completed_pages=_completed_pages(folder, state),
             images=images,
         )
 
     def _kept_images(
         self,
-        output_dir: Path,
+        folder: FolderState,
         item: ItemSpec,
         request: ResumeRequest,
         state: Classification,
@@ -668,9 +683,9 @@ class _Classifier:
         stored transcriptions without an image-settings record is refused
         too: its settings are unknown.
         """
-        stored = _stored_record(output_dir, item.output_stem)
+        stored = _stored_record(folder, item.output_stem)
         if stored is None:
-            if not _stores_transcriptions(output_dir, state):
+            if not _stores_transcriptions(folder, state):
                 return state
             return Classification(
                 ItemState.REFUSED,
@@ -707,7 +722,7 @@ class _Classifier:
 
     def _stored_images(
         self,
-        output_dir: Path,
+        folder: FolderState,
         item: ItemSpec,
         request: ResumeRequest,
         refused: Classification,
@@ -720,7 +735,7 @@ class _Classifier:
         was classified in) when a value the record does not hold still
         differs.
         """
-        stored = _stored_record(output_dir, item.output_stem)
+        stored = _stored_record(folder, item.output_stem)
         if stored is None:
             return refused, None
         images = _pinned_images(self.spec.images, stored)
@@ -732,7 +747,7 @@ class _Classifier:
             image_settings=_image_record(job),
             settings_for=functools.partial(_image_record, job),
         )
-        state = _classify(output_dir, item.output_stem, retry)
+        state = _classify(folder, item.output_stem, retry)
         if state.state is ItemState.REFUSED:
             return refused, None
         given = [
@@ -751,29 +766,22 @@ class _Classifier:
         return state, images
 
 
-def _classify(root: Path, name: str, request: ResumeRequest) -> Classification:
-    """Classify one item, mapping store refusals to plan errors."""
+def _classify(folder: FolderState, name: str, request: ResumeRequest) -> Classification:
+    """Classify one item, mapping another input's document to a plan error."""
     try:
-        return classify(root, name, request)
-    except StoreError as exc:
-        raise StoreRefusedError(str(exc)) from exc
+        return folder.classify(name, request)
     except InputMismatchError as exc:
         raise DuplicateOutputError(str(exc)) from exc
 
 
-def _stores_transcriptions(root: Path, state: Classification) -> bool:
+def _stores_transcriptions(folder: FolderState, state: Classification) -> bool:
     """Whether the classified document holds a transcribed page."""
-    reader = read_store(root) if state.doc_id is not None else None
-    if reader is None or state.doc_id is None:
-        return False
-    units = reader.units(state.doc_id, kind=KIND_TRANSCRIPTION)
-    return any(unit.status == "done" for unit in units)
+    return state.doc_id is not None and bool(folder.transcribed(state.name))
 
 
-def _stored_record(root: Path, name: str) -> Mapping[str, Any] | None:
+def _stored_record(folder: FolderState, name: str) -> Mapping[str, Any] | None:
     """Return the image-settings record stored with document *name*."""
-    reader = read_store(root)
-    resume = reader.resume_state(name) if reader is not None else None
+    resume = folder.resume_state(name)
     record = resume.image_settings if resume is not None else None
     return record if isinstance(record, Mapping) else None
 
@@ -849,7 +857,15 @@ def plan(
     selected, warnings = _select(discovered, spec)
     _guard_duplicate_outputs(selected, base)
 
-    classifier = _Classifier(spec, job, _image_record(job))
+    names: dict[Path, set[str]] = {}
+    for item in selected:
+        names.setdefault(_item_output_dir(item, base), set()).add(item.output_stem)
+    classifier = _Classifier(
+        spec,
+        job,
+        _image_record(job),
+        {folder: frozenset(stems) for folder, stems in names.items()},
+    )
     with concurrent.futures.ThreadPoolExecutor(_HASH_WORKERS) as pool:
         digests = list(pool.map(input_sha256, selected))
     groups: dict[ItemState, list[PlannedItem]] = {state: [] for state in ItemState}
@@ -909,7 +925,9 @@ class ItemResult:
     *report* holds the page statistics (None when the item stopped before
     them or was batched). *failures* are the failed units of a failed item's
     document, transcriptions and summaries, with their error types and
-    errors.
+    errors. *stopped* is the reason the run stopped during the item, which
+    then counts neither complete nor failed; *units_left* counts the units
+    it still needed.
     """
 
     name: str
@@ -920,6 +938,8 @@ class ItemResult:
     submitted: bool = False
     partial: bool = False
     failures: tuple[UnitRow, ...] = ()
+    stopped: str | None = None
+    units_left: int = 0
 
 
 @dataclass(frozen=True)
@@ -938,7 +958,8 @@ class RunResult:
     lease with its expiry; two items of the same name in different folders
     keep their own reasons. *leased* names those of them that another run's
     lease held; they make the run exit 1, while items waiting for a batch
-    are submitted work.
+    are submitted work. *stopped* is the reason a provider stopped the run,
+    which then exits 3; *unstarted* names the items it did not start.
     """
 
     items: tuple[ItemResult, ...]
@@ -950,6 +971,8 @@ class RunResult:
     blocked: tuple[str, ...] = ()
     blocked_reasons: tuple[str, ...] = ()
     leased: tuple[str, ...] = ()
+    stopped: str | None = None
+    unstarted: tuple[str, ...] = ()
 
     @property
     def total_usage(self) -> Usage:
@@ -980,18 +1003,37 @@ class RunResult:
 
     @property
     def failed(self) -> int:
-        """The number of items that finished incomplete."""
-        return sum(1 for item in self.items if not item.success)
+        """The number of items that finished incomplete, not by a stop."""
+        return sum(
+            1 for item in self.items if not item.success and item.stopped is None
+        )
 
     @property
     def total(self) -> int:
-        """The number of items the run processed or skipped."""
-        return len(self.items) + len(self.skipped)
+        """The number of items the run processed, skipped or did not start."""
+        return len(self.items) + len(self.skipped) + len(self.unstarted)
 
     @property
     def exit_code(self) -> ExitCode:
-        """1 when an item failed or another run's lease held one, else 0."""
+        """3 when the run stopped, 1 when an item failed or was leased, else 0."""
+        if self.stopped is not None:
+            return ExitCode.STOPPED
         return exit_code_for(failed=self.failed + len(self.leased))
+
+    def stop_message(self) -> str | None:
+        """Return the line that reports a stopped run, or None."""
+        if self.stopped is None:
+            return None
+        left = f"{len(self.unstarted)} item(s) not started"
+        stopped = [item for item in self.items if item.stopped is not None]
+        if stopped:
+            units = sum(item.units_left for item in stopped)
+            names = ", ".join(f"'{item.name}'" for item in stopped)
+            left = f"{units} unit(s) of {names} and {left}"
+        return (
+            f"Run stopped: {self.stopped}. {left} were left unprocessed; "
+            "a rerun resumes them."
+        )
 
     @property
     def outputs(self) -> list[str]:
@@ -1369,6 +1411,8 @@ async def _run_item(  # noqa: PLR0913 - the item, its place and the run's object
     as well, though not by a lease; an item of which ``--pages`` selects no
     page returns None, before ``--force`` resets it. With *clients*, the
     item's missing units are submitted to the batch APIs instead of called.
+    An item during which the run stopped returns a result with ``stopped``
+    set; its lease is released like any other.
     """
     events = env.events
     total = len(run_plan.to_process)
@@ -1395,6 +1439,7 @@ async def _run_item(  # noqa: PLR0913 - the item, its place and the run's object
     events.item_started(ItemStarted(name, planned.item.kind, index, total))
     processor: ItemProcessor | None = None
     success = False
+    stopped: str | None = None
     try:
         if planned.resume.note:
             await _note(store, doc_id, planned.resume.note, events)
@@ -1421,8 +1466,11 @@ async def _run_item(  # noqa: PLR0913 - the item, its place and the run's object
             env=env,
             force=run_plan.force,
         )
-        success = await processor.process()
-        if not success:
+        try:
+            success = await processor.process()
+        except RunStopped as exc:
+            stopped = str(exc)
+        if not success and stopped is None:
             logger.error(
                 "Item finished with page-level failures or missing outputs: %s",
                 name,
@@ -1441,7 +1489,16 @@ async def _run_item(  # noqa: PLR0913 - the item, its place and the run's object
     report = processor.last_run_report if processor else None
     partial = success and _left_partial(run_plan, store, doc_id)
     events.item_finished(
-        ItemFinished(name, index, total, success, outputs, report, partial=partial)
+        ItemFinished(
+            name,
+            index,
+            total,
+            success,
+            outputs,
+            report,
+            partial=partial,
+            stopped=stopped is not None,
+        )
     )
     return ItemResult(
         name,
@@ -1451,6 +1508,8 @@ async def _run_item(  # noqa: PLR0913 - the item, its place and the run's object
         report,
         partial=partial,
         failures=() if success else _failed_units(store, doc_id),
+        stopped=stopped,
+        units_left=processor.units_left if processor and stopped else 0,
     )
 
 
@@ -1628,8 +1687,11 @@ async def run(
     run records exit code 1 for it like a failure. An item whose pages wait
     in a batch is blocked too, without changing the exit code. An item that
     crashes is logged and counted failed; the run
-    continues with the next item. Refused items count as failed.
-    Cancellation propagates. Under ``--batch`` no model client is built:
+    continues with the next item. Refused items count as failed. When a
+    provider stops the run (the call environment's stop signal), the item
+    in work keeps the units it stored, no further item starts and the run
+    records exit code 3. Cancellation propagates. Under ``--batch`` no model
+    client is built:
     each item's missing units are submitted through one set of batch
     clients, and *args*, the parsed command line if any, serves the
     extension's key variables.
@@ -1655,12 +1717,20 @@ async def run(
     skipped = [item.name for item in run_plan.not_processed]
     held = _Held.of(run_plan)
     exit_code: int = ExitCode.FAILURE
+    stopped: str | None = None
+    unstarted: list[str] = []
     try:
         rendered, results = await _render_complete(run_plan, env, stores, held)
         for failure in results:
             skipped.remove(failure.name)
         for index, planned in enumerate(run_plan.to_process, start=1):
+            if stopped is not None:
+                unstarted.append(planned.name)
+                continue
             result = await _run_item(run_plan, planned, index, env, stores, clients)
+            # The signal, not the item's result: an item that also lost its
+            # lease reports the lease and no stop.
+            stopped = env.stop.reason
             if isinstance(result, ItemResult):
                 results.append(result)
                 continue
@@ -1672,6 +1742,8 @@ async def run(
             results.append(ItemResult(planned.name, False, planned.paths))
         failed = any(not result.success for result in results)
         exit_code = ExitCode.FAILURE if failed or held.leased else ExitCode.OK
+        if stopped is not None:
+            exit_code = ExitCode.STOPPED
     except (asyncio.CancelledError, KeyboardInterrupt):
         exit_code = ExitCode.INTERRUPTED
         raise
@@ -1690,4 +1762,6 @@ async def run(
         blocked=tuple(held.blocked),
         blocked_reasons=tuple(held.reasons),
         leased=tuple(held.leased),
+        stopped=stopped,
+        unstarted=tuple(unstarted),
     )

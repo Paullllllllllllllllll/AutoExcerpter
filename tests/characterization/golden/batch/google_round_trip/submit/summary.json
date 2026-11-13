@@ -11,6 +11,7 @@
     "outputs": [
       "<tmp>/out/autoexcerpter.sqlite"
     ],
+    "stopped": null,
     "usage": {
       "total": {
         "cached_tokens": 0,

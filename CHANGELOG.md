@@ -1,5 +1,18 @@
 # Changelog
 
+- **v1.8.0** (13 November 2026) -- A run that a provider stops ends with the new
+  exit code 3. When the attempt context of `ext.py` answers a failed call with
+  the new decision `STOP`, the requests already sent finish and are stored, no
+  further unit and no further item starts, the item in work keeps its stored pages
+  and writes no file, and its lease is released; the final error line and the new
+  `stopped` field of the `--json` line name the reason, `--help` lists the exit
+  code, and a rerun resumes with the rest. Planning reads the database of an
+  output folder once and classifies all its items from that read, which cut the
+  planning of 1,000 stored documents from 13 s to 2.7 s. The stored message of a
+  failed attempt names the transport error behind it, for example
+  `(cause: httpx.ReadTimeout)`. The shared package gains `Decision.STOP`,
+  `RunStopped`, `StopSignal`, `heed_stop`, `ExitCode.STOPPED` and the
+  connection-level `resume_state`.
 - **v1.7.2** (9 November 2026) -- The tests of the decision parser, the page
   types, the decision images and the stale-unit triggers carry type annotations, so
   `mypy autoexcerpter tests` passes again; no behavior changes.

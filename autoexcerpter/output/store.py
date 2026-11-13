@@ -100,7 +100,7 @@ import json
 import os
 import sqlite3
 import time
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from importlib import metadata
@@ -110,6 +110,7 @@ from typing import Any, Final
 from autoexcerpter.common.native import MODEL_DERIVED_IMAGE_KEYS, changed_image_settings
 from autoexcerpter.common.sqlite import read, read_only
 from autoexcerpter.common.store import (
+    BLOCKING_SUBMISSIONS,
     Component,
     Lease,
     PlannedUnit,
@@ -137,6 +138,7 @@ __all__ = [
     "BatchJob",
     "CitationRow",
     "Classification",
+    "FolderState",
     "InputMismatchError",
     "ItemState",
     "NotAStoreError",
@@ -156,6 +158,7 @@ __all__ = [
     "plan_pages",
     "read_batch_jobs",
     "read_citations",
+    "read_folder",
     "read_only_connection",
     "read_pages",
     "read_store",
@@ -858,10 +861,11 @@ def _nonempty(path: Path) -> bool:
         return False
 
 
-def _path_key(path: Path, root: Path) -> str:
+def _path_key(path: Path, base: Path) -> str:
+    """Return the ``outputs`` key of *path* in the resolved folder *base*."""
     resolved = Path(path).resolve()
     try:
-        return resolved.relative_to(Path(root).resolve()).as_posix()
+        return resolved.relative_to(base).as_posix()
     except ValueError:
         return str(resolved)
 
@@ -870,35 +874,109 @@ def _normalized(path: Path | str) -> str:
     return os.path.normcase(str(Path(path).resolve()))
 
 
-def _details(connection: sqlite3.Connection, doc_id: int) -> _Details:
-    input_path, input_sha256 = connection.execute(
-        "SELECT input_path, input_sha256 FROM documents WHERE doc_id = ?", (doc_id,)
-    ).fetchone()
-    models: dict[str, list[str]] = {}
-    for kind, model in connection.execute(
-        "SELECT DISTINCT kind, model FROM units WHERE doc_id = ? "
-        "AND status != 'pending' ORDER BY kind, model",
-        (doc_id,),
+@dataclass(frozen=True)
+class _Stored:
+    """What classification reads of one stored document."""
+
+    resume: ResumeState
+    details: _Details
+
+
+_IN_JSON = "IN (SELECT value FROM json_each(?))"
+_FOLDER_DOCUMENTS = f"""
+SELECT doc_id, name, status, input_path, input_sha256, image_settings,
+    lease_run_id, lease_until
+FROM documents WHERE name {_IN_JSON}
+"""
+_FOLDER_UNITS = f"""
+SELECT doc_id, kind, idx, status, stale, model FROM units
+WHERE doc_id {_IN_JSON} ORDER BY doc_id, kind, idx
+"""
+_FOLDER_BLOCKED = f"""
+SELECT DISTINCT r.doc_id, r.kind, r.idx FROM submission_requests AS r
+JOIN submissions AS s ON s.submission_id = r.submission_id
+WHERE r.doc_id {_IN_JSON}
+AND s.status IN ({", ".join("?" for _ in BLOCKING_SUBMISSIONS)})
+ORDER BY r.doc_id, r.kind, r.idx
+"""
+_FOLDER_OUTPUTS = f"SELECT doc_id, path, stale FROM outputs WHERE doc_id {_IN_JSON}"
+
+
+def _image_value(value: Any) -> Any:
+    """Decode a stored image-settings record as the store's reads do."""
+    if not isinstance(value, str):
+        return value
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        return value
+
+
+def _read_stored(
+    connection: sqlite3.Connection, names: Sequence[str]
+) -> dict[str, _Stored]:
+    """Read the documents *names* with their units, batch holds and outputs.
+
+    Each table is read once for all documents. The result holds, per
+    document, the :class:`ResumeState` that
+    :meth:`~autoexcerpter.common.store.Store.resume_state` returns and the
+    details classification compares with the request.
+    """
+    documents = connection.execute(_FOLDER_DOCUMENTS, (json.dumps(names),)).fetchall()
+    ids = json.dumps([int(row[0]) for row in documents])
+    units: dict[int, dict[str, dict[int, tuple[str, int]]]] = {}
+    models: dict[int, set[tuple[str, str]]] = {}
+    statuses: dict[int, dict[str, list[UnitKey]]] = {}
+    pairs: dict[tuple[str, int], tuple[str, int]] = {}
+    for doc_id, kind, idx, status, stale, model in connection.execute(
+        _FOLDER_UNITS, (ids,)
     ):
-        models.setdefault(str(kind), []).append(str(model))
-    units: dict[str, dict[int, tuple[str, int]]] = {}
-    for kind, idx, status, stale in connection.execute(
-        "SELECT kind, idx, status, stale FROM units WHERE doc_id = ?", (doc_id,)
+        key = UnitKey(int(doc_id), str(kind), int(idx))
+        pair = (str(status), int(stale))
+        pair = pairs.setdefault(pair, pair)
+        units.setdefault(key.doc_id, {}).setdefault(key.kind, {})[key.idx] = pair
+        statuses.setdefault(key.doc_id, {}).setdefault(pair[0], []).append(key)
+        if pair[0] != "pending":
+            models.setdefault(key.doc_id, set()).add((key.kind, str(model)))
+    blocked: dict[int, list[UnitKey]] = {}
+    for doc_id, kind, idx in connection.execute(
+        _FOLDER_BLOCKED, (ids, *BLOCKING_SUBMISSIONS)
     ):
-        units.setdefault(str(kind), {})[int(idx)] = (str(status), int(stale))
-    outputs = {
-        str(path): int(stale)
-        for path, stale in connection.execute(
-            "SELECT path, stale FROM outputs WHERE doc_id = ?", (doc_id,)
+        blocked.setdefault(int(doc_id), []).append(
+            UnitKey(int(doc_id), str(kind), int(idx))
         )
-    }
-    return _Details(
-        input_path=input_path,
-        input_sha256=input_sha256,
-        models={kind: tuple(names) for kind, names in models.items()},
-        units=units,
-        outputs=outputs,
-    )
+    outputs: dict[int, dict[str, int]] = {}
+    for doc_id, path, stale in connection.execute(_FOLDER_OUTPUTS, (ids,)):
+        outputs.setdefault(int(doc_id), {})[str(path)] = int(stale)
+
+    stored: dict[str, _Stored] = {}
+    for row in documents:
+        doc_id = int(row[0])
+        held = statuses.get(doc_id, {})
+        kinds: dict[str, list[str]] = {}
+        for kind, model in sorted(models.get(doc_id, ())):
+            kinds.setdefault(kind, []).append(model)
+        resume = ResumeState(
+            doc_id=doc_id,
+            name=str(row[1]),
+            status=str(row[2]),
+            counts={status: len(keys) for status, keys in held.items()},
+            pending=tuple(held.get("pending", ())),
+            failed=tuple(held.get("failed", ())),
+            blocked=tuple(blocked.get(doc_id, ())),
+            image_settings=_image_value(row[5]),
+            lease_run_id=row[6],
+            lease_until=row[7],
+        )
+        details = _Details(
+            input_path=row[3],
+            input_sha256=row[4],
+            models={kind: tuple(names) for kind, names in kinds.items()},
+            units=units.get(doc_id, {}),
+            outputs=outputs.get(doc_id, {}),
+        )
+        stored[resume.name] = _Stored(resume, details)
+    return stored
 
 
 def _model_note(
@@ -1056,13 +1134,13 @@ def image_changes(recorded: Any, request: ResumeRequest) -> list[str]:
 
 
 def _complete(
-    root: Path, name: str, doc_id: int, details: _Details, request: ResumeRequest
+    base: Path, name: str, doc_id: int, details: _Details, request: ResumeRequest
 ) -> Classification:
     outputs = request.outputs
     missing = tuple(output for output in outputs if not output.is_file())
     # A file without a row was not rendered from this store; rendering it
     # lets the overwrite guard keep it with a warning or record it.
-    stale = any(details.outputs.get(_path_key(output, root)) != 0 for output in outputs)
+    stale = any(details.outputs.get(_path_key(output, base)) != 0 for output in outputs)
     render = bool(missing) or stale
     reason = "all units stored"
     if render:
@@ -1103,13 +1181,87 @@ def classify(
     Raises the store's errors for a database that is not a current store,
     newer or unreadable.
     """
-    request = request if request is not None else ResumeRequest()
-    path = database_path(root)
+    return read_folder(root, (name,)).classify(name, request, holder=holder, now=now)
+
+
+class FolderState:
+    """The stored state of the named documents of one output folder.
+
+    :func:`read_folder` reads it with one schema check and one read-only
+    connection; classifying its items and the plan's further reads of their
+    documents then open the database no more.
+    """
+
+    def __init__(
+        self, root: Path, names: frozenset[str], stored: Mapping[str, _Stored]
+    ) -> None:
+        self._names = names
+        self._stored = stored
+        self._base = Path(root).resolve()
+
+    def _document(self, name: str) -> _Stored | None:
+        if name not in self._names:
+            raise KeyError(f"'{name}' was not read with this folder.")
+        return self._stored.get(name)
+
+    def resume_state(self, name: str) -> ResumeState | None:
+        """Return what resume needs of document *name*; None when it is unknown."""
+        stored = self._document(name)
+        return stored.resume if stored is not None else None
+
+    def transcribed(self, name: str) -> frozenset[int]:
+        """Return the indices of the done transcription units of *name*."""
+        stored = self._document(name)
+        if stored is None:
+            return frozenset()
+        units = stored.details.units.get(KIND_TRANSCRIPTION, {})
+        return frozenset(idx for idx, (status, _) in units.items() if status == "done")
+
+    def classify(
+        self,
+        name: str,
+        request: ResumeRequest | None = None,
+        *,
+        holder: str | None = None,
+        now: float | None = None,
+    ) -> Classification:
+        """Classify item *name* as :func:`classify` does; never write."""
+        return _classified(
+            self._base,
+            name,
+            self._document(name),
+            request if request is not None else ResumeRequest(),
+            holder,
+            now,
+        )
+
+
+def read_folder(root: Path, names: Iterable[str]) -> FolderState:
+    """Read the stored state of the documents *names* of output folder *root*.
+
+    The schema is checked once and every document is read over one
+    read-only connection; a name without a document is classified as
+    unknown. Raises the store's errors for a database that is not a current
+    store, newer or unreadable.
+    """
+    wanted = sorted(set(names))
     state = _schema(root)
-    store = None
-    if state.exists and not state.empty:
-        store = Store(path, TOOL, components=_COMPONENTS)
-    resume = store.resume_state(name) if store is not None else None
+    stored: dict[str, _Stored] = {}
+    if state.exists and not state.empty and wanted:
+        stored = read(state.path, lambda connection: _read_stored(connection, wanted))
+    return FolderState(root, frozenset(wanted), stored)
+
+
+def _classified(
+    base: Path,
+    name: str,
+    stored: _Stored | None,
+    request: ResumeRequest,
+    holder: str | None,
+    now: float | None,
+) -> Classification:
+    """Classify item *name* from its *stored* document in resolved folder *base*."""
+    resume = stored.resume if stored is not None else None
     doc_id = resume.doc_id if resume is not None else None
     if resume is None or not resume.counts:
         if resume is not None and _leased_elsewhere(resume, holder, now):
@@ -1133,9 +1285,9 @@ def classify(
                 ),
             )
         return Classification(ItemState.NONE, name, doc_id, reason="no stored units")
-    assert doc_id is not None
+    assert doc_id is not None and stored is not None
 
-    details = read(path, lambda connection: _details(connection, doc_id))
+    details = stored.details
     _check_input(name, details, request.input_path)
     leased = _leased_elsewhere(resume, holder, now)
     blocked = _blocked(resume, leased)
@@ -1169,7 +1321,7 @@ def classify(
 
     transcribe, summarize_units = _work(doc_id, details, request.summarize)
     if not transcribe and not summarize_units:
-        complete = _complete(root, name, doc_id, details, request)
+        complete = _complete(base, name, doc_id, details, request)
         return dataclasses.replace(complete, note=note)
     if transcribe and changed:
         return Classification(

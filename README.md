@@ -1,4 +1,4 @@
-# AutoExcerpter v1.7.2
+# AutoExcerpter v1.8.0
 
 <img src="assets/logo.svg" alt="AutoExcerpter logo" width="64" align="right">
 
@@ -211,15 +211,19 @@ option but the OpenRouter provider, for example as `model` or
 | 0 | every item completed or, under `--batch`, was submitted, or nothing was left to do |
 | 1 | an item failed (a refused or unresolved batch submission and an unexpected error included), or another run leases an item (the final message names each blocked item with its reason and a lease with its expiry; an item waiting for a batch is named but does not change the exit code) |
 | 2 | usage or configuration error (invalid flags or settings, an input without a PDF or image folder, several items without `--all`, `--select` or `--files`, a `--select` or `--files` that matches nothing, two items with one output name in one folder, a stored document in the output folder that belongs to another input of the same name, summaries on without a summary format, an unset API key variable in a real run, a database the store refuses, `--batch` on a provider without a batch API) |
+| 3 | stopped: a provider will serve no further calls of this run; the units not yet stored stay as they were, no further item starts, and the final error line names the reason and the units and items left unprocessed |
 | 130 | interrupted (Ctrl+C, or Ctrl+Break on Windows) |
 
 An interrupted `run` releases its leases, so a rerun right away resumes with the
-pages still to do. A run that is killed instead keeps its leases until they
-expire ([Store](#store)). A live run renews its leases every minute, so a rerun
-reads the leases on its items again every 90 seconds: it waits until an
-unrenewed lease expires and then processes the item, and it reports an item
-whose lease was renewed as blocked and exits 1. A lease taken while a run plans or processes its items also counts,
-including for a complete item whose files would be rendered again.
+pages still to do. A stopped run does the same: the requests already sent finish
+and are stored, the item in work keeps the pages it stored and is handled like an
+item with pending pages, and a rerun resumes with the rest. A run that is killed
+instead keeps its leases until they expire ([Store](#store)). A live run renews
+its leases every minute, so a rerun reads the leases on its items again every 90
+seconds: it waits until an unrenewed lease expires and then processes the item,
+and it reports an item whose lease was renewed as blocked and exits 1. A lease
+taken while a run plans or processes its items also counts, including for a
+complete item whose files would be rendered again.
 
 Progress, warnings and errors go to stderr. With `--json`, stdout carries exactly
 one JSON line on every exit, errors and interrupts included. Each line holds
@@ -229,10 +233,11 @@ one JSON line on every exit, errors and interrupts included. Each line holds
 | --- | --- |
 | `items_total` | items processed in this run |
 | `items_complete` | items that finished with every page and output; an item whose selected pages all succeeded while pages outside `--pages` remain pending or failed counts neither complete nor failed |
-| `items_failed` | items that finished incomplete |
+| `items_failed` | items that finished incomplete; the item in work when the run stopped is not counted |
 | `items_skipped` | items not processed: complete, unstored and blocked ones, and those of which `--pages` selects no page |
 | `items_blocked` | the blocked items among `items_skipped`: those another run leases, which exit 1, and those whose units wait in a batch, which do not |
 | `items_submitted` | items whose units wait in batches for `batch check` (`--batch`); they count neither complete nor failed |
+| `stopped` | the reason the run stopped with exit code 3 (the error of the call after which the provider serves no further calls), else `null` |
 | `outputs` | absolute paths of the files written: those of complete items rendered again, then those of the processed items, item by item, then the databases |
 | `usage` | tokens per role (`transcription`, `summary`) and their sum under `total`, each with `input_tokens`, `output_tokens`, `total_tokens`, `cached_tokens` (input read from the provider's prompt cache) and `reasoning_tokens` |
 

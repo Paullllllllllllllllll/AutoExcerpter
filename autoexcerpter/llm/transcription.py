@@ -30,6 +30,7 @@ from autoexcerpter.common.provider_requests import (
     system_content,
 )
 from autoexcerpter.common.responses import ResponseOutcome
+from autoexcerpter.common.retry import RunStopped
 from autoexcerpter.common.structured import (
     ResponseFormat,
     StructuredRequest,
@@ -314,10 +315,16 @@ class TranscriptionManager:
         return False
 
     async def transcribe_payload(self, payload: PagePayload) -> dict[str, Any]:
-        """Transcribe one page; failures return an entry with ``error``."""
+        """Transcribe one page; failures return an entry with ``error``.
+
+        Raises:
+            RunStopped: The run stopped; the page has no result.
+        """
         page = _Page(self, payload)
         try:
             return await page.run()
+        except RunStopped:
+            raise
         except Exception as exc:  # noqa: BLE001 - one page must not fail the item
             logger.error(
                 "Transcription API error for %s after retries: %s - %s",

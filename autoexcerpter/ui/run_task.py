@@ -3,7 +3,8 @@
 :func:`flow` builds the task from the wizard steps of :mod:`.wizard` and
 the review of :mod:`.review`. Its run plans and runs like ``autoexcerpter
 run``, with the progress screen and the summary table, and returns the same
-exit codes: 1 also when another run leases an item.
+exit codes: 1 also when another run leases an item, 3 with the same message
+when a provider stopped the run.
 """
 
 from __future__ import annotations
@@ -75,6 +76,9 @@ def _run(request: RunRequest) -> int:
         _say(request, f"Error: {exc}")
         return int(exc.exit_code)
     request.console.print(summary_table(result))
+    stop_message = result.stop_message()
+    if stop_message is not None:
+        _say(request, f"Error: {stop_message}")
     return int(result.exit_code)
 
 

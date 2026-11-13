@@ -63,7 +63,8 @@ class ItemFinished:
 
     *submitted* means its units went to a batch, which ``batch check``
     collects. *partial* marks a successful ``--pages`` item whose document
-    is still short of complete.
+    is still short of complete. *stopped* marks an item during which a
+    provider stopped the run.
     """
 
     name: str
@@ -74,6 +75,7 @@ class ItemFinished:
     report: Mapping[str, Any] | None = None
     submitted: bool = False
     partial: bool = False
+    stopped: bool = False
 
 
 class RunEvents(Protocol):

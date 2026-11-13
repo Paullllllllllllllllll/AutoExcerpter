@@ -188,6 +188,7 @@
         "value": "high"
       }
     },
+    "stopped": null,
     "to_process": [
       {
         "completed_pages": 0,
