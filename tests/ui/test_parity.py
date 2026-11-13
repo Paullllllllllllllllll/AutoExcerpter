@@ -425,9 +425,13 @@ def custom_images_and_parameters(ws: Workspace) -> Script:
 
 
 def items_by_number(ws: Workspace) -> Script:
-    """Several items selected by number and range, in a folder with a space."""
+    """Several items selected by number and range, in a folder with a space.
+
+    Three selected items are worked three at a time.
+    """
     folder = ws.folder("my scans", "alpha", "beta", "gamma", "delta")
     answers = _base(folder, "copy")
+    answers[17:17] = ["3"]  # open items
     answers[1:1] = ["numbers", "1,3-4"]
     return Script(ws.session(), answers)
 
@@ -444,6 +448,7 @@ def items_in_subfolders(ws: Workspace) -> Script:
     """A folder whose subfolders hold items, searched at every level."""
     folder = ws.folder("shelf", "alpha", "vol_2/beta", "vol_10/gamma")
     answers = _base(folder, "copy")
+    answers[17:17] = [KEEP]  # open items
     answers[1:1] = [True, "all"]
     return Script(ws.session(), answers)
 
@@ -468,6 +473,7 @@ def all_items_without_summary(ws: Workspace) -> Script:
         KEEP,
         ["retranscribe"],
         "2",
+        KEEP,  # open items
         KEEP,
         "copy",
     ]

@@ -47,6 +47,7 @@ from autoexcerpter.common.discovery import (
 )
 from autoexcerpter.common.options import Source
 from autoexcerpter.common.retry import RunStopped
+from autoexcerpter.common.scheduler import ItemTicket, RunScheduler
 from autoexcerpter.common.selection import PageRange, select_items
 from autoexcerpter.common.spec_view import resolved_view
 from autoexcerpter.common.sqlite import DEFAULT_BUSY_TIMEOUT, DEFAULT_WARN_INTERVAL
@@ -136,6 +137,7 @@ BUSY_WARN_INTERVAL: float = DEFAULT_WARN_INTERVAL
 _RESUMABLE = (ItemState.PARTIAL, ItemState.TRANSCRIPTION_ONLY)
 # Inputs hashed at once while planning; the threads overlap the file reads.
 _HASH_WORKERS = 8
+_OPEN_ITEMS = "run.open_items"
 
 
 class PlanError(Exception):
@@ -277,6 +279,17 @@ class RunPlan:
         return self.spec.run.batch
 
     @property
+    def open_items(self) -> int:
+        """The number of items the run keeps open at once.
+
+        ``--open-items``, but one under ``--batch`` and for fewer than two
+        items to process.
+        """
+        if self.batch or len(self.to_process) < 2:
+            return 1
+        return self.spec.run.open_items
+
+    @property
     def render_only(self) -> tuple[PlannedItem, ...]:
         """The complete items whose files are written again without model calls."""
         return tuple(item for item in self.skipped if item.resume.render)
@@ -300,9 +313,13 @@ class RunPlan:
         """Return ``{field: {"value": ..., "source": ...}}`` for every field.
 
         The store records it with the run, and a batch check rebuilds the
-        run's spec from it.
+        run's spec from it. ``run.open_items`` appears only above 1: it
+        changes when the run sends its calls, not what it stores.
         """
-        return effective_spec(self.spec, self.sources)
+        view = effective_spec(self.spec, self.sources)
+        if self.spec.run.open_items == 1:
+            del view[_OPEN_ITEMS]
+        return view
 
     def resolved_spec(self) -> dict[str, dict[str, Any]]:
         """Return :meth:`effective_spec` as the dry run shows it.
@@ -1129,7 +1146,9 @@ class _Stores:
     """The stores of a run: one per output folder, opened on first use.
 
     Opening a store stamps the run with its effective spec and settings
-    fingerprint and starts the heartbeat that renews the run's leases.
+    fingerprint and starts the heartbeat that renews the run's leases. The
+    open items of one folder share its store: two items that ask for it at
+    once wait for one opening.
     """
 
     def __init__(self, run_plan: RunPlan, events: RunEvents) -> None:
@@ -1137,6 +1156,7 @@ class _Stores:
         self._events = events
         self._stores: dict[Path, Store] = {}
         self._keepers: list[LeaseKeeper] = []
+        self._opening = asyncio.Lock()
 
     @property
     def databases(self) -> tuple[str, ...]:
@@ -1150,9 +1170,13 @@ class _Stores:
             StoreRefusedError: The folder's database is refused.
         """
         key = root.resolve()
-        store = self._stores.get(key)
-        if store is not None:
-            return store
+        async with self._opening:
+            store = self._stores.get(key)
+            if store is not None:
+                return store
+            return await self._open(key)
+
+    async def _open(self, key: Path) -> Store:
         key.mkdir(parents=True, exist_ok=True)
         try:
             store = open_store(key, writer=_writer_options(self._events))
@@ -1461,6 +1485,46 @@ def _batch_result(  # noqa: PLR0913 - the item, its place, its outcome
     )
 
 
+@dataclass(frozen=True)
+class _Unstarted:
+    """An item the run opened but stopped before it had started."""
+
+
+@dataclass(frozen=True)
+class _Shared:
+    """What the open items of a run share.
+
+    *scheduler* holds the run's request slots and opens the items; the
+    items write their files one at a time under *finish*.
+    """
+
+    scheduler: RunScheduler
+    finish: asyncio.Lock = field(default_factory=asyncio.Lock)
+
+
+async def _kept_back(
+    run_plan: RunPlan, planned: PlannedItem, store: Store, doc_id: int, env: CallEnv
+) -> tuple[str | None, _Blocked | _Unstarted | None] | None:
+    """Return why a leased item does not start, with its outcome; None when it does.
+
+    The note is None for an item the run stopped before its start: another
+    open item may stop the run while this one waits for its lease, and an
+    item that sends nothing must not be reset by ``--force``.
+    """
+    if store.blocked_units(doc_id):
+        return (
+            f"Skipping '{planned.name}': its pages wait in a batch submitted since "
+            "the plan; run 'autoexcerpter batch check'.",
+            _Blocked("its pages wait in a batch submitted since the plan", False),
+        )
+    skip = await _beyond_pages(run_plan, planned)
+    if skip is not None:
+        return skip, None
+    if env.stop.reason is not None:
+        return None, _Unstarted()
+    return None
+
+
 async def _run_item(  # noqa: PLR0913 - the item, its place and the run's objects
     run_plan: RunPlan,
     planned: PlannedItem,
@@ -1468,15 +1532,22 @@ async def _run_item(  # noqa: PLR0913 - the item, its place and the run's object
     env: CallEnv,
     stores: _Stores,
     clients: BatchClients | None = None,
-) -> ItemResult | _Blocked | None:
+    *,
+    shared: _Shared | None = None,
+    ticket: ItemTicket | None = None,
+) -> ItemResult | _Blocked | _Unstarted | None:
     """Process one item; :class:`_Blocked` when another run holds its document.
+
+    :class:`_Unstarted` when the run stopped before the item had its lease:
+    nothing of it is reset, sent or reported started.
 
     An item whose pages a batch submission took since the plan is blocked
     as well, though not by a lease; an item of which ``--pages`` selects no
     page returns None, before ``--force`` resets it. With *clients*, the
     item's missing units are submitted to the batch APIs instead of called.
     An item during which the run stopped returns a result with ``stopped``
-    set; its lease is released like any other.
+    set; its lease is released like any other. Its units draw on the slots
+    of *shared* and report to *ticket*.
     """
     events = env.events
     total = len(run_plan.to_process)
@@ -1486,20 +1557,14 @@ async def _run_item(  # noqa: PLR0913 - the item, its place and the run's object
     if leased is None:
         return item_run.blocked()
     store, doc_id, lease = leased
-    held: _Blocked | None = None
-    if store.blocked_units(doc_id):
-        held = _Blocked("its pages wait in a batch submitted since the plan", False)
-        skip: str | None = (
-            f"Skipping '{name}': its pages wait in a batch submitted since the "
-            "plan; run 'autoexcerpter batch check'."
-        )
-    else:
-        skip = await _beyond_pages(run_plan, planned)
-    if skip is not None:
-        await _note(store, doc_id, skip, events)
+    kept = await _kept_back(run_plan, planned, store, doc_id, env)
+    if kept is not None:
+        skip, outcome = kept
+        if skip is not None:
+            await _note(store, doc_id, skip, events)
         with contextlib.suppress(sqlite3.Error):
             await store.release(lease)
-        return held
+        return outcome
     events.item_started(ItemStarted(name, planned.item.kind, index, total))
     processor: ItemProcessor | None = None
     success = False
@@ -1529,6 +1594,10 @@ async def _run_item(  # noqa: PLR0913 - the item, its place and the run's object
             events=events,
             env=env,
             force=run_plan.force,
+            scheduler=shared.scheduler if shared is not None else None,
+            ticket=ticket,
+            finish=shared.finish if shared is not None else None,
+            index=index,
         )
         try:
             success = await processor.process()
@@ -1738,26 +1807,31 @@ async def run(
     *,
     args: argparse.Namespace | None = None,
 ) -> RunResult:
-    """Process the plan's items one after another on the running event loop.
+    """Process the plan's items on the running event loop.
 
-    The run owns one rate-limiter registry and one usage total, shared by
-    every item, and one store per output folder, stamped with the run.
-    Before any item starts, the client of every phase the run calls is
-    built once; the clients are closed when the run ends. Each item's
-    document is leased while its units are written and its files written
-    from the store; complete items with missing files are written without
-    model calls. An item whose document another run holds, also a complete
-    one to render again, is skipped with a note and counts as blocked; the
-    run records exit code 1 for it like a failure. An item whose pages wait
-    in a batch is blocked too, without changing the exit code. An item that
-    crashes is logged and counted failed; the run
-    continues with the next item. Refused items count as failed. When a
-    provider stops the run (the call environment's stop signal), the item
-    in work keeps the units it stored, no further item starts and the run
-    records exit code 3. Cancellation propagates. Under ``--batch`` no model
-    client is built:
-    each item's missing units are submitted through one set of batch
-    clients, and *args*, the parsed command line if any, serves the
+    The items open in plan order, at most :attr:`RunPlan.open_items` at a
+    time; a further item opens while the open ones have fewer units left
+    than ``--concurrency``, and the units of all open items share that many
+    request slots. The results, the summary and the exit code follow the
+    plan order, whatever the timing. The run owns one rate-limiter registry
+    and one usage total, shared by every item, and one store per output
+    folder, stamped with the run and shared by its open items. Before any
+    item starts, the client of every phase the run calls is built once; the
+    clients are closed when the run ends. Each item's document is leased
+    while its units are written and its files written from the store, one
+    item's files at a time; complete items with missing files are written
+    without model calls. An item whose document another run holds, also a
+    complete one to render again, is skipped with a note and counts as
+    blocked; the run records exit code 1 for it like a failure. An item
+    whose pages wait in a batch is blocked too, without changing the exit
+    code. An item that crashes is logged and counted failed; the others
+    continue. Refused items count as failed. When a provider stops the run
+    (the call environment's stop signal), every open item keeps the units
+    it stored, no further item opens and the run records exit code 3.
+    Cancellation cancels the open items, which release their leases, and
+    propagates. Under ``--batch`` no model client is built and one item is
+    open at a time: each item's missing units are submitted through one set
+    of batch clients, and *args*, the parsed command line if any, serves the
     extension's key variables.
 
     Raises:
@@ -1777,30 +1851,47 @@ async def run(
     ):
         run_plan.output_dir.mkdir(parents=True, exist_ok=True)
     stores = _Stores(run_plan, sink)
+    shared = _Shared(
+        RunScheduler(
+            run_plan.spec.run.concurrency, window=run_plan.open_items, stop=env.stop
+        )
+    )
     started = time.monotonic()
     skipped = [item.name for item in run_plan.not_processed]
     held = _Held.of(run_plan)
     exit_code: int = ExitCode.FAILURE
     stopped: str | None = None
     unstarted: list[str] = []
+
+    async def open_item(
+        entry: tuple[int, PlannedItem], ticket: ItemTicket
+    ) -> ItemResult | _Blocked | _Unstarted | None:
+        index, planned = entry
+        return await _run_item(
+            run_plan, planned, index, env, stores, clients, shared=shared, ticket=ticket
+        )
+
     try:
         rendered, results = await _render_complete(run_plan, env, stores, held)
         for failure in results:
             skipped.remove(failure.name)
-        for index, planned in enumerate(run_plan.to_process, start=1):
-            if stopped is not None:
-                unstarted.append(planned.name)
-                continue
-            result = await _run_item(run_plan, planned, index, env, stores, clients)
-            # The signal, not the item's result: an item that also lost its
-            # lease reports the lease and no stop.
-            stopped = env.stop.reason
+        entries = list(enumerate(run_plan.to_process, start=1))
+        outcomes = await shared.scheduler.run(entries, open_item)
+        # The signal, not the items' results: an item that also lost its
+        # lease reports the lease and no stop.
+        stopped = env.stop.reason
+        # A stop opens no further item: the outcomes cover the first items.
+        for planned, result in zip(run_plan.to_process, outcomes, strict=False):
             if isinstance(result, ItemResult):
                 results.append(result)
+                continue
+            if isinstance(result, _Unstarted):
+                unstarted.append(planned.name)
                 continue
             skipped.append(planned.name)
             if result is not None:
                 held.add(planned, result)
+        unstarted += [planned.name for planned in run_plan.to_process[len(outcomes) :]]
         for planned in run_plan.refused:
             sink.warning(planned.reason)
             results.append(ItemResult(planned.name, False, planned.paths))

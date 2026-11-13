@@ -40,6 +40,7 @@ __all__ = [
     "condition_warnings",
     "dry_run_fields",
     "execute",
+    "open_items_warning",
     "plan_fields",
     "report_usage_error",
     "summary_fields",
@@ -160,6 +161,34 @@ def condition_warnings(
     return messages
 
 
+def open_items_warning(
+    flags: Mapping[str, Any], defaults: Mapping[str, Any], run_plan: core.RunPlan
+) -> str | None:
+    """Return the warning for an ``--open-items`` above 1 that has no effect.
+
+    It has none under ``--batch`` and with fewer than two items to process;
+    as in :func:`condition_warnings`, a code default never warns.
+    """
+    option = OPTIONS["open_items"]
+    if run_plan.spec.run.open_items == 1 or run_plan.open_items > 1:
+        return None
+    origin = _origin(option, (("flag", flags), ("settings", defaults)))
+    if origin is None:
+        return None
+    if run_plan.batch:
+        reason = "the run submits to batch APIs"
+    else:
+        count = len(run_plan.to_process)
+        reason = f"the run has {'no' if count == 0 else 'a single'} item to process"
+    label = option.flag
+    if origin[0] == "settings":
+        label = f"the settings default {option.name} ({option.flag})"
+    return (
+        f"{label} applies only to several items without --batch and has no "
+        f"effect here: {reason}"
+    )
+
+
 def _origin(
     option: Option, levels: Sequence[tuple[str, Mapping[str, Any]]]
 ) -> tuple[str, str] | None:
@@ -242,6 +271,9 @@ def _execute(
         reporter.error(str(exc))
         emitter.emit(summary_fields(total=exc.items_total))
         return exc.exit_code
+    unused = open_items_warning(flags, settings.defaults, run_plan)
+    if unused is not None:
+        reporter.warning(unused)
     reporter.plan(run_plan)
 
     skipped = len(run_plan.not_processed)

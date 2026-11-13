@@ -1,5 +1,23 @@
 # Changelog
 
+- **v1.10.0** (13 November 2026) -- `run` gains `--open-items N` (default 1),
+  which keeps several items open at once. `--concurrency` now bounds the requests
+  of the whole run, and `--open-items` sets how many items share them: a further
+  item opens whenever the open ones have fewer pages left than `--concurrency`,
+  so a folder of short documents keeps every request slot busy. On 40 two-page
+  documents against an endpoint answering after 1 s, a run at `--concurrency 16`
+  took 87 s with one open item and 16 s with eight. Items store their citations
+  and write their files one at a time, and the summary, the exit code and the
+  failure list keep the item order whatever the timing. A provider stop opens no
+  further item and closes every open item as an interrupted one; Ctrl+C cancels
+  them all and leaves no lease held. An item that was only opening when the run
+  stopped is left as it was, also under `--force`, and counts as not started.
+  The option has no effect with `--batch` or on a single item, and the run warns
+  when it is given there. The stored run spec records `run.open_items` only
+  above 1. With the default of 1 a run behaves as before. The shared package
+  gains `common/scheduler.py`, and the page sources of all PDFs share one lock
+  for PyMuPDF.
+
 - **v1.9.0** (13 November 2026) -- AutoExcerpter now reads input folders by the
   rules ChronoMiner and ChronoTranscriber follow. A folder input gives only its
   own PDFs and the image folders that are the folder itself or one of its direct

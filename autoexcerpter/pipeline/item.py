@@ -37,6 +37,7 @@ from autoexcerpter.common.images import (
     sha256_of_file,
 )
 from autoexcerpter.common.retry import RunStopped, StopSignal
+from autoexcerpter.common.scheduler import ItemTicket, RunScheduler
 from autoexcerpter.common.sqlite import read
 from autoexcerpter.common.store import (
     BLOCKING_SUBMISSIONS,
@@ -318,6 +319,14 @@ class ItemProcessor:
     then counts failed and its units stay in the store. ``stop_signal`` is
     the run's stop signal, that of *env* when given; after a stopped run
     ``units_left`` counts the units the item still needed.
+
+    *scheduler* holds the run's request slots, which the units of every open
+    item share (default: slots of the item's own, the job's concurrency);
+    *ticket* tells it how many units the item has left. *finish*, a lock the
+    open items of a run share (default: one of the item's own), is held
+    while the item stores its citations and writes its files, so that the
+    items write theirs one at a time. *index* is the item's
+    position in the run, which its page events carry.
     """
 
     def __init__(  # noqa: PLR0913 - the item, its document and the run's objects
@@ -332,6 +341,10 @@ class ItemProcessor:
         events: RunEvents | None = None,
         env: CallEnv | None = None,
         force: bool = False,
+        scheduler: RunScheduler | None = None,
+        ticket: ItemTicket | None = None,
+        finish: asyncio.Lock | None = None,
+        index: int = 0,
     ) -> None:
         self.item = item
         self.name = item.output_stem
@@ -348,6 +361,12 @@ class ItemProcessor:
         self.context = context
         self.stop_signal = env.stop if env is not None else StopSignal()
         self.units_left = 0
+        self.scheduler = (
+            scheduler if scheduler is not None else RunScheduler(job.concurrency)
+        )
+        self.ticket = ticket if ticket is not None else ItemTicket(lambda: None)
+        self.finish = finish if finish is not None else asyncio.Lock()
+        self.index = index
         self.runner = PageRunner(
             item_name=self.name,
             document=document,
@@ -421,7 +440,9 @@ class ItemProcessor:
         Every page is planned, but only the pages ``--pages`` selects are
         worked; the others stay pending and the document partial. A stopped
         run starts no further unit; the item is then finished from what the
-        store holds and the stop re-raised.
+        store holds and the stop re-raised. The ticket learns the item's
+        units before the first of them is sent: one per stored page whose
+        summary needs work and one per pending page.
         """
         self.page_count = len(source)
         suffix = " and summarization" if self.job.summarize else ""
@@ -430,13 +451,17 @@ class ItemProcessor:
         await self._plan(source)
         transcriptions = _by_index(self.document.units(KIND_TRANSCRIPTION))
         pending = [idx for idx in self.selected if transcriptions[idx].status != "done"]
+        redo: list[int] = []
+        if self.runner.summary_manager is not None:
+            redo = self._summaries_to_redo(transcriptions, pending)
+        self.ticket.expect(len(redo) + len(pending))
         if pending:
             await self.document.set_image_settings(
                 image_settings_record(source.img_cfg)
             )
         stopped: RunStopped | None = None
         try:
-            await self._summarize_stored(transcriptions, pending)
+            await self._summarize_stored(transcriptions, pending, redo)
             await self._transcribe_pending(source, pending)
         except RunStopped as exc:
             stopped = exc
@@ -506,46 +531,52 @@ class ItemProcessor:
         ]
 
     async def _summarize_stored(
-        self, transcriptions: dict[int, UnitRow], pending: Sequence[int]
+        self,
+        transcriptions: dict[int, UnitRow],
+        pending: Sequence[int],
+        redo: Sequence[int] | None = None,
     ) -> None:
         """Summarize the selected stored pages whose summary needs work.
 
-        The pages (:meth:`_summaries_to_redo`) run like the page pool's: at
-        most the job's concurrency at a time, starts spaced by its
-        ``start_delay``, and on Anthropic the first page alone. An error
-        that escapes the page runner propagates after the other pages are
-        cancelled. Once the run stops, no further page starts, the pages in
-        flight end, and :class:`~autoexcerpter.common.retry.RunStopped` is
-        raised.
+        The pages, *redo* or else :meth:`_summaries_to_redo`, run like the
+        page pool's: each holds one of the scheduler's slots, starts are
+        spaced by the job's ``start_delay``, and on Anthropic the first page
+        runs alone. An error that escapes the page runner propagates after
+        the other pages are cancelled. Once the run stops, no further page
+        starts, the pages in flight end, and
+        :class:`~autoexcerpter.common.retry.RunStopped` is raised.
         """
         if self.runner.summary_manager is None:
             return
-        redo = self._summaries_to_redo(transcriptions, pending)
+        if redo is None:
+            redo = self._summaries_to_redo(transcriptions, pending)
         if not redo:
             return
         logger.info(f"Summarizing {len(redo)} page(s) transcribed by an earlier run")
-        semaphore = asyncio.Semaphore(max(1, self.job.concurrency))
         gate = _StartGate(self.job.start_delay)
         runner = self.runner
 
         async def summarize(idx: int) -> None:
             unit = transcriptions[idx]
             error = unit.error if unit.status == "failed" else None
-            async with semaphore:
-                if runner.stop:
-                    return
-                await gate.wait()
-                if runner.stop:
-                    return
-                try:
-                    await runner.summarize_page(
-                        idx,
-                        unit.label or f"page index {idx}",
-                        unit.content or "",
-                        error,
-                    )
-                except RunStopped as exc:
-                    runner.stop.set(str(exc))
+            try:
+                async with self.scheduler.slot():
+                    if runner.stop:
+                        return
+                    await gate.wait()
+                    if runner.stop:
+                        return
+                    try:
+                        await runner.summarize_page(
+                            idx,
+                            unit.label or f"page index {idx}",
+                            unit.content or "",
+                            error,
+                        )
+                    except RunStopped as exc:
+                        runner.stop.set(str(exc))
+            finally:
+                self.ticket.done()
 
         warm = getattr(runner.summary_manager, "provider", None) == "anthropic"
         batches = [redo[:1], redo[1:]] if warm else [redo]
@@ -598,9 +629,10 @@ class ItemProcessor:
         already_complete: int,
         workers: int,
     ) -> None:
-        """Run the pending pages, at most *workers* at a time.
+        """Run the pending pages, each in one of the scheduler's slots.
 
-        Results are consumed in completion order, and each finished page is
+        *workers* sizes the progress estimate. Results are consumed in
+        completion order, and each finished page is
         reported as a :class:`~autoexcerpter.events.PageDone` event. A page
         error that escapes the page runner propagates after the remaining
         pages are cancelled; cancellation of the item cancels every page.
@@ -618,22 +650,24 @@ class ItemProcessor:
             started_at=self.started_at,
         )
         self._progress = progress
-        semaphore = asyncio.Semaphore(workers)
         gate = _StartGate(self.job.start_delay)
         runner = self.runner
 
         async def run_page(index: int) -> tuple[int, str] | None:
-            async with semaphore:
-                if runner.stop:
-                    return None
-                await gate.wait()
-                if runner.stop:
-                    return None
-                try:
-                    return index, await runner.run(index, source, progress)
-                except RunStopped as exc:
-                    runner.stop.set(str(exc))
-                    return None
+            try:
+                async with self.scheduler.slot():
+                    if runner.stop:
+                        return None
+                    await gate.wait()
+                    if runner.stop:
+                        return None
+                    try:
+                        return index, await runner.run(index, source, progress)
+                    except RunStopped as exc:
+                        runner.stop.set(str(exc))
+                        return None
+            finally:
+                self.ticket.done()
 
         managers = (runner.transcribe_manager, runner.summary_manager)
         warm = any(getattr(m, "provider", None) == "anthropic" for m in managers)
@@ -658,6 +692,7 @@ class ItemProcessor:
                             done=done,
                             total=len(pending),
                             already_complete=already_complete,
+                            index=self.index,
                         )
                     )
                 runner.admit()
@@ -667,10 +702,11 @@ class ItemProcessor:
             await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _write_outputs(self) -> OutputStatus:
-        """Store the citations, then render the files from the store."""
-        if not await self.files.store_citations():
-            return OutputStatus(transcription_ok=False, summaries_ok=False)
-        return await self.files.write()
+        """Store the citations, then render the files, under the finish lock."""
+        async with self.finish:
+            if not await self.files.store_citations():
+                return OutputStatus(transcription_ok=False, summaries_ok=False)
+            return await self.files.write()
 
     async def _finish(self, *, withhold: bool = False) -> bool:
         """Write the outputs, record the run report and return the verdict.

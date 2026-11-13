@@ -109,6 +109,36 @@ def test_samplers_warn_for_the_phase_whose_provider_does_not_take_them(
     assert spec["summary_model.top_k"] == {"value": 20, "source": "flag"}
 
 
+def test_open_items_on_a_single_item_warns_and_runs(
+    make_pdf: MakePdf, capsys: pytest.CaptureFixture[str]
+) -> None:
+    argv = _dry_run(make_pdf("doc.pdf"), "--open-items", "4")
+
+    assert entry.main(argv) == 0
+
+    (warning,) = _warnings(capsys.readouterr().err)
+    assert warning == (
+        "[WARNING] --open-items applies only to several items without --batch "
+        "and has no effect here: the run has a single item to process"
+    )
+
+
+def test_open_items_on_several_items_does_not_warn(
+    tmp_path: Path, make_pdf: MakePdf, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / "in").mkdir()
+    make_pdf("in/a.pdf")
+    make_pdf("in/b.pdf")
+    argv = _dry_run(tmp_path / "in", "--all", "--open-items", "4")
+
+    assert entry.main(argv) == 0
+
+    captured = capsys.readouterr()
+    assert _warnings(captured.err) == []
+    spec = json.loads(captured.out.splitlines()[-1])["spec"]
+    assert spec["run.open_items"] == {"value": 4, "source": "flag"}
+
+
 def test_without_the_conditional_flag_nothing_warns(
     make_pdf: MakePdf, capsys: pytest.CaptureFixture[str]
 ) -> None:

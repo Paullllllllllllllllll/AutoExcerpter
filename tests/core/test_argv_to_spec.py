@@ -410,6 +410,7 @@ ROWS = [
     _row("force", "--force", sets={"run.force": True}),
     _row("retranscribe", "--retranscribe", sets={"run.retranscribe": True}),
     _row("concurrency", "--concurrency", "4", sets={"run.concurrency": 4}),
+    _row("open_items", "--open-items", "3", sets={"run.open_items": 3}),
     _row("batch", "--batch", sets={"run.batch": True}),
     _row("batch", "--no-batch", sets={"run.batch": False}),
     _row("dry_run", "--dry-run", sets={"run.dry_run": True}),
@@ -798,6 +799,7 @@ PRECEDENCE: list[tuple[list[str], dict[str, Any], str, Any, Source]] = [
     ([], {}, "run.concurrency", 16, DEFAULT),
     ([], {"concurrency": 4}, "run.concurrency", 4, SETTINGS),
     (["--concurrency", "8"], {"concurrency": 4}, "run.concurrency", 8, FLAG),
+    ([], {"open_items": 4}, "run.open_items", 4, SETTINGS),
     ([], {"verbosity": "high"}, "summary_model.verbosity", "high", SETTINGS),
     (
         ["--summary-verbosity", "medium"],

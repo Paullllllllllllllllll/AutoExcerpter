@@ -105,6 +105,21 @@ def test_item_without_report_prints_its_verdict() -> None:
     assert "[1/1] gamma: incomplete" in _output(console).splitlines()
 
 
+def test_the_items_bar_counts_no_item_that_is_still_open() -> None:
+    with RichProgress(_console()) as progress:
+        progress.item_started(ItemStarted("alpha", "pdf", 1, 3))
+        progress.item_started(ItemStarted("beta", "pdf", 2, 3))
+        progress.item_finished(ItemFinished("beta", 2, 3, True))
+        (items, *_rest) = progress._progress.tasks
+        assert items.completed == 1
+        progress.item_finished(ItemFinished("alpha", 1, 3, True))
+        assert items.completed == 2
+        # A position no event finished, as of a blocked item, counts as passed.
+        progress.item_started(ItemStarted("gamma", "pdf", 3, 3))
+        progress.item_finished(ItemFinished("gamma", 3, 3, True))
+        assert items.completed == 3
+
+
 def test_submitted_item_prints_submitted() -> None:
     console = _console()
     with RichProgress(console) as progress:
@@ -142,6 +157,24 @@ def test_terminal_console_shows_bars_and_redirects_stderr() -> None:
     assert "a log record" in output
     assert "alpha: complete; 3 page(s) ok" in output
     assert "Items" in output
+
+
+def test_each_open_item_has_its_own_page_bar() -> None:
+    console = Console(
+        file=io.StringIO(), width=100, force_terminal=True, color_system=None
+    )
+    with RichProgress(console) as progress:
+        progress.item_started(ItemStarted("alpha", "pdf", 1, 2))
+        progress.item_started(ItemStarted("beta", "pdf", 2, 2))
+        progress.page_done(PageDone("alpha", 0, "ok", 1, 4, index=1))
+        progress.page_done(PageDone("beta", 0, "ok", 2, 3, index=2))
+        bars = _render(progress._render())
+        assert re.search(r"alpha .* 1/4", bars)
+        assert re.search(r"beta .* 2/3", bars)
+        progress.item_finished(ItemFinished("beta", 2, 2, True, (), _report(3)))
+        bars = _render(progress._render())
+        assert "beta" not in bars
+        assert re.search(r"Items .* 1/2", bars)
 
 
 def _result() -> core.RunResult:

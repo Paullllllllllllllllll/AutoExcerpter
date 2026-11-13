@@ -1,10 +1,11 @@
 """Run screen of the guided UI: live progress bars, plan and summary tables.
 
 :class:`RichProgress` implements :class:`~autoexcerpter.events.RunEvents` on a
-rich console. On a terminal it shows an overall bar for the items, a page bar
-for the current item and a status line for waits; warnings and one result line
-per item are printed above the bars, and so are log records written to stderr
-while the display runs. On any other console it prints plain lines only.
+rich console. On a terminal it shows an overall bar for the items, a
+page bar for each open item and a status line for waits; warnings and one
+result line per item are printed above the bars, and so are log records
+written to stderr while the display runs. On any other console it prints
+plain lines only.
 """
 
 from __future__ import annotations
@@ -78,7 +79,9 @@ class RichProgress:
             auto_refresh=False,
         )
         self._items_task: TaskID | None = None
-        self._page_task: TaskID | None = None
+        self._page_tasks: dict[int, TaskID] = {}
+        self._last = 0
+        self._finished = 0
         self._status: str = ""
         self._live: Live | None = None
 
@@ -129,9 +132,13 @@ class RichProgress:
             )
         else:
             self._progress.update(self._items_task, total=event.total)
-        if self._page_task is not None:
-            self._progress.remove_task(self._page_task)
-        self._page_task = self._progress.add_task(event.name, total=None, note="")
+        known = self._page_tasks.pop(event.index, None)
+        if known is not None:
+            self._progress.remove_task(known)
+        self._page_tasks[event.index] = self._progress.add_task(
+            event.name, total=None, note=""
+        )
+        self._last = event.index
         if not self.live:
             self._print(
                 Text(
@@ -141,18 +148,20 @@ class RichProgress:
             )
 
     def page_done(self, event: PageDone) -> None:
-        """Advance the page bar to *done* of *total* pending pages."""
+        """Advance the item's page bar to *done* of *total* pending pages.
+
+        An event without the item's position advances the item opened last.
+        """
         self._status = ""
-        if self._page_task is None:
+        task = self._page_tasks.get(event.index or self._last)
+        if task is None:
             return
         note = (
             f"+{event.already_complete} from an earlier run"
             if event.already_complete
             else ""
         )
-        self._progress.update(
-            self._page_task, completed=event.done, total=event.total, note=note
-        )
+        self._progress.update(task, completed=event.done, total=event.total, note=note)
 
     def waiting(self, event: Waiting) -> None:
         """Show the wait on the status line, or print it."""
@@ -168,13 +177,20 @@ class RichProgress:
             self._print(Text(f"Warning: {line}", style="yellow"))
 
     def item_finished(self, event: ItemFinished) -> None:
-        """Print the item's result line and advance the overall bar."""
+        """Print the item's result line and advance the overall bar.
+
+        The bar stands at the highest position finished less the items
+        before it that are still open, which with one item open at a time is
+        the position of this item.
+        """
         self._status = ""
-        if self._page_task is not None:
-            self._progress.remove_task(self._page_task)
-            self._page_task = None
+        task = self._page_tasks.pop(event.index, None)
+        if task is not None:
+            self._progress.remove_task(task)
+        self._finished = max(self._finished, event.index)
         if self._items_task is not None:
-            self._progress.update(self._items_task, completed=event.index)
+            behind = sum(index < self._finished for index in self._page_tasks)
+            self._progress.update(self._items_task, completed=self._finished - behind)
         line = Text(f"[{event.index}/{event.total}] {event.name}: ")
         line.append(*_verdict(event))
         report = event.report

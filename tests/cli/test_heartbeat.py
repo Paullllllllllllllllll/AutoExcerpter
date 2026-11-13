@@ -67,6 +67,26 @@ def test_the_events_reach_the_reporter_and_the_file(tmp_path: Path) -> None:
     assert (data["units_done"], data["units_total"], data["eta_seconds"]) == (0, 0, 0)
 
 
+def test_open_items_write_their_pages_together(tmp_path: Path) -> None:
+    path = tmp_path / "hb.json"
+    events = HeartbeatEvents(
+        NullEvents(), ItemProgress(Heartbeat(path, interval=0), "pages")
+    )
+
+    events.item_started(ItemStarted("a", "pdf", 1, 2))
+    events.item_started(ItemStarted("b", "pdf", 2, 2))
+    events.page_done(PageDone("b", 0, "ok", 1, 2, index=2))
+    events.page_done(PageDone("a", 0, "ok", 1, 3, index=1))
+    data = read(path)
+    assert (data["units_done"], data["units_total"]) == (2, 5)
+    assert data["unit_label"] == "pages processed, item 2/2"
+    events.item_finished(ItemFinished("a", 1, 2, True))
+    data = read(path)
+    assert (data["units_done"], data["units_total"]) == (1, 2)
+    events.item_finished(ItemFinished("b", 2, 2, True))
+    assert read(path)["eta_seconds"] == 0
+
+
 def test_without_the_variable_the_reporter_runs_alone(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

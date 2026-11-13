@@ -27,21 +27,40 @@ UNIT = "pages"
 
 
 class HeartbeatEvents:
-    """Pass every event to *inner*, then record it in *progress*."""
+    """Pass every event to *inner*, then record it in *progress*.
+
+    Each open item keeps its own page counts, keyed by its position in the
+    run; a page event without a position belongs to the item opened last.
+    While several items are open, the file shows the pages of all of them
+    together and the position of the one opened last; the item end is
+    written once no item is open.
+    """
 
     def __init__(self, inner: RunEvents, progress: ItemProgress) -> None:
         self.inner = inner
         self.progress = progress
+        self._open: dict[int, tuple[int, int]] = {}
+        self._last = 0
+
+    def _units(self) -> None:
+        done = sum(counts[0] for counts in self._open.values())
+        total = sum(counts[1] for counts in self._open.values())
+        self.progress.units(done, total)
 
     def item_started(self, event: ItemStarted) -> None:
         """Forward the event; start the item's units at zero."""
         self.inner.item_started(event)
+        self._open[event.index] = (0, 0)
+        self._last = event.index
         self.progress.item_started(event.index, event.total)
+        if len(self._open) > 1:
+            self._units()
 
     def page_done(self, event: PageDone) -> None:
         """Forward the event; record the item's pages done."""
         self.inner.page_done(event)
-        self.progress.units(event.done, event.total)
+        self._open[event.index or self._last] = (event.done, event.total)
+        self._units()
 
     def waiting(self, event: Waiting) -> None:
         """Forward the event."""
@@ -52,9 +71,13 @@ class HeartbeatEvents:
         self.inner.warning(message)
 
     def item_finished(self, event: ItemFinished) -> None:
-        """Forward the event; write the finished item."""
+        """Forward the event; write the finished item, or the ones still open."""
         self.inner.item_finished(event)
-        self.progress.item_finished()
+        self._open.pop(event.index, None)
+        if self._open:
+            self._units()
+        else:
+            self.progress.item_finished()
 
 
 def with_heartbeat(reporter: RunEvents) -> tuple[RunEvents, ItemProgress | None]:

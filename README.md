@@ -1,4 +1,4 @@
-# AutoExcerpter v1.9.0
+# AutoExcerpter v1.10.0
 
 <img src="assets/logo.svg" alt="AutoExcerpter logo" width="64" align="right">
 
@@ -215,6 +215,7 @@ option but the OpenRouter provider, for example as `model` or
 | `--force` | reprocess items whose outputs exist (resume is the default): every stored page of the item is reset, also outside --pages | | no |
 | `--retranscribe` | transcribe a partial, transcription-only or refused item again instead of reusing stored transcriptions; a complete item is skipped (--force redoes it); with --pages only those of the selected pages, under the stored image settings | | no |
 | `--concurrency N` | parallel requests | 16 | yes |
+| `--open-items N` | items open at once, sharing the --concurrency requests; no effect with --batch or on a single item | 1 | yes |
 | `--batch`, `--no-batch` | submit the pages and summaries to the providers' batch APIs | off | yes |
 | `--dry-run` | plan without API calls or writes | | no |
 | `--json` | print one JSON summary line on stdout | | no |
@@ -265,7 +266,9 @@ unstored and blocked); `unstored`, `blocked` and `refused` list those items with
 their `name` and `reason`; `spec` maps every field of the effective run
 specification, such as `transcription_model.model`, to its `value` and `source`
 (`flag`, `settings`, `default` or `resolved`, described under
-[Settings File](#settings-file)). A dry run needs no API key: each unset key
+[Settings File](#settings-file)); `run.open_items` appears there, and in the
+spec the store records with the run, only above 1. A dry run needs no API key:
+each unset key
 variable the run would need is a warning on stderr, and the dry run exits 0.
 
 When the environment variable `CHRONO_HEARTBEAT_FILE` names a file, `run` and
@@ -720,11 +723,21 @@ With `--json`, stdout carries one summary line with `database`, `selected`,
 
 ## Batch Processing
 
-Without `--batch`, every page is a direct request. A folder run processes the
-selected items one after another, with up to `--concurrency` pages of an item
-(default 16) in flight at once, their starts spaced by
-`concurrency.delay_between_tasks`. The rate limits apply per provider across the
-run. A failed item is counted, and the run continues.
+Without `--batch`, every page is a direct request. `--concurrency` (default 16)
+bounds the requests in flight over the whole run, and `--open-items` (default 1)
+sets how many items share them. With the default, a folder run processes the
+selected items one after another, with up to `--concurrency` pages of an item in
+flight. A folder of short documents leaves most of these requests unused: two
+pages give two requests in flight. `--open-items 8` opens a further item
+whenever the open ones have fewer pages left than `--concurrency`, up to eight
+items, and each item summarizes its pages as soon as they are transcribed. The
+items still write their files one at a time, and the run summary, the exit code
+and the failure list keep the order of the items. The starts of an item's page
+requests are spaced by `concurrency.delay_between_tasks`. The rate limits apply per
+provider across the run. A failed item is counted, and the run continues; a
+stopped run opens no further item and leaves every open item as an interrupted
+one, with its stored pages kept. `--open-items` has no effect with `--batch` and
+on a run with a single item to process, and the run warns when it is given there.
 
 `run --batch` sends the same requests to the batch APIs of OpenAI, Anthropic and
 Google instead, which cost about half as much and finish within a day. Both

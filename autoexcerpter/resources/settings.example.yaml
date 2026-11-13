@@ -119,7 +119,8 @@ prompt_caching:
 #   # One transcription format (transcription-md or transcription-txt) and the
 #   # summary formats; the database is always written.
 #   formats: [transcription-md, summary-md, summary-docx]
-#   concurrency: 16
+#   concurrency: 16  # requests in flight over the whole run
+#   open_items: 1  # items that share them at once
 #   batch: false  # true submits to the batch APIs; collect with batch check
 #   # Summary context for items without a sidecar: topics or a text file.
 #   # A context default would override the sidecars, like --context.

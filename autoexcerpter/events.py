@@ -38,6 +38,8 @@ class PageDone:
     *page* is the 0-based page index and *status* is ``ok``, ``failed`` or
     ``deferred`` (left for a later run). *done* of *total* counts the pages
     pending in this run; *already_complete* pages came from an earlier run.
+    *index* is the item's position in the run, as :class:`ItemStarted` gives
+    it; it tells apart two items of one name in different output folders.
     """
 
     item: str
@@ -46,6 +48,7 @@ class PageDone:
     done: int
     total: int
     already_complete: int = 0
+    index: int = 0
 
 
 @dataclass(frozen=True)

@@ -1208,8 +1208,23 @@ def _run_step(session: Session) -> Step:
         return _ask_run(ctx, session)
 
     return Step(
-        "run", "Run options", ask=ask, sets=("batch", *RUN_FLAGS, "concurrency")
+        "run",
+        "Run options",
+        ask=ask,
+        sets=("batch", *RUN_FLAGS, "concurrency", "open_items"),
     )
+
+
+def _selected_count(state: State) -> int:
+    """Return the number of items the input step's answers select."""
+    path = state.value("input")
+    if path is None:
+        return 0
+    inventory = inventory_of(state, path)
+    select = state.value("select")
+    if len(inventory.items) < 2 or state.value("all") or not select:
+        return len(inventory.items)
+    return len(selection_of(inventory, select).indices)
 
 
 def _ask_run(ctx: StepContext, session: Session) -> Nav:
@@ -1254,7 +1269,12 @@ def _ask_run(ctx: StepContext, session: Session) -> Nav:
             return None
         return ctx.text_option("concurrency", "Parallel requests:")
 
-    return StepContext.sequence([submission, flags, concurrency])
+    def open_items() -> Nav | None:
+        if state.value("batch") or _selected_count(state) < 2:
+            return None
+        return ctx.text_option("open_items", "Items processed at once:")
+
+    return StepContext.sequence([submission, flags, concurrency, open_items])
 
 
 def _page_range(text: str) -> str | None:

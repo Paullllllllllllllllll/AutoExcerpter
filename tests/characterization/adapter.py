@@ -174,7 +174,7 @@ def _last_json_line(stdout: str) -> dict[str, Any] | None:
     return None
 
 
-def run_tool(
+def run_tool(  # noqa: PLR0912 - one branch per optional flag
     input_path: Path,
     *,
     llm: FakeLLM,
@@ -204,6 +204,7 @@ def run_tool(
     pages: str | None = None,
     concurrency: int | None = None,
     recursive: bool = False,
+    open_items: int | None = None,
 ) -> RunResult:
     """Run AutoExcerpter once, in process, as a fresh CLI invocation would.
 
@@ -226,8 +227,8 @@ def run_tool(
     passed as ``--jpeg-quality``, *image_detail* as ``--image-detail``, and
     *transcription_file_format* (``md`` or ``txt``) joins ``--formats`` as
     ``transcription-md`` or ``transcription-txt``; *batch* adds ``--batch``
-    and *pages* ``--pages``; *concurrency* is passed as ``--concurrency``
-    and *recursive* adds ``--recursive``.
+    and *pages* ``--pages``; *concurrency* is passed as ``--concurrency``,
+    *open_items* as ``--open-items``, and *recursive* adds ``--recursive``.
     During the run ``time.sleep`` returns at once and ``asyncio.sleep`` only
     yields; neither shapes the outputs.
     The fake LLM must already be installed (see ``conftest.fake_llm``).
@@ -288,6 +289,8 @@ def run_tool(
         argv.extend(["--pages", pages])
     if concurrency is not None:
         argv.extend(["--concurrency", str(concurrency)])
+    if open_items is not None:
+        argv.extend(["--open-items", str(open_items)])
     if recursive:
         argv.append("--recursive")
 

@@ -60,6 +60,7 @@ from autoexcerpter.common.standard_options import (
     nonempty_text,
     openrouter_provider_options,
     output_options,
+    positive_int,
     render_options,
     settings_option,
 )
@@ -335,7 +336,9 @@ class RunControl:
     """Resume, concurrency, batch and agent-contract switches.
 
     ``batch`` submits the model calls to the providers' batch APIs instead
-    of calling the models directly.
+    of calling the models directly. ``concurrency`` bounds the requests in
+    flight over the whole run; ``open_items`` is the number of items that
+    share them at once.
     """
 
     force: bool
@@ -344,6 +347,7 @@ class RunControl:
     dry_run: bool
     json: bool
     batch: bool = False
+    open_items: int = 1
 
 
 @dataclass(frozen=True)
@@ -622,6 +626,19 @@ def _build_table() -> OptionTable:
             settable=False,
         ),
         concurrency_option(DEFAULT_CONCURRENCY),
+        Option(
+            "open_items",
+            "--open-items",
+            (
+                "items open at once, sharing the --concurrency requests; "
+                "no effect with --batch or on a single item"
+            ),
+            group="run",
+            type=positive_int,
+            metavar="N",
+            default=1,
+            target="run.open_items",
+        ),
         batch_option("submit the pages and summaries to the providers' batch APIs"),
         dry_run_option("run.dry_run"),
         json_option("run.json"),
