@@ -109,7 +109,7 @@ def test_discover_finds_pdfs_and_image_folders(
     make_pdf("in/a.pdf")
     (tmp_path / "in" / "scans" / "p1.png").write_bytes(b"png")
 
-    items = core.discover(tmp_path / "in")
+    items = core.discover(tmp_path / "in").items
 
     assert sorted((item.kind, item.path.name) for item in items) == [
         ("image_folder", "scans"),
@@ -144,7 +144,7 @@ def _same_stem(tmp_path: Path, make_pdf: MakePdf) -> tuple[Path, dict[str, Any]]
     for sub in ("a", "b"):
         (tmp_path / "in" / sub).mkdir(parents=True)
         make_pdf(f"in/{sub}/book.pdf")
-    return tmp_path / "in", {"all": True, "output": tmp_path / "out"}
+    return tmp_path / "in", {"all": True, "recursive": True, "output": tmp_path / "out"}
 
 
 def _empty_context_file(
@@ -166,7 +166,7 @@ def _summaries_without_format(
     [
         (_empty_dir, core.NoItemsError, 2, "No items found to process"),
         (_select_nothing, core.SelectionError, 2, "No items found matching 'gamma'"),
-        (_files_nothing, core.SelectionError, 2, "--files names no item"),
+        (_files_nothing, core.SelectionError, 2, "match no PDF or image folder"),
         (_two_items, core.AmbiguousSelectionError, 2, "--all, --select and --files"),
         (_same_stem, core.DuplicateOutputError, 2, "Duplicate output target"),
         (_empty_context_file, core.ConfigurationError, 2, "empty or unreadable"),

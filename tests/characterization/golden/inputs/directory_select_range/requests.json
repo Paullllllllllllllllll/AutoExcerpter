@@ -36,6 +36,57 @@
           "blocks": [
             {
               "detail": "original",
+              "height": 600,
+              "mime": "image/jpeg",
+              "type": "image_url",
+              "width": 400
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "gpt-5.6-terra",
+      "page": 0,
+      "provider": "openai",
+      "role": "transcription",
+      "structured": null
+    },
+    {
+      "attempt": 2,
+      "bound": {},
+      "kwargs": {
+        "max_output_tokens": 128000,
+        "reasoning": {
+          "effort": "xhigh"
+        },
+        "service_tier": "default",
+        "text": {
+          "format": {
+            "digest": "70c001ab084d2ded",
+            "name": "markdown_transcription_schema",
+            "properties": [
+              "no_transcribable_text",
+              "transcription",
+              "transcription_not_possible"
+            ],
+            "strict": true,
+            "type": "json_schema"
+          },
+          "verbosity": "high"
+        }
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 3859,
+            "digest": "dc7d9d66708e7330"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "detail": "original",
               "height": 1250,
               "mime": "image/jpeg",
               "type": "image_url",
@@ -52,7 +103,105 @@
       "structured": null
     },
     {
+      "attempt": 1,
+      "bound": {},
+      "kwargs": {
+        "max_output_tokens": 128000,
+        "reasoning": {
+          "effort": "xhigh"
+        },
+        "service_tier": "default",
+        "text": {
+          "format": {
+            "digest": "3feb40d2c56008de",
+            "name": "article_page_summary",
+            "properties": [
+              "bullet_points",
+              "page_information",
+              "references"
+            ],
+            "strict": true,
+            "type": "json_schema"
+          },
+          "verbosity": "low"
+        }
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 5932,
+            "digest": "f4ccaa329d6b6bba"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "chars": 295,
+              "digest": "077b66f2675d3228",
+              "type": "text"
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "gpt-5.6-terra",
+      "page": 0,
+      "provider": "openai",
+      "role": "summary",
+      "structured": null
+    },
+    {
       "attempt": 2,
+      "bound": {},
+      "kwargs": {
+        "max_output_tokens": 128000,
+        "reasoning": {
+          "effort": "xhigh"
+        },
+        "service_tier": "default",
+        "text": {
+          "format": {
+            "digest": "3feb40d2c56008de",
+            "name": "article_page_summary",
+            "properties": [
+              "bullet_points",
+              "page_information",
+              "references"
+            ],
+            "strict": true,
+            "type": "json_schema"
+          },
+          "verbosity": "low"
+        }
+      },
+      "messages": [
+        {
+          "text": {
+            "chars": 5932,
+            "digest": "f4ccaa329d6b6bba"
+          },
+          "type": "system"
+        },
+        {
+          "blocks": [
+            {
+              "chars": 295,
+              "digest": "077b66f2675d3228",
+              "type": "text"
+            }
+          ],
+          "type": "human"
+        }
+      ],
+      "model": "gpt-5.6-terra",
+      "page": 0,
+      "provider": "openai",
+      "role": "summary",
+      "structured": null
+    },
+    {
+      "attempt": 1,
       "bound": {},
       "kwargs": {
         "max_output_tokens": 128000,
@@ -91,155 +240,6 @@
               "mime": "image/jpeg",
               "type": "image_url",
               "width": 400
-            }
-          ],
-          "type": "human"
-        }
-      ],
-      "model": "gpt-5.6-terra",
-      "page": 0,
-      "provider": "openai",
-      "role": "transcription",
-      "structured": null
-    },
-    {
-      "attempt": 1,
-      "bound": {},
-      "kwargs": {
-        "max_output_tokens": 128000,
-        "reasoning": {
-          "effort": "xhigh"
-        },
-        "service_tier": "default",
-        "text": {
-          "format": {
-            "digest": "3feb40d2c56008de",
-            "name": "article_page_summary",
-            "properties": [
-              "bullet_points",
-              "page_information",
-              "references"
-            ],
-            "strict": true,
-            "type": "json_schema"
-          },
-          "verbosity": "low"
-        }
-      },
-      "messages": [
-        {
-          "text": {
-            "chars": 5932,
-            "digest": "f4ccaa329d6b6bba"
-          },
-          "type": "system"
-        },
-        {
-          "blocks": [
-            {
-              "chars": 295,
-              "digest": "077b66f2675d3228",
-              "type": "text"
-            }
-          ],
-          "type": "human"
-        }
-      ],
-      "model": "gpt-5.6-terra",
-      "page": 0,
-      "provider": "openai",
-      "role": "summary",
-      "structured": null
-    },
-    {
-      "attempt": 2,
-      "bound": {},
-      "kwargs": {
-        "max_output_tokens": 128000,
-        "reasoning": {
-          "effort": "xhigh"
-        },
-        "service_tier": "default",
-        "text": {
-          "format": {
-            "digest": "3feb40d2c56008de",
-            "name": "article_page_summary",
-            "properties": [
-              "bullet_points",
-              "page_information",
-              "references"
-            ],
-            "strict": true,
-            "type": "json_schema"
-          },
-          "verbosity": "low"
-        }
-      },
-      "messages": [
-        {
-          "text": {
-            "chars": 5932,
-            "digest": "f4ccaa329d6b6bba"
-          },
-          "type": "system"
-        },
-        {
-          "blocks": [
-            {
-              "chars": 295,
-              "digest": "077b66f2675d3228",
-              "type": "text"
-            }
-          ],
-          "type": "human"
-        }
-      ],
-      "model": "gpt-5.6-terra",
-      "page": 0,
-      "provider": "openai",
-      "role": "summary",
-      "structured": null
-    },
-    {
-      "attempt": 1,
-      "bound": {},
-      "kwargs": {
-        "max_output_tokens": 128000,
-        "reasoning": {
-          "effort": "xhigh"
-        },
-        "service_tier": "default",
-        "text": {
-          "format": {
-            "digest": "70c001ab084d2ded",
-            "name": "markdown_transcription_schema",
-            "properties": [
-              "no_transcribable_text",
-              "transcription",
-              "transcription_not_possible"
-            ],
-            "strict": true,
-            "type": "json_schema"
-          },
-          "verbosity": "high"
-        }
-      },
-      "messages": [
-        {
-          "text": {
-            "chars": 3859,
-            "digest": "dc7d9d66708e7330"
-          },
-          "type": "system"
-        },
-        {
-          "blocks": [
-            {
-              "detail": "original",
-              "height": 1250,
-              "mime": "image/jpeg",
-              "type": "image_url",
-              "width": 834
             }
           ],
           "type": "human"
@@ -287,10 +287,10 @@
           "blocks": [
             {
               "detail": "original",
-              "height": 600,
+              "height": 1250,
               "mime": "image/jpeg",
               "type": "image_url",
-              "width": 400
+              "width": 834
             }
           ],
           "type": "human"

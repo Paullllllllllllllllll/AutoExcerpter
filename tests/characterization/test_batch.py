@@ -559,6 +559,71 @@ def test_refused_submission_fails_the_item_and_leaves_no_batch_job(
     run.golden("anthropic_submission_failure", write_guard)
 
 
+class _FailSecondCall(dict[str, BaseException]):
+    """A ``fail_on`` that raises *error* on the second call named *call* only."""
+
+    def __init__(self, call: str, error: BaseException) -> None:
+        super().__init__()
+        self.call, self.error, self.seen = call, error, 0
+
+    def get(self, key: str, default: Any = None) -> Any:
+        if key != self.call:
+            return default
+        self.seen += 1
+        return self.error if self.seen == 2 else default
+
+
+def test_pages_are_submitted_in_slices_and_complete_as_one_document(
+    case: Callable[[Provider], Case], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("autoexcerpter.batch.item.SLICE_BYTES", 1)
+    run = case("openai")
+
+    submitted = run.submit()
+
+    assert submitted.result.exit_code == 0, submitted.result.stderr
+    assert submitted.calls.count(CREATE_CALLS["openai"]) == PAGES
+    assert [r["page"] for r in submitted.requests(TRANSCRIPTION)] == [0, 1, 2]
+    assert run.rows("SELECT status FROM submissions") == [("submitted",)] * PAGES
+    assert run.jobs() == 1
+    run.check("check1")
+    _assert_complete(run.check("check2"))
+    assert run.statuses(TRANSCRIPTION) == dict.fromkeys(range(PAGES), "done")
+
+
+def test_a_refused_slice_ends_the_rendering_and_leaves_the_rest_pending(
+    case: Callable[[Provider], Case], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("autoexcerpter.batch.item.SLICE_BYTES", 1)
+    run = case("anthropic")
+    run.service.fail_on = _FailSecondCall(CREATE_CALLS["anthropic"], permanent_error())
+
+    submitted = run.submit()
+
+    assert submitted.result.exit_code == 1
+    assert submitted.summary["items_failed"] == 1
+    assert run.rows("SELECT status FROM submissions ORDER BY rowid") == [
+        ("submitted",),
+        ("failed",),
+    ]
+    assert [r["page"] for r in submitted.requests(TRANSCRIPTION)] == [0]
+    assert run.rows("SELECT idx FROM submission_requests ORDER BY idx") == [(0,), (1,)]
+    assert run.statuses(TRANSCRIPTION) == dict.fromkeys(range(PAGES), "pending")
+    assert run.jobs() == 1
+
+    # The submitted page is finalized, then a second run submits the rest.
+    run.service.fail_on = {}
+    run.check("check1")
+    run.check("check2")
+    assert run.statuses(TRANSCRIPTION)[0] == "done"
+    again = run.submit("again")
+    assert again.result.exit_code == 0, again.result.stderr
+    assert [r["page"] for r in again.requests(TRANSCRIPTION)] == [1, 2]
+    run.check("check3")
+    _assert_complete(run.check("check4"))
+    assert run.statuses(TRANSCRIPTION) == dict.fromkeys(range(PAGES), "done")
+
+
 def test_without_summaries_one_check_writes_the_transcription(
     case: Callable[[Provider], Case], write_guard: WriteGuard
 ) -> None:

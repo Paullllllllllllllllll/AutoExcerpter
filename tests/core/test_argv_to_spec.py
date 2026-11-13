@@ -125,6 +125,8 @@ def _sampler_rows(phase: str | None) -> list[Row]:
 
 ROWS = [
     Row("input", ("--input", "a b/c.pdf"), {"input.path": Path("a b/c.pdf")}),
+    _row("recursive", "--recursive", sets={"input.recursive": True}),
+    _row("recursive", "--no-recursive", sets={"input.recursive": False}),
     _row(
         "select",
         "--select",

@@ -2,11 +2,12 @@
 
 :class:`BatchItem` works one leased document. It plans the page units as a
 synchronous run does, then submits the work the store still lacks among the
-pages ``--pages`` selects (every page without it): the
-pages to transcribe as image requests to the transcription model's batch API,
-and the summaries of pages already transcribed as text requests to the
-summary model's. Pages whose transcription it submits wait for ``batch
-check``, which finalizes them and submits their summaries (see
+pages ``--pages`` selects (every page without it): the pages to transcribe as
+image requests to the transcription model's batch API, rendered and submitted
+in slices of :data:`SLICE_BYTES`, and the summaries of pages already
+transcribed as text requests to the summary model's. Pages whose
+transcription it submits wait for ``batch check``, which finalizes them and
+submits their summaries (see
 :mod:`autoexcerpter.batch.check`). A page that fails to render is stored
 failed at once, and the summary of a failed or blank page is a placeholder
 written without a call. The document's batch job, naming this run, is
@@ -23,7 +24,7 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Final, Literal
 
 from autoexcerpter.batch.bodies import (
     ROLE_SUMMARY,
@@ -64,12 +65,15 @@ from autoexcerpter.pipeline.job import ItemJob
 from autoexcerpter.pipeline.types import ItemSpec
 from autoexcerpter.pipeline.units import DocumentHandle
 
-__all__ = ["LABEL", "BatchItem", "BatchItemOutcome"]
+__all__ = ["LABEL", "SLICE_BYTES", "BatchItem", "BatchItemOutcome"]
 
 logger = logging.getLogger(__name__)
 
 LABEL = "autoexcerpter"
 """The name the batches of a run carry at the provider."""
+
+SLICE_BYTES: Final = 64 * 1024 * 1024
+"""The most base64 page-image bytes rendered and held before they are submitted."""
 
 Status = Literal["submitted", "complete", "incomplete", "failed"]
 
@@ -206,12 +210,9 @@ class BatchItem:
         ]
         if pending:
             await document.set_image_settings(image_settings_record(source.img_cfg))
-        transcriptions = await self._render(source, pending, plans[0])
         outcome = BatchItemOutcome("incomplete")
-        if transcriptions:
-            await self._submit(transcriptions, plans[0], outcome)
+        waiting = await self._transcribe(source, pending, plans[0], outcome)
         if self.job.summarize and outcome.status != "failed":
-            waiting = {request.unit.idx for request in transcriptions}
             work = summary_work(
                 document.store,
                 document.doc_id,
@@ -266,62 +267,93 @@ class BatchItem:
             )
         )
 
+    async def _transcribe(
+        self,
+        source: PayloadSource,
+        pending: Sequence[int],
+        plan: BodyPlan,
+        outcome: BatchItemOutcome,
+    ) -> set[int]:
+        """Render and submit the pages to transcribe; return the pages requested.
+
+        The rendered requests are submitted in slices of at most
+        :data:`SLICE_BYTES` of page images, so a long document is never held
+        whole. A slice that is refused or unresolved ends the rendering; the
+        pages not yet submitted stay pending.
+        """
+        requested: set[int] = set()
+        held: list[UnitRequest] = []
+        held_bytes = 0
+        for idx in pending:
+            request = await self._render(source, idx, plan)
+            if request is None:
+                continue
+            size = len(request.request.image_base64 or "")
+            if held and held_bytes + size > SLICE_BYTES:
+                await self._submit(held, plan, outcome)
+                held, held_bytes = [], 0
+                if outcome.status == "failed":
+                    return requested
+            held.append(request)
+            held_bytes += size
+            requested.add(idx)
+        if held:
+            await self._submit(held, plan, outcome)
+        return requested
+
     async def _render(
-        self, source: PayloadSource, pending: Sequence[int], plan: BodyPlan
-    ) -> list[UnitRequest]:
-        """Render the pages to transcribe; store the ones that fail at once.
+        self, source: PayloadSource, idx: int, plan: BodyPlan
+    ) -> UnitRequest | None:
+        """Render page *idx* to its request; store it failed when that fails.
 
         A page whose request exceeds a size limit of the provider fails as
         its synchronous request does.
         """
         document = self.document
         stamp = document.transcription
-        requests: list[UnitRequest] = []
-        for idx in pending:
-            label = source.image_name(idx)
-            source_index: int | str = idx if self.item.kind == "pdf" else label
-            try:
-                payload = await asyncio.to_thread(source.build_payload, idx)
-            except Exception as exc:  # noqa: BLE001 - a render failure fails one page
-                logger.error("Error preparing page %s: %s", label, exc)
-                await self._fail(
-                    idx,
-                    label,
-                    source_index,
-                    f"[preprocessing error: {exc}]",
-                    error=str(exc),
-                    error_type="preprocessing_failure",
-                )
-                continue
-            request = _request(payload)
-            try:
-                plan.body(request)
-            except RequestTooLargeError as exc:
-                logger.error("Transcription failed for %s: %s", label, exc)
-                await self._fail(
-                    idx,
-                    label,
-                    source_index,
-                    f"[transcription error: {exc}]",
-                    error=str(exc),
-                    error_type="api_failure",
-                )
-                continue
-            await document.write_transcription(
-                UnitResult(
-                    kind=KIND_TRANSCRIPTION,
-                    idx=idx,
-                    status="pending",
-                    model=stamp.model,
-                    provider=stamp.provider,
-                    label=label,
-                    source_index=source_index,
-                    provenance=_provenance(payload),
-                    attempts=0,
-                )
+        label = source.image_name(idx)
+        source_index: int | str = idx if self.item.kind == "pdf" else label
+        try:
+            payload = await asyncio.to_thread(source.build_payload, idx)
+        except Exception as exc:  # noqa: BLE001 - a render failure fails one page
+            logger.error("Error preparing page %s: %s", label, exc)
+            await self._fail(
+                idx,
+                label,
+                source_index,
+                f"[preprocessing error: {exc}]",
+                error=str(exc),
+                error_type="preprocessing_failure",
             )
-            requests.append(UnitRequest(document.key(KIND_TRANSCRIPTION, idx), request))
-        return requests
+            return None
+        request = _request(payload)
+        try:
+            plan.body(request)
+        except RequestTooLargeError as exc:
+            logger.error("Transcription failed for %s: %s", label, exc)
+            await self._fail(
+                idx,
+                label,
+                source_index,
+                f"[transcription error: {exc}]",
+                error=str(exc),
+                error_type="api_failure",
+            )
+            return None
+        await document.write_transcription(
+            UnitResult(
+                kind=KIND_TRANSCRIPTION,
+                idx=idx,
+                status="pending",
+                model=stamp.model,
+                provider=stamp.provider,
+                label=label,
+                source_index=source_index,
+                provenance=_provenance(payload),
+                attempts=0,
+            )
+        )
+        return UnitRequest(document.key(KIND_TRANSCRIPTION, idx), request)
 
     async def _submit(
         self,

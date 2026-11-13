@@ -121,6 +121,8 @@ def _input_line(state: State, spec: RunSpec, mark: _Mark) -> Line:
     inventory = inventory_of(state, path)
     count = len(inventory.items)
     parts = [mark("input.path", f"{path}  ({inventory.describe()})")]
+    if spec.input.recursive and path.is_dir():
+        parts.append(mark("input.recursive", "every subfolder"))
     if count > 1:
         if spec.input.all:
             parts.append(mark("input.all", f"all {count} items"))

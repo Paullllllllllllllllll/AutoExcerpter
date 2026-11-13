@@ -36,10 +36,10 @@
           "blocks": [
             {
               "detail": "original",
-              "height": 1250,
+              "height": 600,
               "mime": "image/jpeg",
               "type": "image_url",
-              "width": 834
+              "width": 400
             }
           ],
           "type": "human"
@@ -136,10 +136,10 @@
           "blocks": [
             {
               "detail": "original",
-              "height": 1250,
+              "height": 600,
               "mime": "image/jpeg",
               "type": "image_url",
-              "width": 834
+              "width": 400
             }
           ],
           "type": "human"

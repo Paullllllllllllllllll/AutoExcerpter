@@ -294,7 +294,14 @@ def _duplicate(tmp_path: Path, make_pdf: MakePdf) -> list[str]:
     for sub in ("a", "b"):
         (tmp_path / "in" / sub).mkdir(parents=True)
         make_pdf(f"in/{sub}/book.pdf")
-    return ["--input", str(tmp_path / "in"), "--output", str(tmp_path), "--all"]
+    return [
+        "--input",
+        str(tmp_path / "in"),
+        "--recursive",
+        "--output",
+        str(tmp_path),
+        "--all",
+    ]
 
 
 def _missing_settings(tmp_path: Path, make_pdf: MakePdf) -> list[str]:
@@ -395,7 +402,7 @@ def test_interrupt_and_crash_write_one_json_line(
     failure: BaseException,
     code: int,
 ) -> None:
-    def _raise(_path: Path) -> Any:
+    def _raise(_path: Path, **_kwargs: Any) -> Any:
         raise failure
 
     monkeypatch.setattr(core, "scan_input_path", _raise)

@@ -1,5 +1,25 @@
 # Changelog
 
+- **v1.9.0** (13 November 2026) -- AutoExcerpter now reads input folders by the
+  rules ChronoMiner and ChronoTranscriber follow. A folder input gives only its
+  own PDFs and the image folders that are the folder itself or one of its direct
+  subfolders. A run over a deeper tree needs the new `--recursive` flag; without
+  it the run warns how many items it left in subfolders. Items are processed and
+  numbered in the natural order of their paths below the input folder, PDFs and
+  image folders together (`page_2` before `page_10`, letter case ignored).
+  `--select N` can therefore name another item than before, and a `--select` name
+  search now matches the whole relative path. `--files` takes item paths relative
+  to the input folder, with forward or back slashes, at every level of the tree. A
+  bare file or folder name still works when exactly one item has it; a name
+  several items share is refused with its candidates, and `./name` then selects
+  the item in the input folder itself. Two spellings of one path give one item,
+  and a path that leaves the input folder is refused. Discovery no longer enters
+  `.mabillon` folders or directory links, Windows junctions included. A
+  `run --batch` renders and submits page images in slices of at most 64 MiB, so a
+  long book becomes several batch submissions and is never held in memory whole.
+  The shared package gains `common/discovery.py`. Document names and output paths
+  are unchanged, so existing output folders resume as before.
+
 - **v1.8.0** (13 November 2026) -- A run that a provider stops ends with the new
   exit code 3. When the attempt context of `ext.py` answers a failed call with
   the new decision `STOP`, the requests already sent finish and are stored, no

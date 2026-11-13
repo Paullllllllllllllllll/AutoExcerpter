@@ -440,6 +440,14 @@ def items_by_name(ws: Workspace) -> Script:
     return Script(ws.session(), answers)
 
 
+def items_in_subfolders(ws: Workspace) -> Script:
+    """A folder whose subfolders hold items, searched at every level."""
+    folder = ws.folder("shelf", "alpha", "vol_2/beta", "vol_10/gamma")
+    answers = _base(folder, "copy")
+    answers[1:1] = [True, "all"]
+    return Script(ws.session(), answers)
+
+
 def all_items_without_summary(ws: Workspace) -> Script:
     """Every item into one folder, transcription only."""
     folder = ws.folder("scans", "alpha", "beta")
@@ -575,6 +583,7 @@ SESSIONS: Final[Mapping[str, Callable[[Workspace], Script]]] = MappingProxyType(
             custom_images_and_parameters,
             items_by_number,
             items_by_name,
+            items_in_subfolders,
             all_items_without_summary,
             back_navigation,
             force_review_action,

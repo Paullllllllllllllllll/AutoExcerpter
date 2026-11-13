@@ -123,7 +123,7 @@ def _make_tree(tmp_path: Path) -> Path:
     ("selection", "expected"),
     [
         pytest.param("all", ["alpha", "beta", "scans"], id="directory_all"),
-        pytest.param("2", ["beta"], id="directory_select_number"),
+        pytest.param("2", ["scans"], id="directory_select_number"),
         pytest.param("2-3", ["beta", "scans"], id="directory_select_range"),
         pytest.param("alph", ["alpha"], id="directory_select_name"),
     ],
@@ -144,6 +144,7 @@ def test_directory_tree_selection(
         root=tmp_path,
         output_dir=tmp_path / "out",
         selection=selection,
+        recursive=True,
     )
 
     _assert_items_complete(result, len(expected))
@@ -156,6 +157,21 @@ def test_directory_tree_selection(
     assert "nested under image folder" in result.stderr
     assert not any("thumbs" in str(path) for path in result.created)
     golden(_case(request.node.callspec.id), result)
+
+
+def test_directory_tree_without_recursive_takes_the_top_level(
+    tmp_path: Path, fake_llm: FakeLLM, golden: Golden
+) -> None:
+    tree = _make_tree(tmp_path)
+
+    result = run_tool(tree, llm=fake_llm, root=tmp_path, output_dir=tmp_path / "out")
+
+    _assert_items_complete(result, 2)
+    assert set(_output_names(result)[:-1]) == _final_names(
+        result.paths("alpha")
+    ) | _final_names(result.paths("scans"))
+    assert "1 item lies in subfolders that were not searched" in result.stderr
+    golden(_case("directory_top_level"), result)
 
 
 # ============================================================================
@@ -219,7 +235,9 @@ def test_directory_duplicate_output_stem_exits_2(
     make_pdf(tree / "a" / "book.pdf", pages=1)
     make_pdf(tree / "b" / "book.pdf", pages=1)
 
-    result = run_tool(tree, llm=fake_llm, root=tmp_path, output_dir=tmp_path / "out")
+    result = run_tool(
+        tree, llm=fake_llm, root=tmp_path, output_dir=tmp_path / "out", recursive=True
+    )
 
     _assert_controlled_exit(result, 2)
     assert result.summary is not None

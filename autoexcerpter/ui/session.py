@@ -12,6 +12,7 @@ the input step found.
 from __future__ import annotations
 
 import argparse
+import functools
 import logging
 import os
 from collections.abc import Callable, Mapping, Sequence
@@ -24,6 +25,7 @@ import pymupdf
 
 from autoexcerpter import ext
 from autoexcerpter import run as core
+from autoexcerpter.common.discovery import relative_name
 from autoexcerpter.common.options import OptionTable, Source
 from autoexcerpter.common.selection import ItemSelection, select_items
 from autoexcerpter.common.standard_options import UNSET_PENALTY_HELP
@@ -440,16 +442,23 @@ def _page_count(path: Path) -> int | None:
 
 @dataclass(frozen=True)
 class Inventory:
-    """The items found at an input path, with page or image counts."""
+    """The items found at an input path, with page or image counts.
+
+    *unentered* counts the items in subfolders a search without *recursive*
+    left out.
+    """
 
     path: Path
     items: tuple[ItemSpec, ...]
     counts: tuple[int | None, ...]
+    recursive: bool = False
+    unentered: int = 0
 
-    @property
+    @functools.cached_property
     def names(self) -> list[str]:
-        """The item names that selection expressions match against."""
-        return [item.path.name for item in self.items]
+        """The item paths below the input folder, which selections match."""
+        root = absolute(self.path)
+        return [relative_name(item.path, root) for item in self.items]
 
     def describe(self) -> str:
         """Return ``1 PDF, 212 pages`` or a summary of several kinds."""
@@ -481,25 +490,34 @@ class Inventory:
             detail = "image folder"
             if count is not None:
                 detail += f", {plural(count, 'image')}"
-        return f"{index + 1:>4}  {item.path.name}  ({detail})"
+        return f"{index + 1:>4}  {self.names[index]}  ({detail})"
 
 
-def take_inventory(path: Path) -> Inventory:
+def take_inventory(path: Path, *, recursive: bool = False) -> Inventory:
     """Discover the items at *path* and count their pages or images."""
-    items = tuple(core.discover(path))
+    found = core.discover(path, recursive=recursive)
+    items = tuple(found.items)
     counts = tuple(
         _page_count(item.path) if item.kind == "pdf" else item.image_count
         for item in items
     )
-    return Inventory(path, items, counts)
+    return Inventory(path, items, counts, recursive, found.unentered)
 
 
 def inventory_of(state: State, path: Path) -> Inventory:
-    """Return the stored inventory of *path*, taking it when missing."""
+    """Return the stored inventory of *path*, taking it when missing.
+
+    The inventory searches the subfolders when the ``recursive`` answer says so.
+    """
+    recursive = bool(state.value("recursive"))
     stored = state.data.get(INVENTORY)
-    if isinstance(stored, Inventory) and stored.path == path:
+    if (
+        isinstance(stored, Inventory)
+        and stored.path == path
+        and stored.recursive == recursive
+    ):
         return stored
-    inventory = take_inventory(path)
+    inventory = take_inventory(path, recursive=recursive)
     state.data[INVENTORY] = inventory
     return inventory
 

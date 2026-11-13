@@ -9,12 +9,12 @@
     "items_submitted": 0,
     "items_total": 2,
     "outputs": [
-      "<tmp>/out/beta_transcription.md",
-      "<tmp>/out/beta_summary.docx",
-      "<tmp>/out/beta_summary.md",
       "<tmp>/out/scans_transcription.md",
       "<tmp>/out/scans_summary.docx",
       "<tmp>/out/scans_summary.md",
+      "<tmp>/out/beta_transcription.md",
+      "<tmp>/out/beta_summary.docx",
+      "<tmp>/out/beta_summary.md",
       "<tmp>/out/autoexcerpter.sqlite"
     ],
     "stopped": null,

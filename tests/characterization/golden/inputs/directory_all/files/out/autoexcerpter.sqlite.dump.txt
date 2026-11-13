@@ -166,14 +166,14 @@
     "resolved_detail": "original",
     "target_dpi": "native"
   },
-  "input_path": "<tmp>/in/tree/sub/beta.pdf",
+  "input_path": "<tmp>/in/tree/scans",
   "input_sha256": "<sha256>",
-  "kind": "pdf",
+  "kind": "images",
   "last_run_id": "<run-1>",
   "lease_generation": 1,
   "lease_run_id": null,
   "lease_until": null,
-  "name": "beta",
+  "name": "scans",
   "status": "complete",
   "tool": "autoexcerpter",
   "units_done": 4,
@@ -212,14 +212,14 @@
     "resolved_detail": "original",
     "target_dpi": "native"
   },
-  "input_path": "<tmp>/in/tree/scans",
+  "input_path": "<tmp>/in/tree/sub/beta.pdf",
   "input_sha256": "<sha256>",
-  "kind": "images",
+  "kind": "pdf",
   "last_run_id": "<run-1>",
   "lease_generation": 1,
   "lease_run_id": null,
   "lease_until": null,
-  "name": "scans",
+  "name": "beta",
   "status": "complete",
   "tool": "autoexcerpter",
   "units_done": 4,
@@ -269,33 +269,6 @@
 {
   "doc_id": 2,
   "format": "summary-docx",
-  "path": "beta_summary.docx",
-  "rendered_at": "<datetime>+00:00",
-  "run_id": "<run-1>",
-  "sha256": "<sha256>",
-  "stale": 0
-}
-{
-  "doc_id": 2,
-  "format": "summary-md",
-  "path": "beta_summary.md",
-  "rendered_at": "<datetime>+00:00",
-  "run_id": "<run-1>",
-  "sha256": "<sha256>",
-  "stale": 0
-}
-{
-  "doc_id": 2,
-  "format": "transcription-md",
-  "path": "beta_transcription.md",
-  "rendered_at": "<datetime>+00:00",
-  "run_id": "<run-1>",
-  "sha256": "<sha256>",
-  "stale": 0
-}
-{
-  "doc_id": 3,
-  "format": "summary-docx",
   "path": "scans_summary.docx",
   "rendered_at": "<datetime>+00:00",
   "run_id": "<run-1>",
@@ -303,7 +276,7 @@
   "stale": 0
 }
 {
-  "doc_id": 3,
+  "doc_id": 2,
   "format": "summary-md",
   "path": "scans_summary.md",
   "rendered_at": "<datetime>+00:00",
@@ -312,9 +285,36 @@
   "stale": 0
 }
 {
-  "doc_id": 3,
+  "doc_id": 2,
   "format": "transcription-md",
   "path": "scans_transcription.md",
+  "rendered_at": "<datetime>+00:00",
+  "run_id": "<run-1>",
+  "sha256": "<sha256>",
+  "stale": 0
+}
+{
+  "doc_id": 3,
+  "format": "summary-docx",
+  "path": "beta_summary.docx",
+  "rendered_at": "<datetime>+00:00",
+  "run_id": "<run-1>",
+  "sha256": "<sha256>",
+  "stale": 0
+}
+{
+  "doc_id": 3,
+  "format": "summary-md",
+  "path": "beta_summary.md",
+  "rendered_at": "<datetime>+00:00",
+  "run_id": "<run-1>",
+  "sha256": "<sha256>",
+  "stale": 0
+}
+{
+  "doc_id": 3,
+  "format": "transcription-md",
+  "path": "beta_transcription.md",
   "rendered_at": "<datetime>+00:00",
   "run_id": "<run-1>",
   "sha256": "<sha256>",
@@ -921,6 +921,10 @@
       "source": "flag",
       "value": "<tmp>/in/tree"
     },
+    "input.recursive": {
+      "source": "flag",
+      "value": true
+    },
     "input.select": {
       "source": "flag",
       "value": null
@@ -1429,164 +1433,12 @@
   "error_type": null,
   "idx": 0,
   "kind": "summary",
-  "label": "page_0001.jpg",
-  "model": "gpt-5.6-terra",
-  "outcome": "ok",
-  "provenance": null,
-  "provider": "openai",
-  "response_id": 5,
-  "run_id": "<run-1>",
-  "source_index": 0,
-  "stale": 0,
-  "status": "done",
-  "tool": "autoexcerpter",
-  "updated_at": "<datetime>+00:00",
-  "usage": {
-    "cached_tokens": 0,
-    "input_tokens": 900,
-    "output_tokens": 250,
-    "reasoning_tokens": 0,
-    "total_tokens": 1150
-  }
-}
-{
-  "attempts": 1,
-  "content": null,
-  "doc_id": 2,
-  "error": null,
-  "error_type": null,
-  "idx": 1,
-  "kind": "summary",
-  "label": "page_0002.jpg",
-  "model": "gpt-5.6-terra",
-  "outcome": "ok",
-  "provenance": null,
-  "provider": "openai",
-  "response_id": 6,
-  "run_id": "<run-1>",
-  "source_index": 1,
-  "stale": 0,
-  "status": "done",
-  "tool": "autoexcerpter",
-  "updated_at": "<datetime>+00:00",
-  "usage": {
-    "cached_tokens": 0,
-    "input_tokens": 900,
-    "output_tokens": 250,
-    "reasoning_tokens": 0,
-    "total_tokens": 1150
-  }
-}
-{
-  "attempts": 1,
-  "content": "# Preface\n\nThis volume brings together **new research** on the *material\nculture* of eating in early modern Europe. Its chapters trace how\nprices, wages and diets changed between 1500 and 1800.[^1]\n\n[^1]: See Braudel (1979) for the classic statement of this view.\n\n<page_number>xi</page_number>\n",
-  "doc_id": 2,
-  "error": null,
-  "error_type": null,
-  "idx": 0,
-  "kind": "transcription",
-  "label": "page_0001.jpg",
-  "model": "gpt-5.6-terra",
-  "outcome": "ok",
-  "provenance": {
-    "image_provenance": {
-      "byte_size": "<bytes>",
-      "cap_policy": "openai-original-30k-v1",
-      "downscale_reason": "none",
-      "dpi_source": "fallback",
-      "effective_dpi": 300.0,
-      "format_fallback": false,
-      "height": 1250,
-      "mime_type": "image/jpeg",
-      "payload_format": "jpeg",
-      "render_dpi": 300.0,
-      "sent_dpi": 300.0,
-      "source_dpi_x": 300.0,
-      "source_dpi_y": 300.0,
-      "source_height": 1250,
-      "source_width": 834,
-      "width": 834
-    },
-    "source_file": "<tmp>/in/tree/sub/beta.pdf"
-  },
-  "provider": "openai",
-  "response_id": 7,
-  "run_id": "<run-1>",
-  "source_index": 0,
-  "stale": 0,
-  "status": "done",
-  "tool": "autoexcerpter",
-  "updated_at": "<datetime>+00:00",
-  "usage": {
-    "cached_tokens": 0,
-    "input_tokens": 1500,
-    "output_tokens": 400,
-    "reasoning_tokens": 0,
-    "total_tokens": 1900
-  }
-}
-{
-  "attempts": 1,
-  "content": "## The Price of Bread\n\nBread prices rose faster than wages after 1550, and the economic burden fell on urban households.[^2] The real wage index\nis defined as $w_t / p_t$.\n\n![Image: line chart of bread prices and day wages in Antwerp, 1500-1800; prices rise steeply after 1550 while wages stay flat]\n\n[^2]: Allen, R. C. (2001). The great divergence in European wages and prices from the Middle Ages to the First World War. *Explorations in Economic History, 38*(4), 411-447. https://doi.org/10.1006/exeh.2001.0775\n\n<page_number>1</page_number>\n",
-  "doc_id": 2,
-  "error": null,
-  "error_type": null,
-  "idx": 1,
-  "kind": "transcription",
-  "label": "page_0002.jpg",
-  "model": "gpt-5.6-terra",
-  "outcome": "ok",
-  "provenance": {
-    "image_provenance": {
-      "byte_size": "<bytes>",
-      "cap_policy": "openai-original-30k-v1",
-      "downscale_reason": "none",
-      "dpi_source": "fallback",
-      "effective_dpi": 300.0,
-      "format_fallback": false,
-      "height": 1250,
-      "mime_type": "image/jpeg",
-      "payload_format": "jpeg",
-      "render_dpi": 300.0,
-      "sent_dpi": 300.0,
-      "source_dpi_x": 300.0,
-      "source_dpi_y": 300.0,
-      "source_height": 1250,
-      "source_width": 834,
-      "width": 834
-    },
-    "source_file": "<tmp>/in/tree/sub/beta.pdf"
-  },
-  "provider": "openai",
-  "response_id": 8,
-  "run_id": "<run-1>",
-  "source_index": 1,
-  "stale": 0,
-  "status": "done",
-  "tool": "autoexcerpter",
-  "updated_at": "<datetime>+00:00",
-  "usage": {
-    "cached_tokens": 0,
-    "input_tokens": 1500,
-    "output_tokens": 400,
-    "reasoning_tokens": 0,
-    "total_tokens": 1900
-  }
-}
-{
-  "attempts": 1,
-  "content": null,
-  "doc_id": 3,
-  "error": null,
-  "error_type": null,
-  "idx": 0,
-  "kind": "summary",
   "label": "page_001.jpg",
   "model": "gpt-5.6-terra",
   "outcome": "ok",
   "provenance": null,
   "provider": "openai",
-  "response_id": 9,
+  "response_id": 5,
   "run_id": "<run-1>",
   "source_index": "page_001.jpg",
   "stale": 0,
@@ -1604,7 +1456,7 @@
 {
   "attempts": 1,
   "content": null,
-  "doc_id": 3,
+  "doc_id": 2,
   "error": null,
   "error_type": null,
   "idx": 1,
@@ -1614,7 +1466,7 @@
   "outcome": "ok",
   "provenance": null,
   "provider": "openai",
-  "response_id": 10,
+  "response_id": 6,
   "run_id": "<run-1>",
   "source_index": "page_002.jpg",
   "stale": 0,
@@ -1632,7 +1484,7 @@
 {
   "attempts": 1,
   "content": "# Preface\n\nThis volume brings together **new research** on the *material\nculture* of eating in early modern Europe. Its chapters trace how\nprices, wages and diets changed between 1500 and 1800.[^1]\n\n[^1]: See Braudel (1979) for the classic statement of this view.\n\n<page_number>xi</page_number>\n",
-  "doc_id": 3,
+  "doc_id": 2,
   "error": null,
   "error_type": null,
   "idx": 0,
@@ -1663,7 +1515,7 @@
     "source_file": "<tmp>/in/tree/scans/page_001.jpg"
   },
   "provider": "openai",
-  "response_id": 11,
+  "response_id": 7,
   "run_id": "<run-1>",
   "source_index": "page_001.jpg",
   "stale": 0,
@@ -1681,7 +1533,7 @@
 {
   "attempts": 1,
   "content": "## The Price of Bread\n\nBread prices rose faster than wages after 1550, and the economic burden fell on urban households.[^2] The real wage index\nis defined as $w_t / p_t$.\n\n![Image: line chart of bread prices and day wages in Antwerp, 1500-1800; prices rise steeply after 1550 while wages stay flat]\n\n[^2]: Allen, R. C. (2001). The great divergence in European wages and prices from the Middle Ages to the First World War. *Explorations in Economic History, 38*(4), 411-447. https://doi.org/10.1006/exeh.2001.0775\n\n<page_number>1</page_number>\n",
-  "doc_id": 3,
+  "doc_id": 2,
   "error": null,
   "error_type": null,
   "idx": 1,
@@ -1712,9 +1564,161 @@
     "source_file": "<tmp>/in/tree/scans/page_002.jpg"
   },
   "provider": "openai",
-  "response_id": 12,
+  "response_id": 8,
   "run_id": "<run-1>",
   "source_index": "page_002.jpg",
+  "stale": 0,
+  "status": "done",
+  "tool": "autoexcerpter",
+  "updated_at": "<datetime>+00:00",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 1500,
+    "output_tokens": 400,
+    "reasoning_tokens": 0,
+    "total_tokens": 1900
+  }
+}
+{
+  "attempts": 1,
+  "content": null,
+  "doc_id": 3,
+  "error": null,
+  "error_type": null,
+  "idx": 0,
+  "kind": "summary",
+  "label": "page_0001.jpg",
+  "model": "gpt-5.6-terra",
+  "outcome": "ok",
+  "provenance": null,
+  "provider": "openai",
+  "response_id": 9,
+  "run_id": "<run-1>",
+  "source_index": 0,
+  "stale": 0,
+  "status": "done",
+  "tool": "autoexcerpter",
+  "updated_at": "<datetime>+00:00",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 900,
+    "output_tokens": 250,
+    "reasoning_tokens": 0,
+    "total_tokens": 1150
+  }
+}
+{
+  "attempts": 1,
+  "content": null,
+  "doc_id": 3,
+  "error": null,
+  "error_type": null,
+  "idx": 1,
+  "kind": "summary",
+  "label": "page_0002.jpg",
+  "model": "gpt-5.6-terra",
+  "outcome": "ok",
+  "provenance": null,
+  "provider": "openai",
+  "response_id": 10,
+  "run_id": "<run-1>",
+  "source_index": 1,
+  "stale": 0,
+  "status": "done",
+  "tool": "autoexcerpter",
+  "updated_at": "<datetime>+00:00",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 900,
+    "output_tokens": 250,
+    "reasoning_tokens": 0,
+    "total_tokens": 1150
+  }
+}
+{
+  "attempts": 1,
+  "content": "# Preface\n\nThis volume brings together **new research** on the *material\nculture* of eating in early modern Europe. Its chapters trace how\nprices, wages and diets changed between 1500 and 1800.[^1]\n\n[^1]: See Braudel (1979) for the classic statement of this view.\n\n<page_number>xi</page_number>\n",
+  "doc_id": 3,
+  "error": null,
+  "error_type": null,
+  "idx": 0,
+  "kind": "transcription",
+  "label": "page_0001.jpg",
+  "model": "gpt-5.6-terra",
+  "outcome": "ok",
+  "provenance": {
+    "image_provenance": {
+      "byte_size": "<bytes>",
+      "cap_policy": "openai-original-30k-v1",
+      "downscale_reason": "none",
+      "dpi_source": "fallback",
+      "effective_dpi": 300.0,
+      "format_fallback": false,
+      "height": 1250,
+      "mime_type": "image/jpeg",
+      "payload_format": "jpeg",
+      "render_dpi": 300.0,
+      "sent_dpi": 300.0,
+      "source_dpi_x": 300.0,
+      "source_dpi_y": 300.0,
+      "source_height": 1250,
+      "source_width": 834,
+      "width": 834
+    },
+    "source_file": "<tmp>/in/tree/sub/beta.pdf"
+  },
+  "provider": "openai",
+  "response_id": 11,
+  "run_id": "<run-1>",
+  "source_index": 0,
+  "stale": 0,
+  "status": "done",
+  "tool": "autoexcerpter",
+  "updated_at": "<datetime>+00:00",
+  "usage": {
+    "cached_tokens": 0,
+    "input_tokens": 1500,
+    "output_tokens": 400,
+    "reasoning_tokens": 0,
+    "total_tokens": 1900
+  }
+}
+{
+  "attempts": 1,
+  "content": "## The Price of Bread\n\nBread prices rose faster than wages after 1550, and the economic burden fell on urban households.[^2] The real wage index\nis defined as $w_t / p_t$.\n\n![Image: line chart of bread prices and day wages in Antwerp, 1500-1800; prices rise steeply after 1550 while wages stay flat]\n\n[^2]: Allen, R. C. (2001). The great divergence in European wages and prices from the Middle Ages to the First World War. *Explorations in Economic History, 38*(4), 411-447. https://doi.org/10.1006/exeh.2001.0775\n\n<page_number>1</page_number>\n",
+  "doc_id": 3,
+  "error": null,
+  "error_type": null,
+  "idx": 1,
+  "kind": "transcription",
+  "label": "page_0002.jpg",
+  "model": "gpt-5.6-terra",
+  "outcome": "ok",
+  "provenance": {
+    "image_provenance": {
+      "byte_size": "<bytes>",
+      "cap_policy": "openai-original-30k-v1",
+      "downscale_reason": "none",
+      "dpi_source": "fallback",
+      "effective_dpi": 300.0,
+      "format_fallback": false,
+      "height": 1250,
+      "mime_type": "image/jpeg",
+      "payload_format": "jpeg",
+      "render_dpi": 300.0,
+      "sent_dpi": 300.0,
+      "source_dpi_x": 300.0,
+      "source_dpi_y": 300.0,
+      "source_height": 1250,
+      "source_width": 834,
+      "width": 834
+    },
+    "source_file": "<tmp>/in/tree/sub/beta.pdf"
+  },
+  "provider": "openai",
+  "response_id": 12,
+  "run_id": "<run-1>",
+  "source_index": 1,
   "stale": 0,
   "status": "done",
   "tool": "autoexcerpter",

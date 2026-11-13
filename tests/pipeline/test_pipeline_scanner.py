@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -226,7 +225,7 @@ class TestScanInputPath:
         pdf = tmp_path / "document.pdf"
         pdf.write_bytes(b"%PDF-1.4 fake content")
 
-        items = scan_input_path(pdf)
+        items = scan_input_path(pdf).items
 
         assert len(items) == 1
         assert items[0].kind == "pdf"
@@ -237,7 +236,7 @@ class TestScanInputPath:
         txt = tmp_path / "notes.txt"
         txt.write_text("hello")
 
-        items = scan_input_path(txt)
+        items = scan_input_path(txt).items
 
         assert items == []
 
@@ -245,7 +244,7 @@ class TestScanInputPath:
         """A non-existent path returns an empty list."""
         missing = tmp_path / "does_not_exist.pdf"
 
-        items = scan_input_path(missing)
+        items = scan_input_path(missing).items
 
         assert items == []
 
@@ -254,7 +253,7 @@ class TestScanInputPath:
         for name in ["a.pdf", "b.pdf", "c.pdf"]:
             (tmp_path / name).write_bytes(b"%PDF")
 
-        items = scan_input_path(tmp_path)
+        items = scan_input_path(tmp_path).items
 
         pdf_items = [i for i in items if i.kind == "pdf"]
         assert len(pdf_items) == 3
@@ -266,7 +265,7 @@ class TestScanInputPath:
         for name in ["page_01.jpg", "page_02.jpg"]:
             (img_dir / name).write_bytes(b"\xff\xd8\xff")
 
-        items = scan_input_path(tmp_path)
+        items = scan_input_path(tmp_path).items
 
         folder_items = [i for i in items if i.kind == "image_folder"]
         assert len(folder_items) == 1
@@ -280,7 +279,7 @@ class TestScanInputPath:
         img_dir.mkdir()
         (img_dir / "scan.png").write_bytes(b"\x89PNG")
 
-        items = scan_input_path(tmp_path)
+        items = scan_input_path(tmp_path).items
 
         kinds = {i.kind for i in items}
         assert "pdf" in kinds
@@ -302,7 +301,7 @@ class TestCollectItemsFromDirectory:
         (img_dir / "p1.tiff").write_bytes(b"fake tiff")
         (img_dir / "p2.tiff").write_bytes(b"fake tiff")
 
-        items = list(_collect_items_from_directory(tmp_path))
+        items = _collect_items_from_directory(tmp_path, recursive=True).items
 
         pdf_items = [i for i in items if i.kind == "pdf"]
         folder_items = [i for i in items if i.kind == "image_folder"]
@@ -319,7 +318,7 @@ class TestCollectItemsFromDirectory:
         (sub1 / "doc.pdf").write_bytes(b"%PDF")
         (sub2 / "deep.pdf").write_bytes(b"%PDF")
 
-        items = list(_collect_items_from_directory(tmp_path))
+        items = _collect_items_from_directory(tmp_path, recursive=True).items
 
         pdf_paths = {i.path.name for i in items if i.kind == "pdf"}
         assert "doc.pdf" in pdf_paths
@@ -330,7 +329,7 @@ class TestCollectItemsFromDirectory:
         empty = tmp_path / "empty"
         empty.mkdir()
 
-        items = list(_collect_items_from_directory(empty))
+        items = _collect_items_from_directory(empty).items
 
         assert items == []
 
@@ -339,32 +338,28 @@ class TestCollectItemsFromDirectory:
         (tmp_path / "readme.txt").write_text("hello")
         (tmp_path / "data.csv").write_text("a,b,c")
 
-        items = list(_collect_items_from_directory(tmp_path))
+        items = _collect_items_from_directory(tmp_path, recursive=True).items
 
         assert items == []
 
-    def test_items_follow_name_order_whatever_the_walk_order(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Folders and files are visited by name, so item numbers are stable."""
+    def test_items_follow_name_order(self, tmp_path: Path) -> None:
+        """Folders and files are ordered by name, so item numbers are stable."""
+        for name in ("b_scans", "a_scans"):
+            (tmp_path / name).mkdir()
+            for file in ("p2.jpg", f"{name}.pdf", "p1.jpg"):
+                (tmp_path / name / file).write_bytes(b"x")
+        for file in ("z.pdf", "a.pdf"):
+            (tmp_path / file).write_bytes(b"%PDF")
 
-        def unsorted_walk(top: Path) -> Iterator[tuple[str, list[str], list[str]]]:
-            dirs = ["b_scans", "a_scans"]
-            yield str(top), dirs, ["z.pdf", "a.pdf"]
-            for name in dirs:
-                yield str(top / name), [], ["p2.jpg", f"{name}.pdf", "p1.jpg"]
-
-        monkeypatch.setattr("autoexcerpter.pipeline.scanner.os.walk", unsorted_walk)
-
-        items = list(_collect_items_from_directory(tmp_path))
+        items = _collect_items_from_directory(tmp_path, recursive=True).items
 
         assert [i.path for i in items] == [
             tmp_path / "a.pdf",
-            tmp_path / "z.pdf",
-            tmp_path / "a_scans" / "a_scans.pdf",
-            tmp_path / "b_scans" / "b_scans.pdf",
             tmp_path / "a_scans",
+            tmp_path / "a_scans" / "a_scans.pdf",
             tmp_path / "b_scans",
+            tmp_path / "b_scans" / "b_scans.pdf",
+            tmp_path / "z.pdf",
         ]
 
     def test_image_folder_with_nested_content(self, tmp_path: Path) -> None:
@@ -389,7 +384,7 @@ class TestCollectItemsFromDirectory:
         child.mkdir()
         (child / "nested.pdf").write_bytes(b"%PDF")
 
-        items = list(_collect_items_from_directory(tmp_path))
+        items = _collect_items_from_directory(tmp_path, recursive=True).items
 
         # The image subfolder (thumbnails) is suppressed: only parent remains.
         folder_items = [i for i in items if i.kind == "image_folder"]

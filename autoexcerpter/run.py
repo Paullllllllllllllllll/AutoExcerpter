@@ -39,6 +39,12 @@ from autoexcerpter.batch.clients import BatchClients
 from autoexcerpter.batch.item import BatchItem, BatchItemOutcome
 from autoexcerpter.common.batch import supports_batch
 from autoexcerpter.common.contract import ExitCode, exit_code_for
+from autoexcerpter.common.discovery import (
+    DiscoveryError,
+    duplicated,
+    relative_name,
+    resolve_named,
+)
 from autoexcerpter.common.options import Source
 from autoexcerpter.common.retry import RunStopped
 from autoexcerpter.common.selection import PageRange, select_items
@@ -90,7 +96,7 @@ from autoexcerpter.pipeline.item import (
     open_source,
 )
 from autoexcerpter.pipeline.job import ItemJob, job_from_spec
-from autoexcerpter.pipeline.scanner import scan_input_path
+from autoexcerpter.pipeline.scanner import Discovered, scan_input_path
 from autoexcerpter.pipeline.types import ItemSpec
 from autoexcerpter.pipeline.units import DocumentHandle, Stamp
 from autoexcerpter.settings import Settings, SettingsError
@@ -116,6 +122,7 @@ __all__ = [
     "missing_keys",
     "plan",
     "run",
+    "unentered_note",
 ]
 
 logger = logging.getLogger(__name__)
@@ -341,42 +348,92 @@ def _absolute(path: Path) -> Path:
     return Path(os.path.abspath(os.path.expanduser(str(path))))
 
 
-def discover(input_path: Path) -> list[ItemSpec]:
-    """Return the PDFs and image folders found at *input_path*."""
-    return scan_input_path(_absolute(input_path))
+def discover(input_path: Path, *, recursive: bool = False) -> Discovered:
+    """Return the PDFs and image folders found at *input_path*.
+
+    Without *recursive* a folder gives its PDFs and the image folders that
+    are the folder or one of its subfolders.
+    """
+    return scan_input_path(_absolute(input_path), recursive=recursive)
+
+
+def unentered_note(count: int) -> str:
+    """Return the note on *count* items left in subfolders without --recursive."""
+    items = "1 item lies" if count == 1 else f"{count} items lie"
+    return (
+        f"{items} in subfolders that were not searched; pass --recursive to "
+        "include them."
+    )
 
 
 def _item_output_dir(item: ItemSpec, base: Path | None) -> Path:
     return item.path.parent if base is None else base
 
 
-def _select_files(items: list[ItemSpec], names: tuple[str, ...]) -> list[ItemSpec]:
-    """Return the items named exactly by *names*, in discovery order.
+def _select_files(
+    items: list[ItemSpec], names: tuple[str, ...], root: Path
+) -> list[ItemSpec]:
+    """Return the items *names* gives, in discovery order.
+
+    A name with a slash is an item's path relative to the input folder
+    *root*, with forward or back slashes; ``./a.pdf`` is the item in the
+    folder itself. A bare file or folder name takes the one item in the
+    tree that has it.
 
     Raises:
-        SelectionError: A name matches no discovered item.
+        SelectionError: A bare name that several items have, or a name that
+            matches no item.
     """
-    found = {item.path.name for item in items}
-    missing = [name for name in names if name not in found]
-    if missing:
-        raise SelectionError(
-            f"--files names no item found in the input: {', '.join(missing)}"
+    found = {item.path: item for item in items}
+    by_name: dict[str, list[ItemSpec]] = {}
+    for item in items:
+        by_name.setdefault(item.path.name, []).append(item)
+    chosen: set[Path] = set()
+    relative: list[str] = []
+    for name in names:
+        posix = name.replace("\\", "/").rstrip("/")
+        matches = [] if "/" in posix else by_name.get(posix, [])
+        if len(matches) > 1:
+            paths = [relative_name(item.path, root) for item in matches]
+            listed = ", ".join(p if "/" in p else f"./{p}" for p in paths)
+            raise SelectionError(
+                f"--files name {name!r} matches {len(matches)} items; name one "
+                f"by its path below the input folder: {listed}"
+            )
+        if matches:
+            chosen.add(matches[0].path)
+        else:
+            relative.append(posix)
+    try:
+        chosen.update(
+            resolve_named(
+                root,
+                relative,
+                present=lambda path: path in found,
+                missing="match no PDF or image folder",
+            )
         )
-    wanted = set(names)
-    return [item for item in items if item.path.name in wanted]
+    except DiscoveryError as exc:
+        raise SelectionError(str(exc)) from exc
+    return [item for item in items if item.path in chosen]
 
 
 def _select(
-    items: list[ItemSpec], spec: RunSpec
+    items: list[ItemSpec], spec: RunSpec, root: Path
 ) -> tuple[list[ItemSpec], tuple[str, ...]]:
-    """Apply ``--all``, ``--select`` or ``--files``; a single item needs none."""
+    """Apply ``--all``, ``--select`` or ``--files``; a single item needs none.
+
+    ``--select`` numbers the *items* in their order and searches their
+    paths relative to the input folder *root*.
+    """
     selection = spec.input
     if selection.all:
         return list(items), ()
     if selection.files:
-        return _select_files(items, selection.files), ()
+        return _select_files(items, selection.files, root), ()
     if selection.select:
-        result = select_items([item.path.name for item in items], selection.select)
+        names = [relative_name(item.path, root) for item in items]
+        result = select_items(names, selection.select)
         warnings: tuple[str, ...] = ()
         if result.unmatched:
             warnings = (
@@ -402,19 +459,19 @@ def _guard_duplicate_outputs(items: list[ItemSpec], base: Path | None) -> None:
     Runs before the resume check: otherwise one colliding item's outputs
     could classify the other as complete and hide the collision.
     """
-    seen: dict[tuple[Path, str], ItemSpec] = {}
-    for item in items:
-        key = (_item_output_dir(item, base).resolve(), item.output_stem)
-        prior = seen.get(key)
-        if prior is not None:
-            raise DuplicateOutputError(
-                f"Duplicate output target: '{prior.path}' and '{item.path}' both "
-                f"resolve to output stem '{item.output_stem}' in the same "
-                "directory; their outputs would overwrite each other. Rename one "
-                "input or send them to separate output directories.",
-                items_total=len(items),
-            )
-        seen[key] = item
+    pairs = duplicated(
+        items,
+        key=lambda item: (_item_output_dir(item, base).resolve(), item.output_stem),
+    )
+    if pairs:
+        item, prior = pairs[0]
+        raise DuplicateOutputError(
+            f"Duplicate output target: '{prior.path}' and '{item.path}' both "
+            f"resolve to output stem '{item.output_stem}' in the same "
+            "directory; their outputs would overwrite each other. Rename one "
+            "input or send them to separate output directories.",
+            items_total=len(items),
+        )
 
 
 def _job(spec: RunSpec, settings: Settings) -> ItemJob:
@@ -848,13 +905,20 @@ def plan(
     base = _absolute(spec.output.directory) if spec.output.directory else None
     logger.info("Input=%s, Output=%s", input_path, base or "beside input")
 
-    discovered = discover(input_path)
+    # --files names items at any level, as it did when every run recursed.
+    found = discover(
+        input_path, recursive=spec.input.recursive or bool(spec.input.files)
+    )
+    discovered = found.items
+    unentered = (unentered_note(found.unentered),) if found.unentered else ()
     if not discovered:
         raise NoItemsError(
             f"No items found to process in: {input_path}. Pass --input with a "
             "PDF, an image folder, or a folder holding them."
+            + (f" {unentered[0]}" if unentered else "")
         )
-    selected, warnings = _select(discovered, spec)
+    selected, warnings = _select(discovered, spec, input_path)
+    warnings = unentered + warnings
     _guard_duplicate_outputs(selected, base)
 
     names: dict[Path, set[str]] = {}

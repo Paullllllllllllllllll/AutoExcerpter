@@ -203,6 +203,7 @@ def run_tool(
     batch: bool = False,
     pages: str | None = None,
     concurrency: int | None = None,
+    recursive: bool = False,
 ) -> RunResult:
     """Run AutoExcerpter once, in process, as a fresh CLI invocation would.
 
@@ -225,7 +226,8 @@ def run_tool(
     passed as ``--jpeg-quality``, *image_detail* as ``--image-detail``, and
     *transcription_file_format* (``md`` or ``txt``) joins ``--formats`` as
     ``transcription-md`` or ``transcription-txt``; *batch* adds ``--batch``
-    and *pages* ``--pages``; *concurrency* is passed as ``--concurrency``.
+    and *pages* ``--pages``; *concurrency* is passed as ``--concurrency``
+    and *recursive* adds ``--recursive``.
     During the run ``time.sleep`` returns at once and ``asyncio.sleep`` only
     yields; neither shapes the outputs.
     The fake LLM must already be installed (see ``conftest.fake_llm``).
@@ -286,6 +288,8 @@ def run_tool(
         argv.extend(["--pages", pages])
     if concurrency is not None:
         argv.extend(["--concurrency", str(concurrency)])
+    if recursive:
+        argv.append("--recursive")
 
     llm.text_roles = {
         role

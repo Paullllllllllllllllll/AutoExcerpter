@@ -183,7 +183,9 @@ class InputSpec:
     ``select`` is a selection expression, ``files`` names items exactly and
     ``all`` takes every item; at most one of them is set. ``pages`` is a page
     range (:func:`~autoexcerpter.common.selection.parse_page_range`) applied
-    to every selected item; None takes every page.
+    to every selected item; None takes every page. ``recursive`` searches
+    every level of a folder input; without it the folder gives its PDFs and
+    the image folders that are the folder or one of its subfolders.
     """
 
     path: Path
@@ -191,6 +193,7 @@ class InputSpec:
     all: bool
     files: tuple[str, ...] = ()
     pages: str | None = None
+    recursive: bool = False
 
 
 @dataclass(frozen=True)
@@ -485,6 +488,15 @@ def _build_table() -> OptionTable:
             target="input.path",
         ),
         Option(
+            "recursive",
+            "--recursive",
+            "search the subfolders of the input folder",
+            group="input",
+            kind=Kind.SWITCH,
+            default=False,
+            target="input.recursive",
+        ),
+        Option(
             "select",
             "--select",
             "select items by number (1,3), range (1-5) or name search",
@@ -497,7 +509,7 @@ def _build_table() -> OptionTable:
         Option(
             "files",
             "--files",
-            "comma-separated names of items inside the input folder",
+            "comma-separated item paths relative to the input folder",
             group="input",
             kind=Kind.LIST,
             type=nonempty_text,

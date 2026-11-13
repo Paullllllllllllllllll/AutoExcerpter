@@ -1060,6 +1060,10 @@
       "source": "flag",
       "value": "<tmp>/docs/doc.pdf"
     },
+    "input.recursive": {
+      "source": "default",
+      "value": false
+    },
     "input.select": {
       "source": "flag",
       "value": null

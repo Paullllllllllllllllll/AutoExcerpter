@@ -367,6 +367,10 @@
       "source": "flag",
       "value": "<tmp>/in/tree"
     },
+    "input.recursive": {
+      "source": "flag",
+      "value": true
+    },
     "input.select": {
       "source": "flag",
       "value": "alph"

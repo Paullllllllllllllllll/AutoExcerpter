@@ -1,4 +1,4 @@
-# AutoExcerpter v1.8.0
+# AutoExcerpter v1.9.0
 
 <img src="assets/logo.svg" alt="AutoExcerpter logo" width="64" align="right">
 
@@ -63,6 +63,7 @@ export OPENAI_API_KEY="sk-..."        # PowerShell: $env:OPENAI_API_KEY = "sk-..
 ```bash
 uv run autoexcerpter run --input paper.pdf           # outputs beside the input
 uv run autoexcerpter run --input scans --all --output excerpts
+uv run autoexcerpter run --input library --recursive --all --output excerpts
 uv run autoexcerpter run --input scans --select 1-3  # or a name: --select braudel
 uv run autoexcerpter run --input scans --files a.pdf,b.pdf --formats transcription-txt,summary-md
 uv run autoexcerpter run --input paper.pdf --pages 7,2,15-17  # only these pages
@@ -75,8 +76,18 @@ uv run autoexcerpter render --input excerpts         # rewrite the files, no cal
 uv run autoexcerpter drop --input excerpts --select braudel --dry-run  # preview a drop
 ```
 
-A folder input is searched recursively; item numbers count in discovery order,
-PDFs first. Relative paths resolve against the current directory. With
+A folder input gives its PDFs and the image folders that are the folder itself or
+one of its subfolders; `--recursive` searches every level. Without it, the run
+warns how many items lie in subfolders it did not search. Items are processed
+and numbered in the natural order of their paths below the input folder, PDFs
+and image folders together: `page_2.pdf` comes before `page_10.pdf`, and letter
+case does not count. A search never enters a `.mabillon` folder (Mabillon's
+working folder) or a directory link, and it takes only PDFs and page images, so
+the files a run writes (`X_transcription.md`, `X_summary.md`, `X_summary.docx`,
+`autoexcerpter.sqlite`) and the context sidecars are never items. Two items that
+would write the same output files, such as `a/book.pdf` and `b/book.pdf` with
+one `--output` folder, stop the run before any call with both inputs named
+(exit 2). Relative paths resolve against the current directory. With
 `uv --directory <clone> run autoexcerpter ...` the current directory is the
 clone, so pass absolute paths.
 
@@ -98,17 +109,22 @@ the leading dashes, with underscores for hyphens (`--fallback-context` becomes
 | Flag | Description | Default | In `defaults:` |
 | --- | --- | --- | --- |
 | `--input PATH` | PDF file, image folder, or folder of PDFs and image folders | | yes |
+| `--recursive`, `--no-recursive` | search the subfolders of the input folder | off | yes |
 | `--select EXPR` | select items by number (1,3), range (1-5) or name search | | yes |
-| `--files LIST` | comma-separated names of items inside the input folder | | no |
+| `--files LIST` | comma-separated item paths relative to the input folder | | no |
 | `--all` | process every discovered item | | yes |
 | `--pages RANGE` | pages or images: 5, first:5, last:5, 3-7, 3-, -7 or 1,3,5-8 | all | no |
 
 `--input` is required. A single discovered item needs none of `--all`, `--select`
 and `--files`; several items without one of them are a usage error (exit 2), and
-the three exclude each other. A name search matches part of a file or folder
-name, ignoring case. `--files` takes exact PDF or image folder names
-(`a.pdf,scans_1`) and fails with exit 2 when one names no discovered item, as
-does a `--select` that matches nothing.
+the three exclude each other. A name search matches part of an item's path below
+the input folder (`vol_2/scans`), ignoring case. `--files` takes the paths of
+PDFs and image folders relative to the input folder, with forward or back
+slashes (`a.pdf,vol_2/scans_1`), at every level with or without `--recursive`.
+A bare file or folder name also works when exactly one item in the tree has it.
+A bare name that several items share fails with exit 2 and lists them; `./a.pdf`
+then names the one in the input folder itself. A name that matches no item fails
+with exit 2 too, as does a `--select` that matches nothing.
 
 `--pages` selects pages of every selected item (1-based, in source order): a bare
 number `N` is the first N pages (as `first:N`), `last:N` the last N, and a list
@@ -827,8 +843,11 @@ The shared backends split a submission into parts by the provider's limits:
 OpenAI 50,000 requests and 150 MB per input file, Anthropic 100,000 requests and
 224 MB, Google 50,000 requests sent inline up to 20 MB, else as an uploaded file
 up to 2 GB. Each part is one submission. Page images keep the size caps of a
-direct run, and an item's page images are held in memory until its transcription
-batch is built.
+direct run. An item's pages are rendered and submitted in slices of at most 64
+MiB of encoded images (`SLICE_BYTES` in `batch/item.py`), so a long book becomes
+several submissions and is never held in memory whole. A slice that is refused,
+or whose create gets no confirmed response, ends the item's submission; its
+later pages stay pending for the next `run --batch`.
 
 ## Resume
 

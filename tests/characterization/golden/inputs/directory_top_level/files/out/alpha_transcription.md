@@ -1,5 +1,5 @@
-# Transcription of: beta
-# Source Path: <tmp>/in/tree/sub/beta.pdf
+# Transcription of: alpha
+# Source Path: <tmp>/in/tree/alpha.pdf
 # Type: PDF
 # Processed on: <datetime>
 # Total images processed: 2

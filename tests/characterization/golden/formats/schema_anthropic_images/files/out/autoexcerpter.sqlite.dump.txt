@@ -468,6 +468,10 @@
       "source": "flag",
       "value": "<tmp>/in/book"
     },
+    "input.recursive": {
+      "source": "default",
+      "value": false
+    },
     "input.select": {
       "source": "flag",
       "value": null

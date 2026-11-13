@@ -210,15 +210,16 @@ def _selection_validator(inventory: Inventory, by_number: bool) -> Validator:
 
 
 class _InputQuestions:
-    """The questions of the input step: path, selection mode, expression."""
+    """The questions of the input step: path, subfolders, selection, expression."""
 
     def __init__(self, ctx: StepContext) -> None:
         self.ctx = ctx
         self.state = ctx.state
         self.how_answer: str | None = None
+        self.shallow: Inventory | None = None
 
     def questions(self) -> list[Question]:
-        return [self.path, self.how, self.expression]
+        return [self.path, self.recursive, self.how, self.expression]
 
     def path(self) -> Nav:
         state, prompter = self.state, self.ctx.prompter
@@ -235,12 +236,38 @@ class _InputQuestions:
             location = absolute(answer)
             inventory = take_inventory(location)
             state.data[INVENTORY] = inventory
-            if not inventory.items:
+            if not inventory.items and not inventory.unentered:
                 prompter.show(f"  found no PDF or image folder in {location}")
                 continue
+            self.shallow = inventory
             state.set("input", location)
-            prompter.show(f"  found {inventory.describe()}")
+            if inventory.items:
+                prompter.show(f"  found {inventory.describe()}")
             return DONE
+
+    def recursive(self) -> Nav | None:
+        """Ask whether to search the subfolders, when they hold items."""
+        state, prompter = self.state, self.ctx.prompter
+        shallow = self.shallow
+        if shallow is None or not shallow.unentered:
+            return None
+        answer = self.ctx.select_option(
+            "recursive",
+            f"{plural(shallow.unentered, 'item')} in subfolders. Search them too?",
+            [
+                Choice(False, "No, this folder only"),
+                Choice(True, "Yes, every subfolder"),
+            ],
+        )
+        if answer is BACK:
+            return BACK
+        inventory = inventory_of(state, shallow.path)
+        if not inventory.items:
+            prompter.show(f"  found no PDF or image folder in {shallow.path}")
+            return BACK
+        if inventory.recursive:
+            prompter.show(f"  found {inventory.describe()}")
+        return DONE
 
     def _list_items(self, inventory: Inventory) -> None:
         count = len(inventory.items)
@@ -1279,7 +1306,12 @@ def _ask_pages(ctx: StepContext) -> Nav:
 def build_steps(session: Session) -> list[Step]:
     """Return the tool's steps in order, task and extension steps excluded."""
     return [
-        Step("input", "Input", ask=_ask_input, sets=("input", "select", "all")),
+        Step(
+            "input",
+            "Input",
+            ask=_ask_input,
+            sets=("input", "recursive", "select", "all"),
+        ),
         Step(
             "output",
             "Output and formats",

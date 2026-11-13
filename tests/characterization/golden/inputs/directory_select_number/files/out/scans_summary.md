@@ -1,4 +1,4 @@
-# beta
+# scans
 
 *Summary generated <datetime> · 2 content pages · 2 total pages*
 
