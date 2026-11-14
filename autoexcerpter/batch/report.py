@@ -164,8 +164,8 @@ def _hours(seconds: float) -> str:
 def wait_line(tick: WaitTick, now: datetime | None = None) -> str:
     """Return the line written before a wait sleeps.
 
-    It begins with ``Waiting for batches``, which the job launcher reads;
-    it never says "Waiting until", which marks a budget wait there.
+    It begins with ``Waiting for batches``, a fixed prefix that log readers
+    match.
     """
     at = (now or datetime.now()) + timedelta(seconds=tick.next_in)
     return (

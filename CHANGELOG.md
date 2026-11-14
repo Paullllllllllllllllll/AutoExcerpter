@@ -1,5 +1,9 @@
 # Changelog
 
+- **v1.11.1** (14 November 2026) -- The docstring of the batch wait line now
+  states only its fixed prefix, `Waiting for batches`, and no longer describes
+  how other programs read the log. The line itself and the tool's behavior are
+  unchanged.
 - **v1.11.0** (14 November 2026) -- The repository ships a skill for coding
   agents in `skills/autoexcerpter/`. `SKILL.md` gives the steps of a job (dry run,
   sample, run, verify), the conventions for outputs, page ranges and context files,
