@@ -13,7 +13,6 @@ fails the page in every response format.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import random
 import time
@@ -36,10 +35,10 @@ from autoexcerpter.llm.caller import CallEnv
 from autoexcerpter.llm.options import request_plan, response_format_for
 from autoexcerpter.llm.prompts import (
     PROMPTS_DIR,
-    SCHEMAS_DIR,
     render_prompt_with_schema,
     strip_markdown_code_block,
 )
+from autoexcerpter.llm.schemas import PhaseSchema, packaged_schemas
 from autoexcerpter.llm.transcription import (
     EMPTY_RESPONSE_BACKOFF_S,
     EMPTY_RESPONSE_RETRIES,
@@ -60,7 +59,6 @@ __all__ = [
 
 logger = logging.getLogger(__name__)
 
-SUMMARY_SCHEMA_FILE = "summary_schema.json"
 SUMMARY_PROMPT_FILE = "summary_system_prompt.txt"
 PLAIN_TEXT_SUMMARY_PROMPT_FILE = "summary_plain_text_prompt.txt"
 
@@ -137,17 +135,21 @@ def _wrapped(text: str) -> dict[str, Any]:
 
 
 def summary_prompt(
-    context: str | None, transcription_format: str
+    context: str | None,
+    transcription_format: str,
+    schema_file: PhaseSchema | None = None,
 ) -> tuple[dict[str, Any], str]:
     """Return the summary schema and the system prompt of a summary call.
 
     *context* is the item's summary context as it enters the prompt;
     *transcription_format* is the transcription's response format, whose
-    ``text`` value selects the plain-text prompt.
+    ``text`` value selects the plain-text prompt. *schema_file* is the run's
+    summary schema (default: the packaged one; see
+    :mod:`autoexcerpter.llm.schemas`).
     """
-    schema: dict[str, Any] = json.loads(
-        (SCHEMAS_DIR / SUMMARY_SCHEMA_FILE).read_text(encoding="utf-8")
-    )
+    if schema_file is None:
+        schema_file = packaged_schemas().summary
+    schema = schema_file.spec()
     prompt_file = (
         PLAIN_TEXT_SUMMARY_PROMPT_FILE
         if transcription_format == "text"
@@ -240,7 +242,8 @@ class SummaryManager:
     """Summarize page transcriptions with the summary model of one item.
 
     *context* is the item's summary context as it enters the prompt;
-    *transcription_format* is the response format of the transcription.
+    *transcription_format* is the response format of the transcription;
+    *schema* is the run's summary schema (default: the packaged one).
     """
 
     def __init__(
@@ -250,6 +253,7 @@ class SummaryManager:
         *,
         context: str | None = None,
         transcription_format: str = "schema",
+        schema: PhaseSchema | None = None,
     ) -> None:
         self.caller = env.caller("summary", phase)
         self.provider = self.caller.provider
@@ -261,7 +265,9 @@ class SummaryManager:
         self.rule = retry.schema_retries.get("summary", {}).get("validation_failure")
         self._jitter = (retry.jitter_min, retry.jitter_max)
         self.summary_context = context
-        self.schema, self.system_prompt = summary_prompt(context, transcription_format)
+        self.schema, self.system_prompt = summary_prompt(
+            context, transcription_format, schema
+        )
         self.caching = env.settings.prompt_caching
         self.plan = request_plan(
             self.provider, phase.name, phase.options, phase.service_tier, self.caching

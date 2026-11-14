@@ -168,6 +168,7 @@ def test_every_option_but_json_and_settings_belongs_to_a_step() -> None:
     assert set(OPTIONS.names) - declared == {
         "json",
         "settings",
+        "schemas_dir",
         "files",
         *unprefixed,
         *pinned,
@@ -900,3 +901,20 @@ def test_extension_words_join_only_the_commands_that_take_them(
     assert check[-2:] == ["--access", "x"]
     render = command_words(RENDER_PROGRAM, [], session, RENDER_OPTIONS)
     assert "--access" not in render
+
+
+def test_the_ui_schema_folders_join_the_commands_that_take_them(
+    tmp_path: Path,
+) -> None:
+    folders = (tmp_path / "one", tmp_path / "two")
+    base = _session()
+    session = dataclasses.replace(
+        base, settings=base.settings.with_folders(folders), schemas_dirs=folders
+    )
+    repeated = ["--schemas-dir", str(folders[0]), "--schemas-dir", str(folders[1])]
+
+    check = command_words(CHECK_PROGRAM, [], session, BATCH_CHECK_OPTIONS)
+    assert check == [*CHECK_PROGRAM, *repeated]
+    render = command_words(RENDER_PROGRAM, [], session, RENDER_OPTIONS)
+    assert render == list(RENDER_PROGRAM)
+    assert session.settings.schemas_dirs == folders

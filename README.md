@@ -1,4 +1,4 @@
-# AutoExcerpter v1.11.1
+# AutoExcerpter v1.12.0
 
 <img src="assets/logo.svg" alt="AutoExcerpter logo" width="64" align="right">
 
@@ -99,7 +99,8 @@ and default. They mirror the option table (`autoexcerpter/spec.py`), and
 stated default are off or unset until given. The last column says whether the
 settings `defaults:` block can set the option; its key there is the flag without
 the leading dashes, with underscores for hyphens (`--fallback-context` becomes
-`fallback_context`). `autoexcerpter ui` takes only `--settings FILE`;
+`fallback_context`). `autoexcerpter ui` takes only `--schemas-dir DIR` and
+`--settings FILE`, and repeats both in the command it prints;
 `batch check` and `batch cancel` are described under
 [Batch Processing](#batch-processing), `render` and `drop` under
 [Store](#store).
@@ -219,6 +220,7 @@ option but the OpenRouter provider, for example as `model` or
 | `--batch`, `--no-batch` | submit the pages and summaries to the providers' batch APIs | off | yes |
 | `--dry-run` | plan without API calls or writes | | no |
 | `--json` | print one JSON summary line on stdout | | no |
+| `--schemas-dir DIR` | folder whose transcription_schema.json or summary_schema.json replaces the packaged schema, searched before the settings' schemas_dirs; repeatable | | no |
 | `--settings FILE` | alternate settings file | config/settings.yaml | no |
 
 ### Exit Codes and JSON Summary
@@ -227,7 +229,7 @@ option but the OpenRouter provider, for example as `model` or
 | --- | --- |
 | 0 | every item completed or, under `--batch`, was submitted, or nothing was left to do |
 | 1 | an item failed (a refused or unresolved batch submission and an unexpected error included), or another run leases an item (the final message names each blocked item with its reason and a lease with its expiry; an item waiting for a batch is named but does not change the exit code) |
-| 2 | usage or configuration error (invalid flags or settings, an input without a PDF or image folder, several items without `--all`, `--select` or `--files`, a `--select` or `--files` that matches nothing, two items with one output name in one folder, a stored document in the output folder that belongs to another input of the same name, summaries on without a summary format, an unset API key variable in a real run, a database the store refuses, `--batch` on a provider without a batch API) |
+| 2 | usage or configuration error (invalid flags or settings, an input without a PDF or image folder, several items without `--all`, `--select` or `--files`, a `--select` or `--files` that matches nothing, two items with one output name in one folder, a stored document in the output folder that belongs to another input of the same name, summaries on without a summary format, an unset API key variable in a real run, a database the store refuses, `--batch` on a provider without a batch API, a schema file that cannot replace the packaged one, see [Schemas](#schemas)) |
 | 3 | stopped: a provider will serve no further calls of this run; the units not yet stored stay as they were, no further item starts, and the final error line names the reason and the units and items left unprocessed |
 | 130 | interrupted (Ctrl+C, or Ctrl+Break on Windows) |
 
@@ -380,6 +382,7 @@ retry:
 concurrency: {delay_between_tasks: 0}   # seconds between two request starts
 state_dir: ''                       # '' means ~/.autoexcerpter
 logs_dir: ''                        # '' writes no log file
+schemas_dirs: []                    # folders of replacement schemas, see Schemas
 openalex: {email: '', api_key_env: OPENALEX_API_KEY, max_requests: 300}
 images: {original_max_side_px: null}   # null keeps the model's default
 prompt_caching:
@@ -475,7 +478,8 @@ Each phase sends one system prompt to every provider
 the JSON schema it embeds, states the purpose of the output and, for the summary,
 describes the input, the summary context and the language of the bullets. The
 rules themselves sit in the field descriptions of the transcription and summary
-schemas (`resources/schemas/`). The transcription schema asks for the verbatim
+schemas (`resources/schemas/`, replaceable as [Schemas](#schemas) describes).
+The transcription schema asks for the verbatim
 page text as Markdown (null for a page without text) and the two flags
 `no_transcribable_text` and `transcription_not_possible`; unreadable words become
 `[illegible]`, and the uncertain part of a partly legible word becomes `[?]`. The
@@ -563,6 +567,62 @@ page. A `native` render, like a numeric one, holds at most 24 megapixels, and a
 page rendered smaller for that reason records the downscale reason
 `memory_guard`. A Gemini page whose image and prompt text together exceed 20 MB
 fails without a request.
+
+## Schemas
+
+AutoExcerpter sends two schemas, `transcription_schema.json` and
+`summary_schema.json`, packaged in `autoexcerpter/resources/schemas/`. A file of
+the same name in a user folder replaces the packaged one. The user folders are
+those of `--schemas-dir DIR` (repeatable, on `run`, `batch check` and `ui`),
+searched first, then the settings list `schemas_dirs`; a relative entry there
+resolves against the current directory, as `logs_dir` does. A `--schemas-dir`
+folder must exist, a settings folder that does not exist is passed over, and a
+folder named twice is searched once. The same file name in two user folders
+exits 2 with an error that names both files, so only one of them may stay. The
+replacement takes the place of the packaged file in every request, in the
+system prompt that embeds it and in the store.
+
+The code reads fixed fields of both schemas, so a replacement is checked before
+any request and refused with exit 2 and a message naming the file and the field
+when it fails. A replacement may add fields, reword descriptions, and change
+enums, lengths and limits that the code does not read. It may not remove, rename
+or retype a field that the code reads, move it to another level, make it
+nullable where the code reads no null, or drop it from a `required` list that
+the reader validates. Each such field declares its JSON type with `type`, as the
+packaged files do; a field typed through `anyOf` or `$ref` is refused. The file
+holds the schema under `schema`, as the packaged files do, or is the schema
+itself. The fields the check covers:
+
+| Schema | Field | Required shape |
+| --- | --- | --- |
+| transcription | `transcription` | string, may be null; required |
+| transcription | `no_transcribable_text`, `transcription_not_possible` | boolean, may be null; required |
+| summary | `page_information` | object, may be null; required |
+| summary | `page_information.page_number_integer`, `page_number_integer_end` | integer, may be null |
+| summary | `page_information.is_two_page_spread` | boolean, may be null |
+| summary | `page_information.page_number_type` | string, may be null; an enum, when given, holds only `roman`, `arabic` or `none` |
+| summary | `page_information.page_types` | array of strings, may be null; the item enum holds `content` and only the page types the renderer knows (those of the packaged file) |
+| summary | `bullet_points` | array of strings, may be null; required |
+| summary | `references` | array of objects, may be null; required |
+| summary | `references.items.citation` | string; required |
+| summary | `references.items.is_partial` | boolean, may be null |
+
+Every run records the hash of each schema it sends with its spec in the store
+(`transcription_schema_sha256` and `summary_schema_sha256` in `runs.spec`; the
+transcription entry is absent under the `text` format, which uses no schema, and
+the summary entry without summaries). The hash names the schema text the run
+stores in `artifacts`. A done page's schema is the one recorded by the run that
+sent its request, which for a batch result is the run that submitted the batch. A run
+that would write pages or summaries into a document while a done page or
+summary of the same kind, made under another recorded schema, stays in place is
+refused for that document (state `refused`, counted failed). This covers the
+resume of a partial document, a `--pages` run, `--retranscribe --pages` and the
+summaries a `batch check` submits. `--force`, which processes the whole document
+again, is not refused (give it without `--pages`, or the pages outside the
+selection are reset and stay unprocessed); nor is a run on units of unknown
+schema, made by an earlier version or summarized without a request (blank and
+failed pages).
+Restoring the earlier schema, whose text the store keeps, resumes the document.
 
 ## Output Contract
 
@@ -769,8 +829,11 @@ later steps follow the `run --batch` that submitted the document: its stored
 spec sets the summary model, the formats and OpenAlex, and the summary context it
 read is kept with the document. `--formats` replaces the stored formats for the files
 this check writes; a list without a transcription format keeps the stored one.
-Prompts, schemas and machine settings come from the installed version and the
-current settings file.
+Prompts and machine settings come from the installed version and the current
+settings file, the schemas from the check's `--schemas-dir` and `schemas_dirs`
+folders (see [Schemas](#schemas)). A document whose done summaries were made
+under another recorded summary schema gets no further summary from the check
+and fails with the refusal a run would give.
 
 ```bash
 autoexcerpter run --input scans --all --output excerpts --batch
@@ -790,6 +853,7 @@ autoexcerpter batch check --input excerpts --wait   # or: both, as batches finis
 | `--wait-hours N` | hours after which --wait starts no further check; a running check finishes | 98 | no |
 | `--formats LIST` | comma-separated formats of the finished documents, replacing those of the submitting run (whose transcription format stays when none is given); from transcription-md, transcription-txt, summary-md, summary-docx | the formats of the submitting run | no |
 | `--json` | print one JSON summary line on stdout | | no |
+| `--schemas-dir DIR` | folder whose transcription_schema.json or summary_schema.json replaces the packaged schema, searched before the settings' schemas_dirs; repeatable | | no |
 | `--settings FILE` | alternate settings file | config/settings.yaml | no |
 
 A result is read as a direct answer is: a transcription is validated against its
@@ -814,14 +878,15 @@ is not cancelled at the provider), and a run submits its pages again.
 
 Exit codes of `batch check`: 0 when nothing failed, 1 when a submission or a
 document failed or a submission is unresolved, 2 for a usage error, a missing
-folder, a database the store refuses, or an `--adopt` or `--abandon` that names
-nothing to act on. Its JSON line holds `command` (`check_batches`), the
-submissions `finalized`, `pending`, `failed` and `unresolved`, the summary
-batches `submitted`, the documents `complete`, the `outputs` written and the
-`usage` of the stored results per role, plus `adopted` or `abandoned` when the
-option is given. A document whose selected pages are done while pages outside the
-submitting run's `--pages` remain pending counts as left partial by `--pages` in
-the report lines, not as `complete`.
+folder, a database the store refuses, a schema file that cannot replace the
+packaged one, or an `--adopt` or `--abandon` that names nothing to act on. Its
+JSON line holds `command` (`check_batches`), the submissions `finalized`,
+`pending`, `failed` and `unresolved`, the summary batches `submitted`, the
+documents `complete`, the `outputs` written and the `usage` of the stored
+results per role, plus `adopted` or `abandoned` when the option is given. A
+document whose selected pages are done while pages outside the submitting run's
+`--pages` remain pending counts as left partial by `--pages` in the report
+lines, not as `complete`.
 
 With `--wait` a failure does not end the wait: the other batches are still
 collected, and a later check may still settle an unresolved submission. When the
@@ -875,7 +940,7 @@ Resume is the default. Each item is classified from the store alone
 | `complete` | every unit is stored | skip (`items_skipped`); missing files, files rendered before a later run worked the item and files the store holds no record of are rendered again without model calls or OpenAlex requests (a document without stored citations gets them from the OpenAlex cache); a file that cannot be written counts the item failed |
 | `unstored` | output files exist without stored units, as after a `drop` that kept a file | skip and list; `--force` processes the item again |
 | `blocked` | another live run holds the document's lease, or an open or unresolved batch holds its units | skip and list; a held lease makes the run exit 1 |
-| `refused` | pages remain to transcribe, but the stored pages used other image settings | count failed; name the changed keys |
+| `refused` | pages remain to transcribe, but the stored pages used other image settings; or the run would write pages or summaries next to done ones made under another schema (see [Schemas](#schemas)) | count failed; name the changed keys or the changed schema |
 
 A failure never counts as complete, so a rerun retries failed pages. A page
 stopped by a content filter or refused by the model fails after one call

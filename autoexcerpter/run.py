@@ -15,7 +15,11 @@ documents (see :mod:`autoexcerpter.output.store`). Resume reads only the
 store: an item whose rendered output exists without units in the store is
 ``unstored`` and skipped, an item leased by
 another live run is ``blocked`` and skipped, and an item whose stored pages
-used other image settings is ``refused`` and counts failed.
+used other image settings is ``refused`` and counts failed. So is an item
+whose run would write units of a kind next to done units of that kind made
+under another schema: each run records the hashes of its two schemas with
+its spec (:meth:`RunPlan.run_record`), and the check is repeated under the
+item's lease.
 """
 
 from __future__ import annotations
@@ -50,7 +54,11 @@ from autoexcerpter.common.retry import RunStopped
 from autoexcerpter.common.scheduler import ItemTicket, RunScheduler
 from autoexcerpter.common.selection import PageRange, select_items
 from autoexcerpter.common.spec_view import resolved_view
-from autoexcerpter.common.sqlite import DEFAULT_BUSY_TIMEOUT, DEFAULT_WARN_INTERVAL
+from autoexcerpter.common.sqlite import (
+    DEFAULT_BUSY_TIMEOUT,
+    DEFAULT_WARN_INTERVAL,
+    read,
+)
 from autoexcerpter.common.store import (
     Lease,
     LeaseKeeper,
@@ -70,9 +78,11 @@ from autoexcerpter.events import (
 from autoexcerpter.imaging.settings import resolve_image_settings
 from autoexcerpter.llm import CallEnv
 from autoexcerpter.llm.options import request_plan, response_format_for
+from autoexcerpter.llm.schemas import SchemaFileError
 from autoexcerpter.llm.types import PhaseModel
 from autoexcerpter.output.paths import ItemPaths
 from autoexcerpter.output.store import (
+    KIND_SUMMARY,
     KIND_TRANSCRIPTION,
     Classification,
     FolderState,
@@ -80,6 +90,7 @@ from autoexcerpter.output.store import (
     ItemState,
     ResumeRequest,
     begin_run,
+    changed_schema,
     document_kind,
     drop_batch_job,
     image_changes,
@@ -88,6 +99,10 @@ from autoexcerpter.output.store import (
     open_store,
     read_folder,
     read_store,
+    schema_record,
+    schema_refusal,
+    unit_schemas,
+    unit_states,
 )
 from autoexcerpter.pipeline.context import ContextError, summary_context
 from autoexcerpter.pipeline.item import (
@@ -123,6 +138,7 @@ __all__ = [
     "missing_keys",
     "plan",
     "run",
+    "schema_hashes",
     "unentered_note",
 ]
 
@@ -312,14 +328,23 @@ class RunPlan:
     def effective_spec(self) -> dict[str, dict[str, Any]]:
         """Return ``{field: {"value": ..., "source": ...}}`` for every field.
 
-        The store records it with the run, and a batch check rebuilds the
-        run's spec from it. ``run.open_items`` appears only above 1: it
-        changes when the run sends its calls, not what it stores.
+        A batch check rebuilds the run's spec from it. ``run.open_items``
+        appears only above 1: it changes when the run sends its calls, not
+        what it stores.
         """
         view = effective_spec(self.spec, self.sources)
         if self.spec.run.open_items == 1:
             del view[_OPEN_ITEMS]
         return view
+
+    def run_record(self) -> dict[str, dict[str, Any]]:
+        """Return the spec the store records with the run.
+
+        It is :meth:`effective_spec` with ``transcription_schema_sha256`` and
+        ``summary_schema_sha256``, each present when the run uses that
+        schema (:func:`schema_hashes`).
+        """
+        return {**self.effective_spec(), **schema_record(schema_hashes(self.job))}
 
     def resolved_spec(self) -> dict[str, dict[str, Any]]:
         """Return :meth:`effective_spec` as the dry run shows it.
@@ -492,9 +517,16 @@ def _guard_duplicate_outputs(items: list[ItemSpec], base: Path | None) -> None:
 
 
 def _job(spec: RunSpec, settings: Settings) -> ItemJob:
+    """Return the run's item job, its two schemas found and checked.
+
+    Raises:
+        ConfigurationError: A named endpoint is not defined, a schema of the
+            settings' folders is ambiguous, unreadable or of another shape,
+            or summaries are on without a summary format.
+    """
     try:
         job = job_from_spec(spec, settings)
-    except SettingsError as exc:
+    except (SettingsError, SchemaFileError) as exc:
         raise ConfigurationError(str(exc)) from exc
     if job.summarize and not (job.output_markdown or job.output_docx):
         raise ConfigurationError(
@@ -503,6 +535,19 @@ def _job(spec: RunSpec, settings: Settings) -> ItemJob:
             "summary-docx with --formats."
         )
     return job
+
+
+def schema_hashes(job: ItemJob) -> dict[str, str | None]:
+    """Return the hash of the schema each unit kind of a run is sent with.
+
+    A plain-text transcription uses no schema, and a run without summaries
+    makes none; both map to None.
+    """
+    plain = job.transcription.response_format == "text"
+    return {
+        KIND_TRANSCRIPTION: None if plain else job.schemas.transcription.sha256,
+        KIND_SUMMARY: job.schemas.summary.sha256 if job.summarize else None,
+    }
 
 
 def _batch_phases(job: ItemJob) -> list[tuple[str, PhaseModel]]:
@@ -706,6 +751,9 @@ class _Classifier:
             summary_model=job.summary.name if job.summarize else None,
             summarize=job.summarize,
             settings_for=functools.partial(_image_record, job),
+            schemas=schema_hashes(job),
+            pages=job.pages,
+            retranscribe=self.spec.run.retranscribe,
         )
         state = _classify(folder, item.output_stem, request)
         run = self.spec.run
@@ -1145,8 +1193,8 @@ def _writer_options(events: RunEvents) -> WriterOptions:
 class _Stores:
     """The stores of a run: one per output folder, opened on first use.
 
-    Opening a store stamps the run with its effective spec and settings
-    fingerprint and starts the heartbeat that renews the run's leases. The
+    Opening a store stamps the run with its record (:meth:`RunPlan.run_record`)
+    and settings fingerprint and starts the heartbeat that renews the run's leases. The
     open items of one folder share its store: two items that ask for it at
     once wait for one opening.
     """
@@ -1184,7 +1232,7 @@ class _Stores:
         except StoreError as exc:
             raise StoreRefusedError(str(exc)) from exc
         self._stores[key] = store
-        await begin_run(store, "run", self._plan.effective_spec())
+        await begin_run(store, "run", self._plan.run_record())
         marked = await store.mark_stale_submissions()
         if marked:
             self._events.warning(
@@ -1504,12 +1552,13 @@ class _Shared:
 
 async def _kept_back(
     run_plan: RunPlan, planned: PlannedItem, store: Store, doc_id: int, env: CallEnv
-) -> tuple[str | None, _Blocked | _Unstarted | None] | None:
+) -> tuple[str | None, _Blocked | _Unstarted | ItemResult | None] | None:
     """Return why a leased item does not start, with its outcome; None when it does.
 
     The note is None for an item the run stopped before its start: another
     open item may stop the run while this one waits for its lease, and an
-    item that sends nothing must not be reset by ``--force``.
+    item that sends nothing must not be reset by ``--force``. An item that
+    would mix two schemas (:func:`_schema_change`) fails with the refusal.
     """
     if store.blocked_units(doc_id):
         return (
@@ -1522,7 +1571,36 @@ async def _kept_back(
         return skip, None
     if env.stop.reason is not None:
         return None, _Unstarted()
+    refusal = _schema_change(run_plan, planned, store, doc_id)
+    if refusal is not None:
+        return refusal, ItemResult(planned.name, False, planned.paths)
     return None
+
+
+def _schema_change(
+    run_plan: RunPlan, planned: PlannedItem, store: Store, doc_id: int
+) -> str | None:
+    """Return why a leased item is refused for a changed schema, else None.
+
+    The plan's check is repeated on what the store holds under the lease,
+    before any unit is reset: another run may have written units since the
+    plan. ``--force`` and a changed input reset every unit and are not
+    checked.
+    """
+    spec = run_plan.spec
+    if spec.run.force or planned.resume.reset:
+        return None
+    job = run_plan.job
+    units = unit_states(store.units(doc_id))
+    recorded = read(store.path, lambda c: unit_schemas(c, [doc_id])).get(doc_id, {})
+    request = ResumeRequest(
+        summarize=job.summarize,
+        schemas=schema_hashes(job),
+        pages=job.pages,
+        retranscribe=spec.run.retranscribe and planned.resume.state in _RESUMABLE,
+    )
+    kind = changed_schema(units, recorded, request.schemas, request.writes(units))
+    return schema_refusal(planned.name, kind) if kind is not None else None
 
 
 async def _run_item(  # noqa: PLR0913 - the item, its place and the run's objects

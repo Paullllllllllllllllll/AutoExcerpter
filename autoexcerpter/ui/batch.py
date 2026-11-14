@@ -36,6 +36,7 @@ from autoexcerpter.common.wizard import (
     Step,
     StepContext,
 )
+from autoexcerpter.llm.schemas import SchemaFileError
 from autoexcerpter.settings import SettingsError
 from autoexcerpter.spec import (
     BATCH_CANCEL_OPTIONS,
@@ -259,7 +260,7 @@ def _run_check(request: RunRequest) -> int:
                 args=request.args,
             )
         )
-    except CheckTargetError as exc:
+    except (CheckTargetError, SchemaFileError) as exc:
         _say(request, f"Error: {exc}")
         return int(ExitCode.USAGE)
     for line in check_lines(result):

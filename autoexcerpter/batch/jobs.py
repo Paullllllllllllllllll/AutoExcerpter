@@ -21,6 +21,7 @@ from autoexcerpter.common.sqlite import read
 from autoexcerpter.common.store import Store
 from autoexcerpter.common.structured import ResponseFormat
 from autoexcerpter.llm.options import response_format_for
+from autoexcerpter.llm.schemas import RunSchemas, resolve_schemas
 from autoexcerpter.output.store import BatchJob, read_batch_jobs
 from autoexcerpter.pipeline.job import ItemJob, job_from_spec
 from autoexcerpter.rendering.citations import OpenAlexClient
@@ -80,7 +81,11 @@ def _stored_spec(store: Store, run_id: str) -> Mapping[str, Any] | None:
 
 
 def load_jobs(
-    store: Store, settings: Settings, *, formats: Sequence[str] | None = None
+    store: Store,
+    settings: Settings,
+    *,
+    formats: Sequence[str] | None = None,
+    schemas: RunSchemas | None = None,
 ) -> dict[int, DocumentJob]:
     """Return the batch jobs of *store* by document id.
 
@@ -88,8 +93,15 @@ def load_jobs(
     warning; its document waits for a ``run``. The jobs share one OpenAlex
     client, as the items of a run do, so its cache is written by one owner.
     *formats* (``batch check --formats``) replaces the formats of each
-    stored spec (:func:`~autoexcerpter.spec.check_formats`).
+    stored spec (:func:`~autoexcerpter.spec.check_formats`). Every job takes
+    the check's *schemas*, by default those of the settings' folders.
+
+    Raises:
+        SchemaFileError: *schemas* is None and a schema of the settings'
+            folders is ambiguous, unreadable or of another shape.
     """
+    if schemas is None:
+        schemas = resolve_schemas(settings.schemas_dirs)
     rows = read(store.path, read_batch_jobs)
     jobs: dict[int, DocumentJob] = {}
     shared: OpenAlexClient | None = None
@@ -110,7 +122,7 @@ def load_jobs(
                     spec.output, formats=check_formats(formats, spec.output.formats)
                 )
                 spec = replace(spec, output=output)
-            job = job_from_spec(spec, settings)
+            job = job_from_spec(spec, settings, schemas)
         except (SpecError, SettingsError) as exc:
             logger.warning(
                 "Batch job of document %d cannot be rebuilt: %s", row.doc_id, exc

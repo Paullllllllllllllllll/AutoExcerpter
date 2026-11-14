@@ -49,6 +49,23 @@ def test_tracked_example_loads_and_matches_code_values() -> None:
     assert loaded == Settings(source=EXAMPLE_SETTINGS_PATH)
 
 
+def test_schema_folders_resolve_like_logs_dir_and_flags_come_first(
+    settings_paths: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    work = settings_paths / "work"
+    work.mkdir()
+    monkeypatch.chdir(work)
+    _write(settings_paths / "settings.yaml", "schemas_dirs: [project/schemas]\n")
+    loaded = load()
+    assert loaded.schemas_dirs == (work / "project" / "schemas",)
+    flag = settings_paths / "flag"
+    assert loaded.with_folders((flag,)).schemas_dirs == (
+        flag,
+        work / "project" / "schemas",
+    )
+    assert loaded.with_folders() is loaded
+
+
 def test_example_is_used_when_the_real_file_is_missing(settings_paths: Path) -> None:
     _write(settings_paths / "settings.example.yaml", "openalex:\n  max_requests: 5\n")
     assert load().openalex.max_requests == 5

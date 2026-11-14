@@ -19,6 +19,11 @@ pending unit gets its citations stored and its files rendered, and its batch
 job ends. The batches' input and result files are deleted from the provider
 after that. ``--batch-ids`` limits the finalization to those batches.
 
+The summaries take the check's summary schema, whose hash the check records
+with its run; a document whose done summaries were made under another
+recorded schema gets no further summary and fails with the refusal of a
+run (:func:`~autoexcerpter.output.store.changed_schema`).
+
 :func:`check_until_settled` repeats the check with ``--wait`` until no
 batch work a check can advance is pending, or its deadline has passed. A
 :class:`WaitLedger` records what every pass saw, and :func:`wait_totals`
@@ -83,15 +88,22 @@ from autoexcerpter.common.store import (
 )
 from autoexcerpter.common.usage import Usage
 from autoexcerpter.events import NullEvents
+from autoexcerpter.llm.schemas import RunSchemas, resolve_schemas
 from autoexcerpter.output.store import (
     DATABASE_NAME,
     KIND_SUMMARY,
     KIND_TRANSCRIPTION,
     BatchJob,
+    changed_schema,
     delete_batch_job,
     open_store,
     read_batch_jobs,
     read_store,
+    schema_record,
+    schema_refusal,
+    store_artifacts,
+    unit_schemas,
+    unit_states,
 )
 from autoexcerpter.pipeline.item import ItemFiles
 from autoexcerpter.pipeline.types import ItemSpec
@@ -657,6 +669,9 @@ class _Advance:
 
         if item_job.summarize:
             work = summary_work(store, self.job.doc_id, selected=selected)
+            refusal = self._schema_change(work) if work else None
+            if refusal is not None:
+                return self._result(FAILED, detail=refusal)
             await write_placeholders(
                 store,
                 self.lease,
@@ -692,6 +707,26 @@ class _Advance:
             )
         return await self._render(relevant)
 
+    def _schema_change(self, work: SummaryWork) -> str | None:
+        """Return why *work* is refused for a changed summary schema, else None.
+
+        The summaries it writes would join done summaries of another
+        recorded schema; this check reads the document under its lease.
+        """
+        store, doc_id = self.database.store, self.job.doc_id
+        units = unit_states(store.units(doc_id))
+        recorded = read(store.path, lambda c: unit_schemas(c, [doc_id])).get(doc_id, {})
+        written = {item.unit.idx for item in work.placeholders} | {
+            item.unit.idx for item in work.requests
+        }
+        kind = changed_schema(
+            units,
+            recorded,
+            {KIND_SUMMARY: self.job.job.schemas.summary.sha256},
+            {KIND_SUMMARY: written},
+        )
+        return schema_refusal(self.name, kind) if kind is not None else None
+
     async def _submit(self, work: SummaryWork) -> DocumentAdvance:
         job = self.job
         try:
@@ -701,6 +736,10 @@ class _Advance:
                 context=job.context,
                 transcription_format=job.transcription_format,
                 caching=self.database.clients.settings.prompt_caching,
+                schema_file=job.job.schemas.summary,
+            )
+            await store_artifacts(
+                self.database.store, {"summary_schema": job.job.schemas.summary.text}
             )
             submitted = await submit_units(
                 self.database.store,
@@ -792,17 +831,25 @@ async def _check_database(
     wanted: set[str],
     targets: _Targets,
     result: CheckResult,
+    schemas: RunSchemas,
     formats: Sequence[str] | None = None,
 ) -> None:
     """Mark, reconcile and finalize the submissions of one database.
 
-    Then advance its batch jobs, rendered in *formats* when given.
+    Then advance its batch jobs with the check's *schemas*, rendered in
+    *formats* when given. The run record holds the summary schema's hash.
     """
     async with open_store(database.root) as store:
         await store.begin_run(
             "batch check",
-            spec={"directory": str(database.root), "batch_ids": sorted(wanted)},
+            spec={
+                "directory": str(database.root),
+                "batch_ids": sorted(wanted),
+                **schema_record({KIND_SUMMARY: schemas.summary.sha256}),
+            },
         )
+        # The recorded hash names this text, also when no summary is submitted.
+        await store_artifacts(store, {"summary_schema": schemas.summary.text})
         failed = False
         try:
             async with store.heartbeat():
@@ -813,7 +860,7 @@ async def _check_database(
                         submission_id,
                         database.path,
                     )
-                jobs = load_jobs(store, settings, formats=formats)
+                jobs = load_jobs(store, settings, formats=formats, schemas=schemas)
                 work = _DatabaseCheck(store, database.path, clients, jobs, targets)
                 for submission in store.submissions(_WORKED):
                     if (
@@ -867,6 +914,7 @@ async def check_batches(  # noqa: PLR0913 - the check options plus its objects
     clients: BatchClients | None = None,
     result: CheckResult | None = None,
     formats: Sequence[str] | None = None,
+    schemas: RunSchemas | None = None,
 ) -> CheckResult:
     """Check the open batch work of every database below *directory*.
 
@@ -883,13 +931,19 @@ async def check_batches(  # noqa: PLR0913 - the check options plus its objects
     the parsed command line, if any, for the extension's key variables.
     *clients* are the batch clients to use (new ones by default); *result*,
     when given, is filled as the check goes and returned, so its caller
-    keeps what was checked before an exception.
+    keeps what was checked before an exception. *schemas* are the schemas
+    the summaries it submits take, by default those of the settings'
+    folders, read and checked before any database is opened.
 
     Raises:
         CheckTargetError: *adopt* or *abandon* fits no submission, or more
             than one.
+        SchemaFileError: A schema of the settings' folders is ambiguous,
+            unreadable or of another shape.
     """
     directory = Path(directory)
+    if schemas is None:
+        schemas = resolve_schemas(settings.schemas_dirs)
     result = result if result is not None else CheckResult()
     if clients is None:
         clients = BatchClients(settings, ROLE, args=args)
@@ -905,7 +959,7 @@ async def check_batches(  # noqa: PLR0913 - the check options plus its objects
         if not (database.submissions or database.jobs):
             continue
         await _check_database(
-            database, clients, settings, wanted, targets, result, formats
+            database, clients, settings, wanted, targets, result, schemas, formats
         )
     return result
 
@@ -1218,6 +1272,7 @@ async def check_until_settled(  # noqa: PLR0913 - the check options plus hooks
     on_wait: Callable[[WaitTick], None] = _ignore,
     on_retry: Callable[[int, Exception], None] = _ignore,
     formats: Sequence[str] | None = None,
+    schemas: RunSchemas | None = None,
 ) -> WaitProgress:
     """Check every *limits* interval until no advanceable batch work is pending.
 
@@ -1232,8 +1287,12 @@ async def check_until_settled(  # noqa: PLR0913 - the check options plus hooks
     Raises:
         CheckTargetError: *adopt* or *abandon* fits no submission, or more
             than one.
+        SchemaFileError: A schema of the settings' folders is ambiguous,
+            unreadable or of another shape.
     """
     progress = progress if progress is not None else WaitProgress()
+    if schemas is None:
+        schemas = resolve_schemas(settings.schemas_dirs)
     clients = BatchClients(settings, ROLE, args=args)
     clock = _clock
     progress.started = clock()
@@ -1253,6 +1312,7 @@ async def check_until_settled(  # noqa: PLR0913 - the check options plus hooks
                 clients=clients,
                 result=result,
                 formats=formats,
+                schemas=schemas,
             )
         finally:
             progress.ledger.record(result)

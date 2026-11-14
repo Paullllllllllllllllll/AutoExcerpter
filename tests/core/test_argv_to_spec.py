@@ -415,6 +415,7 @@ ROWS = [
     _row("batch", "--no-batch", sets={"run.batch": False}),
     _row("dry_run", "--dry-run", sets={"run.dry_run": True}),
     _row("json", "--json", sets={"run.json": True}),
+    _row("schemas_dir", "--schemas-dir", ".", sets={}),
     _row("settings", "--settings", "other.yaml", sets={}),
 ]
 

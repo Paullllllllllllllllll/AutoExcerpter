@@ -63,6 +63,15 @@ Unless the user says otherwise:
   otherwise a two-page item uses two request slots and leaves the rest idle. It
   has no effect with `--batch` or on a single item.
 
+A project that needs other transcription or summary instructions keeps its own
+`transcription_schema.json` or `summary_schema.json` in a folder of the project
+and names it with `--schemas-dir DIR` (on `run`, `batch check` and `ui`) or the
+settings list `schemas_dirs`; the file replaces the packaged schema of that
+name. Start from the packaged file: the tool refuses a replacement that drops,
+renames or retypes a field it reads, with exit 2 naming the file and the field
+(README, Schemas). The same file name in two of these folders also exits 2.
+Pass the same folders to `batch check` as to the `run --batch` it continues.
+
 `--pages N` selects the first N pages; a single page is `N-N`. A later range adds
 pages, and a run without `--pages` completes the document. Pass a context file as
 an absolute path: a `--context` value that names no existing file is sent as topic
@@ -75,6 +84,10 @@ A rerun resumes by default and redoes only what is missing, failed or stale; a
 
 - A document stored under other image settings is `refused` on resume (counted
   failed, the changed keys named): pass the stored values, or `--force`.
+- A document is `refused` as well when the run would add pages or summaries
+  next to done ones made under another schema ("The ... schema changed for"):
+  pass the earlier schema folder again, or `--force` to process the document
+  again with the current schema. `batch check` reports such a document failed.
 - `--retranscribe` skips a complete document; `--force` redoes it.
 - `drop` deletes stored documents and their files so the next run starts them
   fresh; `render` writes the files again from the store without model calls.

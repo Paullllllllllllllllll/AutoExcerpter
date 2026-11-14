@@ -43,10 +43,10 @@ from autoexcerpter.llm.image_detail import resolve_request_detail
 from autoexcerpter.llm.options import request_plan, response_format_for
 from autoexcerpter.llm.prompts import (
     PROMPTS_DIR,
-    SCHEMAS_DIR,
     render_prompt_with_schema,
     strip_markdown_code_block,
 )
+from autoexcerpter.llm.schemas import PhaseSchema, packaged_schemas
 from autoexcerpter.llm.types import PhaseModel
 from autoexcerpter.settings import RetryRule
 
@@ -61,7 +61,6 @@ __all__ = [
 
 logger = logging.getLogger(__name__)
 
-TRANSCRIPTION_SCHEMA_FILE = "transcription_schema.json"
 SYSTEM_PROMPT_FILE = "transcription_system_prompt.txt"
 PLAIN_TEXT_PROMPT_FILE = "transcription_plain_text_prompt.txt"
 
@@ -148,13 +147,19 @@ def _recoverable(data: Any) -> bool:
     return isinstance(data.get("transcription"), str)
 
 
-def transcription_prompt(plain: bool) -> tuple[dict[str, Any] | None, str]:
-    """Return the transcription schema (None for text) and the system prompt."""
+def transcription_prompt(
+    plain: bool, schema_file: PhaseSchema | None = None
+) -> tuple[dict[str, Any] | None, str]:
+    """Return the transcription schema (None for text) and the system prompt.
+
+    *schema_file* is the run's transcription schema (default: the packaged
+    one; see :mod:`autoexcerpter.llm.schemas`).
+    """
     if plain:
         return None, (PROMPTS_DIR / PLAIN_TEXT_PROMPT_FILE).read_text(encoding="utf-8")
-    schema: dict[str, Any] = json.loads(
-        (SCHEMAS_DIR / TRANSCRIPTION_SCHEMA_FILE).read_text(encoding="utf-8")
-    )
+    if schema_file is None:
+        schema_file = packaged_schemas().transcription
+    schema = schema_file.spec()
     raw = (PROMPTS_DIR / SYSTEM_PROMPT_FILE).read_text(encoding="utf-8")
     return schema, render_prompt_with_schema(raw, schema.get("schema", schema))
 
@@ -202,9 +207,14 @@ def answer_entry(text: str, image_name: str, *, plain: bool) -> dict[str, Any]:
 
 
 class TranscriptionManager:
-    """Transcribe page payloads with the transcription model of one item."""
+    """Transcribe page payloads with the transcription model of one item.
 
-    def __init__(self, phase: PhaseModel, env: CallEnv) -> None:
+    *schema* is the run's transcription schema (default: the packaged one).
+    """
+
+    def __init__(
+        self, phase: PhaseModel, env: CallEnv, schema: PhaseSchema | None = None
+    ) -> None:
         self.caller = env.caller("transcription", phase)
         self.provider = self.caller.provider
         self.model_name = phase.name
@@ -225,7 +235,7 @@ class TranscriptionManager:
                 "Model '%s' may not support image input; transcription may fail.",
                 phase.name,
             )
-        self.schema, self.system_prompt = transcription_prompt(self.plain_text)
+        self.schema, self.system_prompt = transcription_prompt(self.plain_text, schema)
         self.caching = env.settings.prompt_caching
         self.plan = request_plan(
             self.provider, phase.name, phase.options, phase.service_tier, self.caching

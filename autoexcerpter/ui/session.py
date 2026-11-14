@@ -105,13 +105,16 @@ class Session:
     ``settings_path`` is the ``--settings`` file the ui was started with;
     ``environ`` is where the review looks up API key variables; ``args``
     holds the parsed ``ui`` arguments, which the review's plan passes to the
-    extension's batch consent.
+    extension's batch consent. ``schemas_dirs`` are the ``--schemas-dir``
+    folders the ui was started with; ``settings`` searches them already,
+    and the equivalent command names them.
     """
 
     settings: Settings
     settings_path: Path | None = None
     environ: Mapping[str, str] = field(default_factory=lambda: os.environ)
     args: argparse.Namespace | None = None
+    schemas_dirs: tuple[Path, ...] = ()
 
 
 def new_state(session: Session, table: OptionTable = OPTIONS) -> State:
@@ -152,14 +155,17 @@ def command_words(
 ) -> list[str]:
     """Return the full command: *program*, *argv*, settings and extension words.
 
-    ``--settings`` is added when the ui was started with one and *table*
-    has the option. The extension's options given to the ui follow
-    (:func:`autoexcerpter.ext.extra_argv`) when the command takes them
-    (:data:`autoexcerpter.spec.EXTENSION_COMMANDS`).
+    ``--settings`` and ``--schemas-dir`` are added when the ui was started
+    with them and *table* has the option. The extension's options given to
+    the ui follow (:func:`autoexcerpter.ext.extra_argv`) when the command
+    takes them (:data:`autoexcerpter.spec.EXTENSION_COMMANDS`).
     """
     words = [*program, *argv]
     if session.settings_path is not None and "settings" in table:
         words += ["--settings", str(absolute(session.settings_path))]
+    if "schemas_dir" in table:
+        for folder in session.schemas_dirs:
+            words += ["--schemas-dir", str(folder)]
     if tuple(program[1:]) in EXTENSION_COMMANDS:
         words += ext.extra_argv(session.args)
     return words

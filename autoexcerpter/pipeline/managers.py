@@ -27,7 +27,8 @@ def build_managers(
 ) -> ItemManagers:
     """Build the transcription and (if summarizing) summary managers.
 
-    *context* is the item's summary context as it enters the prompt (see
+    Both take their schema from the job. *context* is the item's summary
+    context as it enters the prompt (see
     :func:`autoexcerpter.pipeline.context.summary_context`). *env* holds the
     run's rate limiters, usage totals and events; None gives the item an
     environment of its own with the default settings.
@@ -36,7 +37,9 @@ def build_managers(
     tx = job.transcription
     tx_format = response_format_for(tx.response_format, resolve_provider(tx), tx.name)
     logger.info("Transcription model %s, response format %s", tx.name, tx_format)
-    transcription = TranscriptionManager(phase=tx, env=env)
+    transcription = TranscriptionManager(
+        phase=tx, env=env, schema=job.schemas.transcription
+    )
     if not job.summarize:
         return ItemManagers(transcription, None)
     summary = SummaryManager(
@@ -44,6 +47,7 @@ def build_managers(
         env=env,
         context=context,
         transcription_format=tx_format,
+        schema=job.schemas.summary,
     )
     return ItemManagers(transcription, summary)
 

@@ -7,7 +7,8 @@ managers for exactly the expected pages and leave every unit done when the
 item is processed. The last test lets an item's lease expire, after its first
 page is stored, while its second page is still with the model, and once
 lets another run take the document over; the late page is not stored and
-the item fails without writing its files.
+the item fails without writing its files. The schema cases run again under
+a replacement schema and must be refused where the run would mix two.
 """
 
 from __future__ import annotations
@@ -30,6 +31,8 @@ import autoexcerpter.pipeline.item as item_module
 import autoexcerpter.pipeline.managers as managers_module
 import autoexcerpter.run as core
 from autoexcerpter.common.sqlite import read_rows
+from autoexcerpter.llm.prompts import SCHEMAS_DIR
+from autoexcerpter.llm.schemas import SCHEMA_FILES, packaged_schemas
 from autoexcerpter.output.paths import ItemPaths
 from autoexcerpter.output.store import DATABASE_NAME
 from autoexcerpter.pipeline.item import ItemFiles, ItemProcessor
@@ -49,6 +52,7 @@ class Offline:
 
     Pages in *fail* fail their transcription; *before* maps a page index to
     a coroutine function awaited before that page's transcription returns.
+    *schemas_dirs* are the settings' schema folders.
     """
 
     pdf: Path
@@ -58,6 +62,7 @@ class Offline:
     transcribed: list[int] = field(default_factory=list)
     summarized: list[int] = field(default_factory=list)
     references: list[dict[str, Any]] | None = None
+    schemas_dirs: tuple[Path, ...] = ()
 
     async def transcribe(self, payload: Any) -> dict[str, Any]:
         index = payload.number - 1
@@ -94,7 +99,10 @@ class Offline:
 
     def plan(self, **flags: Any) -> core.RunPlan:
         spec = make_spec(self.pdf, output=self.out, **{"openalex": False, **flags})
-        return core.plan(spec, make_settings(state_dir=self.out.parent / "state"))
+        settings = make_settings(
+            state_dir=self.out.parent / "state", schemas_dirs=self.schemas_dirs
+        )
+        return core.plan(spec, settings)
 
     def run(
         self, fail: set[int] | None = None, **flags: Any
@@ -768,3 +776,156 @@ def test_a_lease_holder_outliving_its_expiry_stores_no_later_unit(
     holder = OTHER_RUN if taken_over else None
     assert document["lease_run_id"] == holder
     assert any("lease was lost" in m for m in events.of("warning"))
+
+
+# ============================================================================
+# Schema identity
+# ============================================================================
+def _schema_folder(root: Path, role: str) -> Path:
+    """Write a replacement *role* schema that differs from the packaged one."""
+    folder = root / f"{role}_schemas"
+    folder.mkdir(exist_ok=True)
+    name = SCHEMA_FILES[role]
+    data = json.loads((SCHEMAS_DIR / name).read_text(encoding="utf-8"))
+    data["schema"]["description"] = f"A project's own {role} instructions."
+    (folder / name).write_text(json.dumps(data), encoding="utf-8")
+    return folder
+
+
+def _run_specs(db: Path) -> list[dict[str, Any]]:
+    return [json.loads(str(row["spec"])) for row in read_rows(db, "runs")]
+
+
+def test_each_run_records_the_hashes_of_its_schemas_but_the_dry_run_shows_none(
+    offline: Offline,
+) -> None:
+    packaged = packaged_schemas()
+
+    offline.run(summarize=False)
+    offline.run()
+
+    first, second = _run_specs(offline.db)
+    computed = {"source": "computed"}
+    assert first["transcription_schema_sha256"] == {
+        **computed,
+        "value": packaged.transcription.sha256,
+    }
+    assert "summary_schema_sha256" not in first
+    assert second["summary_schema_sha256"] == {
+        **computed,
+        "value": packaged.summary.sha256,
+    }
+    view = offline.plan(dry_run=True).resolved_spec()
+    assert not any(key.endswith("_schema_sha256") for key in view)
+
+
+@pytest.mark.parametrize("role", ["transcription", "summary"])
+def test_a_resume_under_another_schema_is_refused_until_forced(
+    offline: Offline, tmp_path: Path, role: str
+) -> None:
+    offline.run(fail={1})
+    offline.schemas_dirs = (_schema_folder(tmp_path, role),)
+    before = offline.statuses()
+
+    run_plan, result, events = offline.run()
+
+    assert _planned_state(run_plan) == "refused"
+    assert (offline.transcribed, offline.summarized) == ([], [])
+    assert result.failed == 1
+    assert offline.statuses() == before
+    assert any(
+        f"The {role} schema changed for 'doc'" in m for m in events.of("warning")
+    )
+
+    run_plan, result, _ = offline.run(force=True)
+
+    assert _planned_state(run_plan) == "none"
+    assert (result.complete, result.failed) == (1, 0)
+
+
+def test_restoring_the_earlier_schema_resumes(offline: Offline, tmp_path: Path) -> None:
+    offline.schemas_dirs = (_schema_folder(tmp_path, "transcription"),)
+    offline.run(fail={1})
+    offline.schemas_dirs = ()
+    assert _planned_state(offline.plan()) == "refused"
+    offline.schemas_dirs = (_schema_folder(tmp_path, "transcription"),)
+
+    run_plan, result, _ = offline.run()
+
+    assert _planned_state(run_plan) == "partial"
+    assert (sorted(offline.transcribed), result.complete) == ([1], 1)
+
+
+def test_a_changed_schema_of_a_kind_the_run_does_not_write_resumes(
+    offline: Offline, tmp_path: Path
+) -> None:
+    offline.run(summarize=False)
+    offline.schemas_dirs = (_schema_folder(tmp_path, "transcription"),)
+
+    run_plan, result, _ = offline.run()
+
+    assert _planned_state(run_plan) == "transcription_only"
+    assert (offline.transcribed, sorted(offline.summarized)) == ([], BOTH)
+    assert result.complete == 1
+
+
+def test_a_complete_document_under_another_schema_stays_complete(
+    offline: Offline, tmp_path: Path
+) -> None:
+    offline.run()
+    offline.schemas_dirs = (
+        _schema_folder(tmp_path, "transcription"),
+        _schema_folder(tmp_path, "summary"),
+    )
+
+    run_plan, result, _ = offline.run()
+
+    assert _planned_state(run_plan) == "complete"
+    assert result.failed == 0
+
+
+def test_units_of_runs_without_a_recorded_hash_never_refuse(
+    offline: Offline, tmp_path: Path
+) -> None:
+    offline.run(fail={1})
+    connection = sqlite3.connect(offline.db)
+    with contextlib.closing(connection), connection:
+        for run_id, spec in connection.execute("SELECT run_id, spec FROM runs"):
+            stored = json.loads(spec)
+            stored.pop("transcription_schema_sha256")
+            stored.pop("summary_schema_sha256")
+            connection.execute(
+                "UPDATE runs SET spec = ? WHERE run_id = ?",
+                (json.dumps(stored), run_id),
+            )
+    offline.schemas_dirs = (
+        _schema_folder(tmp_path, "transcription"),
+        _schema_folder(tmp_path, "summary"),
+    )
+
+    run_plan, result, _ = offline.run()
+
+    assert _planned_state(run_plan) == "partial"
+    assert result.complete == 1
+
+
+def test_units_written_after_the_plan_are_checked_under_the_lease(
+    offline: Offline, tmp_path: Path
+) -> None:
+    offline.schemas_dirs = (_schema_folder(tmp_path, "transcription"),)
+    late = offline.plan()
+    assert _planned_state(late) == "none"
+    offline.schemas_dirs = ()
+    offline.run(fail={1})
+    offline.transcribed.clear()
+    before = offline.statuses()
+
+    events = RecordingEvents()
+    result = asyncio.run(core.run(late, events))
+
+    assert offline.transcribed == []
+    assert result.failed == 1
+    assert offline.statuses() == before
+    assert any(
+        "The transcription schema changed for 'doc'" in m for m in events.of("warning")
+    )

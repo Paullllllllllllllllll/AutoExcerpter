@@ -232,8 +232,9 @@ Exit codes:
   1    a submission or a document failed, or a submission is unresolved;
        with --wait also when the deadline passed with work pending or a
        document needs a run
-  2    usage error, a missing folder, a database the store refuses, or an
-       --adopt or --abandon that names nothing to act on
+  2    usage error, a missing folder, a database the store refuses, a
+       schema file that cannot replace the packaged one, or an --adopt or
+       --abandon that names nothing to act on
   130  interrupted (Ctrl+C or Ctrl+Break)
 
 With --json, stdout carries exactly one JSON summary line on every exit.
@@ -308,14 +309,14 @@ def add_batch_command(commands: Commands) -> argparse.ArgumentParser:
 
 
 def add_ui_command(commands: Commands) -> argparse.ArgumentParser:
-    """Add the ui subcommand: the settings option and the extension arguments."""
+    """Add the ui subcommand: its settings, schema-folder and extension options."""
     ui: argparse.ArgumentParser = commands.add_parser(
         "ui",
         help="guided session in an interactive terminal",
         description=UI_DESCRIPTION,
         formatter_class=HelpFormatter,
     )
-    OPTIONS.subset(("settings",)).add_arguments(ui)
+    OPTIONS.subset(("schemas_dir", "settings")).add_arguments(ui)
     ext.register_args(ui)
     return ui
 

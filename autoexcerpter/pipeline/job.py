@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from autoexcerpter.common.selection import PageRange, parse_page_range
@@ -12,6 +12,7 @@ from autoexcerpter.imaging.settings import (
     request_detail_option,
     resolve_image_settings,
 )
+from autoexcerpter.llm.schemas import RunSchemas, packaged_schemas, resolve_schemas
 from autoexcerpter.llm.types import PhaseModel
 from autoexcerpter.rendering.citations import OpenAlexClient
 from autoexcerpter.settings import Settings
@@ -35,6 +36,8 @@ class ItemJob:
     *start_delay* is the pause in seconds between starting two page
     requests (``concurrency.delay_between_tasks``). *pages* is the run's
     ``--pages`` range; None works every page (see :meth:`selected_pages`).
+    *schemas* are the run's transcription and summary schemas, which every
+    request, stored schema text and recorded hash of the run takes.
     """
 
     transcription: PhaseModel
@@ -54,6 +57,7 @@ class ItemJob:
     openalex: OpenAlexClient | None = None
     original_max_side_px: int | None = None
     pages: PageRange | None = None
+    schemas: RunSchemas = field(default_factory=packaged_schemas)
 
     def selected_pages(self, count: int) -> list[int]:
         """Return the 0-based pages the run works in an item of *count* pages.
@@ -147,15 +151,20 @@ def phase_model(
     )
 
 
-def job_from_spec(spec: RunSpec, settings: Settings) -> ItemJob:
+def job_from_spec(
+    spec: RunSpec, settings: Settings, schemas: RunSchemas | None = None
+) -> ItemJob:
     """Build the item job of a run from its spec and the machine settings.
 
     The OpenAlex key is read from the environment variable the settings
     name. With OpenAlex lookups on, the job holds the run's one client;
     building it reads nothing, since the cache loads on first use.
+    *schemas* defaults to the schemas the settings' ``schemas_dirs`` give.
 
     Raises:
         SettingsError: A named endpoint is not defined.
+        SchemaFileError: A schema of the settings' folders is ambiguous,
+            unreadable or of another shape.
     """
     key_env = settings.openalex.api_key_env
     openalex_key = os.environ.get(key_env, "").strip() if key_env else ""
@@ -189,6 +198,9 @@ def job_from_spec(spec: RunSpec, settings: Settings) -> ItemJob:
         openalex=openalex,
         original_max_side_px=settings.images.original_max_side_px,
         pages=parse_page_range(spec.input.pages) if spec.input.pages else None,
+        schemas=(
+            schemas if schemas is not None else resolve_schemas(settings.schemas_dirs)
+        ),
     )
 
 

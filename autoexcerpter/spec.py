@@ -7,6 +7,12 @@ options exist three times: the unprefixed flag sets both phases, and the
 options left unset take the provider's recommended value
 (:func:`recommended_images`). :func:`model_suggestions` lists model names
 per provider for the front ends; any other name is accepted.
+
+``--schemas-dir`` of ``run``, ``batch check`` and ``ui`` names a folder
+whose ``transcription_schema.json`` and ``summary_schema.json`` replace the
+packaged schemas (:mod:`autoexcerpter.llm.schemas`). The flag fills no spec
+field; its folders join the settings' list instead
+(:meth:`~autoexcerpter.settings.Settings.with_folders`).
 """
 
 from __future__ import annotations
@@ -122,6 +128,7 @@ __all__ = [
     "resolve_drop",
     "resolve_render",
     "resolve_spec",
+    "schemas_dir_option",
     "spec_from_effective",
     "to_argv",
     "transcription_format_of",
@@ -458,6 +465,33 @@ def _fallback_context(value: str) -> str | None:
     return nonempty_text(value)
 
 
+def _folder(value: str) -> Path:
+    """Return the absolute path of an existing folder."""
+    path = Path(nonempty_text(value)).expanduser()
+    if not path.is_dir():
+        raise ValueError(f"not a folder: {value}")
+    return path.resolve()
+
+
+def schemas_dir_option() -> Option:
+    """Return ``--schemas-dir DIR``; it fills the settings, not the spec."""
+    return Option(
+        "schemas_dir",
+        "--schemas-dir",
+        (
+            "folder whose transcription_schema.json or summary_schema.json "
+            "replaces the packaged schema, searched before the settings' "
+            "schemas_dirs; repeatable"
+        ),
+        group="run",
+        kind=Kind.LIST,
+        type=_folder,
+        metavar="DIR",
+        default=(),
+        settable=False,
+    )
+
+
 def _model_options() -> list[Option]:
     """Return the unprefixed model options and the per-phase copies."""
     return [
@@ -642,6 +676,7 @@ def _build_table() -> OptionTable:
         batch_option("submit the pages and summaries to the providers' batch APIs"),
         dry_run_option("run.dry_run"),
         json_option("run.json"),
+        schemas_dir_option(),
         settings_option(),
     ]
     titles = {
@@ -828,6 +863,7 @@ BATCH_CHECK_OPTIONS = OptionTable(
             settable=False,
         ),
         json_option("json"),
+        schemas_dir_option(),
         settings_option(target="settings"),
     ],
     group_titles={**_BATCH_TITLES, "output": "output"},

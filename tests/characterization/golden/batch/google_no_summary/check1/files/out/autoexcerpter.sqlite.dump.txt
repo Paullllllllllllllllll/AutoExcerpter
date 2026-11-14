@@ -1,6 +1,13 @@
 ## artifacts
 {
   "created_at": "<datetime>+00:00",
+  "kind": "summary_schema",
+  "run_id": "<run-2>",
+  "sha256": "0bc58a02aaf99fff031fb171ee83cf3e5800a238e3128b7529b4134ba02942fb",
+  "text": "<5427 characters>"
+}
+{
+  "created_at": "<datetime>+00:00",
   "kind": "transcription_prompt",
   "run_id": "<run-1>",
   "sha256": "dc7d9d66708e73304f6e7c1483546dcc0b42a28c197c922bae51433c56336fab",
@@ -623,6 +630,10 @@
     "transcription_model.verbosity": {
       "source": "default",
       "value": "high"
+    },
+    "transcription_schema_sha256": {
+      "source": "computed",
+      "value": "e6e7d5e3af95f2b99d19f801bcf9322a8bba50dbdcef136458385250d4f39adc"
     }
   },
   "started_at": "<datetime>+00:00",
@@ -637,7 +648,11 @@
   "settings_fingerprint": null,
   "spec": {
     "batch_ids": [],
-    "directory": "<tmp>/out"
+    "directory": "<tmp>/out",
+    "summary_schema_sha256": {
+      "source": "computed",
+      "value": "0bc58a02aaf99fff031fb171ee83cf3e5800a238e3128b7529b4134ba02942fb"
+    }
   },
   "started_at": "<datetime>+00:00",
   "tool": "autoexcerpter",

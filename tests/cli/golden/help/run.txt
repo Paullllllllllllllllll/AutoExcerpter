@@ -196,6 +196,8 @@ run control:
   --batch, --no-batch   submit the pages and summaries to the providers' batch APIs; default: off
   --dry-run             plan without API calls or writes
   --json                print one JSON summary line on stdout
+  --schemas-dir DIR     folder whose transcription_schema.json or summary_schema.json replaces the
+                        packaged schema, searched before the settings' schemas_dirs; repeatable
   --settings FILE       alternate settings file; default: config/settings.yaml
 
 Precedence: a flag wins over the settings defaults: block, which wins over the code default.

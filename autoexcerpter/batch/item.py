@@ -19,7 +19,6 @@ are stored and the files rendered, as at the end of a synchronous item.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -161,24 +160,34 @@ class BatchItem:
 
     def _plan(self, role: str) -> BodyPlan:
         caching = self.clients.settings.prompt_caching
+        schema_file = self.job.schemas.of(role)
         if role == ROLE_TRANSCRIPTION:
-            return build_plan(self.job.transcription, role, caching=caching)
+            return build_plan(
+                self.job.transcription,
+                role,
+                caching=caching,
+                schema_file=schema_file,
+            )
         return build_plan(
             self.job.summary,
             role,
             context=self.context,
             transcription_format=self.transcription_format,
             caching=caching,
+            schema_file=schema_file,
         )
 
     async def _store_artifacts(self, plans: Sequence[BodyPlan]) -> None:
+        """Store the prompts, the context and the schema text of each phase.
+
+        A phase's schema is stored whenever its prompt carries one, as the
+        hash the run records names it.
+        """
         texts: dict[str, str | None] = {"context": self.context}
         for plan in plans:
             texts[f"{plan.role}_prompt"] = plan.system_prompt
-            if plan.schema is not None:
-                texts[f"{plan.role}_schema"] = json.dumps(
-                    plan.schema, ensure_ascii=False, indent=2
-                )
+            if plan.schema_file is not None:
+                texts[f"{plan.role}_schema"] = plan.schema_file.text
         await store_artifacts(self.document.store, texts)
 
     async def process(self) -> BatchItemOutcome:

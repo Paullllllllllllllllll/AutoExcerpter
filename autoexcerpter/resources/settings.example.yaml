@@ -88,6 +88,12 @@ state_dir: ''
 # errors go to the console).
 logs_dir: ''
 
+# Folders searched, after the --schemas-dir folders, for a
+# transcription_schema.json or summary_schema.json that replaces the packaged
+# schema. A folder that does not exist is passed over; the same file in two
+# folders (flag or settings) is an error. See the README, Schemas.
+schemas_dirs: []
+
 # OpenAlex citation lookups.
 openalex:
   email: ''  # contact address for the polite pool; '' sends none

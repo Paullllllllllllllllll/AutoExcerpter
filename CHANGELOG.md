@@ -1,5 +1,19 @@
 # Changelog
 
+- **v1.12.0** (14 November 2026) -- The two packaged schemas can be replaced.
+  The repeatable flag `--schemas-dir` and the settings list `schemas_dirs` name
+  user folders in which a `transcription_schema.json` or `summary_schema.json`
+  replaces the packaged file of that name; the same file name in two user
+  folders is an error naming both files. A replacement is checked at the start
+  against the fields the code reads and is refused, with the file and the field
+  named, when one of them is missing or of another type. Every run records the
+  hashes of the schemas it sends in its run record
+  (`transcription_schema_sha256` and `summary_schema_sha256` in `runs.spec`). A
+  run that would write pages or summaries into a document while leaving in
+  place a done one made under another recorded schema is refused, also for
+  batch results finalized earlier and for the summaries a `batch check`
+  submits. `--force` is never refused, and neither are units of unknown
+  schema. No table of the store changes.
 - **v1.11.1** (14 November 2026) -- The docstring of the batch wait line now
   states only its fixed prefix, `Waiting for batches`, and no longer describes
   how other programs read the log. The line itself and the tool's behavior are

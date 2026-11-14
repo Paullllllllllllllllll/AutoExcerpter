@@ -1,4 +1,4 @@
-usage: autoexcerpter ui [-h] [--settings FILE]
+usage: autoexcerpter ui [-h] [--schemas-dir DIR] [--settings FILE]
 
 Guided session in an interactive terminal. The first step chooses the task: a new run, checking or
 cancelling batches, rendering stored documents again, or dropping stored documents. Each task asks
@@ -6,7 +6,9 @@ its options one step at a time, shows a review screen with the equivalent comman
 Exit codes are those of the chosen task's command.
 
 options:
-  -h, --help       show this help message and exit
+  -h, --help         show this help message and exit
 
 run control:
-  --settings FILE  alternate settings file; default: config/settings.yaml
+  --schemas-dir DIR  folder whose transcription_schema.json or summary_schema.json replaces the
+                     packaged schema, searched before the settings' schemas_dirs; repeatable
+  --settings FILE    alternate settings file; default: config/settings.yaml

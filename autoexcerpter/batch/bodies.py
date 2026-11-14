@@ -39,6 +39,7 @@ from autoexcerpter.common.provider_requests import Part, RequestPlan, batch_body
 from autoexcerpter.common.settings_schema import PromptCaching
 from autoexcerpter.common.structured import ResponseFormat, fit_response_format
 from autoexcerpter.llm.options import request_plan, response_format_for
+from autoexcerpter.llm.schemas import PhaseSchema, packaged_schemas
 from autoexcerpter.llm.summary import summary_prompt, summary_request_format
 from autoexcerpter.llm.transcription import page_detail, transcription_prompt
 from autoexcerpter.llm.types import PhaseModel
@@ -61,6 +62,8 @@ class BodyPlan:
     *response_format* is the phase's format; *schema* is the schema spec
     the provider enforces, None under prompted JSON and plain text. *detail*
     is the page detail of a transcription's images, None for a summary.
+    *schema_file* is the run's schema of the role, whose text the prompt
+    carries; None for a plain-text transcription, which uses no schema.
     """
 
     role: str
@@ -69,6 +72,7 @@ class BodyPlan:
     response_format: ResponseFormat
     schema: Mapping[str, Any] | None = None
     detail: str | None = None
+    schema_file: PhaseSchema | None = None
 
     @property
     def provider(self) -> str:
@@ -115,13 +119,15 @@ def build_plan(
     context: str | None = None,
     transcription_format: str = "schema",
     caching: PromptCaching | None = None,
+    schema_file: PhaseSchema | None = None,
 ) -> BodyPlan:
     """Return the body plan of *phase*'s requests in *role*.
 
     *role* is ``transcription`` or ``summary``. A summary's prompt carries
     *context*, and *transcription_format* (the transcription's response
     format) selects its plain-text variant. *caching* is the prompt-caching
-    setting (by default the code values).
+    setting (by default the code values); *schema_file* the run's schema of
+    the role (by default the packaged one).
 
     Raises:
         ValueError: The provider has no batch API, or *role* is unknown.
@@ -132,15 +138,20 @@ def build_plan(
         raise ValueError(f"Provider '{provider}' has no batch API")
     response_format = response_format_for(phase.response_format, provider, phase.name)
     detail: str | None = None
+    if role not in (ROLE_TRANSCRIPTION, ROLE_SUMMARY):
+        raise ValueError(f"Unknown batch role {role!r}")
+    if schema_file is None:
+        schema_file = packaged_schemas().of(role)
     if role == ROLE_TRANSCRIPTION:
-        schema, prompt = transcription_prompt(response_format == "text")
+        plain = response_format == "text"
+        schema, prompt = transcription_prompt(plain, schema_file)
         request_format = response_format
         detail = page_detail(provider, phase.name, phase.options)
-    elif role == ROLE_SUMMARY:
-        schema, prompt = summary_prompt(context, transcription_format)
-        request_format = summary_request_format(response_format)
+        if plain:
+            schema_file = None
     else:
-        raise ValueError(f"Unknown batch role {role!r}")
+        schema, prompt = summary_prompt(context, transcription_format, schema_file)
+        request_format = summary_request_format(response_format)
     return BodyPlan(
         role=role,
         plan=request_plan(
@@ -154,4 +165,5 @@ def build_plan(
         response_format=response_format,
         schema=_enforced(provider, request_format, schema),
         detail=detail,
+        schema_file=schema_file,
     )

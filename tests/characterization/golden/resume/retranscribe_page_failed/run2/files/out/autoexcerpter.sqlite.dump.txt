@@ -821,6 +821,10 @@
       "source": "default",
       "value": "low"
     },
+    "summary_schema_sha256": {
+      "source": "computed",
+      "value": "0bc58a02aaf99fff031fb171ee83cf3e5800a238e3128b7529b4134ba02942fb"
+    },
     "transcription_model.endpoint": {
       "source": "default",
       "value": null
@@ -884,6 +888,10 @@
     "transcription_model.verbosity": {
       "source": "default",
       "value": "high"
+    },
+    "transcription_schema_sha256": {
+      "source": "computed",
+      "value": "e6e7d5e3af95f2b99d19f801bcf9322a8bba50dbdcef136458385250d4f39adc"
     }
   },
   "started_at": "<datetime>+00:00",
@@ -1057,6 +1065,10 @@
       "source": "default",
       "value": "low"
     },
+    "summary_schema_sha256": {
+      "source": "computed",
+      "value": "0bc58a02aaf99fff031fb171ee83cf3e5800a238e3128b7529b4134ba02942fb"
+    },
     "transcription_model.endpoint": {
       "source": "default",
       "value": null
@@ -1120,6 +1132,10 @@
     "transcription_model.verbosity": {
       "source": "default",
       "value": "high"
+    },
+    "transcription_schema_sha256": {
+      "source": "computed",
+      "value": "e6e7d5e3af95f2b99d19f801bcf9322a8bba50dbdcef136458385250d4f39adc"
     }
   },
   "started_at": "<datetime>+00:00",

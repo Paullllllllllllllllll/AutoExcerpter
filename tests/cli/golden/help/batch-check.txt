@@ -1,6 +1,7 @@
 usage: autoexcerpter batch check [-h] [--input DIR] [--batch-ids IDS] [--adopt BATCH_ID |
                                  --abandon SUBMISSION_ID] [--wait] [--poll-minutes N]
-                                 [--wait-hours N] [--formats LIST] [--json] [--settings FILE]
+                                 [--wait-hours N] [--formats LIST] [--json] [--schemas-dir DIR]
+                                 [--settings FILE]
 
 Check the batch submissions found below a folder: store the results of every finished batch,
 submit the summaries of the pages it transcribed, and write the files of every document left with
@@ -33,6 +34,8 @@ output:
 
 run control:
   --json                print one JSON summary line on stdout
+  --schemas-dir DIR     folder whose transcription_schema.json or summary_schema.json replaces the
+                        packaged schema, searched before the settings' schemas_dirs; repeatable
   --settings FILE       alternate settings file; default: config/settings.yaml
 
 Without --wait a check makes one pass. A run --batch that summarizes then needs two checks after
@@ -45,8 +48,9 @@ Exit codes:
   1    a submission or a document failed, or a submission is unresolved;
        with --wait also when the deadline passed with work pending or a
        document needs a run
-  2    usage error, a missing folder, a database the store refuses, or an
-       --adopt or --abandon that names nothing to act on
+  2    usage error, a missing folder, a database the store refuses, a
+       schema file that cannot replace the packaged one, or an --adopt or
+       --abandon that names nothing to act on
   130  interrupted (Ctrl+C or Ctrl+Break)
 
 With --json, stdout carries exactly one JSON summary line on every exit.

@@ -3,8 +3,9 @@
 ``batch check`` exits 0 when nothing failed, 1 when a submission or a
 document failed or a submission waits unresolved for ``--adopt`` or
 ``--abandon``, and 2 when a database below the folder is refused
-(versionless, newer or unreadable), the folder is missing, or ``--adopt``
-or ``--abandon`` names nothing to act on. ``batch cancel`` exits 1 when a
+(versionless, newer or unreadable), the folder is missing, a schema of the
+``--schemas-dir`` or settings folders is refused, or ``--adopt`` or
+``--abandon`` names nothing to act on. ``batch cancel`` exits 1 when a
 cancellation or a provider listing failed, and 2 for a refused database or
 a missing folder. With ``--json`` both write one JSON summary line on every
 exit; the check's line adds ``adopted`` or ``abandoned`` when those options
@@ -69,6 +70,7 @@ from autoexcerpter.common.contract import (
 from autoexcerpter.common.log_setup import configure_logging
 from autoexcerpter.common.polling import Stop, WaitLimits, WaitTick
 from autoexcerpter.common.usage import Usage
+from autoexcerpter.llm.schemas import RunSchemas, SchemaFileError, resolve_schemas
 from autoexcerpter.settings import Settings
 from autoexcerpter.spec import (
     BATCH_CANCEL_OPTIONS,
@@ -175,15 +177,19 @@ def _prepare(
     settings_path: Path | None,
     args: argparse.Namespace,
     directory: Path | None,
+    folders: Sequence[Path] = (),
 ) -> Settings | str:
     """Load the settings, check the folder and run the extension startup.
 
-    Returns the settings, or the message of what refused the command.
+    *folders* are the ``--schemas-dir`` folders, searched before the
+    settings' ``schemas_dirs``. Returns the settings, or the message of what
+    refused the command.
     """
     try:
         settings = settings_module.load(settings_path, blocks=ext.settings_blocks())
     except settings_module.SettingsError as exc:
         return str(exc)
+    settings = settings.with_folders(folders)
     configure_logging(log_file=settings.log_file())
     if directory is not None and not directory.is_dir():
         return f"Input folder does not exist: {directory}"
@@ -199,13 +205,21 @@ def _execute_check(
 ) -> int:
     spec = resolve_batch_check(flags)
     directory = spec.directory.expanduser().resolve()
-    prepared = _prepare(spec, spec.settings, args, directory)
+    prepared = _prepare(
+        spec, spec.settings, args, directory, flags.get("schemas_dir", ())
+    )
     if isinstance(prepared, str):
         _write(f"[ERROR] {prepared}")
         emitter.emit(_base(flags))
         return ExitCode.USAGE
+    try:
+        schemas = resolve_schemas(prepared.schemas_dirs)
+    except SchemaFileError as exc:
+        _write(f"[ERROR] {exc}")
+        emitter.emit(_base(flags))
+        return ExitCode.USAGE
     if spec.wait:
-        return _execute_wait(args, flags, spec, prepared, emitter)
+        return _execute_wait(args, flags, spec, prepared, emitter, schemas)
     _write(f"Checking the batch work below '{directory}'...")
     try:
         result = asyncio.run(
@@ -217,6 +231,7 @@ def _execute_check(
                 abandon=spec.abandon,
                 args=args,
                 formats=spec.formats,
+                schemas=schemas,
             )
         )
     except CheckTargetError as exc:
@@ -286,6 +301,7 @@ def _execute_wait(
     spec: BatchCheckSpec,
     settings: Settings,
     emitter: SummaryEmitter,
+    schemas: RunSchemas,
 ) -> int:
     """Check until no batch work is pending; see :func:`check_until_settled`.
 
@@ -328,6 +344,7 @@ def _execute_wait(
                 on_wait=on_wait,
                 on_retry=lambda number, exc: _write(retry_line(number, exc)),
                 formats=spec.formats,
+                schemas=schemas,
             )
         )
     except CheckTargetError as exc:

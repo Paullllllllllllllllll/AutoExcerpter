@@ -3,7 +3,10 @@
 ``load`` reads ``--settings FILE`` when given, else ``config/settings.yaml``
 in the repository (gitignored), else the packaged
 ``resources/settings.example.yaml``; without any file the code values apply.
-Every key is optional and falls back to the code value. The ``defaults``
+Every key is optional and falls back to the code value. The list
+``schemas_dirs`` names user folders whose ``transcription_schema.json`` and
+``summary_schema.json`` replace the packaged schemas (see
+:mod:`autoexcerpter.llm.schemas`). The ``defaults``
 block sets run options by option name (see :mod:`autoexcerpter.spec`); a
 flag overrides it, and it overrides the code default. Further top-level
 blocks are accepted only when the caller passes a parser for
@@ -11,7 +14,7 @@ them; :attr:`Settings.extensions` holds their parsed values.
 
 The shared blocks (``api_keys``, ``endpoints``, ``timeouts``,
 ``rate_limits``, ``concurrency``, ``images``, ``prompt_caching``,
-``state_dir``, ``logs_dir``) are read by
+``state_dir``, ``logs_dir``, ``schemas_dirs``) are read by
 :mod:`autoexcerpter.common.settings_schema` with this tool's defaults;
 ``retry`` and ``openalex`` are this tool's own.
 """
@@ -19,8 +22,8 @@ The shared blocks (``api_keys``, ``endpoints``, ``timeouts``,
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
-from dataclasses import dataclass, field
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
@@ -49,6 +52,7 @@ from autoexcerpter.common.settings_schema import (
     read_logs_dir,
     read_prompt_caching,
     read_rate_limits,
+    read_schemas_dirs,
     read_state_dir,
     read_timeouts,
     state_directory,
@@ -170,8 +174,11 @@ class OpenAlexSettings:
 class Settings:
     """Machine values, the optional run defaults and any extra blocks.
 
-    *extensions* maps the name of each extra top-level block in the file to
-    the value its parser returned.
+    *schemas_dirs* are the user folders searched for the two schema files
+    before the packaged ones: the ``--schemas-dir`` folders of the command
+    (see :meth:`with_folders`), then the settings list. *extensions* maps
+    the name of each extra top-level block in the file to the value its
+    parser returned.
     """
 
     api_keys: Mapping[str, str] = field(default_factory=lambda: DEFAULT_API_KEYS)
@@ -190,6 +197,17 @@ class Settings:
     defaults: Mapping[str, Any] = field(default_factory=lambda: MappingProxyType({}))
     source: Path | None = None
     extensions: Mapping[str, Any] = field(default_factory=lambda: MappingProxyType({}))
+    schemas_dirs: tuple[Path, ...] = ()
+
+    def with_folders(self, schemas: Sequence[Path] = ()) -> Settings:
+        """Return these settings with the *schemas* folders searched first.
+
+        *schemas* are the ``--schemas-dir`` folders; they come before the
+        settings list.
+        """
+        if not schemas:
+            return self
+        return replace(self, schemas_dirs=(*schemas, *self.schemas_dirs))
 
     def log_file(self) -> Path | None:
         """Return the log file, or None to log to the console only.
@@ -278,11 +296,13 @@ class Settings:
             defaults=MappingProxyType(dict(defaults or {})),
             source=source,
             extensions=read_extensions(reader, data, blocks),
+            schemas_dirs=read_schemas_dirs(reader, data),
         )
 
 
 _TOP_KEYS = frozenset(
     {
+        "schemas_dirs",
         "api_keys",
         "endpoints",
         "timeouts",

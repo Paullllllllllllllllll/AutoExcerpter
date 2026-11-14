@@ -108,6 +108,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from autoexcerpter.common.native import MODEL_DERIVED_IMAGE_KEYS, changed_image_settings
+from autoexcerpter.common.selection import PageRange
 from autoexcerpter.common.sqlite import read, read_only
 from autoexcerpter.common.store import (
     BLOCKING_SUBMISSIONS,
@@ -120,6 +121,7 @@ from autoexcerpter.common.store import (
     StoreError,
     UnitKey,
     UnitResult,
+    UnitRow,
     VersionlessDatabaseError,
     WriterOptions,
     check_schema,
@@ -132,8 +134,10 @@ __all__ = [
     "KIND_SUMMARY",
     "KIND_TRANSCRIPTION",
     "MODEL_NOTE_PREFIX",
+    "SCHEMA_SHA256_KEYS",
     "TOOL",
     "UNIT_KINDS",
+    "UNKNOWN_SCHEMA_OUTCOMES",
     "VIEWS",
     "BatchJob",
     "CitationRow",
@@ -145,6 +149,7 @@ __all__ = [
     "ResumeRequest",
     "SummaryRow",
     "begin_run",
+    "changed_schema",
     "classify",
     "database_path",
     "delete_batch_job",
@@ -162,10 +167,15 @@ __all__ = [
     "read_only_connection",
     "read_pages",
     "read_store",
+    "run_writes",
+    "schema_record",
+    "schema_refusal",
     "settings_fingerprint",
     "store_artifacts",
     "tool_version",
     "transcription_outcome",
+    "unit_schemas",
+    "unit_states",
     "write_batch_job",
     "write_citations",
     "write_summary",
@@ -847,11 +857,18 @@ class Classification:
 
 @dataclass(frozen=True)
 class _Details:
+    """What classification compares of one document.
+
+    *schemas* maps each unit kind to the recorded schema hash of each done
+    unit whose schema is known (:func:`unit_schemas`).
+    """
+
     input_path: str | None
     input_sha256: str | None
     models: Mapping[str, tuple[str, ...]]
     units: Mapping[str, Mapping[int, tuple[str, int]]]
     outputs: Mapping[str, int]
+    schemas: Mapping[str, Mapping[int, str]] = dataclasses.field(default_factory=dict)
 
 
 def _nonempty(path: Path) -> bool:
@@ -948,6 +965,7 @@ def _read_stored(
     outputs: dict[int, dict[str, int]] = {}
     for doc_id, path, stale in connection.execute(_FOLDER_OUTPUTS, (ids,)):
         outputs.setdefault(int(doc_id), {})[str(path)] = int(stale)
+    schemas = unit_schemas(connection, [int(row[0]) for row in documents])
 
     stored: dict[str, _Stored] = {}
     for row in documents:
@@ -974,9 +992,181 @@ def _read_stored(
             models={kind: tuple(names) for kind, names in kinds.items()},
             units=units.get(doc_id, {}),
             outputs=outputs.get(doc_id, {}),
+            schemas=schemas.get(doc_id, {}),
         )
         stored[resume.name] = _Stored(resume, details)
     return stored
+
+
+# =============================================================================
+# Schema identity
+# =============================================================================
+
+SCHEMA_SHA256_KEYS: Final[Mapping[str, str]] = {
+    KIND_TRANSCRIPTION: "transcription_schema_sha256",
+    KIND_SUMMARY: "summary_schema_sha256",
+}
+"""The ``runs.spec`` entry that records the schema hash of each unit kind."""
+
+UNKNOWN_SCHEMA_OUTCOMES: Final = frozenset({"placeholder", "blank"})
+"""Summary outcomes written without a request; their schema is unknown."""
+
+_UNIT_RUNS = f"""
+SELECT u.doc_id, u.kind, u.idx, u.outcome, COALESCE(s.run_id, u.run_id)
+FROM units AS u
+LEFT JOIN responses AS r ON r.response_id = u.response_id
+LEFT JOIN submissions AS s ON s.submission_id = r.submission_id
+WHERE u.doc_id {_IN_JSON} AND u.status = 'done'
+"""
+_RUN_SPECS = f"SELECT run_id, spec FROM runs WHERE run_id {_IN_JSON}"
+
+_STAGE_DONE: Final[Mapping[str, str]] = {
+    KIND_TRANSCRIPTION: "transcribed",
+    KIND_SUMMARY: "summarized",
+}
+
+
+def unit_states(units: Iterable[UnitRow]) -> dict[str, dict[int, tuple[str, int]]]:
+    """Return the ``(status, stale)`` of each unit, by unit kind and page."""
+    states: dict[str, dict[int, tuple[str, int]]] = {}
+    for unit in units:
+        states.setdefault(unit.kind, {})[unit.idx] = (unit.status, int(unit.stale))
+    return states
+
+
+def schema_record(hashes: Mapping[str, str | None]) -> dict[str, dict[str, str]]:
+    """Return the ``runs.spec`` entries of the schemas a run uses.
+
+    *hashes* maps a unit kind to the ``artifacts.sha256`` of the schema text
+    the run stores for it; a kind mapped to None uses no schema and gets no
+    entry.
+    """
+    return {
+        SCHEMA_SHA256_KEYS[kind]: {"value": sha, "source": "computed"}
+        for kind, sha in hashes.items()
+        if sha
+    }
+
+
+def _recorded(spec: Any) -> dict[str, str]:
+    """Return the schema hash of each unit kind that a stored run spec records."""
+    if isinstance(spec, str):
+        try:
+            spec = json.loads(spec)
+        except json.JSONDecodeError:
+            return {}
+    if not isinstance(spec, Mapping):
+        return {}
+    found: dict[str, str] = {}
+    for kind, key in SCHEMA_SHA256_KEYS.items():
+        entry = spec.get(key)
+        value = entry.get("value") if isinstance(entry, Mapping) else None
+        if isinstance(value, str) and value:
+            found[kind] = value
+    return found
+
+
+def unit_schemas(
+    connection: sqlite3.Connection, doc_ids: Sequence[int]
+) -> dict[int, dict[str, dict[int, str]]]:
+    """Return the schema hash of each done unit of the documents *doc_ids*.
+
+    A unit's schema is the hash recorded by the run that sent its request:
+    ``units.run_id`` for a synchronous unit, ``submissions.run_id`` (through
+    ``units.response_id`` and ``responses.submission_id``) for a batch unit.
+    The result maps document, unit kind and page to the hash; a unit whose
+    run recorded none, or a summary written without a request (outcome
+    ``placeholder`` or ``blank``), is left out, its schema unknown.
+    """
+    rows = connection.execute(_UNIT_RUNS, (json.dumps(list(doc_ids)),)).fetchall()
+    runs = sorted({str(row[4]) for row in rows if row[4] is not None})
+    recorded = {
+        str(run_id): _recorded(spec)
+        for run_id, spec in connection.execute(_RUN_SPECS, (json.dumps(runs),))
+    }
+    found: dict[int, dict[str, dict[int, str]]] = {}
+    for doc_id, kind, idx, outcome, run_id in rows:
+        if kind == KIND_SUMMARY and outcome in UNKNOWN_SCHEMA_OUTCOMES:
+            continue
+        sha = recorded.get(str(run_id), {}).get(str(kind))
+        if sha is not None:
+            found.setdefault(int(doc_id), {}).setdefault(str(kind), {})[int(idx)] = sha
+    return found
+
+
+def run_writes(
+    units: Mapping[str, Mapping[int, tuple[str, int]]],
+    *,
+    summarize: bool,
+    selected: Iterable[int] | None = None,
+    reset: Iterable[int] = (),
+) -> dict[str, frozenset[int]]:
+    """Return the pages whose units a run writes, by unit kind.
+
+    *units* maps each kind to the ``(status, stale)`` of each page. The run
+    works the *selected* pages (None: every page). It transcribes those whose
+    transcription is not done or is among the *reset* pages that
+    ``--retranscribe`` makes pending; when it summarizes, it summarizes the
+    pages it transcribes and those whose summary is not done or stale.
+    """
+    transcriptions = units.get(KIND_TRANSCRIPTION, {})
+    summaries = units.get(KIND_SUMMARY, {})
+    pages = set(transcriptions) | set(summaries)
+    chosen = pages if selected is None else pages & set(selected)
+    again = set(reset)
+    transcribe = frozenset(
+        idx
+        for idx in chosen
+        if idx in again or transcriptions.get(idx, ("pending", 0))[0] != "done"
+    )
+    summarized: frozenset[int] = frozenset()
+    if summarize:
+        summarized = frozenset(
+            idx
+            for idx in chosen
+            if idx in transcribe or summaries.get(idx, ("pending", 0)) != ("done", 0)
+        )
+    return {KIND_TRANSCRIPTION: transcribe, KIND_SUMMARY: summarized}
+
+
+def changed_schema(
+    units: Mapping[str, Mapping[int, tuple[str, int]]],
+    schemas: Mapping[str, Mapping[int, str]],
+    current: Mapping[str, str | None],
+    writes: Mapping[str, Iterable[int]],
+) -> str | None:
+    """Return the unit kind whose schemas a run would mix, else None.
+
+    A kind mixes when the run writes units of it (*writes*) while a done unit
+    of it that the run leaves in place has a recorded hash (*schemas*, see
+    :func:`unit_schemas`) other than the run's (*current*). A kind the run
+    sends without a schema (*current* None or absent) and a done unit of
+    unknown schema never mix.
+    """
+    for kind in UNIT_KINDS:
+        sha = current.get(kind)
+        written = set(writes.get(kind, ()))
+        if not sha or not written:
+            continue
+        recorded = schemas.get(kind, {})
+        for idx, (status, _stale) in units.get(kind, {}).items():
+            if (
+                status == "done"
+                and idx not in written
+                and recorded.get(idx, sha) != sha
+            ):
+                return kind
+    return None
+
+
+def schema_refusal(name: str, kind: str) -> str:
+    """Return the reason a document whose *kind* schema changed is refused."""
+    return (
+        f"The {kind} schema changed for '{name}' since its done pages were "
+        f"{_STAGE_DONE[kind]}. Skipping it; use --force without --pages to "
+        f"process the whole document again with the current schema, or restore "
+        f"the earlier schema, whose text {DATABASE_NAME} keeps in its artifacts."
+    )
 
 
 def _model_note(
@@ -1046,7 +1236,10 @@ class ResumeRequest:
     the two roles; *summarize* False leaves summary units out.
     *settings_for* returns the record this run's image options give another
     model, named by its ``provider`` and ``model_name``, or None when they do
-    not resolve.
+    not resolve. *schemas* maps each unit kind to the hash of the schema this
+    run sends it with (None or absent: none); *pages* is the run's
+    ``--pages`` range and *retranscribe* its ``--retranscribe``, which decide
+    the units it writes (:func:`run_writes`).
     """
 
     outputs: Sequence[Path] = ()
@@ -1057,6 +1250,26 @@ class ResumeRequest:
     summary_model: str | None = None
     summarize: bool = True
     settings_for: Callable[[str, str], Mapping[str, Any] | None] | None = None
+    schemas: Mapping[str, str | None] = dataclasses.field(default_factory=dict)
+    pages: PageRange | None = None
+    retranscribe: bool = False
+
+    def writes(
+        self, units: Mapping[str, Mapping[int, tuple[str, int]]]
+    ) -> dict[str, frozenset[int]]:
+        """Return the pages whose units this run writes in a document of *units*.
+
+        ``--retranscribe`` makes the transcriptions of the selected pages
+        pending first.
+        """
+        count = len(units.get(KIND_TRANSCRIPTION, {}))
+        selected = self.pages.resolve(count) if self.pages is not None else None
+        reset: Iterable[int] = ()
+        if self.retranscribe:
+            reset = selected if selected is not None else range(count)
+        return run_writes(
+            units, summarize=self.summarize, selected=selected, reset=reset
+        )
 
 
 def lease_reason(holder: str | None, until: float | None) -> str:
@@ -1177,7 +1390,10 @@ def classify(
     summary units that are missing or stale. Transcription work makes the
     item partial, summary work alone ``TRANSCRIPTION_ONLY``. A changed user
     image setting (the keys derived from the model left out) refuses an item
-    with transcription work; a changed model alone resumes with a note.
+    with transcription work; a changed model alone resumes with a note. A
+    run that would write units of a kind while leaving in place a done unit
+    of that kind made under another recorded schema is refused
+    (:func:`changed_schema`); units of unknown schema never refuse.
     Raises the store's errors for a database that is not a current store,
     newer or unreadable.
     """
@@ -1332,6 +1548,13 @@ def _classified(
                 f"Image settings changed: {', '.join(changed)}. Skipping "
                 f"'{name}'; use --force to replace the existing run."
             ),
+        )
+    stage = changed_schema(
+        details.units, details.schemas, request.schemas, request.writes(details.units)
+    )
+    if stage is not None:
+        return Classification(
+            ItemState.REFUSED, name, doc_id, reason=schema_refusal(name, stage)
         )
     total = len(details.units.get(KIND_TRANSCRIPTION, {}))
     if not transcribe:

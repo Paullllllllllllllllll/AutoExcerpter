@@ -249,6 +249,7 @@ def _execute(
 ) -> int:
     try:
         settings = load(flags.get("settings"), blocks=ext.settings_blocks())
+        settings = settings.with_folders(flags.get("schemas_dir", ()))
         configure_logging(log_file=settings.log_file())
         resolution = resolve(settings, flags)
     except (SettingsError, SpecError) as exc:
