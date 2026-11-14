@@ -1,5 +1,12 @@
 # Changelog
 
+- **v1.11.0** (14 November 2026) -- The repository ships a skill for coding
+  agents in `skills/autoexcerpter/`. `SKILL.md` gives the steps of a job (dry run,
+  sample, run, verify), the conventions for outputs, page ranges and context files,
+  and the handling of resumed and failed items; `batch.md` covers the two phases of
+  a batch job. The skill defers to the README and `--help` for flags and behavior,
+  and the README's new Agent Skill section says how to install it. The tool's code
+  and behavior are unchanged.
 - **v1.10.0** (13 November 2026) -- `run` gains `--open-items N` (default 1),
   which keeps several items open at once. `--concurrency` now bounds the requests
   of the whole run, and `--open-items` sets how many items share them: a further

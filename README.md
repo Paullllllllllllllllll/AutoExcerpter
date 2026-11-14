@@ -1,4 +1,4 @@
-# AutoExcerpter v1.10.0
+# AutoExcerpter v1.11.0
 
 <img src="assets/logo.svg" alt="AutoExcerpter logo" width="64" align="right">
 
@@ -934,6 +934,16 @@ included; cached results are served even when the request budget is exhausted.
 The `openalex:` settings hold the contact `email`, the variable with an optional
 API key (`api_key_env`; the key is redacted from logs) and `max_requests`, the
 citations looked up per document. `--no-openalex` turns lookups off.
+
+## Agent Skill
+
+`skills/autoexcerpter/` holds a skill for coding agents such as Claude Code.
+`SKILL.md` gives the steps of a job (dry run, sample, run, verify), the conventions
+for outputs, page ranges and context files, and the handling of resumed and failed
+items; `batch.md` covers the two phases of a batch job. To install it, copy or link
+the folder into the agent's skills folder, for Claude Code
+`~/.claude/skills/autoexcerpter/`. The skill runs the tool from a clone set up as in
+Installation and defers to this README and `--help` for flags and behavior.
 
 ## Architecture
 
