@@ -1,5 +1,11 @@
 # Changelog
 
+- **v1.13.0** (17 November 2026) -- The capability table knows gpt-6.2-sol and
+  gpt-6.2-astra. Both take text and image input with structured outputs and
+  the reasoning efforts `low` to `max`, so `none` and `minimal` become `low`.
+  gpt-6.2-sol otherwise takes the settings of gpt-6.1-sol and gpt-6.2-astra
+  those of gpt-6-astra (Flex processing, image detail, prompt caching), and the
+  wizard suggests both models.
 - **v1.12.0** (14 November 2026) -- The two packaged schemas can be replaced.
   The repeatable flag `--schemas-dir` and the settings list `schemas_dirs` name
   user folders in which a `transcription_schema.json` or `summary_schema.json`

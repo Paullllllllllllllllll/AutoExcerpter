@@ -1,4 +1,4 @@
-# AutoExcerpter v1.12.0
+# AutoExcerpter v1.13.0
 
 <img src="assets/logo.svg" alt="AutoExcerpter logo" width="64" align="right">
 
@@ -503,9 +503,10 @@ receive a thinking level, Gemini 2 models a limit of 10 to 50 percent of the
 output limit (at most 24,576 tokens, 32,768 on Gemini 2.5 Pro), and the Gemini
 image models none. A schema stays enforced on Gemini with thinking. An effort a
 model does not document becomes the next level it does, or its highest, with
-one warning per run: `none` and `minimal` become `low` on gpt-6-astra and
-gpt-6.1-sol, `max` becomes `xhigh` on gpt-5.5, `none` becomes `minimal` on
-gpt-5, the pro models take `medium` to `xhigh`, and Gemini `minimal` becomes
+one warning per run: `none` and `minimal` become `low` on gpt-6-astra,
+gpt-6.1-sol, gpt-6.2-sol and gpt-6.2-astra, `max` becomes `xhigh` on gpt-5.5,
+`none` becomes `minimal` on gpt-5, the pro models take `medium` to `xhigh`, and
+Gemini `minimal` becomes
 `low` on Gemini 3.1 Pro and 3.7/3.8 Flash. o1, o1-mini and the chat-latest
 models receive no effort. OpenRouter reasoning models receive OpenRouter's
 `reasoning` object: the effort, or for Claude and Gemini models with a known
