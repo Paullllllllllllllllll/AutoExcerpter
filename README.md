@@ -1,4 +1,4 @@
-# AutoExcerpter v1.13.0
+# AutoExcerpter v1.13.1
 
 <img src="assets/logo.svg" alt="AutoExcerpter logo" width="64" align="right">
 
@@ -520,9 +520,9 @@ OpenRouter model whose output limit the capability facts document gets that
 limit, which also caps a larger set one. The service tier is sent with OpenAI
 calls only; a tier given for another provider by flag or settings default is
 ignored with a warning on stderr. `flex` goes only to the models OpenAI lists for
-Flex processing (GPT-6, GPT-5.6, 5.5, 5.4, 5.2, 5.1, 5 and their mini, nano and
-pro variants where listed, o3, o4-mini); other models are sent no tier, with one
-warning per run.
+Flex processing (GPT-6 and 6.1 but not 6.2, GPT-5.6, 5.5, 5.4, 5.2, 5.1, 5 and
+their mini, nano and pro variants where listed, o3, o4-mini); other models are
+sent no tier, with one warning per run.
 
 The family rules in `autoexcerpter/common/capability_table.py`, shared with
 ChronoTranscriber and ChronoMiner, feed the resolver in
